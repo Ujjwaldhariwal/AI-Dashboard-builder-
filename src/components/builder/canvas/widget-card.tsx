@@ -5,20 +5,40 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  Trash2, RefreshCw, Loader2, AlertCircle,
-  BarChart3, LineChart, PieChart, AreaChart, Table2, Pencil
+  Trash2,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  BarChart3,
+  LineChart,
+  PieChart,
+  AreaChart,
+  Table2,
+  Pencil,
+  BrainCircuit,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { Widget } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
+import { WidgetInsights } from '@/components/builder/widget-insights'
+import { TrendAnalyzer, TrendInsight } from '@/lib/ai/trend-analyzer'
 import { toast } from 'sonner'
 import {
-  BarChart, Bar,
-  LineChart as ReLineChart, Line,
-  AreaChart as ReAreaChart, Area,
-  PieChart as RePieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  BarChart,
+  Bar,
+  LineChart as ReLineChart,
+  Line,
+  AreaChart as ReAreaChart,
+  Area,
+  PieChart as RePieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
 } from 'recharts'
 
 interface WidgetCardProps {
@@ -28,8 +48,11 @@ interface WidgetCardProps {
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 
 const chartTypeIcon: Record<string, any> = {
-  bar: BarChart3, line: LineChart,
-  area: AreaChart, pie: PieChart, table: Table2,
+  bar: BarChart3,
+  line: LineChart,
+  area: AreaChart,
+  pie: PieChart,
+  table: Table2,
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -48,16 +71,21 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export function WidgetCard({ widget }: WidgetCardProps) {
   const { endpoints, removeWidget } = useDashboardStore()
-  const [data, setData] = useState<any[] | null>(null)
+  const [data, setData] = useState<{ x: string; y: number }[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [showInsights, setShowInsights] = useState(false)
+  const [insights, setInsights] = useState<TrendInsight | null>(null)
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon = chartTypeIcon[widget.type] ?? BarChart3
 
   const fetchData = async () => {
-    if (!endpoint) { setError('Endpoint not found'); return }
+    if (!endpoint) {
+      setError('Endpoint not found')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -65,15 +93,16 @@ export function WidgetCard({ widget }: WidgetCardProps) {
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
       const result = await res.json()
       const dataArray = Array.isArray(result)
-        ? result : result.data || result.results || [result]
+        ? result
+        : result.data || result.results || [result]
 
-      setData(
-        dataArray.slice(0, 20).map((row: any) => ({
-          x: String(row[widget.dataMapping.xAxis] ?? 'N/A'),
-          y: Number(row[widget.dataMapping.yAxis]) || 0,
-          ...row,
-        }))
-      )
+      const mapped = dataArray.slice(0, 20).map((row: any) => ({
+        x: String(row[widget.dataMapping.xAxis] ?? 'N/A'),
+        y: Number(row[widget.dataMapping.yAxis]) || 0,
+        ...row,
+      }))
+
+      setData(mapped)
     } catch (err: any) {
       setError(err.message)
       toast.error(`Widget "${widget.title}": ${err.message}`)
@@ -82,7 +111,20 @@ export function WidgetCard({ widget }: WidgetCardProps) {
     }
   }
 
-  useEffect(() => { fetchData() }, [widget.endpointId, widget.dataMapping])
+  useEffect(() => {
+    fetchData()
+  }, [widget.endpointId, widget.dataMapping])
+
+  // Compute insights whenever data changes
+  useEffect(() => {
+    if (data && data.length >= 2) {
+      const result = TrendAnalyzer.analyze(data)
+      setInsights(result)
+    } else {
+      setInsights(null)
+      setShowInsights(false)
+    }
+  }, [data])
 
   const renderChart = () => {
     if (!data?.length) return null
@@ -98,8 +140,15 @@ export function WidgetCard({ widget }: WidgetCardProps) {
               <XAxis dataKey="x" tick={{ fontSize: 10 }} tickLine={false} />
               <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="y" name={widget.dataMapping.yAxis} fill={COLORS[0]} radius={[4, 4, 0, 0]}>
-                {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              <Bar
+                dataKey="y"
+                name={widget.dataMapping.yAxis}
+                fill={COLORS[0]}
+                radius={[4, 4, 0, 0]}
+              >
+                {data.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -114,9 +163,11 @@ export function WidgetCard({ widget }: WidgetCardProps) {
               <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Line
-                type="monotone" dataKey="y"
+                type="monotone"
+                dataKey="y"
                 name={widget.dataMapping.yAxis}
-                stroke={COLORS[0]} strokeWidth={2.5}
+                stroke={COLORS[0]}
+                strokeWidth={2.5}
                 dot={{ r: 3, fill: COLORS[0] }}
                 activeDot={{ r: 5 }}
               />
@@ -139,9 +190,11 @@ export function WidgetCard({ widget }: WidgetCardProps) {
               <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Area
-                type="monotone" dataKey="y"
+                type="monotone"
+                dataKey="y"
                 name={widget.dataMapping.yAxis}
-                stroke={COLORS[0]} strokeWidth={2.5}
+                stroke={COLORS[0]}
+                strokeWidth={2.5}
                 fill={`url(#g-${widget.id})`}
               />
             </ReAreaChart>
@@ -153,10 +206,17 @@ export function WidgetCard({ widget }: WidgetCardProps) {
           <ResponsiveContainer width="100%" height={200}>
             <RePieChart>
               <Pie
-                data={data.slice(0, 6)} dataKey="y" nameKey="x"
-                cx="50%" cy="50%" outerRadius={70} innerRadius={30}
+                data={data.slice(0, 6)}
+                dataKey="y"
+                nameKey="x"
+                cx="50%"
+                cy="50%"
+                outerRadius={70}
+                innerRadius={30}
                 paddingAngle={3}
-                label={({ name, percent }) => `${String(name).slice(0, 8)} ${(percent * 100).toFixed(0)}%`}
+                label={({ name, percent }) =>
+                  `${String(name).slice(0, 8)} ${(percent * 100).toFixed(0)}%`
+                }
                 labelLine={false}
               >
                 {data.slice(0, 6).map((_: any, i: number) => (
@@ -185,9 +245,16 @@ export function WidgetCard({ widget }: WidgetCardProps) {
               </thead>
               <tbody>
                 {data.map((row, i) => (
-                  <tr key={i} className="border-b hover:bg-muted/40 transition-colors">
-                    <td className="p-2 text-[11px]">{String(row.x ?? 'N/A')}</td>
-                    <td className="p-2 text-[11px] font-medium">{String(row.y ?? 'N/A')}</td>
+                  <tr
+                    key={i}
+                    className="border-b hover:bg-muted/40 transition-colors"
+                  >
+                    <td className="p-2 text-[11px]">
+                      {String(row.x ?? 'N/A')}
+                    </td>
+                    <td className="p-2 text-[11px] font-medium">
+                      {String(row.y ?? 'N/A')}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -195,7 +262,8 @@ export function WidgetCard({ widget }: WidgetCardProps) {
           </div>
         )
 
-      default: return null
+      default:
+        return null
     }
   }
 
@@ -208,34 +276,52 @@ export function WidgetCard({ widget }: WidgetCardProps) {
               <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
                 <Icon className="w-3.5 h-3.5 text-white" />
               </div>
-              <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
+              <CardTitle className="text-sm truncate">
+                {widget.title}
+              </CardTitle>
             </div>
             <div className="flex items-center gap-0.5 flex-shrink-0">
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 mr-1">
+              <Badge
+                variant="outline"
+                className="text-[10px] px-1.5 py-0 mr-1"
+              >
                 {widget.type.toUpperCase()}
               </Badge>
-              {/* Edit */}
+              {insights && (
+                <Button
+                  variant={showInsights ? 'default' : 'ghost'}
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setShowInsights(s => !s)}
+                  title="AI Insights"
+                >
+                  <BrainCircuit className="w-3 h-3" />
+                </Button>
+              )}
               <Button
-                variant="ghost" size="icon"
+                variant="ghost"
+                size="icon"
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
                 onClick={() => setEditOpen(true)}
               >
                 <Pencil className="w-3 h-3" />
               </Button>
-              {/* Refresh */}
               <Button
-                variant="ghost" size="icon"
+                variant="ghost"
+                size="icon"
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                onClick={fetchData} disabled={loading}
+                onClick={fetchData}
+                disabled={loading}
               >
-                {loading
-                  ? <Loader2 className="w-3 h-3 animate-spin" />
-                  : <RefreshCw className="w-3 h-3" />
-                }
+                {loading ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
               </Button>
-              {/* Delete */}
               <Button
-                variant="ghost" size="icon"
+                variant="ghost"
+                size="icon"
                 className="h-6 w-6 text-red-500 hover:text-red-700"
                 onClick={() => {
                   if (confirm(`Delete "${widget.title}"?`)) {
@@ -249,7 +335,8 @@ export function WidgetCard({ widget }: WidgetCardProps) {
             </div>
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-            {endpoint?.name ?? 'Unknown source'} · {widget.dataMapping.xAxis} → {widget.dataMapping.yAxis}
+            {endpoint?.name ?? 'Unknown source'} ·{' '}
+            {widget.dataMapping.xAxis} → {widget.dataMapping.yAxis}
           </p>
         </CardHeader>
 
@@ -271,10 +358,18 @@ export function WidgetCard({ widget }: WidgetCardProps) {
               <p className="text-xs text-muted-foreground">No data returned</p>
             </div>
           )}
+
+          {showInsights && insights && data && (
+            <WidgetInsights
+              insights={insights}
+              xLabel={widget.dataMapping.xAxis}
+              yLabel={widget.dataMapping.yAxis}
+              data={data}
+            />
+          )}
         </CardContent>
       </Card>
 
-      {/* Edit Dialog */}
       <WidgetEditDialog
         widget={widget}
         open={editOpen}
