@@ -1,7 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,8 +17,13 @@ import { useAuthStore } from '@/store/auth-store'
 import { useDashboardStore } from '@/store/builder-store'
 import { toast } from 'sonner'
 import {
-  User, Bell, Shield, Database,
-  Trash2, LogOut, Moon, Sun, Save
+  User,
+  Shield,
+  Database,
+  Trash2,
+  LogOut,
+  Sun,
+  Save,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -28,6 +39,7 @@ export default function SettingsPage() {
   const [autoRefresh, setAutoRefresh] = useState(true)
 
   const handleSaveProfile = () => {
+    // later: persist to backend
     toast.success('✅ Profile saved')
   }
 
@@ -46,7 +58,6 @@ export default function SettingsPage() {
   return (
     <div className="p-6">
       <div className="w-full max-w-3xl mx-auto space-y-5">
-
         {/* Header */}
         <div>
           <h1 className="text-xl font-bold mb-0.5">Settings</h1>
@@ -64,7 +75,9 @@ export default function SettingsPage() {
               </div>
               <div>
                 <CardTitle className="text-sm">Profile</CardTitle>
-                <CardDescription className="text-xs">Update your personal info</CardDescription>
+                <CardDescription className="text-xs">
+                  Update your personal info
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -106,7 +119,9 @@ export default function SettingsPage() {
               </div>
               <div>
                 <CardTitle className="text-sm">Preferences</CardTitle>
-                <CardDescription className="text-xs">App behaviour and display</CardDescription>
+                <CardDescription className="text-xs">
+                  App behaviour and display
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -114,7 +129,9 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Dark Mode</p>
-                <p className="text-xs text-muted-foreground">Toggle dark/light theme</p>
+                <p className="text-xs text-muted-foreground">
+                  Toggle dark/light theme
+                </p>
               </div>
               <Switch
                 checked={darkMode}
@@ -129,14 +146,22 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium">Notifications</p>
                 <p className="text-xs text-muted-foreground">Show toast alerts</p>
               </div>
-              <Switch checked={notifications} onCheckedChange={setNotifications} />
+              <Switch
+                checked={notifications}
+                onCheckedChange={setNotifications}
+              />
             </div>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Auto-refresh widgets</p>
-                <p className="text-xs text-muted-foreground">Refresh data based on interval</p>
+                <p className="text-xs text-muted-foreground">
+                  Refresh data based on interval
+                </p>
               </div>
-              <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
+              <Switch
+                checked={autoRefresh}
+                onCheckedChange={setAutoRefresh}
+              />
             </div>
           </CardContent>
         </Card>
@@ -150,20 +175,41 @@ export default function SettingsPage() {
               </div>
               <div>
                 <CardTitle className="text-sm">Data Usage</CardTitle>
-                <CardDescription className="text-xs">Your current project stats</CardDescription>
+                <CardDescription className="text-xs">
+                  Your current project stats
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-5">
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Dashboards', value: dashboards.length, color: 'text-blue-600' },
-                { label: 'APIs', value: endpoints.length, color: 'text-purple-600' },
-                { label: 'Widgets', value: widgets.length, color: 'text-green-600' },
+                {
+                  label: 'Dashboards',
+                  value: dashboards.length,
+                  color: 'text-blue-600',
+                },
+                {
+                  label: 'APIs',
+                  value: endpoints.length,
+                  color: 'text-purple-600',
+                },
+                {
+                  label: 'Widgets',
+                  value: widgets.length,
+                  color: 'text-green-600',
+                },
               ].map(stat => (
-                <div key={stat.label} className="p-3 rounded-lg bg-muted/50 border text-center">
-                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
+                <div
+                  key={stat.label}
+                  className="p-3 rounded-lg bg-muted/50 border text-center"
+                >
+                  <p className={`text-2xl font-bold ${stat.color}`}>
+                    {stat.value}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {stat.label}
+                  </p>
                 </div>
               ))}
             </div>
@@ -179,7 +225,9 @@ export default function SettingsPage() {
               </div>
               <div>
                 <CardTitle className="text-sm">Security</CardTitle>
-                <CardDescription className="text-xs">Account actions</CardDescription>
+                <CardDescription className="text-xs">
+                  Account actions
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -187,9 +235,13 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
               <div>
                 <p className="text-sm font-medium">Logged in as</p>
-                <p className="text-xs text-muted-foreground">{user?.email ?? 'Unknown'}</p>
+                <p className="text-xs text-muted-foreground">
+                  {user?.email ?? 'Unknown'}
+                </p>
               </div>
-              <Badge variant="secondary" className="text-xs">Active</Badge>
+              <Badge variant="secondary" className="text-xs">
+                Active
+              </Badge>
             </div>
             <Button
               variant="outline"
@@ -211,8 +263,12 @@ export default function SettingsPage() {
                 <Trash2 className="w-4 h-4 text-white" />
               </div>
               <div>
-                <CardTitle className="text-sm text-red-600">Danger Zone</CardTitle>
-                <CardDescription className="text-xs">Irreversible actions</CardDescription>
+                <CardTitle className="text-sm text-red-600">
+                  Danger Zone
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Irreversible actions
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -237,7 +293,6 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-
       </div>
     </div>
   )
