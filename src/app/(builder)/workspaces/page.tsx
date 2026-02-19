@@ -4,7 +4,7 @@ import { useDashboardStore } from '@/store/builder-store'
 import { useAuthStore } from '@/store/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Plus, FolderKanban, Trash2, ExternalLink } from 'lucide-react'
+import { Plus, FolderKanban, Trash2, ExternalLink, Database, LayoutGrid } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
@@ -15,7 +15,15 @@ import { toast } from 'sonner'
 export default function WorkspacesPage() {
   const router = useRouter()
   const { user } = useAuthStore()
-  const store = useDashboardStore()
+  const {
+    dashboards,
+    endpoints,
+    widgets,
+    addDashboard,
+    removeDashboard,
+    setCurrentDashboard,
+  } = useDashboardStore()
+
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -36,30 +44,31 @@ export default function WorkspacesPage() {
     )
   }
 
-  const dashboards = store.dashboards || []
-  const { addDashboard, deleteDashboard, setCurrentDashboard } = store
-
   const handleCreate = () => {
     if (!name.trim()) {
       toast.error('Dashboard name is required')
       return
     }
+
     const id = addDashboard({
-      name,
-      description,
-      ownerId: user?.id || 'unknown',
+      name: name.trim(),
+      description: description.trim(),
+      ownerId: user?.id || 'unknown', // now valid because Dashboard has ownerId?
     })
+
     setOpen(false)
     setName('')
     setDescription('')
     toast.success('Dashboard created')
+
     setCurrentDashboard(id)
-    router.push(`/builder`)
+    router.push('/builder')
   }
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold mb-1">My Dashboards</h1>
           <p className="text-muted-foreground">
@@ -72,10 +81,60 @@ export default function WorkspacesPage() {
         </Button>
       </div>
 
+      {/* Stats bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        {[
+          {
+            label: 'Dashboards',
+            value: dashboards.length,
+            icon: FolderKanban,
+            color: 'from-blue-600 to-blue-500',
+          },
+          {
+            label: 'Connected APIs',
+            value: endpoints.length,
+            icon: Database,
+            color: 'from-purple-600 to-purple-500',
+          },
+          {
+            label: 'Widgets',
+            value: widgets.length,
+            icon: LayoutGrid,
+            color: 'from-green-600 to-green-500',
+          },
+        ].map(stat => {
+          const Icon = stat.icon
+          return (
+            <Card key={stat.label}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center flex-shrink-0`}
+                  >
+                    <Icon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{stat.value}</p>
+                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+
+      {/* Dashboard cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {dashboards.map((d) => (
           <Card key={d.id} className="flex flex-col">
-            <CardHeader className="cursor-pointer" onClick={() => { setCurrentDashboard(d.id); router.push('/builder') }}>
+            <CardHeader
+              className="cursor-pointer"
+              onClick={() => {
+                setCurrentDashboard(d.id)
+                router.push('/builder')
+              }}
+            >
               <CardTitle className="flex items-center gap-2">
                 <FolderKanban className="w-5 h-5 text-blue-600" />
                 {d.name}
@@ -86,7 +145,10 @@ export default function WorkspacesPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => { setCurrentDashboard(d.id); router.push('/builder') }}
+                onClick={() => {
+                  setCurrentDashboard(d.id)
+                  router.push('/builder')
+                }}
               >
                 <ExternalLink className="w-4 h-4 mr-1" />
                 Open
@@ -97,7 +159,7 @@ export default function WorkspacesPage() {
                 className="text-red-500 hover:text-red-700"
                 onClick={() => {
                   if (confirm('Delete this dashboard?')) {
-                    deleteDashboard(d.id)
+                    removeDashboard(d.id)
                     toast.success('Dashboard deleted')
                   }
                 }}
@@ -125,6 +187,7 @@ export default function WorkspacesPage() {
         )}
       </div>
 
+      {/* Create dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
