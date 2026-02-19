@@ -7,6 +7,7 @@ interface Dashboard {
   name: string
   description: string
   createdAt: Date
+  ownerId?: string            // ✅ add this line
 }
 
 interface APIEndpoint {
