@@ -7,5 +7,5 @@ export default function ViewerLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <AppLayout>{children}</AppLayout>
+  return <>{children}</>
 }
