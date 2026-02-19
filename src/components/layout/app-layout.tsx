@@ -12,6 +12,10 @@ import { Input } from '@/components/ui/input'
 import { useDashboardStore } from '@/store/builder-store'
 import { useAuthStore } from '@/store/auth-store'
 import { useRouter } from 'next/navigation'
+import { NotificationBell } from '@/components/layout/notification-bell'
+
+// In the header JSX:
+
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -65,15 +69,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <Button variant="ghost" size="icon" className="relative h-8 w-8">
-              <Bell className="w-4 h-4" />
-              <Badge
-                variant="destructive"
-                className="absolute -top-1 -right-1 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center"
-              >
-                3
-              </Badge>
-            </Button>
+            <NotificationBell />
             <Button variant="ghost" size="icon" className="h-8 w-8">
               <User className="w-4 h-4" />
             </Button>
