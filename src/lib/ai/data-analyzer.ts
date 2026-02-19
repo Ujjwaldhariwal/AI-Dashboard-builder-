@@ -41,7 +41,6 @@ export class DataAnalyzer {
       const uniqueCount = new Set(values).size
       const sampleValues = values.slice(0, 5)
 
-      // Type detection
       const isNumeric = values.every((v) => typeof v === 'number' || !isNaN(Number(v)))
       const isDate = values.some((v) => {
         const str = String(v).toLowerCase()
@@ -68,14 +67,12 @@ export class DataAnalyzer {
       }
     })
 
-    // Detect time series
     const dateField = fields.find((f) => f.isDate)
     const timeSeries = {
       detected: !!dateField,
       dateField: dateField?.name,
     }
 
-    // Generate chart suggestions
     const suggestedCharts = this.generateChartSuggestions(fields, data.length, timeSeries)
 
     return {
@@ -95,9 +92,7 @@ export class DataAnalyzer {
 
     const numericFields = fields.filter((f) => f.isNumeric)
     const categoricalFields = fields.filter((f) => f.isCategorical)
-    const dateFields = fields.filter((f) => f.isDate)
 
-    // Time series line chart
     if (timeSeries.detected && numericFields.length > 0) {
       suggestions.push({
         type: 'line',
@@ -106,7 +101,6 @@ export class DataAnalyzer {
         xAxis: timeSeries.dateField,
         yAxis: numericFields[0].name,
       })
-
       suggestions.push({
         type: 'area',
         confidence: 85,
@@ -116,7 +110,6 @@ export class DataAnalyzer {
       })
     }
 
-    // Bar chart for categorical data
     if (categoricalFields.length > 0 && numericFields.length > 0) {
       suggestions.push({
         type: 'bar',
@@ -127,7 +120,6 @@ export class DataAnalyzer {
       })
     }
 
-    // Pie chart for categorical distribution
     if (categoricalFields.length > 0 && categoricalFields[0].uniqueValues <= 10) {
       suggestions.push({
         type: 'pie',
@@ -138,7 +130,6 @@ export class DataAnalyzer {
       })
     }
 
-    // Table for detailed view
     suggestions.push({
       type: 'table',
       confidence: 100,
