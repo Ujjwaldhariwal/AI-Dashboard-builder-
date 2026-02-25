@@ -1,141 +1,175 @@
-export interface DataAnalysis {
-  totalRecords: number
-  fields: Array<{
-    name: string
-    type: 'string' | 'number' | 'date' | 'boolean' | 'object' | 'array'
-    uniqueValues: number
-    sampleValues: any[]
-    hasNulls: boolean
-    isNumeric: boolean
-    isDate: boolean
-    isCategorical: boolean
-  }>
-  suggestedCharts: Array<{
-    type: 'line' | 'bar' | 'pie' | 'area' | 'table'
-    confidence: number
-    reason: string
-    xAxis?: string
-    yAxis?: string
-    groupBy?: string
-  }>
-  timeSeries: {
-    detected: boolean
-    dateField?: string
-  }
+// src/lib/ai/data-analyzer.ts
+import { ChartType, YAxisConfig } from '@/types/widget'
+
+export type FieldType = 'number' | 'string' | 'date' | 'boolean' | 'unknown'
+
+export interface DataField {
+  name: string
+  type: FieldType
 }
 
+export interface ChartSuggestion {
+  title: string
+  chartType: ChartType
+  xAxis: string
+  yAxes: YAxisConfig[]
+  description: string
+}
+
+// Chart color palette for multi-metric charts
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#ec4899']
+
 export class DataAnalyzer {
-  static analyze(data: any[]): DataAnalysis {
-    if (!Array.isArray(data) || data.length === 0) {
-      return {
-        totalRecords: 0,
-        fields: [],
-        suggestedCharts: [],
-        timeSeries: { detected: false },
+  
+  /**
+   * O(N) Breadth-First Search to find the first substantial array in weird JSON structures.
+   */
+  static extractDataArray(rawData: unknown): any[] {
+    if (!rawData) return []
+    if (Array.isArray(rawData)) return rawData
+
+    const queue = [rawData]
+    let maxDepth = 5 // Prevent infinite loops on circular structures
+
+    while (queue.length > 0 && maxDepth > 0) {
+      const current = queue.shift() as Record<string, unknown>
+      
+      for (const key in current) {
+        const val = current[key]
+        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
+          return val // Found the primary array of objects
+        }
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+          queue.push(val)
+        }
       }
+      maxDepth--
     }
-
-    const firstItem = data[0]
-    const fields = Object.keys(firstItem).map((fieldName) => {
-      const values = data.map((item) => item[fieldName]).filter((v) => v != null)
-      const uniqueCount = new Set(values).size
-      const sampleValues = values.slice(0, 5)
-
-      const isNumeric = values.every((v) => typeof v === 'number' || !isNaN(Number(v)))
-      const isDate = values.some((v) => {
-        const str = String(v).toLowerCase()
-        return str.includes('date') || str.includes('time') || !isNaN(Date.parse(v))
-      })
-      const isCategorical = uniqueCount < data.length * 0.5 && uniqueCount < 20
-
-      let type: 'string' | 'number' | 'date' | 'boolean' | 'object' | 'array' = 'string'
-      if (isNumeric) type = 'number'
-      else if (isDate) type = 'date'
-      else if (typeof values[0] === 'boolean') type = 'boolean'
-      else if (Array.isArray(values[0])) type = 'array'
-      else if (typeof values[0] === 'object') type = 'object'
-
-      return {
-        name: fieldName,
-        type,
-        uniqueValues: uniqueCount,
-        sampleValues,
-        hasNulls: values.length < data.length,
-        isNumeric,
-        isDate,
-        isCategorical,
-      }
-    })
-
-    const dateField = fields.find((f) => f.isDate)
-    const timeSeries = {
-      detected: !!dateField,
-      dateField: dateField?.name,
-    }
-
-    const suggestedCharts = this.generateChartSuggestions(fields, data.length, timeSeries)
-
-    return {
-      totalRecords: data.length,
-      fields,
-      suggestedCharts,
-      timeSeries,
-    }
+    return []
   }
 
-  private static generateChartSuggestions(
-    fields: any[],
-    recordCount: number,
-    timeSeries: any
-  ) {
-    const suggestions: any[] = []
+  /**
+   * Samples up to 50 rows to accurately infer data types (optimized for performance).
+   */
+  static inferTypes(rows: any[]): DataField[] {
+    if (!rows.length) return []
+    
+    const sampleSize = Math.min(rows.length, 50)
+    const sampleRows = rows.slice(0, sampleSize)
+    const keys = Object.keys(sampleRows[0] || {}).filter(k => k !== 'id' && !k.startsWith('_'))
 
-    const numericFields = fields.filter((f) => f.isNumeric)
-    const categoricalFields = fields.filter((f) => f.isCategorical)
+    return keys.map(key => {
+      let isNum = true, isDate = true, isBool = true
 
-    if (timeSeries.detected && numericFields.length > 0) {
-      suggestions.push({
-        type: 'line',
-        confidence: 95,
-        reason: 'Time series data detected with numeric values - perfect for trend visualization',
-        xAxis: timeSeries.dateField,
-        yAxis: numericFields[0].name,
-      })
-      suggestions.push({
-        type: 'area',
-        confidence: 85,
-        reason: 'Area charts work well for showing volume over time',
-        xAxis: timeSeries.dateField,
-        yAxis: numericFields[0].name,
-      })
-    }
+      for (const row of sampleRows) {
+        const val = row[key]
+        if (val === null || val === undefined) continue
+        
+        if (typeof val !== 'number' && isNaN(Number(val))) isNum = false
+        if (typeof val !== 'boolean') isBool = false
+        if (typeof val !== 'string' || isNaN(Date.parse(val))) isDate = false
+      }
 
-    if (categoricalFields.length > 0 && numericFields.length > 0) {
-      suggestions.push({
-        type: 'bar',
-        confidence: 90,
-        reason: 'Categorical data with numeric values - ideal for comparison',
-        xAxis: categoricalFields[0].name,
-        yAxis: numericFields[0].name,
-      })
-    }
+      let type: FieldType = 'string'
+      if (isBool) type = 'boolean'
+      else if (isNum) type = 'number'
+      else if (isDate) type = 'date'
 
-    if (categoricalFields.length > 0 && categoricalFields[0].uniqueValues <= 10) {
-      suggestions.push({
-        type: 'pie',
-        confidence: 80,
-        reason: `Small number of categories (${categoricalFields[0].uniqueValues}) - good for showing distribution`,
-        groupBy: categoricalFields[0].name,
-        yAxis: numericFields[0]?.name || 'count',
-      })
-    }
-
-    suggestions.push({
-      type: 'table',
-      confidence: 100,
-      reason: 'Table view for detailed data inspection - always useful',
+      return { name: key, type }
     })
+  }
 
-    return suggestions.sort((a, b) => b.confidence - a.confidence)
+  /**
+   * Generates intelligent dashboard widget suggestions based on available schema.
+   */
+  static generateSuggestions(fields: DataField[]): ChartSuggestion[] {
+    const numbers = fields.filter(f => f.type === 'number').map(f => f.name)
+    const dates = fields.filter(f => f.type === 'date').map(f => f.name)
+    const categories = fields.filter(f => f.type === 'string').map(f => f.name)
+
+    const suggestions: ChartSuggestion[] = []
+
+    // 1. Time-Series Analysis (If dates and numbers exist)
+    if (dates.length > 0 && numbers.length > 0) {
+      // Pick up to 3 metrics for a clean chart
+      const selectedMetrics = numbers.slice(0, 3)
+      suggestions.push({
+        title: `${selectedMetrics.join(' & ')} over time`,
+        chartType: 'area',
+        xAxis: dates[0],
+        yAxes: selectedMetrics.map((key, i) => ({ key, color: COLORS[i % COLORS.length] })),
+        description: 'Visualizes trend changes over the time period.'
+      })
+    }
+
+    // 2. Categorical Comparison (If strings and numbers exist)
+    if (categories.length > 0 && numbers.length > 0) {
+      suggestions.push({
+        title: `${numbers[0]} by ${categories[0]}`,
+        chartType: 'bar',
+        xAxis: categories[0],
+        yAxes: [{ key: numbers[0], color: COLORS[0] }],
+        description: 'Compares the primary metric across different categories.'
+      })
+
+      // If we have multiple metrics, suggest a multi-bar chart
+      if (numbers.length > 1) {
+        const multiMetrics = numbers.slice(0, 4)
+        suggestions.push({
+          title: `Metrics breakdown by ${categories[0]}`,
+          chartType: 'bar',
+          xAxis: categories[0],
+          yAxes: multiMetrics.map((key, i) => ({ key, color: COLORS[i % COLORS.length] })),
+          description: 'Side-by-side comparison of multiple data points.'
+        })
+      }
+    }
+
+    // 3. Distribution (Pie Chart)
+    if (categories.length > 0 && numbers.length > 0) {
+      suggestions.push({
+        title: `Distribution of ${numbers[0]}`,
+        chartType: 'pie',
+        xAxis: categories[0],
+        yAxes: [{ key: numbers[0], color: COLORS[4] }],
+        description: 'Shows the proportional breakdown of the data.'
+      })
+    }
+
+    // 4. Always suggest a raw Data Table
+    if (fields.length > 0) {
+      suggestions.push({
+        title: `Raw Data Grid`,
+        chartType: 'table',
+        xAxis: fields[0].name,
+        yAxes: numbers.map((key, i) => ({ key, color: COLORS[i % COLORS.length] })),
+        description: 'Complete paginated view of the structured API response.'
+      })
+    }
+
+    return suggestions
+  }
+
+  static analyzeJsonString(jsonString: string) {
+    try {
+      const parsed = JSON.parse(jsonString)
+      const rows = this.extractDataArray(parsed)
+      
+      if (!rows || rows.length === 0) {
+        throw new Error("Could not find a valid array of objects in the JSON.")
+      }
+
+      const fields = this.inferTypes(rows)
+      const suggestions = this.generateSuggestions(fields)
+
+      return {
+        success: true,
+        totalRows: rows.length,
+        fields,
+        suggestions
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
   }
 }

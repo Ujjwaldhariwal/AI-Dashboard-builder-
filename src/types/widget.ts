@@ -1,4 +1,20 @@
-export type ChartType = 'line' | 'bar' | 'pie' | 'area' | 'table'
+// src/types/widget.ts
+export type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'table' | 'stat-card'
+
+export interface YAxisConfig {
+  key: string
+  color: string
+  label?: string
+}
+
+export interface DataMapping {
+  xAxis: string
+  yAxis?: string // Legacy support for old widgets
+  yAxes?: YAxisConfig[] // New multi-metric support
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+  limit?: number
+}
 
 export interface Widget {
   id: string
@@ -6,25 +22,16 @@ export interface Widget {
   title: string
   type: ChartType
   endpointId: string
-  dataMapping: {
-    xAxis: string
-    yAxis: string
-  }
-  position: {
-    x: number
-    y: number
-    w: number
-    h: number
-  }
-  refreshInterval?: number
-  createdAt: string
-  updatedAt: string
+  dataMapping: DataMapping
+  position?: number
+  created_at?: string
+  updated_at?: string
 }
 
 export interface WidgetConfigInput {
   title: string
   type: ChartType
   endpointId: string
-  xAxis: string
-  yAxis: string
+  dataMapping: DataMapping
+  dashboardId?: string
 }
