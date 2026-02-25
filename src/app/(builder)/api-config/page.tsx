@@ -1,368 +1,308 @@
 'use client'
 
-import { useState } from 'react'
-import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
-} from '@/components/ui/card'
+import { useState, useEffect } from 'react'
+import { useDashboardStore } from '@/store/builder-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Plus, Database, Trash2, CheckCircle2,
-  Shield, ChevronDown, ChevronUp, Zap,
+  Plus, Trash2, Globe, ChevronDown, ChevronUp,
+  RefreshCw, CheckCircle2, XCircle, Loader2,
 } from 'lucide-react'
-import { useDashboardStore } from '@/store/builder-store'
-import { LiveAPIPreview } from '@/components/builder/api-tester/live-api-preview'
 import { toast } from 'sonner'
+import { LiveAPIPreview } from '@/components/builder/api-tester/live-api-preview'
+import { cn } from '@/lib/utils'
 
-type AuthType = 'none' | 'api-key' | 'bearer' | 'basic'
-
-const defaultForm = {
-  name: '',
-  url: '',
-  method: 'GET' as 'GET' | 'POST',
-  authType: 'none' as AuthType,
-  refreshInterval: 0,
-  status: 'active' as const,
+// ── Local type (APIEndpoint not exported from store) ─────────────────────────
+type APIEndpoint = {
+  id: string
+  name: string
+  url: string
+  method: 'GET' | 'POST'
+  authType: 'none' | 'api-key' | 'bearer' | 'basic'
+  headers?: Record<string, string>
+  refreshInterval: number
+  status: 'active' | 'inactive'
 }
 
+type HealthStatus = 'idle' | 'checking' | 'ok' | 'error'
+
 export default function APIConfigPage() {
-  const {
-    currentDashboardId,
-    endpoints,
-    addEndpoint,
-    removeEndpoint,
-  } = useDashboardStore()
+  const { endpoints, addEndpoint, removeEndpoint, updateEndpoint } = useDashboardStore()
 
-  const [isCreating, setIsCreating] = useState(false)
-  const [formData, setFormData] = useState(defaultForm)
-  // Track which endpoint's live preview is expanded
-  const [expandedEndpointId, setExpandedEndpointId] = useState<string | null>(null)
+  // ── Form state ──────────────────────────────────────────────────────────────
+  const [name, setName] = useState('')
+  const [url, setUrl] = useState('')
+  const [method, setMethod] = useState<'GET' | 'POST'>('GET')
+  const [authType, setAuthType] = useState<'none' | 'api-key' | 'bearer' | 'basic'>('none')
 
-  const resetForm = () => {
-    setFormData(defaultForm)
-    setIsCreating(false)
+  // ── UI state ────────────────────────────────────────────────────────────────
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [healthMap, setHealthMap] = useState<Record<string, HealthStatus>>({})
+
+  // ── Feature 8: health ping ───────────────────────────────────────────────
+  const pingEndpoint = async (ep: APIEndpoint) => {
+    setHealthMap(prev => ({ ...prev, [ep.id]: 'checking' }))
+    try {
+      const res = await fetch(ep.url, {
+        method: ep.method,
+        signal: AbortSignal.timeout(5000),
+      })
+      setHealthMap(prev => ({ ...prev, [ep.id]: res.ok ? 'ok' : 'error' }))
+    } catch {
+      setHealthMap(prev => ({ ...prev, [ep.id]: 'error' }))
+    }
   }
 
-  if (!currentDashboardId) {
+  const pingAll = () => endpoints.forEach(pingEndpoint)
+
+  useEffect(() => {
+    if (endpoints.length) pingAll()
+  }, [endpoints.length])
+
+  // ── Add endpoint ────────────────────────────────────────────────────────────
+  const handleAdd = () => {
+    if (!name.trim()) { toast.error('Name is required'); return }
+    if (!url.trim()) { toast.error('URL is required'); return }
+    try { new URL(url.trim()) } catch { toast.error('Invalid URL'); return }
+
+    addEndpoint({
+      name: name.trim(),
+      url: url.trim(),
+      method,
+      authType,
+      refreshInterval: 30,
+      status: 'active',
+    })
+
+    toast.success('Endpoint saved')
+    setName('')
+    setUrl('')
+    setMethod('GET')
+    setAuthType('none')
+  }
+
+  // ── Health dot ──────────────────────────────────────────────────────────────
+  const HealthDot = ({ id }: { id: string }) => {
+    const s = healthMap[id] ?? 'idle'
     return (
-      <div className="p-6">
-        <div className="w-full max-w-lg mx-auto">
-          <Card>
-            <CardContent className="py-10 text-center">
-              <Database className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <h3 className="text-lg font-semibold mb-1">No Dashboard Selected</h3>
-              <p className="text-sm text-muted-foreground">
-                Please select a dashboard first
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <span
+        title={s}
+        className={cn(
+          'inline-block w-2.5 h-2.5 rounded-full flex-shrink-0',
+          s === 'checking' && 'bg-yellow-400 animate-pulse',
+          s === 'ok'       && 'bg-green-500',
+          s === 'error'    && 'bg-red-500',
+          s === 'idle'     && 'bg-muted-foreground/30',
+        )}
+      />
     )
   }
 
-  const handleSubmit = () => {
-    if (!formData.name.trim() || !formData.url.trim()) {
-      toast.error('Name and URL are required')
-      return
-    }
-    addEndpoint({ ...formData })
-    toast.success('✅ API endpoint saved')
-    resetForm()
-  }
-
   return (
-    <div className="p-6">
-      <div className="w-full max-w-5xl mx-auto space-y-4">
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-8">
 
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold mb-0.5">API Configuration</h1>
-            <p className="text-sm text-muted-foreground">
-              Connect data sources, test them, and create widgets
-            </p>
-          </div>
-          {!isCreating && (
-            <Button size="sm" onClick={() => setIsCreating(true)}>
-              <Plus className="w-3.5 h-3.5 mr-1.5" />
-              Add API
-            </Button>
-          )}
+      {/* ── Page header ────────────────────────────────── */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">API Configuration</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            Connect data sources and test them live
+          </p>
         </div>
+        {endpoints.length > 0 && (
+          <Button variant="outline" size="sm" onClick={pingAll}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Ping All
+          </Button>
+        )}
+      </div>
 
-        {/* Security banner */}
-        <Card className="border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-950/25">
-          <CardContent className="py-2.5 px-4">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
-                <Shield className="w-3.5 h-3.5 text-green-700 dark:text-green-300" />
-              </div>
-              <div>
-                <h3 className="text-xs font-semibold text-green-900 dark:text-green-100">
-                  Enterprise-grade security
-                </h3>
-                <p className="text-[11px] text-green-700 dark:text-green-300">
-                  All credentials encrypted with AES-256
-                </p>
-              </div>
+      {/* ── Add endpoint form ──────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Add New Endpoint
+          </CardTitle>
+          <CardDescription>
+            Save a REST API endpoint to use as a data source for your widgets.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Name *</Label>
+              <Input
+                placeholder="e.g. Users API"
+                value={name}
+                onChange={e => setName(e.target.value)}
+              />
             </div>
+            <div className="space-y-1.5">
+              <Label>URL *</Label>
+              <Input
+                placeholder="https://api.example.com/data"
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Method</Label>
+              <Select value={method} onValueChange={(v: 'GET' | 'POST') => setMethod(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GET">GET</SelectItem>
+                  <SelectItem value="POST">POST</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Auth Type</Label>
+              <Select value={authType} onValueChange={(v: any) => setAuthType(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Auth</SelectItem>
+                  <SelectItem value="bearer">Bearer Token</SelectItem>
+                  <SelectItem value="api-key">API Key</SelectItem>
+                  <SelectItem value="basic">Basic Auth</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleAdd}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              Save Endpoint
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Saved endpoints list ───────────────────────── */}
+      {endpoints.length > 0 ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Saved Endpoints ({endpoints.length})
+            </h2>
+          </div>
+
+          {endpoints.map(ep => {
+            const isExpanded = expandedId === ep.id
+            const health = healthMap[ep.id] ?? 'idle'
+
+            return (
+              <Card key={ep.id} className="overflow-hidden">
+                {/* Endpoint row */}
+                <div className="flex items-center gap-3 px-4 py-3">
+                  {/* Health dot */}
+                  <HealthDot id={ep.id} />
+
+                  {/* Icon */}
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
+                    <Globe className="w-4 h-4 text-white" />
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm truncate">{ep.name}</span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 font-mono">
+                        {ep.method}
+                      </Badge>
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          'text-[10px] px-1.5',
+                          health === 'ok'    && 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400',
+                          health === 'error' && 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
+                        )}
+                      >
+                        {health === 'checking' ? 'checking…' : health === 'ok' ? 'online' : health === 'error' ? 'unreachable' : 'not pinged'}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground font-mono truncate mt-0.5">
+                      {ep.url}
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-7 w-7 text-muted-foreground"
+                      onClick={() => pingEndpoint(ep)}
+                      title="Ping"
+                    >
+                      {health === 'checking'
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : health === 'ok'
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+                          : health === 'error'
+                            ? <XCircle className="w-3.5 h-3.5 text-red-500" />
+                            : <RefreshCw className="w-3.5 h-3.5" />
+                      }
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setExpandedId(isExpanded ? null : ep.id)}
+                    >
+                      Test & Analyze
+                      {isExpanded
+                        ? <ChevronUp className="w-3 h-3" />
+                        : <ChevronDown className="w-3 h-3" />
+                      }
+                    </Button>
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-7 w-7 text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
+                      onClick={() => {
+                        if (confirm(`Delete "${ep.name}"?`)) {
+                          removeEndpoint(ep.id)
+                          toast.success('Endpoint removed')
+                          if (expandedId === ep.id) setExpandedId(null)
+                        }
+                      }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+{isExpanded && (
+  <div className="border-t bg-muted/20 px-4 py-4">
+    <LiveAPIPreview 
+      endpointId={ep.id} 
+      url={ep.url} 
+      method={ep.method} 
+    /> 
+  </div>
+)}
+
+
+              </Card>
+            )
+          })}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="py-14 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mx-auto mb-4">
+              <Globe className="w-7 h-7 text-white" />
+            </div>
+            <h2 className="text-lg font-semibold mb-1">No endpoints yet</h2>
+            <p className="text-muted-foreground text-sm">
+              Add your first REST API endpoint above to start building widgets.
+            </p>
           </CardContent>
         </Card>
-
-        {/* ── ADD FORM ──────────────────────────────────────── */}
-        {isCreating && (
-          <Card>
-            <CardHeader className="pb-3 px-4 pt-4">
-              <CardTitle className="text-sm">New API Endpoint</CardTitle>
-              <CardDescription className="text-xs">
-                Fill details and save — then test & add widgets
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 px-4 pb-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Name *</Label>
-                  <Input
-                    className="h-8 text-sm"
-                    placeholder="e.g., Users Service"
-                    value={formData.name}
-                    onChange={e =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Method</Label>
-                  <Select
-                    value={formData.method}
-                    onValueChange={(v: any) =>
-                      setFormData({ ...formData, method: v })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GET">GET</SelectItem>
-                      <SelectItem value="POST">POST</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs">API URL *</Label>
-                <Input
-                  className="h-8 text-sm"
-                  placeholder="https://api.example.com/data"
-                  value={formData.url}
-                  onChange={e =>
-                    setFormData({ ...formData, url: e.target.value })
-                  }
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Try:{' '}
-                  <span
-                    className="font-mono cursor-pointer text-blue-600 hover:underline"
-                    onClick={() =>
-                      setFormData({
-                        ...formData,
-                        url: 'https://jsonplaceholder.typicode.com/users',
-                        name: formData.name || 'JSONPlaceholder Users',
-                      })
-                    }
-                  >
-                    jsonplaceholder.typicode.com/users
-                  </span>
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Auth</Label>
-                  <Select
-                    value={formData.authType}
-                    onValueChange={(v: AuthType) =>
-                      setFormData({ ...formData, authType: v })
-                    }
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="None" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="api-key">API Key</SelectItem>
-                      <SelectItem value="bearer">Bearer Token</SelectItem>
-                      <SelectItem value="basic">Basic Auth</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Refresh interval (sec)</Label>
-                  <Input
-                    className="h-8 text-sm"
-                    type="number"
-                    min={0}
-                    placeholder="0 = manual"
-                    value={formData.refreshInterval || ''}
-                    onChange={e =>
-                      setFormData({
-                        ...formData,
-                        refreshInterval: Number(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                {/* ✅ Save is always enabled — no longer requires analysis */}
-                <Button
-                  size="sm"
-                  onClick={handleSubmit}
-                  disabled={!formData.name.trim() || !formData.url.trim()}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                  Save Endpoint
-                </Button>
-                <Button size="sm" variant="outline" onClick={resetForm}>
-                  Cancel
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── CONNECTED APIs ────────────────────────────────── */}
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">
-              Connected APIs
-            </h2>
-            {endpoints.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {endpoints.length} source{endpoints.length > 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-
-          {endpoints.length === 0 && !isCreating && (
-            <Card>
-              <CardContent className="py-10 text-center">
-                <Database className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <h3 className="text-base font-semibold mb-1">No APIs yet</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Add your first data source
-                </p>
-                <Button size="sm" onClick={() => setIsCreating(true)}>
-                  <Plus className="w-3.5 h-3.5 mr-1.5" />
-                  Add first API
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {endpoints.length > 0 && (
-            <div className="space-y-3">
-              {endpoints.map(endpoint => (
-                <Card
-                  key={endpoint.id}
-                  className="hover:shadow-sm transition-shadow"
-                >
-                  <CardContent className="p-3">
-                    {/* Endpoint row */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 space-y-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-                            <Database className="w-3.5 h-3.5 text-white" />
-                          </div>
-                          <h3 className="font-semibold text-xs truncate">
-                            {endpoint.name}
-                          </h3>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {endpoint.url}
-                        </p>
-                        <div className="flex items-center gap-1.5 pt-0.5">
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0"
-                          >
-                            {endpoint.method}
-                          </Badge>
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] px-1.5 py-0"
-                          >
-                            Active
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {/* Test & Add Widgets toggle */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs px-2"
-                          onClick={() =>
-                            setExpandedEndpointId(
-                              expandedEndpointId === endpoint.id
-                                ? null
-                                : endpoint.id,
-                            )
-                          }
-                        >
-                          <Zap className="w-3 h-3 mr-1" />
-                          Test & Add
-                          {expandedEndpointId === endpoint.id ? (
-                            <ChevronUp className="w-3 h-3 ml-1" />
-                          ) : (
-                            <ChevronDown className="w-3 h-3 ml-1" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-500"
-                          onClick={() => {
-                            if (confirm('Delete this endpoint?')) {
-                              removeEndpoint(endpoint.id)
-                              toast.success('Endpoint removed')
-                            }
-                          }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* ✅ Inline live preview AFTER endpoint is saved */}
-                    {expandedEndpointId === endpoint.id && (
-                      <div className="mt-3 pt-3 border-t">
-                        <LiveAPIPreview
-                          url={endpoint.url}
-                          method={endpoint.method}
-                          headers={endpoint.headers}
-                          endpointId={endpoint.id}      
-                          onAnalysisComplete={() => {}}
-                        />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
+      )}
     </div>
   )
 }
