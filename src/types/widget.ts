@@ -1,4 +1,5 @@
-export type ChartType = 'line' | 'bar' | 'pie' | 'area' | 'table'
+// src/types/widget.ts
+export type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'table'
 
 export interface Widget {
   id: string
@@ -10,21 +11,18 @@ export interface Widget {
     xAxis: string
     yAxis: string
   }
-  position: {
-    x: number
-    y: number
-    w: number
-    h: number
-  }
-  refreshInterval?: number
-  createdAt: string
-  updatedAt: string
+  position?: number      // ✅ optional
+  createdAt?: string     // ✅ optional
+  updatedAt?: string     // ✅ optional
 }
 
 export interface WidgetConfigInput {
   title: string
   type: ChartType
   endpointId: string
-  xAxis: string
-  yAxis: string
+  dataMapping: {
+    xAxis: string
+    yAxis: string
+  }
+  dashboardId?: string
 }
