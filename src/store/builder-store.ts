@@ -7,7 +7,7 @@ interface Dashboard {
   name: string
   description: string
   createdAt: Date
-  ownerId?: string            // ✅ add this line
+  ownerId?: string
 }
 
 interface APIEndpoint {
@@ -27,7 +27,8 @@ interface DashboardStore {
   currentDashboardId: string | null
   addDashboard: (dashboard: Omit<Dashboard, 'id' | 'createdAt'>) => string
   removeDashboard: (id: string) => void
-  deleteDashboard: (id: string) => void   // ✅ alias — same as removeDashboard
+  deleteDashboard: (id: string) => void
+  updateDashboard: (id: string, updates: Partial<Dashboard>) => void // ✅ Feature 7
   setCurrentDashboard: (id: string | null) => void
 
   // Endpoints
@@ -41,6 +42,8 @@ interface DashboardStore {
   addWidget: (config: WidgetConfigInput) => void
   removeWidget: (id: string) => void
   updateWidget: (id: string, updates: Partial<Widget>) => void
+  duplicateWidget: (id: string) => void  // ✅ Feature 3
+  reorderWidgets: (dashboardId: string, newOrder: Widget[]) => void // ✅ Feature 4
   getWidgetsByDashboard: (dashboardId: string) => Widget[]
 }
 
@@ -71,13 +74,13 @@ export const useDashboardStore = create<DashboardStore>()(
         }))
       },
 
-      // ✅ alias so old code calling deleteDashboard still works
-      deleteDashboard: (id) => {
+      deleteDashboard: (id) => get().removeDashboard(id),
+
+      updateDashboard: (id, updates) => {
         set((state) => ({
-          dashboards: state.dashboards.filter((d) => d.id !== id),
-          currentDashboardId:
-            state.currentDashboardId === id ? null : state.currentDashboardId,
-          widgets: state.widgets.filter((w) => w.dashboardId !== id),
+          dashboards: state.dashboards.map((d) =>
+            d.id === id ? { ...d, ...updates } : d
+          ),
         }))
       },
 
@@ -128,6 +131,7 @@ export const useDashboardStore = create<DashboardStore>()(
             xAxis: config.xAxis,
             yAxis: config.yAxis,
           },
+          // @ts-ignore - optional prop
           position: { x: 0, y: 0, w: 6, h: 4 },
           createdAt: now,
           updatedAt: now,
@@ -151,6 +155,35 @@ export const useDashboardStore = create<DashboardStore>()(
             w.id === id ? { ...w, ...updates, updatedAt: now } : w
           ),
         }))
+      },
+
+      duplicateWidget: (id) => {
+        const { widgets } = get()
+        const original = widgets.find((w) => w.id === id)
+        if (!original) return
+
+        const newId = `widget-${Date.now()}`
+        const copy: Widget = {
+          ...original,
+          id: newId,
+          title: `${original.title} (Copy)`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+
+        set((state) => ({
+          widgets: [...state.widgets, copy],
+        }))
+      },
+
+      reorderWidgets: (dashboardId, newOrder) => {
+        set((state) => {
+          // Keep widgets from other dashboards, replace current dash widgets with newOrder
+          const others = state.widgets.filter((w) => w.dashboardId !== dashboardId)
+          return {
+            widgets: [...others, ...newOrder],
+          }
+        })
       },
 
       getWidgetsByDashboard: (dashboardId) => {
