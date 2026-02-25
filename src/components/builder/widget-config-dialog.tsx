@@ -2,28 +2,40 @@
 
 import { useState, useEffect } from 'react'
 import {
-  Dialog, DialogContent, DialogDescription,
-  DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/builder-store'
 import { ChartType } from '@/types/widget'
 import { toast } from 'sonner'
 import {
-  BarChart3, LineChart, PieChart, AreaChart, Table2,
+  BarChart3,
+  LineChart,
+  PieChart,
+  AreaChart,
+  Table2,
 } from 'lucide-react'
 
 interface WidgetConfigDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 
-  // Optional when opened from Builder directly
+  // Optional when opened from API Config
   endpointId?: string
   suggestedType?: ChartType
   suggestedXAxis?: string
@@ -48,32 +60,24 @@ export function WidgetConfigDialog({
   suggestedYAxis,
   availableFields,
 }: WidgetConfigDialogProps) {
-  const {
-    addWidget,
-    endpoints,
-    currentDashboardId,
-  } = useDashboardStore()
+  const { addWidget, endpoints, currentDashboardId } = useDashboardStore()
 
   const [title, setTitle] = useState('')
   const [type, setType] = useState<ChartType>('bar')
   const [xAxis, setXAxis] = useState('')
   const [yAxis, setYAxis] = useState('')
 
+  // Endpoint: either the one passed in, or first in list
   const endpoint = endpointId
     ? endpoints.find(e => e.id === endpointId)
     : endpoints[0]
 
-  const effectiveFields =
-    availableFields ??
-    (endpoint
-      ? Object.keys((endpoint.sampleResponse as any) ?? {}).map(name => ({
-          name,
-          type: 'unknown',
-        }))
-      : [])
+  // Fallback for available fields: if none passed, just use empty list
+  const effectiveFields = availableFields ?? []
 
   useEffect(() => {
     if (!open) return
+
     setType(suggestedType ?? 'bar')
     setXAxis(suggestedXAxis ?? effectiveFields[0]?.name ?? '')
     setYAxis(
@@ -93,10 +97,6 @@ export function WidgetConfigDialog({
   ])
 
   const handleCreate = () => {
-    if (!currentDashboardId) {
-      toast.error('No dashboard selected')
-      return
-    }
     if (!endpoint) {
       toast.error('Please select an API endpoint first')
       return
@@ -110,16 +110,17 @@ export function WidgetConfigDialog({
       return
     }
 
+    // WidgetConfigInput in builder-store does NOT have dashboardId,
+    // it will attach the current dashboard internally.
     addWidget({
-      dashboardId: currentDashboardId,
-      endpointId: endpoint.id,
       title: title.trim(),
       type,
+      endpointId: endpoint.id,
       dataMapping: {
         xAxis,
         yAxis,
       },
-    })
+    } as any)
 
     toast.success('✅ Widget added to dashboard')
     onOpenChange(false)
@@ -151,7 +152,7 @@ export function WidgetConfigDialog({
             />
           </div>
 
-          {/* Endpoint selector when opened from Builder */}
+          {/* Endpoint selector when endpointId is not forced */}
           {!endpointId && (
             <div className="space-y-1.5">
               <Label className="text-xs">Data source</Label>
@@ -160,7 +161,6 @@ export function WidgetConfigDialog({
                 onValueChange={id => {
                   const ep = endpoints.find(e => e.id === id)
                   if (!ep) return
-                  // reset mappings when endpoint changes
                   setTitle(ep.name)
                   setXAxis('')
                   setYAxis('')
