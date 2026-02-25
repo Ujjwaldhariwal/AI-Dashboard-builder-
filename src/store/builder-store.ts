@@ -41,6 +41,7 @@ interface DashboardStore {
   addWidget: (config: WidgetConfigInput) => void
   removeWidget: (id: string) => void
   updateWidget: (id: string, updates: Partial<Widget>) => void
+  reorderWidgets: (dashboardId: string, newOrder: Widget[]) => void
   getWidgetsByDashboard: (dashboardId: string) => Widget[]
 }
 
@@ -152,6 +153,18 @@ export const useDashboardStore = create<DashboardStore>()(
           ),
         }))
       },
+
+       reorderWidgets: (dashboardId, newOrder) => {
+        set((state) => {
+          // Keep widgets from OTHER dashboards untouched
+          const others = state.widgets.filter((w) => w.dashboardId !== dashboardId)
+          // Add the newly ordered widgets for THIS dashboard
+          return {
+            widgets: [...others, ...newOrder],
+          }
+        })
+      },
+      
 
       getWidgetsByDashboard: (dashboardId) => {
         return get().widgets.filter((w) => w.dashboardId === dashboardId)
