@@ -350,6 +350,7 @@ export default function APIConfigPage() {
                           url={endpoint.url}
                           method={endpoint.method}
                           headers={endpoint.headers}
+                          endpointId={endpoint.id}      
                           onAnalysisComplete={() => {}}
                         />
                       </div>
