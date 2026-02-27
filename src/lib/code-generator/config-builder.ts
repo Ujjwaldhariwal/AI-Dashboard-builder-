@@ -1,4 +1,5 @@
-// Module: ConfigBuilder
+// src/lib/code-generator/config-builder.ts
+
 import type { Widget, ChartType } from '@/types/widget'
 
 interface DashboardShape {
@@ -40,11 +41,11 @@ export interface DashboardExportConfig {
 export function buildDashboardConfig(
   dashboard: DashboardShape,
   endpoints: EndpointShape[],
-  widgets: Widget[]
+  widgets: Widget[],
 ): DashboardExportConfig {
-  const dashboardWidgets = widgets.filter((w) => w.dashboardId === dashboard.id)
-  const endpointMap = new Map(endpoints.map((e) => [e.id, e]))
-  const usedEndpointIds = new Set(dashboardWidgets.map((w) => w.endpointId))
+  const dashboardWidgets = widgets.filter(w => w.dashboardId === dashboard.id)
+  const endpointMap = new Map(endpoints.map(e => [e.id, e]))
+  const usedEndpointIds = new Set(dashboardWidgets.map(w => w.endpointId))
 
   return {
     meta: {
@@ -54,27 +55,24 @@ export function buildDashboardConfig(
       exportedAt: new Date().toISOString(),
     },
     endpoints: Array.from(usedEndpointIds)
-      .map((id) => endpointMap.get(id))
+      .map(id => endpointMap.get(id))
       .filter((e): e is EndpointShape => Boolean(e))
-      .map((e) => ({
-        id: e.id,
-        name: e.name,
-        url: e.url,
-        method: e.method,
-      })),
-    widgets: dashboardWidgets.map((w) => ({
+      .map(e => ({ id: e.id, name: e.name, url: e.url, method: e.method })),
+    widgets: dashboardWidgets.map(w => ({
       id: w.id,
       title: w.title,
       type: w.type,
       endpointId: w.endpointId,
       xAxis: w.dataMapping.xAxis,
-      yAxis: w.dataMapping.yAxis,
+      // ✅ fallback to empty string so exported config never has undefined
+      yAxis: w.dataMapping.yAxis ?? '',
     })),
   }
 }
 
 export function slugifyDashboardName(name: string): string {
   return (
-    name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'dashboard'
+    name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
+    'dashboard'
   )
 }
