@@ -119,40 +119,39 @@ export const useDashboardStore = create<DashboardStore>()(
       // ─── Widgets ──────────────────────────────────────────────
       widgets: [],
 
-      addWidget: (config) => {
-        const { currentDashboardId, widgets } = get();
-        if (!currentDashboardId) return;
+     addWidget: (config) => {
+  const { currentDashboardId, widgets } = get()
+  if (!currentDashboardId) return
 
-        const resolvedMapping = config.dataMapping ?? {
-          xAxis: config.xAxis ?? "",
-          yAxis: config.yAxis,
-        };
-        if (!resolvedMapping.xAxis) return;
+  const resolvedMapping = config.dataMapping ?? {
+    xAxis: config.xAxis ?? '',
+    yAxis: config.yAxis,
+  }
+  if (!resolvedMapping.xAxis) return
 
-        // ✅ Random suffix prevents duplicate IDs even on same-ms calls
-        const id = `widget-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  // ✅ FIX 1: truly unique ID — random suffix prevents same-ms collisions
+  const id = `widget-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
-        // ✅ Dedup guard — bail if somehow still collides
-        if (widgets.some((w) => w.id === id)) return;
+  // ✅ FIX 2: dedup guard
+  if (widgets.some(w => w.id === id)) return
 
-        const now = new Date().toISOString();
+  const now = new Date().toISOString()
 
-        const newWidget: Widget = {
-          id,
-          dashboardId: currentDashboardId,
-          title: config.title,
-          type: config.type,
-          endpointId: config.endpointId,
-          dataMapping: resolvedMapping,
-          position: { x: 0, y: 0, w: 6, h: 4 },
-          createdAt: now,
-          updatedAt: now,
-        };
+  const newWidget: Widget = {
+    id,
+    dashboardId: currentDashboardId,
+    title: config.title,
+    type: config.type,
+    endpointId: config.endpointId,
+    dataMapping: resolvedMapping,
+    position: { x: 0, y: 0, w: 6, h: 4 },
+    createdAt: now,
+    updatedAt: now,
+  }
 
-        set((state) => ({
-          widgets: [...state.widgets, newWidget],
-        }));
-      },
+  set((state) => ({ widgets: [...state.widgets, newWidget] }))
+},
+
 
       removeWidget: (id) => {
         set((state) => ({
