@@ -1,7 +1,8 @@
 'use client'
-// Component: WidgetCard
 
-import { useEffect, useState } from 'react'
+// src/components/builder/canvas/widget-card.tsx
+
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,9 +10,10 @@ import {
   Trash2, RefreshCw, Loader2, AlertCircle,
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
-  AlignLeft,
+  AlignLeft, Clock, Wifi, WifiOff,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
+import { useMonitoringStore } from '@/store/monitoring-store'
 import { Widget } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
 import { toast } from 'sonner'
@@ -19,7 +21,6 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 
-// ── Chart imports ─────────────────────────────────────────────────────────────
 import { ModernBarChart } from '@/components/charts/modern-bar-chart'
 import { ModernLineChart } from '@/components/charts/modern-line-chart'
 import { ModernAreaChart } from '@/components/charts/modern-area-chart'
@@ -28,104 +29,158 @@ import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart
 import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
 import { ModernStatusCard } from '@/components/charts/modern-status-card'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 interface WidgetCardProps {
   widget: Widget
   viewMode?: boolean
 }
 
 const chartTypeIcon: Record<string, any> = {
-  bar: BarChart3,
-  line: LineChart,
-  area: AreaChart,
-  pie: PieChart,
-  donut: PieChart,
+  bar:              BarChart3,
+  line:             LineChart,
+  area:             AreaChart,
+  pie:              PieChart,
+  donut:            PieChart,
   'horizontal-bar': AlignLeft,
-  gauge: Gauge,
-  'status-card': TrendingUp,
-  table: Table2,
+  gauge:            Gauge,
+  'status-card':    TrendingUp,
+  table:            Table2,
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { endpoints, removeWidget } = useDashboardStore()
-  const [rawData, setRawData] = useState<any[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [editOpen, setEditOpen] = useState(false)
+  const { addLog, updateEndpointHealth } = useMonitoringStore()
 
-  // DnD
+  const [rawData, setRawData]     = useState<any[] | null>(null)
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+  const [editOpen, setEditOpen]   = useState(false)
+  const [lastFetched, setLastFetched] = useState<Date | null>(null)
+  const [latency, setLatency]     = useState<number | null>(null)
+
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id })
 
   const dragStyle = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 50 : ('auto' as any),
+    opacity:  isDragging ? 0.4 : 1,
+    zIndex:   isDragging ? 50 : ('auto' as any),
     position: 'relative' as const,
   }
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
-  const Icon = chartTypeIcon[widget.type] ?? BarChart3
+  const Icon     = chartTypeIcon[widget.type] ?? BarChart3
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  const fetchData = async () => {
-    if (!endpoint) { setError('Endpoint not found'); return }
+  // ── Fetch with monitoring ────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    if (!endpoint) {
+      setError('Endpoint not found')
+      addLog({
+        widgetId:    widget.id,
+        widgetTitle: widget.title,
+        endpointId:  widget.endpointId,
+        endpointUrl: '',
+        level:       'error',
+        message:     'Endpoint not found in store',
+      })
+      return
+    }
+
     setLoading(true)
     setError(null)
+    const t0 = performance.now()
+
     try {
       const res = await fetch(endpoint.url, { method: endpoint.method })
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-      const result = await res.json()
+      const ms  = Math.round(performance.now() - t0)
+      setLatency(ms)
 
-      // ✅ Use DataAnalyzer to reliably extract array
-      const arr = DataAnalyzer.extractDataArray(result) ?? (Array.isArray(result) ? result : [result])
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+
+      const result = await res.json()
+      const arr    =
+        DataAnalyzer.extractDataArray(result) ??
+        (Array.isArray(result) ? result : [result])
+
       setRawData(arr)
+      setLastFetched(new Date())
+
+      // ── Log success ──────────────────────────────────────────────────
+      addLog({
+        widgetId:    widget.id,
+        widgetTitle: widget.title,
+        endpointId:  endpoint.id,
+        endpointUrl: endpoint.url,
+        level:       ms > 2000 ? 'warn' : 'success',
+        message:     ms > 2000
+          ? `Slow response: ${ms}ms — ${arr.length} rows`
+          : `Fetched ${arr.length} rows in ${ms}ms`,
+        latencyMs:   ms,
+        statusCode:  res.status,
+      })
+
+      updateEndpointHealth(endpoint.id, {
+        endpointName:  endpoint.name,
+        url:           endpoint.url,
+        status:        ms > 3000 ? 'degraded' : 'healthy',
+        latencyMs:     ms,
+        successCount:  (useMonitoringStore.getState().endpointHealth[endpoint.id]?.successCount ?? 0) + 1,
+      })
     } catch (err: any) {
+      const ms = Math.round(performance.now() - t0)
       setError(err.message)
-      toast.error(`Widget "${widget.title}": ${err.message}`)
+
+      // ── Log error ────────────────────────────────────────────────────
+      addLog({
+        widgetId:    widget.id,
+        widgetTitle: widget.title,
+        endpointId:  endpoint.id,
+        endpointUrl: endpoint.url,
+        level:       'error',
+        message:     err.message,
+        latencyMs:   ms,
+      })
+
+      updateEndpointHealth(endpoint.id, {
+        endpointName: endpoint.name,
+        url:          endpoint.url,
+        status:       'down',
+        lastError:    err.message,
+        errorCount:   (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
+      })
+
+      toast.error(`"${widget.title}": ${err.message}`)
     } finally {
       setLoading(false)
     }
-  }
+  }, [widget.endpointId, widget.dataMapping.xAxis])
 
-  useEffect(() => { fetchData() }, [widget.endpointId, widget.dataMapping.xAxis])
+  useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Self-aware chart renderer ──────────────────────────────────────────────
+  // ── Auto-refresh ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!endpoint?.refreshInterval || endpoint.refreshInterval <= 0) return
+    const id = setInterval(fetchData, endpoint.refreshInterval * 1000)
+    return () => clearInterval(id)
+  }, [endpoint?.refreshInterval, fetchData])
+
+  // ── Chart renderer ────────────────────────────────────────────────────────
   const renderChart = () => {
     if (!rawData?.length) return null
-
     const x = widget.dataMapping.xAxis
     const y = widget.dataMapping.yAxis ?? ''
 
     switch (widget.type) {
-      case 'bar':
-        return <ModernBarChart data={rawData} xField={x} yField={y} />
-
-      case 'line':
-        return <ModernLineChart data={rawData} xField={x} yField={y} />
-
-      case 'area':
-        return <ModernAreaChart data={rawData} xField={x} yField={y} />
-
-      case 'pie':
-        return <ModernPieChart data={rawData} nameField={x} valueField={y} />
-
-      case 'donut':
-        return <ModernPieChart data={rawData} nameField={x} valueField={y} donut />
-
-      case 'horizontal-bar':
-        return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} />
-
-      case 'gauge':
-        return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} />
-
-      case 'status-card':
-        return <ModernStatusCard data={rawData} yField={y} label={widget.title} />
-
+      case 'bar':             return <ModernBarChart data={rawData} xField={x} yField={y} />
+      case 'line':            return <ModernLineChart data={rawData} xField={x} yField={y} />
+      case 'area':            return <ModernAreaChart data={rawData} xField={x} yField={y} />
+      case 'pie':             return <ModernPieChart data={rawData} nameField={x} valueField={y} />
+      case 'donut':           return <ModernPieChart data={rawData} nameField={x} valueField={y} donut />
+      case 'horizontal-bar':  return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} />
+      case 'gauge':           return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} />
+      case 'status-card':     return <ModernStatusCard data={rawData} yField={y} label={widget.title} />
       case 'table': {
-        const cols = rawData.length > 0 ? Object.keys(rawData[0]).slice(0, 6) : []
+        const cols = Object.keys(rawData[0]).slice(0, 6)
         return (
           <div className="overflow-auto max-h-[300px] rounded-lg border">
             <table className="w-full text-xs border-collapse">
@@ -153,13 +208,18 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
           </div>
         )
       }
-
       default:
-        return <p className="text-xs text-muted-foreground">Unknown chart type: {widget.type}</p>
+        return <p className="text-xs text-muted-foreground">Unknown: {widget.type}</p>
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Health indicator ──────────────────────────────────────────────────────
+  const healthColor = error
+    ? 'text-red-500'
+    : latency && latency > 2000
+    ? 'text-amber-500'
+    : 'text-green-500'
+
   return (
     <>
       <Card
@@ -179,7 +239,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                   {...attributes}
                   {...listeners}
                   className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors flex-shrink-0 touch-none"
-                  title="Drag to reorder"
                 >
                   <GripVertical className="w-3.5 h-3.5" />
                 </button>
@@ -194,6 +253,13 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 mr-1">
                 {widget.type.toUpperCase()}
               </Badge>
+
+              {/* ✅ Health dot */}
+              {error
+                ? <WifiOff className={`w-3 h-3 ${healthColor} mr-1`} />
+                : <Wifi className={`w-3 h-3 ${healthColor} mr-1`} />
+              }
+
               {!viewMode && (
                 <>
                   <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditOpen(true)}>
@@ -224,16 +290,34 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
             </div>
           </div>
 
-          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-            {endpoint?.name ?? 'Unknown source'} · {widget.dataMapping.xAxis} → {widget.dataMapping.yAxis}
-          </p>
+          {/* Sub-line: source + latency + last fetched */}
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-[10px] text-muted-foreground truncate flex-1">
+              {endpoint?.name ?? 'Unknown'} · {widget.dataMapping.xAxis} → {widget.dataMapping.yAxis}
+            </p>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {latency !== null && (
+                <span className={`text-[10px] font-mono ${
+                  latency > 2000 ? 'text-amber-500' : 'text-green-600'
+                }`}>
+                  {latency}ms
+                </span>
+              )}
+              {lastFetched && (
+                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                  <Clock className="w-2.5 h-2.5" />
+                  {lastFetched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent className="px-4 pb-4 flex-1">
           {error && (
-            <div className="flex items-start gap-2 p-2.5 rounded-lg border border-red-200 bg-red-50/50">
+            <div className="flex items-start gap-2 p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20 mb-3">
               <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-[11px] text-red-700">{error}</p>
+              <p className="text-[11px] text-red-700 dark:text-red-400">{error}</p>
             </div>
           )}
           {loading && !rawData && (
@@ -244,7 +328,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
           {!loading && !error && rawData && renderChart()}
           {!loading && !error && rawData?.length === 0 && (
             <div className="flex items-center justify-center h-[200px]">
-              <p className="text-xs text-muted-foreground">No data returned from endpoint</p>
+              <p className="text-xs text-muted-foreground">No data returned</p>
             </div>
           )}
         </CardContent>

@@ -1,36 +1,43 @@
 'use client'
 
-// Component: AppLayout
+// src/components/layout/app-layout.tsx
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { 
-  LayoutDashboard, Database, FolderTree, Settings, 
-  LogOut, User, Search
+import {
+  LayoutDashboard, Database, FolderTree,
+  Settings, LogOut, User, Search,
+  Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/builder-store'
 import { useAuthStore } from '@/store/auth-store'
+import { useMonitoringStore } from '@/store/monitoring-store'
 import { useRouter } from 'next/navigation'
 import { NotificationBell } from '@/components/layout/notification-bell'
+import { MonitoringPanel } from '@/components/layout/monitoring-panel'
+import { useState } from 'react'
 
 interface AppLayoutProps {
   children: React.ReactNode
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const pathname = usePathname()
-  const router = useRouter()
-  // ✅ FIX: added `widgets` to destructure
+  const pathname  = usePathname()
+  const router    = useRouter()
   const { endpoints, dashboards, widgets, currentDashboardId } = useDashboardStore()
   const { logout } = useAuthStore()
+  const { logs, getErrorCount } = useMonitoringStore()
+
+  const [monitoringOpen, setMonitoringOpen] = useState(false)
 
   const navigation = [
     { name: 'Dashboards', href: '/workspaces', icon: LayoutDashboard, show: true },
-    { name: 'Builder',    href: '/builder',    icon: FolderTree,      show: !!currentDashboardId },
-    { name: 'API Config', href: '/api-config', icon: Database,        show: !!currentDashboardId },
-    { name: 'Settings',   href: '/settings',   icon: Settings,        show: true },
+    { name: 'Builder',    href: '/builder',    icon: FolderTree,       show: !!currentDashboardId },
+    { name: 'API Config', href: '/api-config', icon: Database,         show: !!currentDashboardId },
+    { name: 'Settings',   href: '/settings',   icon: Settings,         show: true },
   ]
 
   const handleLogout = () => {
@@ -38,12 +45,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     router.push('/login')
   }
 
-  const currentDashboard = dashboards.find(d => d.id === currentDashboardId)
-
-  // ✅ FIX: only count widgets for the active dashboard
-  const activeWidgetCount = currentDashboardId
+  const currentDashboard   = dashboards.find(d => d.id === currentDashboardId)
+  const activeWidgetCount  = currentDashboardId
     ? widgets.filter(w => w.dashboardId === currentDashboardId).length
     : widgets.length
+  const errorCount         = getErrorCount()
+  const recentLogCount     = logs.length
 
   return (
     <div className="min-h-screen bg-background">
@@ -73,7 +80,24 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* ✅ Monitoring button with live error badge */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 relative"
+              onClick={() => setMonitoringOpen(v => !v)}
+              title="Monitoring & Logs"
+            >
+              <Activity className={`w-4 h-4 ${errorCount > 0 ? 'text-red-500' : ''}`} />
+              {errorCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
+                  {errorCount > 9 ? '9+' : errorCount}
+                </span>
+              )}
+            </Button>
+
             <NotificationBell />
+
             <Button variant="ghost" size="icon" className="h-8 w-8">
               <User className="w-4 h-4" />
             </Button>
@@ -88,12 +112,12 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Sidebar + Main */}
       <div className="flex pt-14">
 
-        {/* Fixed sidebar */}
+        {/* Sidebar */}
         <aside className="fixed left-0 top-14 bottom-0 w-56 border-r bg-card overflow-y-auto z-40">
           <nav className="p-3 space-y-0.5">
-            {navigation.filter(item => item.show).map((item) => {
+            {navigation.filter(item => item.show).map(item => {
               const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
-              const Icon = item.icon
+              const Icon     = item.icon
               return (
                 <Link key={item.name} href={item.href}>
                   <Button
@@ -109,21 +133,29 @@ export function AppLayout({ children }: AppLayoutProps) {
           </nav>
 
           <div className="p-3 mt-6 border-t">
-            <h3 className="text-[10px] font-semibold text-muted-foreground mb-2">QUICK STATS</h3>
+            <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+              Quick Stats
+            </h3>
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Active APIs</span>
-                <span className="font-semibold">{endpoints.length}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Dashboards</span>
-                <span className="font-semibold">{dashboards.length}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Widgets</span>
-                {/* ✅ FIX: was hardcoded 0 */}
-                <span className="font-semibold">{activeWidgetCount}</span>
-              </div>
+              {[
+                { label: 'Active APIs',  value: endpoints.length },
+                { label: 'Dashboards',   value: dashboards.length },
+                { label: 'Widgets',      value: activeWidgetCount },
+                { label: 'Log entries',  value: recentLogCount },
+              ].map(stat => (
+                <div key={stat.label} className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">{stat.label}</span>
+                  <span className="font-semibold">{stat.value}</span>
+                </div>
+              ))}
+              {errorCount > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-red-500">Errors</span>
+                  <Badge variant="destructive" className="text-[9px] px-1.5 h-4">
+                    {errorCount}
+                  </Badge>
+                </div>
+              )}
             </div>
           </div>
         </aside>
@@ -132,8 +164,36 @@ export function AppLayout({ children }: AppLayoutProps) {
         <main className="ml-56 flex-1 min-h-screen bg-muted/30">
           {children}
         </main>
-
       </div>
+
+      {/* ✅ Monitoring slide-over panel */}
+      <AnimatePresence>
+        {monitoringOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/20"
+              onClick={() => setMonitoringOpen(false)}
+            />
+            {/* Panel */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="fixed right-0 top-14 bottom-0 w-96 z-50 border-l shadow-2xl"
+            >
+              <MonitoringPanel onClose={() => setMonitoringOpen(false)} />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
+
+// ── Need these imports for AnimatePresence/motion ─────────────────────────────
+import { motion, AnimatePresence } from 'framer-motion'
