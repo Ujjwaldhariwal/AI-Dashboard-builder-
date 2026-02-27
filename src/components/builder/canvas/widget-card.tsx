@@ -1,12 +1,14 @@
 'use client'
 
+// Component: WidgetCard
+
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   Trash2, RefreshCw, Loader2, AlertCircle,
-  BarChart3, LineChart, PieChart, AreaChart, Table2, Pencil,
+  BarChart3, LineChart, PieChart, AreaChart, Table2, Pencil, GripVertical,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { Widget } from '@/types/widget'
@@ -20,15 +22,17 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface WidgetCardProps {
   widget: Widget
-  viewMode?: boolean  // ← true = viewer page: hides edit/delete/refresh buttons
+  viewMode?: boolean
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────────
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 
@@ -40,7 +44,7 @@ const chartTypeIcon: Record<string, any> = {
   table: Table2,
 }
 
-// ── Custom tooltip ───────────────────────────────────────────────────────────
+// ── Custom Tooltip ─────────────────────────────────────────────────────────────
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
@@ -56,7 +60,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Component ──────────────────────────────────────────────────────────────────
 
 export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { endpoints, removeWidget } = useDashboardStore()
@@ -64,6 +68,24 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+
+  // ── DnD Setup ──
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: widget.id })
+
+  const dragStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : 'auto' as any,
+    position: 'relative' as const,
+  }
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon = chartTypeIcon[widget.type] ?? BarChart3
@@ -81,11 +103,14 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         : result.data || result.results || [result]
 
       setData(
-        dataArray.slice(0, 20).map((row: any) => ({
-          x: String(row[widget.dataMapping.xAxis] ?? 'N/A'),
-          y: Number(row[widget.dataMapping.yAxis]) || 0,
-          ...row,
-        }))
+        dataArray.slice(0, 20).map((row: any) => {
+          const yKey = widget.dataMapping.yAxis ?? ''
+          return {
+            x: String(row[widget.dataMapping.xAxis] ?? 'N/A'),
+            y: Number((row as any)[yKey]) || 0,
+            ...row,
+          }
+        })
       )
     } catch (err: any) {
       setError(err.message)
@@ -97,11 +122,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
   useEffect(() => { fetchData() }, [widget.endpointId, widget.dataMapping])
 
-  // ── Chart renders ──────────────────────────────────────────────────────────
+  // ── Chart Renders ──────────────────────────────────────────────────────────
 
   const renderChart = () => {
     if (!data?.length) return null
-
     const common = { data, margin: { top: 4, right: 8, left: -16, bottom: 0 } }
 
     switch (widget.type) {
@@ -221,10 +245,31 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
   return (
     <>
-      <Card className="flex flex-col hover:shadow-md transition-all duration-200">
+      <Card
+        ref={setNodeRef}
+        style={dragStyle}
+        className={`flex flex-col transition-all duration-200 ${
+          isDragging
+            ? 'shadow-2xl ring-2 ring-blue-500/50 scale-[1.02]'
+            : 'hover:shadow-md'
+        }`}
+      >
         <CardHeader className="pb-2 px-4 pt-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
+
+              {/* ✨ Drag Handle — only in builder mode */}
+              {!viewMode && (
+                <button
+                  {...attributes}
+                  {...listeners}
+                  className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors flex-shrink-0 touch-none"
+                  title="Drag to reorder"
+                >
+                  <GripVertical className="w-3.5 h-3.5" />
+                </button>
+              )}
+
               <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
                 <Icon className="w-3.5 h-3.5 text-white" />
               </div>
@@ -236,7 +281,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                 {widget.type.toUpperCase()}
               </Badge>
 
-              {/* ── Action buttons: hidden in viewMode ── */}
               {!viewMode && (
                 <>
                   <Button
@@ -272,7 +316,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                 </>
               )}
 
-              {/* ── viewMode: just show refresh quietly ── */}
               {viewMode && (
                 <Button
                   variant="ghost" size="icon"
@@ -315,7 +358,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         </CardContent>
       </Card>
 
-      {/* Edit Dialog — never rendered in viewMode */}
       {!viewMode && (
         <WidgetEditDialog
           widget={widget}

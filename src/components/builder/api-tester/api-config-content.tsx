@@ -1,5 +1,7 @@
 'use client'
 
+// Component: ApiConfigContent
+
 import { useState } from 'react'
 import { 
   Plus, Shield, Database, Trash2, Edit, Lock, CheckCircle2,

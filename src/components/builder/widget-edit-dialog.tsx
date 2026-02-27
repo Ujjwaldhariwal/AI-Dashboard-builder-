@@ -1,16 +1,24 @@
+// Component: WidgetEditDialog
+// src/components/builder/widget-edit-dialog.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog, DialogContent, DialogDescription,
+  DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select, SelectContent, SelectItem,
+  SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/builder-store'
 import { Widget, ChartType } from '@/types/widget'
 import { toast } from 'sonner'
-import { BarChart3, LineChart, PieChart, AreaChart, Table2 } from 'lucide-react'
+import { BarChart3, LineChart, PieChart, AreaChart, Table2, Loader2 } from 'lucide-react'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 
 interface WidgetEditDialogProps {
@@ -19,12 +27,13 @@ interface WidgetEditDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const chartIcons: Record<ChartType, any> = {
+const chartIcons: Record<string, any> = {
   line: LineChart,
   bar: BarChart3,
   pie: PieChart,
   area: AreaChart,
   table: Table2,
+  'stat-card': BarChart3,
 }
 
 export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialogProps) {
@@ -33,19 +42,18 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
   const [title, setTitle] = useState(widget.title)
   const [type, setType] = useState<ChartType>(widget.type)
   const [xAxis, setXAxis] = useState(widget.dataMapping.xAxis)
-  const [yAxis, setYAxis] = useState(widget.dataMapping.yAxis)
+  const [yAxis, setYAxis] = useState(widget.dataMapping.yAxis ?? '')
   const [fields, setFields] = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
 
-  // Reset form when dialog opens
   useEffect(() => {
     if (open) {
       setTitle(widget.title)
       setType(widget.type)
       setXAxis(widget.dataMapping.xAxis)
-      setYAxis(widget.dataMapping.yAxis)
+      setYAxis(widget.dataMapping.yAxis ?? '')
       fetchFields()
     }
   }, [open])
@@ -55,17 +63,20 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     setLoadingFields(true)
     try {
       const res = await fetch(endpoint.url, { method: endpoint.method })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const result = await res.json()
       const dataArray = Array.isArray(result)
         ? result
         : result.data || result.results || [result]
-      const analysis = DataAnalyzer.analyze(dataArray)
+
+      // ✅ Fixed: analyzeArray() not analyze()
+      const analysis = DataAnalyzer.analyzeArray(dataArray)
       setFields(analysis.fields)
     } catch {
-      // fallback to existing axes if fetch fails
+      // Fallback to existing axes if fetch fails
       setFields([
         { name: widget.dataMapping.xAxis, type: 'string' },
-        { name: widget.dataMapping.yAxis, type: 'number' },
+        { name: widget.dataMapping.yAxis ?? '', type: 'number' },
       ])
     } finally {
       setLoadingFields(false)
@@ -81,10 +92,14 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     updateWidget(widget.id, {
       title: title.trim(),
       type,
-      dataMapping: { xAxis, yAxis },
+      dataMapping: {
+        ...widget.dataMapping, // ✅ preserve yAxes multi-metric config
+        xAxis,
+        yAxis,
+      },
     })
 
-    toast.success('✅ Widget updated')
+    toast.success('Widget updated')
     onOpenChange(false)
   }
 
@@ -122,8 +137,11 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
                     key={chartType}
                     type="button"
                     onClick={() => setType(chartType)}
-                    className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border-2 transition-all
-                      ${isSelected ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}
+                    className={`flex flex-col items-center gap-1.5 p-2.5 rounded-lg border-2 transition-all ${
+                      isSelected
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border hover:border-primary/50'
+                    }`}
                   >
                     <Icon className={`w-5 h-5 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
                     <span className={`text-[10px] font-medium ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
@@ -138,10 +156,13 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
           {/* Axes */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">X-Axis</Label>
+              <Label className="text-xs flex items-center gap-1">
+                X-Axis
+                {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
+              </Label>
               <Select value={xAxis} onValueChange={setXAxis} disabled={loadingFields}>
                 <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
+                  <SelectValue placeholder="Select field" />
                 </SelectTrigger>
                 <SelectContent>
                   {fields.map(f => (
@@ -156,10 +177,13 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Y-Axis</Label>
+              <Label className="text-xs flex items-center gap-1">
+                Y-Axis
+                {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
+              </Label>
               <Select value={yAxis} onValueChange={setYAxis} disabled={loadingFields}>
                 <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
+                  <SelectValue placeholder="Select field" />
                 </SelectTrigger>
                 <SelectContent>
                   {fields.map(f => (
@@ -178,8 +202,10 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
           {/* Endpoint info */}
           <div className="p-2.5 rounded-lg bg-muted/50 border">
             <p className="text-[11px] text-muted-foreground">
-              Data source: <span className="font-medium text-foreground">{endpoint?.name ?? 'Unknown'}</span>
-              {' · '}<span className="font-mono">{endpoint?.url}</span>
+              Data source:{' '}
+              <span className="font-medium text-foreground">{endpoint?.name ?? 'Unknown'}</span>
+              {' · '}
+              <span className="font-mono truncate">{endpoint?.url}</span>
             </p>
           </div>
         </div>

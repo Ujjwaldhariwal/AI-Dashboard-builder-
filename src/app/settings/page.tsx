@@ -1,5 +1,7 @@
 'use client'
 
+// Component: Page
+
 import { useState } from 'react'
 import {
   Card,

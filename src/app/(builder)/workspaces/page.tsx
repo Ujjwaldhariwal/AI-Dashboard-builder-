@@ -1,5 +1,7 @@
 'use client'
 
+// Component: Page
+
 import { useDashboardStore } from '@/store/builder-store'
 import { useAuthStore } from '@/store/auth-store'
 import { Button } from '@/components/ui/button'

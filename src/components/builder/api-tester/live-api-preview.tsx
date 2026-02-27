@@ -1,15 +1,12 @@
+// Component: LiveApiPreview
+// src/components/builder/live-api-preview.tsx
 'use client'
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  Loader2,
-  Play,
-  CheckCircle2,
-  AlertCircle,
-  Sparkles,
-  ChevronRight,
+  Loader2, Play, CheckCircle2, AlertCircle, Sparkles, ChevronRight,
 } from 'lucide-react'
 import { DataAnalyzer, DataAnalysis } from '@/lib/ai/data-analyzer'
 import { WidgetConfigDialog } from '@/components/builder/widget-config-dialog'
@@ -45,7 +42,6 @@ export function LiveAPIPreview({
   const [error, setError] = useState<string | null>(null)
   const [rawData, setRawData] = useState<any[] | null>(null)
   const [analysis, setAnalysis] = useState<DataAnalysis | null>(null)
-
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogProps, setDialogProps] = useState<{
     endpointId: string
@@ -78,10 +74,10 @@ export function LiveAPIPreview({
         ? json
         : json.data || json.results || json.items || [json]
 
-      const preview = dataArray.slice(0, 5)
-      setRawData(preview)
+      setRawData(dataArray.slice(0, 5))
 
-      const result = DataAnalyzer.analyze(dataArray)
+      // ✅ Fixed: analyzeArray() not analyze()
+      const result = DataAnalyzer.analyzeArray(dataArray)
       setAnalysis(result)
       onAnalysisComplete?.(result)
     } catch (err: any) {
@@ -91,7 +87,6 @@ export function LiveAPIPreview({
     }
   }
 
-  // Opens dialog prefilled from an AI suggestion card
   const openWidgetDialogFromSuggestion = (suggestion: SuggestedChart) => {
     if (!endpointId) {
       toast.error('Save the endpoint first before adding widgets')
@@ -117,7 +112,6 @@ export function LiveAPIPreview({
     setDialogOpen(true)
   }
 
-  // Fallback: opens dialog using the first two detected fields
   const openWidgetDialogManual = () => {
     if (!endpointId) {
       toast.error('Save the endpoint first before adding widgets')
@@ -138,11 +132,10 @@ export function LiveAPIPreview({
     setDialogOpen(true)
   }
 
-  // Suggestions we actually display: exclude 'table', max 3
   const actionableSuggestions =
-    analysis?.suggestedCharts.filter(
-      (s) => s.type !== 'table' && (s.xAxis || s.groupBy)
-    ).slice(0, 3) ?? []
+    analysis?.suggestedCharts
+      .filter(s => s.type !== 'table' && (s.xAxis || s.groupBy))
+      .slice(0, 3) ?? []
 
   return (
     <div className="space-y-3">
@@ -153,11 +146,10 @@ export function LiveAPIPreview({
         disabled={loading || !url}
         className="w-full"
       >
-        {loading ? (
-          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-        ) : (
-          <Play className="w-3.5 h-3.5 mr-1.5" />
-        )}
+        {loading
+          ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+          : <Play className="w-3.5 h-3.5 mr-1.5" />
+        }
         {loading ? 'Analyzing…' : 'Test & Analyze'}
       </Button>
 
@@ -169,10 +161,10 @@ export function LiveAPIPreview({
         </div>
       )}
 
-      {/* Success + analysis */}
+      {/* Analysis results */}
       {analysis && rawData && (
         <div className="space-y-3">
-          {/* Status — fixed: was totalRows (undefined), now totalRecords */}
+          {/* Status */}
           <div className="flex items-center gap-2 p-2 rounded-lg bg-green-50/60 border border-green-200 dark:bg-green-950/20 dark:border-green-900">
             <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
             <p className="text-[11px] font-medium text-green-800 dark:text-green-200">
@@ -180,18 +172,14 @@ export function LiveAPIPreview({
             </p>
           </div>
 
-          {/* Detected fields */}
+          {/* Fields */}
           <div>
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
               Fields
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {analysis.fields.map((field) => (
-                <Badge
-                  key={field.name}
-                  variant="outline"
-                  className="text-[10px] px-2 py-0.5"
-                >
+              {analysis.fields.map(field => (
+                <Badge key={field.name} variant="outline" className="text-[10px] px-2 py-0.5">
                   {field.name}
                   <span className="ml-1 text-muted-foreground">{field.type}</span>
                 </Badge>
@@ -199,7 +187,7 @@ export function LiveAPIPreview({
             </div>
           </div>
 
-          {/* AI Suggestions — shown when DataAnalyzer found actionable suggestions */}
+          {/* AI Suggestions */}
           {actionableSuggestions.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
@@ -217,7 +205,7 @@ export function LiveAPIPreview({
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 w-9 flex-shrink-0">
-                        {CHART_TYPE_LABELS[suggestion.type]}
+                        {CHART_TYPE_LABELS[suggestion.type] ?? suggestion.type.toUpperCase()}
                       </span>
                       <span className="text-[11px] text-muted-foreground truncate">
                         {suggestion.xAxis ?? suggestion.groupBy} vs {suggestion.yAxis}
@@ -235,7 +223,7 @@ export function LiveAPIPreview({
             </div>
           )}
 
-          {/* Manual setup fallback */}
+          {/* Manual fallback */}
           <Button
             size="sm"
             variant="ghost"
@@ -246,7 +234,7 @@ export function LiveAPIPreview({
           </Button>
 
           {/* Raw preview */}
-          <details className="group">
+          <details>
             <summary className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground">
               Raw Preview (first 5 rows)
             </summary>
