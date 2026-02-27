@@ -1,7 +1,16 @@
 // Module: Widget
 // src/types/widget.ts
-export type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'table' | 'stat-card'
-
+export type ChartType =
+  | 'bar'
+  | 'line'
+  | 'area'
+  | 'pie'
+  | 'donut'
+  | 'horizontal-bar'
+  | 'gauge'
+  | 'status-card'
+  | 'table'
+  
 export interface YAxisConfig {
   key: string
   color: string

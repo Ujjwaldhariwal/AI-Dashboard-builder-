@@ -1,5 +1,4 @@
 'use client'
-
 // Component: WidgetCard
 
 import { useEffect, useState } from 'react'
@@ -8,88 +7,69 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   Trash2, RefreshCw, Loader2, AlertCircle,
-  BarChart3, LineChart, PieChart, AreaChart, Table2, Pencil, GripVertical,
+  BarChart3, LineChart, PieChart, AreaChart,
+  Table2, Pencil, GripVertical, Gauge, TrendingUp,
+  AlignLeft,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { Widget } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
 import { toast } from 'sonner'
-import {
-  BarChart, Bar,
-  LineChart as ReLineChart, Line,
-  AreaChart as ReAreaChart, Area,
-  PieChart as RePieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
-} from 'recharts'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Chart imports ─────────────────────────────────────────────────────────────
+import { ModernBarChart } from '@/components/charts/modern-bar-chart'
+import { ModernLineChart } from '@/components/charts/modern-line-chart'
+import { ModernAreaChart } from '@/components/charts/modern-area-chart'
+import { ModernPieChart } from '@/components/charts/modern-pie-chart'
+import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'
+import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
+import { ModernStatusCard } from '@/components/charts/modern-status-card'
 
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface WidgetCardProps {
   widget: Widget
   viewMode?: boolean
 }
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444']
 
 const chartTypeIcon: Record<string, any> = {
   bar: BarChart3,
   line: LineChart,
   area: AreaChart,
   pie: PieChart,
+  donut: PieChart,
+  'horizontal-bar': AlignLeft,
+  gauge: Gauge,
+  'status-card': TrendingUp,
   table: Table2,
 }
 
-// ── Custom Tooltip ─────────────────────────────────────────────────────────────
-
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-card border rounded-lg shadow-lg p-2.5 text-xs">
-      <p className="font-medium mb-1">{label}</p>
-      {payload.map((entry: any, i: number) => (
-        <p key={i} style={{ color: entry.color }}>
-          {entry.name}: <span className="font-semibold">{entry.value}</span>
-        </p>
-      ))}
-    </div>
-  )
-}
-
-// ── Component ──────────────────────────────────────────────────────────────────
-
+// ── Component ─────────────────────────────────────────────────────────────────
 export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { endpoints, removeWidget } = useDashboardStore()
-  const [data, setData] = useState<any[] | null>(null)
+  const [rawData, setRawData] = useState<any[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
 
-  // ── DnD Setup ──
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: widget.id })
+  // DnD
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: widget.id })
 
   const dragStyle = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 50 : 'auto' as any,
+    zIndex: isDragging ? 50 : ('auto' as any),
     position: 'relative' as const,
   }
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon = chartTypeIcon[widget.type] ?? BarChart3
 
+  // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchData = async () => {
     if (!endpoint) { setError('Endpoint not found'); return }
     setLoading(true)
@@ -98,20 +78,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       const res = await fetch(endpoint.url, { method: endpoint.method })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
       const result = await res.json()
-      const dataArray = Array.isArray(result)
-        ? result
-        : result.data || result.results || [result]
 
-      setData(
-        dataArray.slice(0, 20).map((row: any) => {
-          const yKey = widget.dataMapping.yAxis ?? ''
-          return {
-            x: String(row[widget.dataMapping.xAxis] ?? 'N/A'),
-            y: Number((row as any)[yKey]) || 0,
-            ...row,
-          }
-        })
-      )
+      // ✅ Use DataAnalyzer to reliably extract array
+      const arr = DataAnalyzer.extractDataArray(result) ?? (Array.isArray(result) ? result : [result])
+      setRawData(arr)
     } catch (err: any) {
       setError(err.message)
       toast.error(`Widget "${widget.title}": ${err.message}`)
@@ -120,129 +90,76 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     }
   }
 
-  useEffect(() => { fetchData() }, [widget.endpointId, widget.dataMapping])
+  useEffect(() => { fetchData() }, [widget.endpointId, widget.dataMapping.xAxis])
 
-  // ── Chart Renders ──────────────────────────────────────────────────────────
-
+  // ── Self-aware chart renderer ──────────────────────────────────────────────
   const renderChart = () => {
-    if (!data?.length) return null
-    const common = { data, margin: { top: 4, right: 8, left: -16, bottom: 0 } }
+    if (!rawData?.length) return null
+
+    const x = widget.dataMapping.xAxis
+    const y = widget.dataMapping.yAxis ?? ''
 
     switch (widget.type) {
       case 'bar':
-        return (
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart {...common}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="x" tick={{ fontSize: 10 }} tickLine={false} />
-              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="y" name={widget.dataMapping.yAxis} fill={COLORS[0]} radius={[4, 4, 0, 0]}>
-                {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )
+        return <ModernBarChart data={rawData} xField={x} yField={y} />
 
       case 'line':
-        return (
-          <ResponsiveContainer width="100%" height={200}>
-            <ReLineChart {...common}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="x" tick={{ fontSize: 10 }} tickLine={false} />
-              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-              <Tooltip content={<CustomTooltip />} />
-              <Line
-                type="monotone" dataKey="y"
-                name={widget.dataMapping.yAxis}
-                stroke={COLORS[0]} strokeWidth={2.5}
-                dot={{ r: 3, fill: COLORS[0] }}
-                activeDot={{ r: 5 }}
-              />
-            </ReLineChart>
-          </ResponsiveContainer>
-        )
+        return <ModernLineChart data={rawData} xField={x} yField={y} />
 
       case 'area':
-        return (
-          <ResponsiveContainer width="100%" height={200}>
-            <ReAreaChart {...common}>
-              <defs>
-                <linearGradient id={`g-${widget.id}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={COLORS[0]} stopOpacity={0.35} />
-                  <stop offset="95%" stopColor={COLORS[0]} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="x" tick={{ fontSize: 10 }} tickLine={false} />
-              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area
-                type="monotone" dataKey="y"
-                name={widget.dataMapping.yAxis}
-                stroke={COLORS[0]} strokeWidth={2.5}
-                fill={`url(#g-${widget.id})`}
-              />
-            </ReAreaChart>
-          </ResponsiveContainer>
-        )
+        return <ModernAreaChart data={rawData} xField={x} yField={y} />
 
       case 'pie':
-        return (
-          <ResponsiveContainer width="100%" height={200}>
-            <RePieChart>
-              <Pie
-                data={data.slice(0, 6)} dataKey="y" nameKey="x"
-                cx="50%" cy="50%" outerRadius={70} innerRadius={30}
-                paddingAngle={3}
-                label={({ name, percent }) =>
-                  `${String(name).slice(0, 8)} ${(percent * 100).toFixed(0)}%`
-                }
-                labelLine={false}
-              >
-                {data.slice(0, 6).map((_: any, i: number) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-            </RePieChart>
-          </ResponsiveContainer>
-        )
+        return <ModernPieChart data={rawData} nameField={x} valueField={y} />
 
-      case 'table':
+      case 'donut':
+        return <ModernPieChart data={rawData} nameField={x} valueField={y} donut />
+
+      case 'horizontal-bar':
+        return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} />
+
+      case 'gauge':
+        return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} />
+
+      case 'status-card':
+        return <ModernStatusCard data={rawData} yField={y} label={widget.title} />
+
+      case 'table': {
+        const cols = rawData.length > 0 ? Object.keys(rawData[0]).slice(0, 6) : []
         return (
-          <div className="overflow-auto max-h-[200px] border rounded-lg">
+          <div className="overflow-auto max-h-[300px] rounded-lg border">
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0 bg-muted z-10">
                 <tr>
-                  <th className="text-left p-2 font-medium border-b text-[11px]">
-                    {widget.dataMapping.xAxis}
-                  </th>
-                  <th className="text-left p-2 font-medium border-b text-[11px]">
-                    {widget.dataMapping.yAxis}
-                  </th>
+                  {cols.map(col => (
+                    <th key={col} className="text-left p-2 font-medium border-b text-[11px] whitespace-nowrap">
+                      {col}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {data.map((row, i) => (
+                {rawData.slice(0, 50).map((row, i) => (
                   <tr key={i} className="border-b hover:bg-muted/40 transition-colors">
-                    <td className="p-2 text-[11px]">{String(row.x ?? 'N/A')}</td>
-                    <td className="p-2 text-[11px] font-medium">{String(row.y ?? 'N/A')}</td>
+                    {cols.map(col => (
+                      <td key={col} className="p-2 text-[11px] max-w-[160px] truncate">
+                        {String(row[col] ?? '—')}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )
+      }
 
       default:
-        return null
+        return <p className="text-xs text-muted-foreground">Unknown chart type: {widget.type}</p>
     }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       <Card
@@ -257,8 +174,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         <CardHeader className="pb-2 px-4 pt-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-
-              {/* ✨ Drag Handle — only in builder mode */}
               {!viewMode && (
                 <button
                   {...attributes}
@@ -269,7 +184,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                   <GripVertical className="w-3.5 h-3.5" />
                 </button>
               )}
-
               <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
                 <Icon className="w-3.5 h-3.5 text-white" />
               </div>
@@ -280,26 +194,13 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 mr-1">
                 {widget.type.toUpperCase()}
               </Badge>
-
               {!viewMode && (
                 <>
-                  <Button
-                    variant="ghost" size="icon"
-                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                    onClick={() => setEditOpen(true)}
-                  >
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditOpen(true)}>
                     <Pencil className="w-3 h-3" />
                   </Button>
-                  <Button
-                    variant="ghost" size="icon"
-                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                    onClick={fetchData}
-                    disabled={loading}
-                  >
-                    {loading
-                      ? <Loader2 className="w-3 h-3 animate-spin" />
-                      : <RefreshCw className="w-3 h-3" />
-                    }
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={fetchData} disabled={loading}>
+                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                   </Button>
                   <Button
                     variant="ghost" size="icon"
@@ -315,18 +216,9 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                   </Button>
                 </>
               )}
-
               {viewMode && (
-                <Button
-                  variant="ghost" size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                  onClick={fetchData}
-                  disabled={loading}
-                >
-                  {loading
-                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : <RefreshCw className="w-3 h-3" />
-                  }
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={fetchData} disabled={loading}>
+                  {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                 </Button>
               )}
             </div>
@@ -344,26 +236,22 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               <p className="text-[11px] text-red-700">{error}</p>
             </div>
           )}
-          {loading && !data && (
-            <div className="flex items-center justify-center h-[200px]">
+          {loading && !rawData && (
+            <div className="flex items-center justify-center h-[240px]">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           )}
-          {!loading && !error && data && renderChart()}
-          {!loading && !error && data?.length === 0 && (
+          {!loading && !error && rawData && renderChart()}
+          {!loading && !error && rawData?.length === 0 && (
             <div className="flex items-center justify-center h-[200px]">
-              <p className="text-xs text-muted-foreground">No data returned</p>
+              <p className="text-xs text-muted-foreground">No data returned from endpoint</p>
             </div>
           )}
         </CardContent>
       </Card>
 
       {!viewMode && (
-        <WidgetEditDialog
-          widget={widget}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-        />
+        <WidgetEditDialog widget={widget} open={editOpen} onOpenChange={setEditOpen} />
       )}
     </>
   )

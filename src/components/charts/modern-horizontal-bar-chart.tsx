@@ -1,17 +1,17 @@
 'use client'
-// Component: ModernBarChart
+// Component: ModernHorizontalBarChart
 
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, Cell,
+  Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts'
 import { CHART_COLORS, getChartHeight } from './chart-registry'
 
-interface ModernBarChartProps {
+interface Props {
   data: any[]
   xField: string
   yField: string
-  title?: string
+  stacked?: boolean
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -20,7 +20,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     <div className="bg-card border rounded-lg shadow-lg p-2.5 text-xs">
       <p className="font-medium mb-1 text-foreground">{label}</p>
       {payload.map((e: any, i: number) => (
-        <p key={i} style={{ color: e.color }}>
+        <p key={i} style={{ color: e.fill }}>
           {e.name}: <span className="font-semibold">{e.value}</span>
         </p>
       ))}
@@ -28,20 +28,18 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
-export function ModernBarChart({ data, xField, yField }: ModernBarChartProps) {
-  // ✅ FIX: count string occurrences when yField is non-numeric
+export function ModernHorizontalBarChart({ data, xField, yField, stacked = false }: Props) {
   const isNumeric = data.length > 0 && !isNaN(Number(data[0][yField]))
 
   const chartData = isNumeric
-    ? data.slice(0, 30).map((item, i) => ({
-        name: String(item[xField] ?? `Item ${i + 1}`).slice(0, 20),
+    ? data.slice(0, 25).map((item, i) => ({
+        name: String(item[xField] ?? `#${i}`).slice(0, 24),
         value: parseFloat(item[yField]) || 0,
       }))
     : (() => {
-        // Count occurrences of each xField category
         const counts: Record<string, number> = {}
         data.forEach(item => {
-          const k = String(item[xField] ?? 'Unknown').slice(0, 20)
+          const k = String(item[xField] ?? 'Unknown').slice(0, 24)
           counts[k] = (counts[k] ?? 0) + 1
         })
         return Object.entries(counts)
@@ -51,35 +49,39 @@ export function ModernBarChart({ data, xField, yField }: ModernBarChartProps) {
       })()
 
   const h = getChartHeight(chartData.length)
-  const bottomMargin = chartData.length > 10 ? 70 : 40
 
   return (
     <div className="w-full" style={{ height: h }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
+          layout="vertical"
           data={chartData}
-          margin={{ top: 8, right: 16, left: -8, bottom: bottomMargin }}
+          margin={{ top: 4, right: 48, left: 8, bottom: 4 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" opacity={0.3} />
           <XAxis
-            dataKey="name"
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-            tickLine={false}
-            angle={chartData.length > 8 ? -40 : 0}
-            textAnchor={chartData.length > 8 ? 'end' : 'middle'}
-            interval={0}
-          />
-          <YAxis
+            type="number"
             tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
             tickLine={false}
             axisLine={false}
           />
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={110}
+            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+            tickLine={false}
+          />
           <Tooltip content={<CustomTooltip />} />
-          <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="square" />
-          <Bar dataKey="value" name={yField} radius={[6, 6, 0, 0]}>
+          <Bar dataKey="value" name={yField} radius={[0, 6, 6, 0]}>
             {chartData.map((_, i) => (
               <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
             ))}
+            <LabelList
+              dataKey="value"
+              position="right"
+              style={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
+            />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
