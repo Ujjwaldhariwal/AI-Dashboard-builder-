@@ -1,6 +1,7 @@
 'use client'
 
 // Component: WidgetConfigDialog
+// src/components/builder/widget-config-dialog.tsx
 
 import { useState, useEffect } from 'react'
 import {
@@ -33,6 +34,10 @@ import {
   AreaChart,
   Table2,
   Loader2,
+  Gauge,
+  TrendingUp,
+  AlignLeft,
+  Circle,
 } from 'lucide-react'
 
 interface WidgetConfigDialogProps {
@@ -45,13 +50,36 @@ interface WidgetConfigDialogProps {
   availableFields?: Array<{ name: string; type: string }>
 }
 
+// ✅ FIX: matches ChartType exactly — no 'stat-card', uses 'status-card'
 const chartIcons: Record<ChartType, any> = {
   line: LineChart,
   bar: BarChart3,
   pie: PieChart,
   area: AreaChart,
+  donut: Circle,
+  'horizontal-bar': AlignLeft,
+  gauge: Gauge,
+  'status-card': TrendingUp,
   table: Table2,
-  'stat-card': BarChart3,
+}
+
+// Rows shown in the chart type picker
+// Split into 2 rows of 5 for readability
+const CHART_TYPE_ROWS: ChartType[][] = [
+  ['bar', 'line', 'area', 'pie', 'donut'],
+  ['horizontal-bar', 'gauge', 'status-card', 'table'],
+]
+
+const chartTypeLabel: Record<ChartType, string> = {
+  bar: 'Bar',
+  line: 'Line',
+  area: 'Area',
+  pie: 'Pie',
+  donut: 'Donut',
+  'horizontal-bar': 'H-Bar',
+  gauge: 'Gauge',
+  'status-card': 'KPI',
+  table: 'Table',
 }
 
 export function WidgetConfigDialog({
@@ -72,13 +100,12 @@ export function WidgetConfigDialog({
   const [fields, setFields] = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
 
-  // Active endpoint: forced one OR first in list
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>(
     endpointId ?? endpoints[0]?.id ?? '',
   )
   const endpoint = endpoints.find(e => e.id === selectedEndpointId)
 
-  // When dialog opens: reset state + fetch fields
+  // ── Reset + fetch on open ─────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return
 
@@ -101,7 +128,7 @@ export function WidgetConfigDialog({
     }
   }, [open])
 
-  // Fetch + parse fields live from endpoint
+  // ── Live field fetch ──────────────────────────────────────────────────────
   const fetchFields = async (ep: { url: string; method: string }) => {
     setLoadingFields(true)
     setFields([])
@@ -109,27 +136,26 @@ export function WidgetConfigDialog({
       const res = await fetch(ep.url, { method: ep.method })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const result = await res.json()
-      const dataArray = Array.isArray(result)
-        ? result
-        : result.data ?? result.results ?? result.items ?? result
+
+      // ✅ Use DataAnalyzer for reliable extraction
+      const dataArray =
+        DataAnalyzer.extractDataArray(result) ??
+        (Array.isArray(result) ? result : [result])
 
       const analysis = DataAnalyzer.analyzeArray(dataArray)
       setFields(analysis.fields)
 
-      // Auto-select first two fields
       if (!suggestedXAxis) setXAxis(analysis.fields[0]?.name ?? '')
       if (!suggestedYAxis)
         setYAxis(analysis.fields[1]?.name ?? analysis.fields[0]?.name ?? '')
     } catch {
-      toast.error('Could not fetch fields from endpoint. Enter axis names manually.')
-      // Fallback: let user type
+      toast.error('Could not fetch fields. Enter axis names manually.')
       setFields([])
     } finally {
       setLoadingFields(false)
     }
   }
 
-  // When user changes endpoint in dropdown
   const handleEndpointChange = (id: string) => {
     const ep = endpoints.find(e => e.id === id)
     if (!ep) return
@@ -149,7 +175,7 @@ export function WidgetConfigDialog({
       toast.error('Please enter a widget title')
       return
     }
-    if (!xAxis) {
+    if (!xAxis && !['gauge', 'status-card'].includes(type)) {
       toast.error('Please select or enter an X-axis field')
       return
     }
@@ -158,22 +184,27 @@ export function WidgetConfigDialog({
       title: title.trim(),
       type,
       endpointId: endpoint.id,
-      dataMapping: { xAxis, yAxis: yAxis || undefined },
+      dataMapping: {
+        xAxis: xAxis || fields[0]?.name || '',
+        yAxis: yAxis || undefined,
+      },
     })
 
-    toast.success('✅ Widget added to dashboard')
+    toast.success('Widget added to dashboard')
     onOpenChange(false)
   }
 
+  // ── Axis fields — gauge/status-card only need Y ───────────────────────────
+  const needsXAxis = !['gauge', 'status-card'].includes(type)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* ✅ FIX 3: max-h + overflow-y-auto stops form overflow */}
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg">Create Widget</DialogTitle>
           <DialogDescription className="text-xs">
             Configure a new widget using data from{' '}
-            <span className="font-mono">
+            <span className="font-mono font-medium">
               {endpoint?.name || 'a connected API'}
             </span>
             .
@@ -181,6 +212,7 @@ export function WidgetConfigDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+
           {/* Title */}
           <div className="space-y-1.5">
             <Label className="text-xs">Widget title *</Label>
@@ -192,14 +224,11 @@ export function WidgetConfigDialog({
             />
           </div>
 
-          {/* Endpoint selector — only when not forced */}
+          {/* Endpoint selector */}
           {!endpointId && (
             <div className="space-y-1.5">
               <Label className="text-xs">Data source</Label>
-              <Select
-                value={selectedEndpointId}
-                onValueChange={handleEndpointChange}
-              >
+              <Select value={selectedEndpointId} onValueChange={handleEndpointChange}>
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue placeholder="Select API endpoint" />
                 </SelectTrigger>
@@ -214,84 +243,87 @@ export function WidgetConfigDialog({
             </div>
           )}
 
-          {/* Chart type */}
+          {/* Chart type picker — 2 rows */}
           <div className="space-y-1.5">
             <Label className="text-xs">Chart type</Label>
-            <div className="grid grid-cols-5 gap-1.5">
-              {(['line', 'bar', 'pie', 'area', 'table'] as ChartType[]).map(
-                chartType => {
-                  const Icon = chartIcons[chartType]
-                  const isSelected = type === chartType
-                  return (
-                    <button
-                      key={chartType}
-                      type="button"
-                      onClick={() => setType(chartType)}
-                      className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all ${
-                        isSelected
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border hover:border-primary/50'
-                      }`}
-                    >
-                      <Icon
-                        className={`w-4 h-4 ${
-                          isSelected ? 'text-primary' : 'text-muted-foreground'
-                        }`}
-                      />
-                      <span
-                        className={`text-[10px] font-medium ${
-                          isSelected ? 'text-primary' : 'text-muted-foreground'
+            <div className="space-y-1.5">
+              {CHART_TYPE_ROWS.map((row, ri) => (
+                <div key={ri} className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${row.length}, 1fr)` }}>
+                  {row.map(chartType => {
+                    const Icon = chartIcons[chartType]
+                    const isSelected = type === chartType
+                    return (
+                      <button
+                        key={chartType}
+                        type="button"
+                        onClick={() => setType(chartType)}
+                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all ${
+                          isSelected
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border hover:border-primary/50'
                         }`}
                       >
-                        {chartType[0].toUpperCase() + chartType.slice(1)}
-                      </span>
-                    </button>
-                  )
-                },
-              )}
+                        <Icon
+                          className={`w-4 h-4 ${
+                            isSelected ? 'text-primary' : 'text-muted-foreground'
+                          }`}
+                        />
+                        <span
+                          className={`text-[10px] font-medium ${
+                            isSelected ? 'text-primary' : 'text-muted-foreground'
+                          }`}
+                        >
+                          {chartTypeLabel[chartType]}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* X axis */}
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1.5">
-              X-axis (horizontal)
-              {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
-            </Label>
-            {fields.length > 0 ? (
-              <Select value={xAxis} onValueChange={setXAxis} disabled={loadingFields}>
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Select field" />
-                </SelectTrigger>
-                <SelectContent>
-                  {fields.map(field => (
-                    <SelectItem key={field.name} value={field.name}>
-                      <div className="flex items-center gap-2">
-                        <span>{field.name}</span>
-                        <Badge variant="outline" className="text-[9px] px-1 py-0">
-                          {field.type}
-                        </Badge>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              // ✅ Fallback: manual input when fields can't be fetched
-              <Input
-                className="h-9 text-sm font-mono"
-                placeholder={loadingFields ? 'Fetching fields...' : 'e.g., month'}
-                value={xAxis}
-                onChange={e => setXAxis(e.target.value)}
-                disabled={loadingFields}
-              />
-            )}
-          </div>
+          {/* X axis — hidden for gauge/status-card */}
+          {needsXAxis && (
+            <div className="space-y-1.5">
+              <Label className="text-xs flex items-center gap-1.5">
+                X-axis (horizontal)
+                {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
+              </Label>
+              {fields.length > 0 ? (
+                <Select value={xAxis} onValueChange={setXAxis} disabled={loadingFields}>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Select field" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {fields.map(field => (
+                      <SelectItem key={field.name} value={field.name}>
+                        <div className="flex items-center gap-2">
+                          <span>{field.name}</span>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0">
+                            {field.type}
+                          </Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  className="h-9 text-sm font-mono"
+                  placeholder={loadingFields ? 'Fetching fields...' : 'e.g., month'}
+                  value={xAxis}
+                  onChange={e => setXAxis(e.target.value)}
+                  disabled={loadingFields}
+                />
+              )}
+            </div>
+          )}
 
           {/* Y axis */}
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1.5">
-              Y-axis (vertical)
+              {['gauge', 'status-card'].includes(type) ? 'Value field' : 'Y-axis (vertical)'}
               {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
             </Label>
             {fields.length > 0 ? (
@@ -322,14 +354,11 @@ export function WidgetConfigDialog({
               />
             )}
           </div>
+
         </div>
 
         <DialogFooter className="pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-          >
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button size="sm" onClick={handleCreate} disabled={loadingFields}>
