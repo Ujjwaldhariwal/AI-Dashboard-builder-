@@ -1,5 +1,7 @@
 'use client'
 
+// Component: ModernLineChart
+
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface ModernLineChartProps {

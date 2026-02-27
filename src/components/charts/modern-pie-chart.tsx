@@ -1,5 +1,7 @@
 'use client'
 
+// Component: ModernPieChart
+
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface ModernPieChartProps {

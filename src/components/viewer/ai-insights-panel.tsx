@@ -1,5 +1,7 @@
 'use client'
 
+// Component: AiInsightsPanel
+
 import { motion } from 'framer-motion'
 import { Brain, TrendingUp, AlertTriangle, Lightbulb, Zap } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'

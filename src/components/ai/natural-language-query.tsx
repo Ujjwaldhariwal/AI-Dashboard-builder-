@@ -1,5 +1,7 @@
 'use client'
 
+// Component: NaturalLanguageQuery
+
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, Send, Loader2, MessageSquare, TrendingUp, Database } from 'lucide-react'

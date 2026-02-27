@@ -1,5 +1,7 @@
 'use client'
 
+// Component: ModernAreaChart
+
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface ModernAreaChartProps {

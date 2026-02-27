@@ -1,5 +1,6 @@
+// Component: Page
+//src/app/%28viewer%29/dashboard/page.tsx
 'use client'
-
 import { useState } from 'react'
 import { useDashboardStore } from '@/store/builder-store'
 import { WidgetCard } from '@/components/builder/canvas/widget-card'
