@@ -1,3 +1,4 @@
+// Module: ChartGenerator
 interface DataPoint {
   [key: string]: any
 }

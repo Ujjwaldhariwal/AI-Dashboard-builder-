@@ -1,3 +1,4 @@
+// Module: CorrelationEngine
 interface CorrelationResult {
   field1: string
   field2: string

@@ -1,3 +1,4 @@
+// Module: SchemaDetector
 import Ajv from 'ajv'
 import { ApiSchema } from '@/types'
 

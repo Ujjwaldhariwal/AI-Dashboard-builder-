@@ -1,3 +1,4 @@
+// Module: InsightsEngine
 interface DataPoint {
   [key: string]: any
 }
