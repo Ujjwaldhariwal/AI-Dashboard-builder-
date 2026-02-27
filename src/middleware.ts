@@ -1,3 +1,4 @@
+// Module: Middleware
 import { NextRequest, NextResponse } from 'next/server'
 
 // For now, middleware does NOT enforce auth.
