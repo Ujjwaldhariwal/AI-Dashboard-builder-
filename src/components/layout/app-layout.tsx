@@ -1,21 +1,19 @@
 'use client'
 
+// Component: AppLayout
+
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { 
   LayoutDashboard, Database, FolderTree, Settings, 
-  LogOut, User, Bell, Search
+  LogOut, User, Search
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { useDashboardStore } from '@/store/builder-store'
 import { useAuthStore } from '@/store/auth-store'
 import { useRouter } from 'next/navigation'
 import { NotificationBell } from '@/components/layout/notification-bell'
-
-// In the header JSX:
-
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -24,7 +22,8 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const { endpoints, dashboards, currentDashboardId } = useDashboardStore()
+  // ✅ FIX: added `widgets` to destructure
+  const { endpoints, dashboards, widgets, currentDashboardId } = useDashboardStore()
   const { logout } = useAuthStore()
 
   const navigation = [
@@ -40,6 +39,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   }
 
   const currentDashboard = dashboards.find(d => d.id === currentDashboardId)
+
+  // ✅ FIX: only count widgets for the active dashboard
+  const activeWidgetCount = currentDashboardId
+    ? widgets.filter(w => w.dashboardId === currentDashboardId).length
+    : widgets.length
 
   return (
     <div className="min-h-screen bg-background">
@@ -117,13 +121,14 @@ export function AppLayout({ children }: AppLayoutProps) {
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Widgets</span>
-                <span className="font-semibold">0</span>
+                {/* ✅ FIX: was hardcoded 0 */}
+                <span className="font-semibold">{activeWidgetCount}</span>
               </div>
             </div>
           </div>
         </aside>
 
-        {/* Main content — simple ml-56 is enough since AppLayout renders exactly once */}
+        {/* Main content */}
         <main className="ml-56 flex-1 min-h-screen bg-muted/30">
           {children}
         </main>

@@ -1,3 +1,5 @@
+// Module: BuilderStore
+//builder-store.ts
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Widget, WidgetConfigInput } from '@/types/widget'
@@ -32,7 +34,7 @@ interface DashboardStore {
 
   // Endpoints
   endpoints: APIEndpoint[]
-  addEndpoint: (endpoint: Omit<APIEndpoint, 'id'>) => void
+  addEndpoint: (endpoint: Omit<APIEndpoint, 'id'>) => string
   removeEndpoint: (id: string) => void
   updateEndpoint: (id: string, updates: Partial<APIEndpoint>) => void
 
@@ -42,6 +44,8 @@ interface DashboardStore {
   removeWidget: (id: string) => void
   updateWidget: (id: string, updates: Partial<Widget>) => void
   getWidgetsByDashboard: (dashboardId: string) => Widget[]
+  reorderWidgets: (dashboardId: string, activeId: string, overId: string) => void
+
 }
 
 export const useDashboardStore = create<DashboardStore>()(
@@ -91,6 +95,7 @@ export const useDashboardStore = create<DashboardStore>()(
         set((state) => ({
           endpoints: [...state.endpoints, { ...endpoint, id }],
         }))
+        return id
       },
 
       removeEndpoint: (id) => {
@@ -115,6 +120,13 @@ export const useDashboardStore = create<DashboardStore>()(
         const { currentDashboardId } = get()
         if (!currentDashboardId) return
 
+        // Support both legacy flat fields and full dataMapping payloads.
+        const resolvedMapping = config.dataMapping ?? {
+          xAxis: config.xAxis ?? '',
+          yAxis: config.yAxis,
+        }
+        if (!resolvedMapping.xAxis) return
+
         const id = `widget-${Date.now()}`
         const now = new Date().toISOString()
 
@@ -124,10 +136,7 @@ export const useDashboardStore = create<DashboardStore>()(
           title: config.title,
           type: config.type,
           endpointId: config.endpointId,
-          dataMapping: {
-            xAxis: config.xAxis,
-            yAxis: config.yAxis,
-          },
+          dataMapping: resolvedMapping,
           position: { x: 0, y: 0, w: 6, h: 4 },
           createdAt: now,
           updatedAt: now,
@@ -152,6 +161,19 @@ export const useDashboardStore = create<DashboardStore>()(
           ),
         }))
       },
+      reorderWidgets: (dashboardId, activeId, overId) => {
+  set(state => {
+    const dashWidgets = state.widgets.filter(w => w.dashboardId === dashboardId)
+    const rest = state.widgets.filter(w => w.dashboardId !== dashboardId)
+    const oldIndex = dashWidgets.findIndex(w => w.id === activeId)
+    const newIndex = dashWidgets.findIndex(w => w.id === overId)
+    if (oldIndex === -1 || newIndex === -1) return state
+    const reordered = [...dashWidgets]
+    const [moved] = reordered.splice(oldIndex, 1)
+    reordered.splice(newIndex, 0, moved)
+    return { widgets: [...rest, ...reordered] }
+  })
+},
 
       getWidgetsByDashboard: (dashboardId) => {
         return get().widgets.filter((w) => w.dashboardId === dashboardId)

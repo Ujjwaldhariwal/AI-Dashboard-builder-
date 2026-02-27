@@ -1,69 +1,49 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Maximize2, RefreshCw } from 'lucide-react'
+// Component: ChartWrapper
+import { RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ChartCustomizationPanel } from '@/components/dashboard/chart-customization-panel'
-import { ChartConfig } from '@/types'
+import { cn } from '@/lib/utils'
 
 interface ChartWrapperProps {
   title: string
   children: React.ReactNode
   onRefresh?: () => void
-  onMaximize?: () => void
   isLoading?: boolean
-  chart?: ChartConfig
+  className?: string
 }
 
 export function ChartWrapper({
   title,
   children,
   onRefresh,
-  onMaximize,
   isLoading = false,
-  chart,
+  className,
 }: ChartWrapperProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3 }}
-      className="h-full"
-    >
-      <Card className="glass-effect border-gray-700 h-full hover:shadow-neon transition-all duration-300">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-lg font-semibold text-white">
-            {title}
-          </CardTitle>
-          <div className="flex gap-2">
-            {chart && <ChartCustomizationPanel chart={chart} />}
-            {onRefresh && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onRefresh}
-                className="h-8 w-8 text-gray-400 hover:text-white"
-              >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              </Button>
-            )}
-            {onMaximize && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onMaximize}
-                className="h-8 w-8 text-gray-400 hover:text-white"
-              >
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-            )}
+    <div className={cn('h-full flex flex-col', className)}>
+      <div className="flex items-center justify-between pb-2">
+        <h3 className="text-sm font-semibold truncate">{title}</h3>
+        {onRefresh && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 flex-shrink-0"
+            onClick={onRefresh}
+            disabled={isLoading}
+          >
+            <RefreshCw className={cn('w-3 h-3', isLoading && 'animate-spin')} />
+          </Button>
+        )}
+      </div>
+      <div className="flex-1 relative">
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10 rounded">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
-        </CardHeader>
-        <CardContent className="pt-4">
-          {children}
-        </CardContent>
-      </Card>
-    </motion.div>
+        )}
+        {children}
+      </div>
+    </div>
   )
 }

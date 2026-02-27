@@ -1,5 +1,7 @@
 'use client'
 
+// Component: WidgetConfigDialog
+
 import { useState, useEffect } from 'react'
 import {
   Dialog,
@@ -49,6 +51,7 @@ const chartIcons: Record<ChartType, any> = {
   pie: PieChart,
   area: AreaChart,
   table: Table2,
+  'stat-card': BarChart3,
 }
 
 export function WidgetConfigDialog({
@@ -120,7 +123,7 @@ export function WidgetConfigDialog({
         xAxis,
         yAxis,
       },
-    } as any)
+    })
 
     toast.success('✅ Widget added to dashboard')
     onOpenChange(false)
