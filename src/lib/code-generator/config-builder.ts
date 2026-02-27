@@ -1,3 +1,4 @@
+// Module: ConfigBuilder
 import type { Widget, ChartType } from '@/types/widget'
 
 interface DashboardShape {

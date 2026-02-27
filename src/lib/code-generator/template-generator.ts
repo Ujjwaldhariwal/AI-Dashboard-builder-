@@ -1,3 +1,4 @@
+// Module: TemplateGenerator
 import type { DashboardExportConfig } from './config-builder'
 
 export type GeneratedFileMap = Record<string, string>

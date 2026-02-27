@@ -1,3 +1,4 @@
+// Module: ZipPackager
 import JSZip from 'jszip'
 import type { GeneratedFileMap } from './template-generator'
 
