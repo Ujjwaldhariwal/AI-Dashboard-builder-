@@ -31,6 +31,7 @@ interface DashboardStore {
   removeDashboard: (id: string) => void;
   deleteDashboard: (id: string) => void; // ✅ alias — same as removeDashboard
   setCurrentDashboard: (id: string | null) => void;
+  duplicateDashboard: (id: string) => string;
 
   // Endpoints
   endpoints: APIEndpoint[];
@@ -88,6 +89,38 @@ export const useDashboardStore = create<DashboardStore>()(
         }));
       },
 
+      // In implementation — add after deleteDashboard:
+      duplicateDashboard: (id) => {
+        const { dashboards, widgets, user } = get() as any;
+        const source = dashboards.find((d: Dashboard) => d.id === id);
+        if (!source) return "";
+        const newId = `dashboard-${Date.now()}`;
+        const now = new Date();
+        const sourceWidgets = widgets.filter(
+          (w: Widget) => w.dashboardId === id,
+        );
+        const clonedWidgets = sourceWidgets.map((w: Widget) => ({
+          ...w,
+          id: `widget-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          dashboardId: newId,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        }));
+        set((state) => ({
+          dashboards: [
+            ...state.dashboards,
+            {
+              ...source,
+              id: newId,
+              name: `${source.name} (copy)`,
+              createdAt: now,
+            },
+          ],
+          widgets: [...state.widgets, ...clonedWidgets],
+        }));
+        return newId;
+      },
+
       setCurrentDashboard: (id) => set({ currentDashboardId: id }),
 
       // ─── Endpoints ────────────────────────────────────────────
@@ -119,39 +152,38 @@ export const useDashboardStore = create<DashboardStore>()(
       // ─── Widgets ──────────────────────────────────────────────
       widgets: [],
 
-     addWidget: (config) => {
-  const { currentDashboardId, widgets } = get()
-  if (!currentDashboardId) return
+      addWidget: (config) => {
+        const { currentDashboardId, widgets } = get();
+        if (!currentDashboardId) return;
 
-  const resolvedMapping = config.dataMapping ?? {
-    xAxis: config.xAxis ?? '',
-    yAxis: config.yAxis,
-  }
-  if (!resolvedMapping.xAxis) return
+        const resolvedMapping = config.dataMapping ?? {
+          xAxis: config.xAxis ?? "",
+          yAxis: config.yAxis,
+        };
+        if (!resolvedMapping.xAxis) return;
 
-  // ✅ FIX 1: truly unique ID — random suffix prevents same-ms collisions
-  const id = `widget-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+        // ✅ FIX 1: truly unique ID — random suffix prevents same-ms collisions
+        const id = `widget-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-  // ✅ FIX 2: dedup guard
-  if (widgets.some(w => w.id === id)) return
+        // ✅ FIX 2: dedup guard
+        if (widgets.some((w) => w.id === id)) return;
 
-  const now = new Date().toISOString()
+        const now = new Date().toISOString();
 
-  const newWidget: Widget = {
-    id,
-    dashboardId: currentDashboardId,
-    title: config.title,
-    type: config.type,
-    endpointId: config.endpointId,
-    dataMapping: resolvedMapping,
-    position: { x: 0, y: 0, w: 6, h: 4 },
-    createdAt: now,
-    updatedAt: now,
-  }
+        const newWidget: Widget = {
+          id,
+          dashboardId: currentDashboardId,
+          title: config.title,
+          type: config.type,
+          endpointId: config.endpointId,
+          dataMapping: resolvedMapping,
+          position: { x: 0, y: 0, w: 6, h: 4 },
+          createdAt: now,
+          updatedAt: now,
+        };
 
-  set((state) => ({ widgets: [...state.widgets, newWidget] }))
-},
-
+        set((state) => ({ widgets: [...state.widgets, newWidget] }));
+      },
 
       removeWidget: (id) => {
         set((state) => ({
