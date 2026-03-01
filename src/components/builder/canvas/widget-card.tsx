@@ -7,6 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Trash2, RefreshCw, Loader2, AlertCircle,
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
@@ -30,7 +35,7 @@ import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-
 import { ModernStatusCard } from '@/components/charts/modern-status-card'
 
 interface WidgetCardProps {
-  widget: Widget
+  widget:    Widget
   viewMode?: boolean
 }
 
@@ -46,16 +51,32 @@ const chartTypeIcon: Record<string, any> = {
   table:            Table2,
 }
 
+// ── Skeleton shimmer ──────────────────────────────────────────────────────────
+function WidgetSkeleton() {
+  return (
+    <div className="space-y-3 animate-pulse">
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-md bg-muted" />
+        <div className="h-4 bg-muted rounded w-32" />
+        <div className="ml-auto h-4 bg-muted rounded w-12" />
+      </div>
+      <div className="h-3 bg-muted rounded w-48" />
+      <div className="h-[220px] bg-muted rounded-lg mt-2" />
+    </div>
+  )
+}
+
 export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { endpoints, removeWidget } = useDashboardStore()
   const { addLog, updateEndpointHealth } = useMonitoringStore()
 
-  const [rawData, setRawData]     = useState<any[] | null>(null)
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState<string | null>(null)
-  const [editOpen, setEditOpen]   = useState(false)
+  const [rawData, setRawData]         = useState<any[] | null>(null)
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState<string | null>(null)
+  const [editOpen, setEditOpen]       = useState(false)
+  const [deleteOpen, setDeleteOpen]   = useState(false)   // ✅ AlertDialog
   const [lastFetched, setLastFetched] = useState<Date | null>(null)
-  const [latency, setLatency]     = useState<number | null>(null)
+  const [latency, setLatency]         = useState<number | null>(null)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id })
@@ -71,17 +92,14 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon     = chartTypeIcon[widget.type] ?? BarChart3
 
-  // ── Fetch with monitoring ────────────────────────────────────────────────
+  // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!endpoint) {
       setError('Endpoint not found')
       addLog({
-        widgetId:    widget.id,
-        widgetTitle: widget.title,
-        endpointId:  widget.endpointId,
-        endpointUrl: '',
-        level:       'error',
-        message:     'Endpoint not found in store',
+        widgetId: widget.id, widgetTitle: widget.title,
+        endpointId: widget.endpointId, endpointUrl: '',
+        level: 'error', message: 'Endpoint not found in store',
       })
       return
     }
@@ -94,7 +112,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       const res = await fetch(endpoint.url, { method: endpoint.method })
       const ms  = Math.round(performance.now() - t0)
       setLatency(ms)
-
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
 
       const result = await res.json()
@@ -105,50 +122,35 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       setRawData(arr)
       setLastFetched(new Date())
 
-      // ── Log success ──────────────────────────────────────────────────
       addLog({
-        widgetId:    widget.id,
-        widgetTitle: widget.title,
-        endpointId:  endpoint.id,
-        endpointUrl: endpoint.url,
-        level:       ms > 2000 ? 'warn' : 'success',
-        message:     ms > 2000
+        widgetId: widget.id, widgetTitle: widget.title,
+        endpointId: endpoint.id, endpointUrl: endpoint.url,
+        level:     ms > 2000 ? 'warn' : 'success',
+        message:   ms > 2000
           ? `Slow response: ${ms}ms — ${arr.length} rows`
           : `Fetched ${arr.length} rows in ${ms}ms`,
-        latencyMs:   ms,
-        statusCode:  res.status,
+        latencyMs: ms, statusCode: res.status,
       })
 
       updateEndpointHealth(endpoint.id, {
-        endpointName:  endpoint.name,
-        url:           endpoint.url,
-        status:        ms > 3000 ? 'degraded' : 'healthy',
-        latencyMs:     ms,
-        successCount:  (useMonitoringStore.getState().endpointHealth[endpoint.id]?.successCount ?? 0) + 1,
+        endpointName: endpoint.name, url: endpoint.url,
+        status:       ms > 3000 ? 'degraded' : 'healthy',
+        latencyMs:    ms,
+        successCount: (useMonitoringStore.getState().endpointHealth[endpoint.id]?.successCount ?? 0) + 1,
       })
     } catch (err: any) {
       const ms = Math.round(performance.now() - t0)
       setError(err.message)
-
-      // ── Log error ────────────────────────────────────────────────────
       addLog({
-        widgetId:    widget.id,
-        widgetTitle: widget.title,
-        endpointId:  endpoint.id,
-        endpointUrl: endpoint.url,
-        level:       'error',
-        message:     err.message,
-        latencyMs:   ms,
+        widgetId: widget.id, widgetTitle: widget.title,
+        endpointId: endpoint.id, endpointUrl: endpoint.url,
+        level: 'error', message: err.message, latencyMs: ms,
       })
-
       updateEndpointHealth(endpoint.id, {
-        endpointName: endpoint.name,
-        url:          endpoint.url,
-        status:       'down',
-        lastError:    err.message,
+        endpointName: endpoint.name, url: endpoint.url,
+        status:       'down', lastError: err.message,
         errorCount:   (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
       })
-
       toast.error(`"${widget.title}": ${err.message}`)
     } finally {
       setLoading(false)
@@ -157,7 +159,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Auto-refresh ─────────────────────────────────────────────────────────
+  // ── Auto-refresh ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!endpoint?.refreshInterval || endpoint.refreshInterval <= 0) return
     const id = setInterval(fetchData, endpoint.refreshInterval * 1000)
@@ -171,14 +173,14 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     const y = widget.dataMapping.yAxis ?? ''
 
     switch (widget.type) {
-      case 'bar':             return <ModernBarChart data={rawData} xField={x} yField={y} />
-      case 'line':            return <ModernLineChart data={rawData} xField={x} yField={y} />
-      case 'area':            return <ModernAreaChart data={rawData} xField={x} yField={y} />
-      case 'pie':             return <ModernPieChart data={rawData} nameField={x} valueField={y} />
-      case 'donut':           return <ModernPieChart data={rawData} nameField={x} valueField={y} donut />
-      case 'horizontal-bar':  return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} />
-      case 'gauge':           return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} />
-      case 'status-card':     return <ModernStatusCard data={rawData} yField={y} label={widget.title} />
+      case 'bar':            return <ModernBarChart data={rawData} xField={x} yField={y} />
+      case 'line':           return <ModernLineChart data={rawData} xField={x} yField={y} />
+      case 'area':           return <ModernAreaChart data={rawData} xField={x} yField={y} />
+      case 'pie':            return <ModernPieChart data={rawData} nameField={x} valueField={y} />
+      case 'donut':          return <ModernPieChart data={rawData} nameField={x} valueField={y} donut />
+      case 'horizontal-bar': return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} />
+      case 'gauge':          return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} />
+      case 'status-card':    return <ModernStatusCard data={rawData} yField={y} label={widget.title} />
       case 'table': {
         const cols = Object.keys(rawData[0]).slice(0, 6)
         return (
@@ -213,7 +215,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     }
   }
 
-  // ── Health indicator ──────────────────────────────────────────────────────
   const healthColor = error
     ? 'text-red-500'
     : latency && latency > 2000
@@ -236,8 +237,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
             <div className="flex items-center gap-2 min-w-0">
               {!viewMode && (
                 <button
-                  {...attributes}
-                  {...listeners}
+                  {...attributes} {...listeners}
                   className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors flex-shrink-0 touch-none"
                 >
                   <GripVertical className="w-3.5 h-3.5" />
@@ -253,53 +253,52 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 mr-1">
                 {widget.type.toUpperCase()}
               </Badge>
-
-              {/* ✅ Health dot */}
               {error
                 ? <WifiOff className={`w-3 h-3 ${healthColor} mr-1`} />
-                : <Wifi className={`w-3 h-3 ${healthColor} mr-1`} />
+                : <Wifi    className={`w-3 h-3 ${healthColor} mr-1`} />
               }
-
               {!viewMode && (
                 <>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditOpen(true)}>
+                  <Button variant="ghost" size="icon" className="h-6 w-6"
+                    onClick={() => setEditOpen(true)}>
                     <Pencil className="w-3 h-3" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={fetchData} disabled={loading}>
-                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  <Button variant="ghost" size="icon" className="h-6 w-6"
+                    onClick={fetchData} disabled={loading}>
+                    {loading
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : <RefreshCw className="w-3 h-3" />
+                    }
                   </Button>
                   <Button
                     variant="ghost" size="icon"
                     className="h-6 w-6 text-red-500 hover:text-red-700"
-                    onClick={() => {
-                      if (confirm(`Delete "${widget.title}"?`)) {
-                        removeWidget(widget.id)
-                        toast.success('Widget removed')
-                      }
-                    }}
+                    onClick={() => setDeleteOpen(true)}   // ✅ no window.confirm
                   >
                     <Trash2 className="w-3 h-3" />
                   </Button>
                 </>
               )}
               {viewMode && (
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={fetchData} disabled={loading}>
-                  {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                <Button variant="ghost" size="icon" className="h-6 w-6"
+                  onClick={fetchData} disabled={loading}>
+                  {loading
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <RefreshCw className="w-3 h-3" />
+                  }
                 </Button>
               )}
             </div>
           </div>
 
-          {/* Sub-line: source + latency + last fetched */}
+          {/* Sub-line */}
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-[10px] text-muted-foreground truncate flex-1">
               {endpoint?.name ?? 'Unknown'} · {widget.dataMapping.xAxis} → {widget.dataMapping.yAxis}
             </p>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {latency !== null && (
-                <span className={`text-[10px] font-mono ${
-                  latency > 2000 ? 'text-amber-500' : 'text-green-600'
-                }`}>
+                <span className={`text-[10px] font-mono ${latency > 2000 ? 'text-amber-500' : 'text-green-600'}`}>
                   {latency}ms
                 </span>
               )}
@@ -314,17 +313,29 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         </CardHeader>
 
         <CardContent className="px-4 pb-4 flex-1">
+          {/* ✅ Skeleton shimmer on first load */}
+          {loading && !rawData && <WidgetSkeleton />}
+
+          {/* Error state with retry */}
           {error && (
-            <div className="flex items-start gap-2 p-2.5 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20 mb-3">
-              <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-[11px] text-red-700 dark:text-red-400">{error}</p>
+            <div className="flex flex-col items-start gap-2 p-3 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-red-700 dark:text-red-400">{error}</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[11px] border-red-300 text-red-600 hover:bg-red-50"
+                onClick={fetchData}
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                Retry
+              </Button>
             </div>
           )}
-          {loading && !rawData && (
-            <div className="flex items-center justify-center h-[240px]">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
-          )}
+
           {!loading && !error && rawData && renderChart()}
           {!loading && !error && rawData?.length === 0 && (
             <div className="flex items-center justify-center h-[200px]">
@@ -333,6 +344,31 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* ✅ AlertDialog delete — no window.confirm */}
+      <AlertDialog open={deleteOpen} onOpenChange={(v: boolean) => !v && setDeleteOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{widget.title}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This widget will be permanently removed from the dashboard.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => {
+                removeWidget(widget.id)
+                toast.success('Widget removed')
+                setDeleteOpen(false)
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {!viewMode && (
         <WidgetEditDialog widget={widget} open={editOpen} onOpenChange={setEditOpen} />

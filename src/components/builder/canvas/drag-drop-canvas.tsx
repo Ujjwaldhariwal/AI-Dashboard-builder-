@@ -1,48 +1,50 @@
-"use client";
+"use client"
 
 // src/components/builder/canvas/drag-drop-canvas.tsx
 
-import { useState, useCallback } from "react";
+import { useState, useCallback } from "react"
 import {
-  DndContext,
-  DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  PointerSensor,
-  TouchSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
-import { useDashboardStore } from "@/store/builder-store";
-import { WidgetCard } from "./widget-card";
-import { WidgetConfigDialog } from "@/components/builder/widget-config-dialog";
-import { Widget } from "@/types/widget";
+  DndContext, DragEndEvent, DragOverlay, DragStartEvent,
+  PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
+} from "@dnd-kit/core"
+import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable"
+import { useDashboardStore } from "@/store/builder-store"
+import { WidgetCard } from "./widget-card"
+import { WidgetConfigDialog } from "@/components/builder/widget-config-dialog"
+import { Widget } from "@/types/widget"
 import {
-  LayoutDashboard,
-  Plus,
-  Wand2,
-  BarChart3,
-  TrendingUp,
-  PieChart,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { MagicPasteModal } from "@/components/builder/magic-paste-modal";
+  LayoutDashboard, Plus, Wand2,
+  BarChart3, TrendingUp, PieChart,
+  LayoutGrid, Square, Columns2,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { MagicPasteModal } from "@/components/builder/magic-paste-modal"
+
+type ColCount = 1 | 2 | 3
+
+const COL_CLASSES: Record<ColCount, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-1 lg:grid-cols-2',
+  3: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3',
+}
+
+const COL_ICONS = {
+  1: Square,
+  2: Columns2,
+  3: LayoutGrid,
+}
 
 interface DragDropCanvasProps {
-  viewMode?: boolean;
+  viewMode?: boolean
 }
 
 // ── Empty State ───────────────────────────────────────────────────────────────
 function EmptyCanvas({
-  onAddWidget,
-  onMagicBuild,
-  hasEndpoints,
+  onAddWidget, onMagicBuild, hasEndpoints,
 }: {
-  onAddWidget: () => void;
-  onMagicBuild: () => void;
-  hasEndpoints: boolean;
+  onAddWidget:  () => void
+  onMagicBuild: () => void
+  hasEndpoints: boolean
 }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
@@ -64,41 +66,31 @@ function EmptyCanvas({
       <h3 className="text-xl font-semibold mb-1.5">Your canvas is empty</h3>
       <p className="text-sm text-muted-foreground max-w-sm mb-6">
         {hasEndpoints
-          ? "Add a widget manually or use Magic Auto-Build to instantly generate charts from your API."
+          ? "Add a widget manually or use Magic Auto-Build to instantly generate charts."
           : "Connect an API first from API Config, then come back to add widgets."}
       </p>
 
       <div className="flex flex-col sm:flex-row items-center gap-3">
-        <Button
-          onClick={onAddWidget}
-          disabled={!hasEndpoints}
-          className="gap-2 min-w-[160px]"
-        >
-          <Plus className="w-4 h-4" />
-          Add Widget
+        <Button onClick={onAddWidget} disabled={!hasEndpoints} className="gap-2 min-w-[160px]">
+          <Plus className="w-4 h-4" />Add Widget
         </Button>
         <Button
-          variant="outline"
-          onClick={onMagicBuild}
-          disabled={!hasEndpoints}
+          variant="outline" onClick={onMagicBuild} disabled={!hasEndpoints}
           className="gap-2 min-w-[160px] border-purple-500/40 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
         >
-          <Wand2 className="w-4 h-4" />
-          Magic Auto-Build
+          <Wand2 className="w-4 h-4" />Magic Auto-Build
         </Button>
       </div>
 
       {!hasEndpoints && (
         <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1.5">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
-          No APIs connected yet —{" "}
-          <a href="/api-config" className="underline text-primary">
-            API Config
-          </a>
+          No APIs connected —{" "}
+          <a href="/api-config" className="underline text-primary">API Config</a>
         </p>
       )}
     </div>
-  );
+  )
 }
 
 // ── Add Widget Tile ───────────────────────────────────────────────────────────
@@ -113,51 +105,64 @@ function AddWidgetTile({ onClick }: { onClick: () => void }) {
       </div>
       <span className="text-xs font-medium">Add widget</span>
     </button>
-  );
+  )
+}
+
+// ── Layout Selector ───────────────────────────────────────────────────────────
+function LayoutSelector({ cols, onChange }: { cols: ColCount; onChange: (c: ColCount) => void }) {
+  return (
+    <div className="flex items-center gap-1 mb-4">
+      <span className="text-[11px] text-muted-foreground mr-1">Layout:</span>
+      {([1, 2, 3] as ColCount[]).map(n => {
+        const Icon = COL_ICONS[n]
+        return (
+          <button
+            key={n}
+            onClick={() => onChange(n)}
+            title={`${n} column${n > 1 ? 's' : ''}`}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+              cols === n
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted hover:bg-muted/80 text-muted-foreground'
+            }`}
+          >
+            <Icon className="w-3 h-3" />{n}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 // ── Main Canvas ───────────────────────────────────────────────────────────────
 export function DragDropCanvas({ viewMode = false }: DragDropCanvasProps) {
-  const { widgets, endpoints, currentDashboardId, reorderWidgets } =
-    useDashboardStore();
+  const { widgets, endpoints, currentDashboardId, reorderWidgets } = useDashboardStore()
 
-  const [activeWidget, setActiveWidget] = useState<Widget | null>(null);
-  const [addWidgetOpen, setAddWidgetOpen] = useState(false);
-  const [magicOpen, setMagicOpen] = useState(false);
+  const [activeWidget, setActiveWidget]   = useState<Widget | null>(null)
+  const [addWidgetOpen, setAddWidgetOpen] = useState(false)
+  const [magicOpen, setMagicOpen]         = useState(false)
+  const [cols, setCols]                   = useState<ColCount>(2)  // ✅ layout selector
 
-  const dashboardWidgets = widgets.filter(
-    (w) => w.dashboardId === currentDashboardId,
-  );
-  const hasEndpoints = endpoints.length > 0;
+  const dashboardWidgets = widgets.filter(w => w.dashboardId === currentDashboardId)
+  const hasEndpoints     = endpoints.length > 0
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 8 },
-    }),
-  );
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } }),
+  )
 
-  const handleDragStart = useCallback(
-    (event: DragStartEvent) => {
-      const found = dashboardWidgets.find((w) => w.id === event.active.id);
-      setActiveWidget(found ?? null);
-    },
-    [dashboardWidgets],
-  );
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const found = dashboardWidgets.find(w => w.id === event.active.id)
+    setActiveWidget(found ?? null)
+  }, [dashboardWidgets])
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      setActiveWidget(null);
-      if (!over || active.id === over.id || !currentDashboardId) return;
-      reorderWidgets(currentDashboardId, String(active.id), String(over.id));
-    },
-    [currentDashboardId, reorderWidgets],
-  );
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveWidget(null)
+    if (!over || active.id === over.id || !currentDashboardId) return
+    reorderWidgets(currentDashboardId, String(active.id), String(over.id))
+  }, [currentDashboardId, reorderWidgets])
 
-  // ── Empty states ──────────────────────────────────────────────────────────
   if (dashboardWidgets.length === 0 && !viewMode) {
     return (
       <>
@@ -166,50 +171,40 @@ export function DragDropCanvas({ viewMode = false }: DragDropCanvasProps) {
           onMagicBuild={() => setMagicOpen(true)}
           hasEndpoints={hasEndpoints}
         />
-        <WidgetConfigDialog
-          open={addWidgetOpen}
-          onOpenChange={setAddWidgetOpen}
-        />
-        <MagicPasteModal
-          isOpen={magicOpen}
-          onClose={() => setMagicOpen(false)}
-        />
+        <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
+        <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
       </>
-    );
+    )
   }
 
   if (dashboardWidgets.length === 0 && viewMode) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[40vh] text-center">
         <LayoutDashboard className="w-10 h-10 text-muted-foreground mb-3" />
-        <p className="text-sm text-muted-foreground">
-          No widgets on this dashboard yet.
-        </p>
+        <p className="text-sm text-muted-foreground">No widgets on this dashboard yet.</p>
       </div>
-    );
+    )
   }
 
-  // ── Canvas ────────────────────────────────────────────────────────────────
   return (
     <>
+      {/* ✅ Layout selector — hidden in viewMode */}
+      {!viewMode && (
+        <LayoutSelector cols={cols} onChange={setCols} />
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext
-          items={dashboardWidgets.map((w) => w.id)}
-          strategy={rectSortingStrategy}
-        >
-          {/* ✅ MAX 2 cols — gives charts breathing room */}
-          <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
-            {dashboardWidgets.map((widget) => (
+        <SortableContext items={dashboardWidgets.map(w => w.id)} strategy={rectSortingStrategy}>
+          <div className={`grid gap-5 ${COL_CLASSES[cols]}`}>
+            {dashboardWidgets.map(widget => (
               <WidgetCard key={widget.id} widget={widget} viewMode={viewMode} />
             ))}
-            {!viewMode && (
-              <AddWidgetTile onClick={() => setAddWidgetOpen(true)} />
-            )}
+            {!viewMode && <AddWidgetTile onClick={() => setAddWidgetOpen(true)} />}
           </div>
         </SortableContext>
 
@@ -222,11 +217,8 @@ export function DragDropCanvas({ viewMode = false }: DragDropCanvasProps) {
         </DragOverlay>
       </DndContext>
 
-      <WidgetConfigDialog
-        open={addWidgetOpen}
-        onOpenChange={setAddWidgetOpen}
-      />
+      <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
     </>
-  );
+  )
 }

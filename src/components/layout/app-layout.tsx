@@ -23,6 +23,8 @@ import { useAuthStore } from '@/store/auth-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
 import { NotificationBell } from '@/components/layout/notification-bell'
 import { MonitoringPanel } from '@/components/layout/monitoring-panel'
+import { OnboardingWizard }    from '@/components/layout/onboarding-wizard'
+import { KeyboardShortcuts }   from '@/components/layout/keyboard-shortcuts'
 import { useState, useRef, useEffect, useCallback } from 'react'
 
 interface AppLayoutProps {
@@ -497,6 +499,9 @@ const pageResults: SearchResult[] = (
           </>
         )}
       </AnimatePresence>
+
+      <OnboardingWizard />
+<KeyboardShortcuts />
     </div>
   )
 }
