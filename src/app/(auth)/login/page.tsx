@@ -1,5 +1,3 @@
-// Component: Page
-// src/app/(auth)/login/page.tsx
 'use client'
 
 import { useState } from 'react'
@@ -7,94 +5,200 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { BarChart3, Lock, Loader2 } from 'lucide-react'
+import { BarChart3, Lock, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/auth-store'
 
+// ── All known Supabase auth error messages ─────────────────────────────────
+const isInvalidCredentials = (msg: string) =>
+  msg.includes('Invalid login credentials') ||
+  msg.includes('invalid_credentials') ||
+  msg.includes('Invalid email or password') ||
+  msg.includes('Email not confirmed') ||   // treat unconfirmed as wrong creds
+  msg.toLowerCase().includes('invalid login')
+
+const isUserNotFound = (msg: string) =>
+  msg.includes('User not found') ||
+  msg.includes('user_not_found') ||
+  msg.includes('No user found')
+
+const isAlreadyRegistered = (msg: string) =>
+  msg.includes('already registered') ||
+  msg.includes('User already registered') ||
+  msg.includes('email_exists')
+
+const isRateLimit = (msg: string) =>
+  msg.includes('rate limit') ||
+  msg.includes('too many requests') ||
+  msg.includes('over_email_send_rate_limit')
+
 export default function LoginPage() {
-  const [empId, setEmpId] = useState('')
-  const [password, setPassword] = useState('')
+  const [empId, setEmpId]         = useState('')
+  const [password, setPassword]   = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [showPass, setShowPass]   = useState(false)
+  const [fieldError, setFieldError] = useState<{
+    empId?: string
+    password?: string
+    general?: string
+  }>({})
+
   const { checkSession } = useAuthStore()
   const supabase = createClient()
 
+  const clearErrors = () => setFieldError({})
+
+  // ── Validate inputs before touching Supabase ───────────────────────────
+  const validate = (): boolean => {
+    const errors: typeof fieldError = {}
+
+    if (!empId.trim()) {
+      errors.empId = 'Employee ID is required'
+    } else if (!/^[a-zA-Z0-9_-]+$/.test(empId.trim())) {
+      errors.empId = 'Employee ID can only contain letters, numbers, - and _'
+    }
+
+    if (!password) {
+      errors.password = 'Password is required'
+    } else if (password.length < 6) {
+      errors.password = `Password must be at least 6 characters (${6 - password.length} more needed)`
+    } else if (password.length > 72) {
+      errors.password = 'Password cannot exceed 72 characters'
+    }
+
+    setFieldError(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  // ── Main auth handler ──────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!empId.trim() || !password) {
-      toast.error('Please enter Employee ID and Password')
-      return
-    }
+    clearErrors()
+
+    if (!validate()) return
 
     setIsLoading(true)
     const email = `${empId.trim().toLowerCase()}@company.com`
 
     try {
-      // STEP 1: Try signing in
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      // ── ATTEMPT 1: Sign in ────────────────────────────────────────────
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({ email, password })
 
+      // ✅ Login succeeded
+      if (!signInError && signInData.session) {
+        toast.success('Welcome back!', { id: 'auth' })
+        await checkSession()
+        setTimeout(() => { window.location.href = '/workspaces' }, 300)
+        return
+      }
+
+      // ── Handle sign-in errors ─────────────────────────────────────────
       if (signInError) {
-        if (!signInError.message.includes('Invalid login')) {
-          // Network error, rate limit, etc.
-          throw signInError
+        if (isRateLimit(signInError.message)) {
+          throw new Error('Too many attempts. Please wait a minute and try again.')
         }
 
-        // STEP 2: "Invalid login" = new user. Try registering them.
-        toast.loading('First time login — setting up account...', { id: 'auth' })
+        // Wrong password for existing account
+        if (isInvalidCredentials(signInError.message) && !isUserNotFound(signInError.message)) {
+          // Check if user actually exists by attempting a dummy signUp
+          // Supabase returns "already registered" if email exists
+          const { error: probeError } = await supabase.auth.signUp({
+            email,
+            password: 'probe-only-not-used-x9z2',
+            options: { data: { emp_id: empId.trim().toUpperCase() } },
+          })
 
-        const { error: signUpError } = await supabase.auth.signUp({
+          if (probeError && isAlreadyRegistered(probeError.message)) {
+            // ✅ User EXISTS → wrong password
+            setFieldError({ password: 'Incorrect password. Please try again.' })
+            setIsLoading(false)
+            return
+          }
+
+          // User does NOT exist → first time login, register them
+          // Fall through to registration below
+        }
+
+        // Network / server errors
+        if (
+          !isInvalidCredentials(signInError.message) &&
+          !isUserNotFound(signInError.message)
+        ) {
+          throw new Error(signInError.message)
+        }
+      }
+
+      // ── ATTEMPT 2: Register new employee ─────────────────────────────
+      toast.loading('First time login – setting up your account...', { id: 'auth' })
+
+      const { data: signUpData, error: signUpError } =
+        await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              emp_id: empId.trim().toUpperCase(),
-              name: `Employee ${empId.trim().toUpperCase()}`,
+              emp_id:  empId.trim().toUpperCase(),
+              name:    `Employee ${empId.trim().toUpperCase()}`,
             },
           },
         })
 
-        if (signUpError) {
-          if (signUpError.message.includes('already registered')) {
-            // Account exists → they just typed wrong password
-            throw new Error('Incorrect password. Please try again.')
-          }
-          throw signUpError
+      if (signUpError) {
+        if (isAlreadyRegistered(signUpError.message)) {
+          // Account exists but wrong password confirmed
+          setFieldError({ password: 'Incorrect password. Please try again.' })
+          setIsLoading(false)
+          toast.dismiss('auth')
+          return
         }
-
-        // STEP 3: signUp alone won't create a session if email confirmation
-        // is ON in Supabase. So we ALWAYS sign in again right after signUp
-        // to guarantee a real session cookie is set.
-        const { error: signInAfterSignUpError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
-
-        if (signInAfterSignUpError) {
-          // Extremely rare edge case — account was created but login failed
-          throw new Error('Account created but login failed. Please try signing in again.')
+        if (isRateLimit(signUpError.message)) {
+          throw new Error('Too many attempts. Please wait a minute and try again.')
         }
-
-        toast.success('Account created & signed in!', { id: 'auth' })
-      } else {
-        toast.success('Login successful!', { id: 'auth' })
+        throw signUpError
       }
 
-      // STEP 4: Session is now guaranteed. Sync Zustand store.
-      await checkSession()
+      // ── ATTEMPT 3: Sign in right after sign up ────────────────────────
+      // Required when Supabase email confirmation is disabled
+      const { data: finalSignIn, error: finalError } =
+        await supabase.auth.signInWithPassword({ email, password })
 
-      // STEP 5: Redirect. Small delay so the cookie write fully completes.
-      setTimeout(() => {
-        window.location.href = '/workspaces'
-      }, 300)
+      if (finalError) {
+        // Edge case: email confirmation is ON in Supabase dashboard
+        if (
+          finalError.message.includes('Email not confirmed') ||
+          finalError.message.includes('email_not_confirmed')
+        ) {
+          throw new Error(
+            'A confirmation email has been sent. Please check your inbox, then sign in again.',
+          )
+        }
+        throw new Error('Account created but sign-in failed. Please try logging in again.')
+      }
+
+      if (!finalSignIn.session) {
+        throw new Error(
+          'Account registered. Please check your email to confirm, then sign in.',
+        )
+      }
+
+      toast.success('Account created & signed in!', { id: 'auth' })
+      await checkSession()
+      setTimeout(() => { window.location.href = '/workspaces' }, 300)
 
     } catch (err: any) {
-      console.error('Auth error:', err)
-      toast.error(err.message || 'Failed to authenticate', { id: 'auth' })
+      console.error('[Auth]', err)
+      toast.dismiss('auth')
+      // Show general errors that aren't field-specific
+      if (!fieldError.password && !fieldError.empId) {
+        setFieldError({ general: err.message || 'Authentication failed. Please try again.' })
+      }
       setIsLoading(false)
     }
-    // NOTE: No finally block — we intentionally keep isLoading=true
-    // during the redirect so the spinner stays visible until page change.
   }
+
+  const passShort = password.length > 0 && password.length < 6
 
   return (
     <Card className="w-full max-w-md mx-4 shadow-2xl border-muted/50 bg-background/60 backdrop-blur-xl">
@@ -109,38 +213,88 @@ export default function LoginPage() {
       </CardHeader>
 
       <CardContent>
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div className="space-y-2 text-left">
+        <form onSubmit={handleLogin} className="space-y-5" noValidate>
+
+          {/* ── General error banner ────────────────────────────────────── */}
+          {fieldError.general && (
+            <div className="flex items-start gap-2.5 p-3 rounded-lg border border-red-200 bg-red-50/60 dark:border-red-900 dark:bg-red-950/20">
+              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 dark:text-red-400">{fieldError.general}</p>
+            </div>
+          )}
+
+          {/* ── Employee ID ──────────────────────────────────────────────── */}
+          <div className="space-y-1.5 text-left">
             <Label htmlFor="empId">Employee ID</Label>
             <Input
               id="empId"
               placeholder="e.g. EMP001"
               value={empId}
-              onChange={(e) => setEmpId(e.target.value)}
-              className="h-11 bg-background/50"
+              onChange={e => { setEmpId(e.target.value); clearErrors() }}
+              className={`h-11 bg-background/50 ${
+                fieldError.empId ? 'border-red-400 focus-visible:ring-red-400' : ''
+              }`}
               autoComplete="username"
               disabled={isLoading}
+              autoFocus
             />
+            {fieldError.empId && (
+              <p className="text-[11px] text-red-500 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {fieldError.empId}
+              </p>
+            )}
           </div>
 
-          <div className="space-y-2 text-left">
+          {/* ── Password ─────────────────────────────────────────────────── */}
+          <div className="space-y-1.5 text-left">
             <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="h-11 bg-background/50"
-              autoComplete="current-password"
-              disabled={isLoading}
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPass ? 'text' : 'password'}
+                placeholder="Min 6 characters"
+                value={password}
+                onChange={e => { setPassword(e.target.value); clearErrors() }}
+                className={`h-11 bg-background/50 pr-10 ${
+                  fieldError.password || passShort
+                    ? 'border-red-400 focus-visible:ring-red-400'
+                    : ''
+                }`}
+                autoComplete="current-password"
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                tabIndex={-1}
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Field-level password error */}
+            {fieldError.password && (
+              <p className="text-[11px] text-red-500 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                {fieldError.password}
+              </p>
+            )}
+
+            {/* Live counter — only show when typing, no other error showing */}
+            {passShort && !fieldError.password && (
+              <p className="text-[11px] text-amber-500">
+                {6 - password.length} more character{6 - password.length !== 1 ? 's' : ''} needed
+              </p>
+            )}
           </div>
 
+          {/* ── Submit ───────────────────────────────────────────────────── */}
           <Button
             type="submit"
-            className="w-full h-11 text-base font-medium shadow-md transition-all hover:shadow-lg"
-            disabled={isLoading}
+            className="w-full h-11 text-base font-medium shadow-md"
+            disabled={isLoading || passShort}
           >
             {isLoading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -152,8 +306,8 @@ export default function LoginPage() {
             )}
           </Button>
 
-          <p className="text-xs text-center text-muted-foreground pt-4">
-            New Employee IDs will be automatically registered for this POC.
+          <p className="text-xs text-center text-muted-foreground pt-2">
+            New Employee IDs are automatically registered on first login.
           </p>
         </form>
       </CardContent>
