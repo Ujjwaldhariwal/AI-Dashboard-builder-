@@ -9,6 +9,7 @@ import {
   Settings, LogOut, User, Search,
   Activity,
 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -25,19 +26,21 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const pathname  = usePathname()
-  const router    = useRouter()
+  const pathname = usePathname()
+  const router   = useRouter()
   const { endpoints, dashboards, widgets, currentDashboardId } = useDashboardStore()
   const { logout } = useAuthStore()
   const { logs, getErrorCount } = useMonitoringStore()
 
   const [monitoringOpen, setMonitoringOpen] = useState(false)
 
+  // ✅ Monitoring added — shows when dashboard is active
   const navigation = [
-    { name: 'Dashboards', href: '/workspaces', icon: LayoutDashboard, show: true },
-    { name: 'Builder',    href: '/builder',    icon: FolderTree,       show: !!currentDashboardId },
-    { name: 'API Config', href: '/api-config', icon: Database,         show: !!currentDashboardId },
-    { name: 'Settings',   href: '/settings',   icon: Settings,         show: true },
+    { name: 'Dashboards', href: '/workspaces',  icon: LayoutDashboard, show: true },
+    { name: 'Builder',    href: '/builder',      icon: FolderTree,      show: !!currentDashboardId },
+    { name: 'API Config', href: '/api-config',   icon: Database,        show: !!currentDashboardId },
+    { name: 'Monitoring', href: '/monitoring',   icon: Activity,        show: !!currentDashboardId },
+    { name: 'Settings',   href: '/settings',     icon: Settings,        show: true },
   ]
 
   const handleLogout = () => {
@@ -45,12 +48,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     router.push('/login')
   }
 
-  const currentDashboard   = dashboards.find(d => d.id === currentDashboardId)
-  const activeWidgetCount  = currentDashboardId
+  const currentDashboard  = dashboards.find(d => d.id === currentDashboardId)
+  const activeWidgetCount = currentDashboardId
     ? widgets.filter(w => w.dashboardId === currentDashboardId).length
     : widgets.length
-  const errorCount         = getErrorCount()
-  const recentLogCount     = logs.length
+  const errorCount        = getErrorCount()
+  const recentLogCount    = logs.length
 
   return (
     <div className="min-h-screen bg-background">
@@ -80,7 +83,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* ✅ Monitoring button with live error badge */}
+
+            {/* Monitoring button — opens slide-over panel */}
             <Button
               variant="ghost"
               size="icon"
@@ -126,22 +130,32 @@ export function AppLayout({ children }: AppLayoutProps) {
                   >
                     <Icon className="w-4 h-4 mr-2.5" />
                     {item.name}
+                    {/* ✅ Error badge on Monitoring nav item */}
+                    {item.name === 'Monitoring' && errorCount > 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="ml-auto text-[9px] px-1.5 h-4"
+                      >
+                        {errorCount}
+                      </Badge>
+                    )}
                   </Button>
                 </Link>
               )
             })}
           </nav>
 
-          <div className="p-3 mt-6 border-t">
+          {/* Quick stats */}
+          <div className="p-3 mt-4 border-t">
             <h3 className="text-[10px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
               Quick Stats
             </h3>
             <div className="space-y-1.5">
               {[
-                { label: 'Active APIs',  value: endpoints.length },
-                { label: 'Dashboards',   value: dashboards.length },
-                { label: 'Widgets',      value: activeWidgetCount },
-                { label: 'Log entries',  value: recentLogCount },
+                { label: 'Active APIs', value: endpoints.length },
+                { label: 'Dashboards',  value: dashboards.length },
+                { label: 'Widgets',     value: activeWidgetCount },
+                { label: 'Log entries', value: recentLogCount },
               ].map(stat => (
                 <div key={stat.label} className="flex justify-between text-xs">
                   <span className="text-muted-foreground">{stat.label}</span>
@@ -149,7 +163,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
               ))}
               {errorCount > 0 && (
-                <div className="flex justify-between text-xs">
+                <div className="flex justify-between text-xs items-center">
                   <span className="text-red-500">Errors</span>
                   <Badge variant="destructive" className="text-[9px] px-1.5 h-4">
                     {errorCount}
@@ -157,6 +171,20 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
               )}
             </div>
+
+            {/* ✅ Quick link to full monitoring page */}
+            {currentDashboardId && (
+              <Link href="/monitoring" className="block mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-7 text-xs gap-1.5"
+                >
+                  <Activity className="w-3 h-3" />
+                  View Full Monitoring
+                </Button>
+              </Link>
+            )}
           </div>
         </aside>
 
@@ -166,11 +194,10 @@ export function AppLayout({ children }: AppLayoutProps) {
         </main>
       </div>
 
-      {/* ✅ Monitoring slide-over panel */}
+      {/* Monitoring slide-over panel */}
       <AnimatePresence>
         {monitoringOpen && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -178,7 +205,6 @@ export function AppLayout({ children }: AppLayoutProps) {
               className="fixed inset-0 z-40 bg-black/20"
               onClick={() => setMonitoringOpen(false)}
             />
-            {/* Panel */}
             <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
@@ -194,6 +220,3 @@ export function AppLayout({ children }: AppLayoutProps) {
     </div>
   )
 }
-
-// ── Need these imports for AnimatePresence/motion ─────────────────────────────
-import { motion, AnimatePresence } from 'framer-motion'
