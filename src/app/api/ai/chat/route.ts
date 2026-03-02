@@ -1,61 +1,56 @@
-// Module: AI Chat API — supports create_widget + update_style (Layer 3 only)
+// Module: AI Chat API — Gemini 1.5 Flash + style/create modes
 // src/app/api/ai/chat/route.ts
 
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export async function POST(req: NextRequest) {
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
     const { messages, context } = await req.json()
 
     const isStyleMode = !!context?.styleOnlyMode && !!context?.selectedWidget
-
-    // ── System prompt switches based on mode ──────────────────────
     const systemPrompt = isStyleMode
       ? buildStylePrompt(context)
       : buildCreatePrompt(context)
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ],
-      max_tokens: 1024,
-      temperature: 0.3,
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      systemInstruction: systemPrompt,
     })
 
-    const content = completion.choices[0]?.message?.content ?? ''
+    const history = messages.slice(0, -1).map((m: any) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }))
+    const lastMessage = messages[messages.length - 1]
 
-    // ── Parse widget creation block ────────────────────────────────
+    const chat    = model.startChat({ history })
+    const result  = await chat.sendMessage(lastMessage.content)
+    const content = result.response.text()
+
+    // Parse widget creation block
     let widgetAction = null
     const widgetMatch = content.match(/```widget\n([\s\S]*?)\n```/)
     if (widgetMatch) {
       try { widgetAction = JSON.parse(widgetMatch[1]) } catch {}
     }
 
-    // ── Parse style update block ───────────────────────────────────
+    // Parse style update block
     let styleAction = null
     const styleMatch = content.match(/```style\n([\s\S]*?)\n```/)
     if (styleMatch) {
       try {
         const parsed = JSON.parse(styleMatch[1])
-        // Enforce widgetId always comes from context, never from AI
         styleAction = {
           ...parsed,
           action:   'update_style',
-          widgetId: context.selectedWidget.id, // locked — AI cannot override
+          widgetId: context.selectedWidget?.id,
         }
       } catch {}
     }
 
-    return NextResponse.json({
-      message: content,
-      widgetAction,
-      styleAction,
-      usage: completion.usage,
-    })
+    return NextResponse.json({ message: content, widgetAction, styleAction })
   } catch (err: any) {
     console.error('[AI Chat]', err)
     return NextResponse.json(
@@ -65,7 +60,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// ── Style-only prompt — Layer 3 strictly ──────────────────────────
+// ── Style-only prompt — Layer 3 strictly ─────────────────────
 function buildStylePrompt(context: any): string {
   const w = context.selectedWidget
   return `You are a chart styling AI for Analytics AI Dashboard Builder.
@@ -84,14 +79,14 @@ You are styling this widget:
 - Current style: ${JSON.stringify(w.currentStyle, null, 2)}
 
 Editable style fields:
-- colors: string[]          — array of hex colors for chart elements
-- tooltipBg: string         — tooltip background hex color
-- tooltipBorder: string     — tooltip border hex color
-- barRadius: number         — bar corner radius in px (bar/horizontal-bar only)
-- showLegend: boolean       — show or hide the legend
-- showGrid: boolean         — show or hide the grid lines
-- labelFormat: string       — label format hint (e.g. "currency", "percent")
-- customCSS: string         — extra CSS string for advanced overrides
+- colors: string[]        — array of hex colors for chart elements
+- tooltipBg: string       — tooltip background hex color
+- tooltipBorder: string   — tooltip border hex color
+- barRadius: number       — bar corner radius in px (bar/horizontal-bar only)
+- showLegend: boolean     — show or hide the legend
+- showGrid: boolean       — show or hide the grid lines
+- labelFormat: string     — label format hint (e.g. "currency", "percent")
+- customCSS: string       — extra CSS string for advanced overrides
 
 When the user asks to change a style property, respond with a \`\`\`style block:
 \`\`\`style
@@ -104,11 +99,11 @@ When the user asks to change a style property, respond with a \`\`\`style block:
 }
 \`\`\`
 
-Only include fields that actually change. Keep your explanation brief.
-Always show a color preview by listing hex codes in your message.`
+Only include fields that actually change. Keep explanation brief.
+Always show hex codes in your message so user can preview colors.`
 }
 
-// ── Widget creation prompt ─────────────────────────────────────────
+// ── Widget creation prompt ────────────────────────────────────
 function buildCreatePrompt(context: any): string {
   return `You are an expert data visualization AI assistant for Analytics AI Dashboard Builder.
 

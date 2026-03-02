@@ -1,6 +1,6 @@
-// Component: ChartSuggester
 'use client'
 
+// Module: Chart Suggester — AI suggestions with style seed support
 // src/components/builder/ai-assistant/chart-suggester.tsx
 
 import { useState } from 'react'
@@ -31,7 +31,6 @@ const CHART_ICONS: Record<ChartType, any> = {
 }
 
 interface ChartSuggesterProps {
-  /** If provided, only suggest for this endpoint. Otherwise uses first. */
   endpointId?: string
 }
 
@@ -48,10 +47,7 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
     : endpoints[0]
 
   const handleAnalyze = async () => {
-    if (!endpoint) {
-      toast.error('No API connected. Add one in API Config.')
-      return
-    }
+    if (!endpoint) { toast.error('No API connected. Add one in API Config.'); return }
 
     setLoading(true)
     setSuggestions([])
@@ -89,16 +85,17 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
       return
     }
 
+    // Widget created with default style — AI can customize it later via chatbot
     addWidget({
-      title: suggestion.title,
-      type: suggestion.type,
+      title:      suggestion.title,
+      type:       suggestion.type,
       endpointId: endpoint.id,
-      xAxis: suggestion.xAxis,
-      yAxis: suggestion.yAxis,
+      xAxis:      suggestion.xAxis,
+      yAxis:      suggestion.yAxis,
     })
 
     setAddedIds(prev => new Set(prev).add(index))
-    toast.success(`"${suggestion.title}" added!`)
+    toast.success(`"${suggestion.title}" added! Select it on the canvas to style with AI.`)
   }
 
   return (
@@ -118,8 +115,7 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
           )}
         </div>
         <Button
-          variant="outline"
-          size="sm"
+          variant="outline" size="sm"
           onClick={handleAnalyze}
           disabled={loading || !endpoint}
           className="h-7 text-xs gap-1.5"
@@ -135,14 +131,12 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
         </Button>
       </div>
 
-      {/* No endpoint */}
       {!endpoint && (
         <p className="text-xs text-muted-foreground text-center py-4">
           Connect an API in API Config to get suggestions.
         </p>
       )}
 
-      {/* Suggestions list */}
       <AnimatePresence>
         {suggestions.map((s, i) => {
           const Icon    = CHART_ICONS[s.type] ?? BarChart3
@@ -162,20 +156,12 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-xs font-semibold truncate">{s.title}</p>
-                  <Badge variant="outline" className="text-[9px] px-1.5 py-0">
-                    {s.type}
-                  </Badge>
+                  <Badge variant="outline" className="text-[9px] px-1.5 py-0">{s.type}</Badge>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                  {s.reason}
-                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{s.reason}</p>
                 <div className="flex gap-1.5 mt-1.5">
-                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-                    X: {s.xAxis}
-                  </span>
-                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">
-                    Y: {s.yAxis}
-                  </span>
+                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">X: {s.xAxis}</span>
+                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono">Y: {s.yAxis}</span>
                 </div>
               </div>
               <Button

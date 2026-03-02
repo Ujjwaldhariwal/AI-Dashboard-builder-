@@ -1,5 +1,6 @@
 'use client'
 
+// Module: Builder Page — AI overlay + selectedWidgetId for style scoping
 // src/app/(builder)/builder/page.tsx
 
 import { useEffect, useState } from 'react'
@@ -15,19 +16,15 @@ import { ChartSuggester } from '@/components/builder/ai-assistant/chart-suggeste
 import { toast } from 'sonner'
 import {
   Plus, Settings2, Eye, Database, FolderKanban,
-  Download, Wand2, Sparkles, ChevronRight, ChevronLeft,
-  LayoutGrid, Bot, Circle,
+  Download, Wand2, Sparkles, X, Bot,
+  LayoutGrid, Circle, Minimize2, Maximize2,
 } from 'lucide-react'
 import Link from 'next/link'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { buildDashboardConfig, slugifyDashboardName } from '@/lib/code-generator/config-builder'
 import { generateProjectFromConfig } from '@/lib/code-generator/template-generator'
 import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export default function BuilderPage() {
   const router = useRouter()
@@ -39,9 +36,11 @@ export default function BuilderPage() {
   const [addWidgetOpen, setAddWidgetOpen]   = useState(false)
   const [magicOpen, setMagicOpen]           = useState(false)
   const [exporting, setExporting]           = useState(false)
-  const [aiPanelOpen, setAiPanelOpen]       = useState(false)
+  const [aiOpen, setAiOpen]                 = useState(false)
+  const [aiMinimized, setAiMinimized]       = useState(false)
   const [lastSavedCount, setLastSavedCount] = useState(0)
   const [unsaved, setUnsaved]               = useState(false)
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null)  // Phase 2
 
   useEffect(() => {
     if (!currentDashboardId && dashboards.length > 0) {
@@ -52,10 +51,12 @@ export default function BuilderPage() {
   const currentDash = dashboards.find(d => d.id === currentDashboardId)
   const widgets     = currentDashboardId ? getWidgetsByDashboard(currentDashboardId) : []
 
-  // Track unsaved changes — any widget add/remove marks dirty
   useEffect(() => {
     if (widgets.length !== lastSavedCount) setUnsaved(true)
   }, [widgets.length])
+
+  // Deselect widget when clicking canvas background
+  const handleCanvasClick = () => setSelectedWidgetId(null)
 
   const handleExport = async () => {
     if (!currentDash)    { toast.error('No active dashboard'); return }
@@ -75,7 +76,6 @@ export default function BuilderPage() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
       toast.success('Export ready!', { id: 'export' })
-      // Mark as saved after export
       setLastSavedCount(widgets.length)
       setUnsaved(false)
     } catch (err: any) {
@@ -85,7 +85,7 @@ export default function BuilderPage() {
     }
   }
 
-  // ── No dashboard ──────────────────────────────────────────────────────────
+  // ── No dashboard ──────────────────────────────────────────────
   if (dashboards.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] p-6">
@@ -94,26 +94,24 @@ export default function BuilderPage() {
             <FolderKanban className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-xl font-bold mb-2">No Dashboard Yet</h2>
-          <p className="text-sm text-muted-foreground mb-5">
-            Create one from Workspaces first.
-          </p>
+          <p className="text-sm text-muted-foreground mb-5">Create one from Workspaces first.</p>
           <Button onClick={() => router.push('/workspaces')}>Go to Workspaces</Button>
         </div>
       </div>
     )
   }
 
-  // ── No APIs ───────────────────────────────────────────────────────────────
+  // ── No APIs ───────────────────────────────────────────────────
   if (endpoints.length === 0 && widgets.length === 0) {
     return (
       <div className="p-6">
         <BuilderHeader
           currentDash={currentDash} widgets={widgets} endpoints={endpoints}
-          exporting={exporting} aiPanelOpen={aiPanelOpen} unsaved={false}
+          exporting={exporting} aiOpen={aiOpen} unsaved={false}
           onAddWidget={() => setAddWidgetOpen(true)}
           onMagicOpen={() => setMagicOpen(true)}
           onExport={handleExport}
-          onToggleAI={() => setAiPanelOpen(v => !v)}
+          onToggleAI={() => { setAiOpen(true); setAiMinimized(false) }}
         />
         <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
           <div className="text-center max-w-sm px-6">
@@ -129,13 +127,11 @@ export default function BuilderPage() {
                 onClick={() => setMagicOpen(true)}
                 className="bg-gradient-to-r from-purple-600 to-blue-600 text-white"
               >
-                <Wand2 className="w-4 h-4 mr-2" />
-                Magic Auto-Build
+                <Wand2 className="w-4 h-4 mr-2" />Magic Auto-Build
               </Button>
               <Link href="/api-config">
                 <Button variant="outline" className="w-full">
-                  <Settings2 className="w-4 h-4 mr-2" />
-                  Configure APIs Manually
+                  <Settings2 className="w-4 h-4 mr-2" />Configure APIs Manually
                 </Button>
               </Link>
             </div>
@@ -147,78 +143,116 @@ export default function BuilderPage() {
     )
   }
 
-  // ── Main Builder ──────────────────────────────────────────────────────────
+  // ── Main Builder ──────────────────────────────────────────────
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
 
-      {/* Canvas area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-6 pt-5 pb-3 border-b bg-card/80 backdrop-blur flex-shrink-0">
-          <BuilderHeader
-            currentDash={currentDash} widgets={widgets} endpoints={endpoints}
-            exporting={exporting} aiPanelOpen={aiPanelOpen} unsaved={unsaved}
-            onAddWidget={() => setAddWidgetOpen(true)}
-            onMagicOpen={() => setMagicOpen(true)}
-            onExport={handleExport}
-            onToggleAI={() => setAiPanelOpen(v => !v)}
-          />
-        </div>
-        <div className="flex-1 overflow-y-auto p-6">
-          <DragDropCanvas />
-        </div>
+      {/* Header */}
+      <div className="px-6 pt-5 pb-3 border-b bg-card/80 backdrop-blur flex-shrink-0">
+        <BuilderHeader
+          currentDash={currentDash} widgets={widgets} endpoints={endpoints}
+          exporting={exporting} aiOpen={aiOpen} unsaved={unsaved}
+          onAddWidget={() => setAddWidgetOpen(true)}
+          onMagicOpen={() => setMagicOpen(true)}
+          onExport={handleExport}
+          onToggleAI={() => { setAiOpen(v => !v); setAiMinimized(false) }}
+        />
       </div>
 
-      {/* AI Side Panel */}
-      <div className={`flex-shrink-0 border-l bg-card transition-all duration-300 ease-in-out overflow-hidden ${
-        aiPanelOpen ? 'w-[380px]' : 'w-0'
-      }`}>
-        {aiPanelOpen && (
-          <div className="w-[380px] h-full flex flex-col">
-            <Tabs defaultValue="chat" className="flex flex-col h-full">
-              <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-                    <Sparkles className="w-3.5 h-3.5 text-white" />
-                  </div>
-                  <span className="text-sm font-semibold">AI Assistant</span>
+      {/* Full-width canvas — never shrinks */}
+      <div className="flex-1 overflow-y-auto p-6" onClick={handleCanvasClick}>
+        <DragDropCanvas
+          selectedWidgetId={selectedWidgetId}
+          onSelectWidget={setSelectedWidgetId}
+        />
+      </div>
+
+      {/* ── Floating AI Overlay ─────────────────────────────────── */}
+      <AnimatePresence>
+        {aiOpen && (
+          <motion.div
+            key="ai-overlay"
+            initial={{ opacity: 0, y: 24, scale: 0.97 }}
+            animate={aiMinimized
+              ? { opacity: 1, y: 0, scale: 1, height: 'auto' }
+              : { opacity: 1, y: 0, scale: 1 }
+            }
+            exit={{ opacity: 0, y: 24, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            className="fixed bottom-5 right-5 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-card"
+            style={{ width: 380, height: aiMinimized ? 'auto' : 560 }}
+          >
+            {/* Overlay header */}
+            <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gradient-to-r from-blue-600/10 to-purple-600/10 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
+                  <Sparkles className="w-3 h-3 text-white" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <TabsList className="h-7">
-                    <TabsTrigger value="chat" className="text-[11px] h-6 px-2.5 gap-1">
-                      <Bot className="w-3 h-3" />Chat
+                <span className="text-sm font-semibold">AI Assistant</span>
+                {selectedWidgetId && !aiMinimized && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    Styling widget
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <Tabs defaultValue="chat">
+                  <TabsList className="h-6">
+                    <TabsTrigger value="chat" className="text-[10px] h-5 px-2 gap-1">
+                      <Bot className="w-2.5 h-2.5" />Chat
                     </TabsTrigger>
-                    <TabsTrigger value="suggest" className="text-[11px] h-6 px-2.5 gap-1">
-                      <LayoutGrid className="w-3 h-3" />Suggest
+                    <TabsTrigger value="suggest" className="text-[10px] h-5 px-2 gap-1">
+                      <LayoutGrid className="w-2.5 h-2.5" />Suggest
                     </TabsTrigger>
                   </TabsList>
-                  <Button variant="ghost" size="icon" className="h-7 w-7"
-                    onClick={() => setAiPanelOpen(false)}>
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
-                </div>
+                </Tabs>
+                <Button
+                  variant="ghost" size="icon" className="h-6 w-6"
+                  onClick={() => setAiMinimized(v => !v)}
+                >
+                  {aiMinimized
+                    ? <Maximize2 className="w-3 h-3" />
+                    : <Minimize2 className="w-3 h-3" />
+                  }
+                </Button>
+                <Button
+                  variant="ghost" size="icon" className="h-6 w-6"
+                  onClick={() => setAiOpen(false)}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
               </div>
-              <TabsContent value="chat" className="flex-1 m-0 overflow-hidden">
-                <div className="h-full"><ConfigChatbot /></div>
-              </TabsContent>
-              <TabsContent value="suggest" className="flex-1 m-0 overflow-y-auto p-4">
-                <ChartSuggester />
-              </TabsContent>
-            </Tabs>
-          </div>
-        )}
-      </div>
+            </div>
 
-      {/* AI toggle tab */}
-      {!aiPanelOpen && (
-        <button
-          onClick={() => setAiPanelOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 z-50 flex items-center gap-1.5 bg-gradient-to-b from-blue-600 to-purple-600 text-white text-xs font-medium px-2 py-4 rounded-l-xl shadow-lg hover:from-blue-700 hover:to-purple-700 transition-all"
-          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+            {/* Overlay body */}
+            {!aiMinimized && (
+              <Tabs defaultValue="chat" className="flex flex-col h-[calc(560px-44px)]">
+                <TabsContent value="chat" className="flex-1 m-0 overflow-hidden h-full">
+                  <ConfigChatbot
+                    selectedWidgetId={selectedWidgetId}
+                    onClose={() => setAiOpen(false)}
+                  />
+                </TabsContent>
+                <TabsContent value="suggest" className="flex-1 m-0 overflow-y-auto p-4">
+                  <ChartSuggester />
+                </TabsContent>
+              </Tabs>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Floating trigger button (when closed) ──────────────── */}
+      {!aiOpen && (
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          onClick={() => { setAiOpen(true); setAiMinimized(false) }}
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-medium px-4 py-2.5 rounded-2xl shadow-lg transition-all"
         >
-          <Sparkles className="w-3.5 h-3.5 rotate-90" />
+          <Sparkles className="w-4 h-4" />
           AI Assistant
-          <ChevronLeft className="w-3 h-3 rotate-90" />
-        </button>
+        </motion.button>
       )}
 
       <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
@@ -227,16 +261,16 @@ export default function BuilderPage() {
   )
 }
 
-// ── Builder Header ────────────────────────────────────────────────────────────
+// ── Builder Header ─────────────────────────────────────────────
 function BuilderHeader({
   currentDash, widgets, endpoints, exporting,
-  aiPanelOpen, unsaved, onAddWidget, onMagicOpen, onExport, onToggleAI,
+  aiOpen, unsaved, onAddWidget, onMagicOpen, onExport, onToggleAI,
 }: {
   currentDash: any
   widgets:     any[]
   endpoints:   any[]
   exporting:   boolean
-  aiPanelOpen: boolean
+  aiOpen:      boolean
   unsaved:     boolean
   onAddWidget: () => void
   onMagicOpen: () => void
@@ -254,7 +288,6 @@ function BuilderHeader({
           <Badge variant="outline" className="text-[10px]">
             {endpoints.length} API{endpoints.length !== 1 ? 's' : ''}
           </Badge>
-          {/* Unsaved indicator */}
           {unsaved && (
             <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
               <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
@@ -297,15 +330,14 @@ function BuilderHeader({
           <Plus className="w-3.5 h-3.5 mr-1.5" />Add Widget
         </Button>
         <Button
-          size="sm"
-          onClick={onToggleAI}
-          className={aiPanelOpen
+          size="sm" onClick={onToggleAI}
+          className={aiOpen
             ? 'bg-purple-600 hover:bg-purple-700 text-white gap-1.5'
             : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white gap-1.5'
           }
         >
           <Sparkles className="w-3.5 h-3.5" />
-          {aiPanelOpen ? 'Close AI' : 'AI Assistant'}
+          {aiOpen ? 'Close AI' : 'AI Assistant'}
         </Button>
       </div>
     </div>
