@@ -1,7 +1,5 @@
-'use client'
-
-import { AppLayout } from '@/components/layout/app-layout'
-
+// Component: Layout
+// src/app/(viewer)/layout.tsx
 export default function ViewerLayout({
   children,
 }: {

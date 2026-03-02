@@ -1,5 +1,7 @@
 'use client'
 
+// Component: AnnotationLayer
+
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MessageCircle, X, Check } from 'lucide-react'

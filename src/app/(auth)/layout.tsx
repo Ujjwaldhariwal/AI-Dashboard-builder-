@@ -1,3 +1,4 @@
+// Component: Layout
 export default function AuthLayout({
   children,
 }: {

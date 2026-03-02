@@ -1,6 +1,13 @@
 'use client'
 
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from 'recharts'
+import {
+  CHART_COLORS, getChartHeight,
+  getTickInterval, getBottomMargin,
+} from './chart-registry'
 
 interface ModernAreaChartProps {
   data: any[]
@@ -9,51 +16,89 @@ interface ModernAreaChartProps {
   title?: string
 }
 
-export function ModernAreaChart({ data, xField, yField, title }: ModernAreaChartProps) {
-  const chartData = data.map((item, index) => ({
-    name: item[xField] || `Item ${index + 1}`,
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-card border rounded-lg shadow-lg p-2.5 text-xs max-w-[200px]">
+      <p className="font-medium mb-1 text-foreground truncate">{label}</p>
+      {payload.map((e: any, i: number) => (
+        <p key={i} style={{ color: e.stroke }}>
+          {e.name}: <span className="font-semibold">{e.value?.toLocaleString()}</span>
+        </p>
+      ))}
+    </div>
+  )
+}
+
+export function ModernAreaChart({ data, xField, yField }: ModernAreaChartProps) {
+  const chartData = data.map((item, i) => ({
+    name: String(item[xField] ?? `#${i + 1}`).slice(0, 18),
     value: parseFloat(item[yField]) || 0,
   }))
 
+  const h            = getChartHeight(chartData.length)
+  const interval     = getTickInterval(chartData.length)
+  const bottomMargin = getBottomMargin(chartData.length)
+  const rotate       = chartData.length > 8
+  const gradId       = `area-grad-${yField.replace(/\W/g, '')}`
+
   return (
-    <div className="w-full h-full">
+    <div className="w-full" style={{ height: h }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <AreaChart
+          data={chartData}
+          margin={{ top: 8, right: 12, left: 0, bottom: bottomMargin }}
+        >
           <defs>
-            <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="hsl(221.2 83.2% 53.3%)" stopOpacity={0.8}/>
-              <stop offset="95%" stopColor="hsl(221.2 83.2% 53.3%)" stopOpacity={0}/>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%"  stopColor={CHART_COLORS[0]} stopOpacity={0.4} />
+              <stop offset="95%" stopColor={CHART_COLORS[0]} stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-          <XAxis 
-            dataKey="name" 
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-            tickLine={{ stroke: 'hsl(var(--border))' }}
-            angle={-45}
-            textAnchor="end"
-            height={80}
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="hsl(var(--border))"
+            opacity={0.4}
+            vertical={false}
           />
-          <YAxis 
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-            tickLine={{ stroke: 'hsl(var(--border))' }}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '8px',
-              fontSize: '12px',
+          <XAxis
+            dataKey="name"
+            tick={{
+              fill: 'hsl(var(--muted-foreground))',
+              fontSize: chartData.length > 15 ? 10 : 11,
             }}
-            labelStyle={{ color: 'hsl(var(--foreground))' }}
+            tickLine={false}
+            axisLine={false}
+            angle={rotate ? -35 : 0}
+            textAnchor={rotate ? 'end' : 'middle'}
+            interval={interval}
+            tickFormatter={(v: string) =>
+              v.length > 14 ? v.slice(0, 12) + '…' : v
+            }
           />
+          <YAxis
+            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            width={40}
+            tickFormatter={(v: number) =>
+              v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)
+            }
+          />
+          <Tooltip content={<CustomTooltip />} />
           <Area
             type="monotone"
             dataKey="value"
-            stroke="hsl(221.2 83.2% 53.3%)"
-            fillOpacity={1}
-            fill="url(#colorValue)"
-            strokeWidth={2}
+            name={yField}
+            stroke={CHART_COLORS[0]}
+            strokeWidth={2.5}
+            fill={`url(#${gradId})`}
+            dot={
+              chartData.length < 25
+                ? { r: 2.5, fill: CHART_COLORS[0], strokeWidth: 0 }
+                : false
+            }
+            activeDot={{ r: 5 }}
           />
         </AreaChart>
       </ResponsiveContainer>

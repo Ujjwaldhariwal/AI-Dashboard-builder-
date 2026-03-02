@@ -1,85 +1,89 @@
-interface DataPoint {
-  [key: string]: any
-}
+// src/lib/ai/chart-generator.ts
+import { ChartType } from '@/types/widget'
+import { DataField } from './data-analyzer'
 
-interface ChartRecommendation {
-  type: 'line' | 'bar' | 'pie' | 'area'
+export interface AIChartSuggestion {
   title: string
-  xField: string
-  yField: string
+  type: ChartType
+  xAxis: string
+  yAxis: string
   reason: string
 }
 
-export class ChartGenerator {
-  static generateRecommendations(data: DataPoint[]): ChartRecommendation[] {
-    if (!data || data.length === 0) return []
+export interface AIChartGeneratorResult {
+  suggestions: AIChartSuggestion[]
+  source: 'ai' | 'heuristic'
+  error?: string
+}
 
-    const recommendations: ChartRecommendation[] = []
-    const fields = Object.keys(data[0])
-    
-    const numericFields = fields.filter(field => {
-      return data.slice(0, 10).every(item => typeof item[field] === 'number')
+/**
+ * Calls /api/ai/suggest — OpenAI powered.
+ * Falls back to heuristic if API fails.
+ */
+export async function generateAIChartSuggestions(
+  fields: DataField[],
+  sampleData: any[],
+  endpointName: string,
+): Promise<AIChartGeneratorResult> {
+  try {
+    const res = await fetch('/api/ai/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields, sampleData, endpointName }),
     })
 
-    const categoricalFields = fields.filter(field => {
-      const uniqueValues = new Set(data.map(item => item[field])).size
-      return typeof data[0][field] === 'string' && uniqueValues < data.length * 0.5
-    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
 
-    const timeFields = fields.filter(field => {
-      return /date|time|created|updated/i.test(field)
-    })
+    if (!data.suggestions?.length) throw new Error('No suggestions returned')
 
-    // Recommendation 1: Trend over index/id (Line Chart)
-    if (numericFields.length > 0) {
-      const idField = fields.find(f => /id|index|number/i.test(f)) || fields[0]
-      const valueField = numericFields[0]
-      
-      recommendations.push({
-        type: 'line',
-        title: `${valueField} Trend`,
-        xField: idField,
-        yField: valueField,
-        reason: 'Shows progression and trends over sequential data'
-      })
+    return {
+      suggestions: data.suggestions as AIChartSuggestion[],
+      source: 'ai',
     }
+  } catch (err: any) {
+    // ── Heuristic fallback ─────────────────────────────────────────────
+    const numbers    = fields.filter(f => f.type === 'number').map(f => f.name)
+    const dates      = fields.filter(f => f.type === 'date').map(f => f.name)
+    const categories = fields.filter(f => f.type === 'string').map(f => f.name)
 
-    // Recommendation 2: Category comparison (Bar Chart)
-    if (categoricalFields.length > 0 && numericFields.length > 0) {
-      recommendations.push({
-        type: 'bar',
-        title: `${numericFields[0]} by ${categoricalFields[0]}`,
-        xField: categoricalFields[0],
-        yField: numericFields[0],
-        reason: 'Compares values across different categories'
-      })
-    }
+    const suggestions: AIChartSuggestion[] = []
 
-    // Recommendation 3: Distribution (Pie Chart)
-    if (categoricalFields.length > 0) {
-      const catField = categoricalFields[0]
-      const valueField = numericFields[0] || catField
-      
-      recommendations.push({
-        type: 'pie',
-        title: `Distribution by ${catField}`,
-        xField: catField,
-        yField: valueField,
-        reason: 'Shows proportional distribution of categories'
-      })
-    }
-
-    // Recommendation 4: Area chart for cumulative/trend data
-    if (numericFields.length > 1) {
-      recommendations.push({
+    if (dates.length && numbers.length) {
+      suggestions.push({
+        title: `${numbers[0]} over time`,
         type: 'area',
-        title: `${numericFields[1]} Accumulation`,
-        xField: fields[0],
-        yField: numericFields[1],
-        reason: 'Visualizes cumulative trends and volumes'
+        xAxis: dates[0],
+        yAxis: numbers[0],
+        reason: 'Time series data is best shown as an area chart',
+      })
+    }
+    if (categories.length && numbers.length) {
+      suggestions.push({
+        title: `${numbers[0]} by ${categories[0]}`,
+        type: 'bar',
+        xAxis: categories[0],
+        yAxis: numbers[0],
+        reason: 'Category comparison works best as a bar chart',
+      })
+      suggestions.push({
+        title: `Distribution of ${numbers[0]}`,
+        type: 'pie',
+        xAxis: categories[0],
+        yAxis: numbers[0],
+        reason: 'Proportional breakdown suits a pie chart',
+      })
+    }
+    if (fields.length >= 2) {
+      suggestions.push({
+        title: 'Raw Data Grid',
+        type: 'table',
+        xAxis: fields[0].name,
+        yAxis: fields[1].name,
+        reason: 'Full tabular view for all data',
       })
     }
 
-    return recommendations.slice(0, 4)
+    return { suggestions, source: 'heuristic', error: err.message }
   }
 }

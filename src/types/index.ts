@@ -1,3 +1,5 @@
+// Module: Index
+//index.ts
 export interface ApiEndpoint {
   id: string
   name: string

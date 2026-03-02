@@ -1,3 +1,4 @@
+// Module: AlertEngine
 interface Alert {
   id: string
   type: 'critical' | 'warning' | 'info'
