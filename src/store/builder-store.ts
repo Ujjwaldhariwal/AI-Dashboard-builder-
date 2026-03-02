@@ -29,6 +29,7 @@ interface DashboardStore {
   currentDashboardId: string | null;
   addDashboard: (dashboard: Omit<Dashboard, "id" | "createdAt">) => string;
   removeDashboard: (id: string) => void;
+  updateDashboard: (id: string, patch: Partial<Dashboard>) => void
   deleteDashboard: (id: string) => void; // ✅ alias — same as removeDashboard
   setCurrentDashboard: (id: string | null) => void;
   duplicateDashboard: (id: string) => string;
@@ -78,6 +79,12 @@ export const useDashboardStore = create<DashboardStore>()(
           widgets: state.widgets.filter((w) => w.dashboardId !== id),
         }));
       },
+
+      updateDashboard: (id: string, patch: Partial<Dashboard>) =>
+  set(s => ({
+    dashboards: s.dashboards.map(d => d.id === id ? { ...d, ...patch } : d),
+  })),
+
 
       // ✅ alias so old code calling deleteDashboard still works
       deleteDashboard: (id) => {
