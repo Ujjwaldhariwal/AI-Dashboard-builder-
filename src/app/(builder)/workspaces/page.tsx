@@ -23,11 +23,11 @@ import {
 import {
   Plus, FolderKanban, Trash2, ExternalLink,
   Database, LayoutGrid, Copy, Search,
-  CalendarDays, Eye,
+  CalendarDays, Eye, Pencil, Check, X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -40,18 +40,70 @@ const GRADIENTS = [
   'from-indigo-600 to-violet-600',
 ]
 
+// ── Inline rename input ───────────────────────────────────────────────────────
+function InlineRename({
+  value,
+  onSave,
+  onCancel,
+}: {
+  value:    string
+  onSave:   (v: string) => void
+  onCancel: () => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select() }, [])
+
+  const commit = () => {
+    const trimmed = draft.trim()
+    if (!trimmed) { toast.error('Name cannot be empty'); return }
+    if (trimmed === value) { onCancel(); return }
+    onSave(trimmed)
+  }
+
+  return (
+    <div className="flex items-center gap-1 flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+      <Input
+        ref={inputRef}
+        className="h-7 text-sm font-semibold px-2 flex-1 min-w-0"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter')  commit()
+          if (e.key === 'Escape') onCancel()
+        }}
+        onBlur={commit}
+      />
+      <button
+        className="p-1 rounded hover:bg-green-100 text-green-600 dark:hover:bg-green-950/30 flex-shrink-0"
+        onMouseDown={e => { e.preventDefault(); commit() }}
+      >
+        <Check className="w-3.5 h-3.5" />
+      </button>
+      <button
+        className="p-1 rounded hover:bg-muted text-muted-foreground flex-shrink-0"
+        onMouseDown={e => { e.preventDefault(); onCancel() }}
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  )
+}
+
 export default function WorkspacesPage() {
   const router   = useRouter()
   const { user } = useAuthStore()
   const {
     dashboards, endpoints, widgets,
-    addDashboard, removeDashboard,
-    setCurrentDashboard, duplicateDashboard,  // ✅ from store
+    addDashboard, removeDashboard, updateDashboard,
+    setCurrentDashboard, duplicateDashboard,
   } = useDashboardStore()
 
   const [mounted, setMounted]          = useState(false)
   const [createOpen, setCreateOpen]    = useState(false)
   const [deleteId, setDeleteId]        = useState<string | null>(null)
+  const [renamingId, setRenamingId]    = useState<string | null>(null)  // ✅ inline rename
   const [name, setName]                = useState('')
   const [description, setDescription] = useState('')
   const [search, setSearch]            = useState('')
@@ -75,7 +127,7 @@ export default function WorkspacesPage() {
     )
   }
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleCreate = () => {
     if (!name.trim()) { toast.error('Dashboard name is required'); return }
     const id = addDashboard({
@@ -91,8 +143,14 @@ export default function WorkspacesPage() {
     router.push('/builder')
   }
 
+  const handleRename = (id: string, newName: string) => {
+    updateDashboard(id, { name: newName })
+    setRenamingId(null)
+    toast.success('Dashboard renamed')
+  }
+
   const handleDuplicate = (d: typeof dashboards[0]) => {
-    const newId = duplicateDashboard(d.id)  // ✅ store method — clones widgets too
+    const newId = duplicateDashboard(d.id)
     if (!newId) return
     toast.success(`"${d.name}" duplicated`)
     setCurrentDashboard(newId)
@@ -106,13 +164,9 @@ export default function WorkspacesPage() {
     toast.success('Dashboard deleted')
   }
 
-  const getWidgetCount = (id: string) =>
-    widgets.filter(w => w.dashboardId === id).length
-
+  const getWidgetCount   = (id: string) => widgets.filter(w => w.dashboardId === id).length
   const getEndpointCount = (id: string) =>
-    endpoints.filter(e =>
-      widgets.some(w => w.dashboardId === id && w.endpointId === e.id),
-    ).length
+    endpoints.filter(e => widgets.some(w => w.dashboardId === id && w.endpointId === e.id)).length
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -127,8 +181,7 @@ export default function WorkspacesPage() {
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          New Dashboard
+          <Plus className="w-4 h-4 mr-2" />New Dashboard
         </Button>
       </div>
 
@@ -178,9 +231,8 @@ export default function WorkspacesPage() {
             const widgetCount   = getWidgetCount(d.id)
             const endpointCount = getEndpointCount(d.id)
             const gradient      = GRADIENTS[idx % GRADIENTS.length]
-            const createdDate   = d.createdAt
-              ? new Date(d.createdAt).toLocaleDateString()
-              : null
+            const createdDate   = d.createdAt ? new Date(d.createdAt).toLocaleDateString() : null
+            const isRenaming    = renamingId === d.id
 
             return (
               <motion.div
@@ -192,27 +244,50 @@ export default function WorkspacesPage() {
                 transition={{ duration: 0.18 }}
               >
                 <Card className="flex flex-col hover:shadow-md transition-shadow overflow-hidden">
-
-                  {/* Gradient top bar */}
                   <div className={`h-1.5 w-full bg-gradient-to-r ${gradient}`} />
 
                   <CardHeader
-                    className="cursor-pointer pb-2"
-                    onClick={() => { setCurrentDashboard(d.id); router.push('/builder') }}
+                    className={`pb-2 ${!isRenaming ? 'cursor-pointer' : ''}`}
+                    onClick={() => {
+                      if (isRenaming) return
+                      setCurrentDashboard(d.id)
+                      router.push('/builder')
+                    }}
                   >
                     <div className="flex items-start gap-2">
                       <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0 mt-0.5`}>
                         <FolderKanban className="w-4 h-4 text-white" />
                       </div>
+
                       <div className="flex-1 min-w-0">
-                        <CardTitle className="text-sm truncate">{d.name}</CardTitle>
+                        {/* ✅ Inline rename — swaps title for input */}
+                        {isRenaming ? (
+                          <InlineRename
+                            value={d.name}
+                            onSave={v => handleRename(d.id, v)}
+                            onCancel={() => setRenamingId(null)}
+                          />
+                        ) : (
+                          <div className="flex items-center gap-1 group/title">
+                            <CardTitle className="text-sm truncate flex-1">{d.name}</CardTitle>
+                            <button
+                              className="opacity-0 group-hover/title:opacity-100 p-1 rounded hover:bg-muted transition-all flex-shrink-0"
+                              title="Rename"
+                              onClick={e => {
+                                e.stopPropagation()
+                                setRenamingId(d.id)
+                              }}
+                            >
+                              <Pencil className="w-3 h-3 text-muted-foreground" />
+                            </button>
+                          </div>
+                        )}
                         <CardDescription className="text-xs truncate mt-0.5">
                           {d.description || 'No description'}
                         </CardDescription>
                       </div>
                     </div>
 
-                    {/* Meta badges */}
                     <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                       <Badge variant="secondary" className="text-[10px] px-1.5">
                         <LayoutGrid className="w-2.5 h-2.5 mr-1" />
@@ -234,42 +309,29 @@ export default function WorkspacesPage() {
                   <CardContent className="pt-0 pb-3 px-4">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <Button
-                        size="sm"
-                        className="h-7 text-xs flex-1"
+                        size="sm" className="h-7 text-xs flex-1"
                         onClick={() => { setCurrentDashboard(d.id); router.push('/builder') }}
                       >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Open
+                        <ExternalLink className="w-3 h-3 mr-1" />Open
                       </Button>
-
                       <Link href="/dashboard">
                         <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
+                          size="sm" variant="outline" className="h-7 text-xs"
                           onClick={() => setCurrentDashboard(d.id)}
                         >
-                          <Eye className="w-3 h-3 mr-1" />
-                          View
+                          <Eye className="w-3 h-3 mr-1" />View
                         </Button>
                       </Link>
-
                       <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0"
-                        title="Duplicate"
-                        onClick={() => handleDuplicate(d)}
+                        size="sm" variant="ghost" className="h-7 w-7 p-0"
+                        title="Duplicate" onClick={() => handleDuplicate(d)}
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </Button>
-
                       <Button
-                        size="sm"
-                        variant="ghost"
+                        size="sm" variant="ghost"
                         className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                        title="Delete"
-                        onClick={() => setDeleteId(d.id)}
+                        title="Delete" onClick={() => setDeleteId(d.id)}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
@@ -281,7 +343,6 @@ export default function WorkspacesPage() {
           })}
         </AnimatePresence>
 
-        {/* No search results */}
         {filtered.length === 0 && dashboards.length > 0 && (
           <div className="col-span-full py-12 text-center">
             <Search className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
@@ -292,7 +353,6 @@ export default function WorkspacesPage() {
           </div>
         )}
 
-        {/* Empty state */}
         {dashboards.length === 0 && (
           <Card className="col-span-full">
             <CardContent className="py-16 text-center">
@@ -304,8 +364,7 @@ export default function WorkspacesPage() {
                 Create your first AI-powered dashboard to get started.
               </p>
               <Button onClick={() => setCreateOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create dashboard
+                <Plus className="w-4 h-4 mr-2" />Create dashboard
               </Button>
             </CardContent>
           </Card>
@@ -327,7 +386,7 @@ export default function WorkspacesPage() {
               <Input
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="e.g. MDM – City X Analytics"
+                placeholder="e.g. MDM — City X Analytics"
                 onKeyDown={e => e.key === 'Enter' && handleCreate()}
                 autoFocus
               />
