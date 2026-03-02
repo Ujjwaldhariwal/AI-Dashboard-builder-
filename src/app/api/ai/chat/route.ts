@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
+// ✅ No top-level instantiation — won't crash at build time
 export async function POST(req: NextRequest) {
   try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
     const { messages, context } = await req.json()
 
     const systemPrompt = `You are an expert data visualization AI assistant for Analytics AI Dashboard Builder.
@@ -47,13 +48,10 @@ If the user's data context is provided, reference actual field names from it.`
 
     const content = completion.choices[0]?.message?.content ?? ''
 
-    // Parse widget action if present
     const widgetMatch = content.match(/```widget\n([\s\S]*?)\n```/)
     let widgetAction = null
     if (widgetMatch) {
-      try {
-        widgetAction = JSON.parse(widgetMatch[1])
-      } catch {}
+      try { widgetAction = JSON.parse(widgetMatch[1]) } catch {}
     }
 
     return NextResponse.json({
