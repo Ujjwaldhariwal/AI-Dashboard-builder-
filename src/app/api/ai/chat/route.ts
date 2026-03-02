@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
     const { messages, context } = await req.json()
 
-    const isStyleMode = !!context?.styleOnlyMode && !!context?.selectedWidget
+    const isStyleMode  = !!context?.styleOnlyMode && !!context?.selectedWidget
     const systemPrompt = isStyleMode
       ? buildStylePrompt(context)
       : buildCreatePrompt(context)
@@ -19,15 +19,22 @@ export async function POST(req: NextRequest) {
       systemInstruction: systemPrompt,
     })
 
-    const history = messages.slice(0, -1).map((m: any) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }))
-    const lastMessage = messages[messages.length - 1]
+    // Gemini requires history to start with 'user' — strip leading assistant messages
+    const history = messages
+      .slice(0, -1)
+      .reduce((acc: any[], m: any) => {
+        if (acc.length === 0 && m.role === 'assistant') return acc
+        acc.push({
+          role:  m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        })
+        return acc
+      }, [])
 
-    const chat    = model.startChat({ history })
-    const result  = await chat.sendMessage(lastMessage.content)
-    const content = result.response.text()
+    const lastMessage = messages[messages.length - 1]
+    const chat        = model.startChat({ history })
+    const result      = await chat.sendMessage(lastMessage.content)
+    const content     = result.response.text()
 
     // Parse widget creation block
     let widgetAction = null
@@ -42,10 +49,10 @@ export async function POST(req: NextRequest) {
     if (styleMatch) {
       try {
         const parsed = JSON.parse(styleMatch[1])
-        styleAction = {
+        styleAction  = {
           ...parsed,
           action:   'update_style',
-          widgetId: context.selectedWidget?.id,
+          widgetId: context.selectedWidget?.id, // locked — AI cannot override
         }
       } catch {}
     }
