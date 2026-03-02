@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-
 export async function POST(req: NextRequest) {
   try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) // ✅ inside handler
+
     const { fields, sampleData, endpointName } = await req.json()
 
     const prompt = `You are a data visualization expert. Given this API data schema, suggest the best charts.
@@ -40,8 +40,8 @@ Rules:
       response_format: { type: 'json_object' },
     })
 
-    const raw        = completion.choices[0]?.message?.content ?? '{}'
-    const parsed     = JSON.parse(raw)
+    const raw         = completion.choices[0]?.message?.content ?? '{}'
+    const parsed      = JSON.parse(raw)
     const suggestions = Array.isArray(parsed)
       ? parsed
       : parsed.suggestions ?? parsed.charts ?? []
