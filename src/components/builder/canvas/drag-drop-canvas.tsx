@@ -1,5 +1,6 @@
 "use client"
 
+// Module: Drag Drop Canvas — widget selection for AI style scoping
 // src/components/builder/canvas/drag-drop-canvas.tsx
 
 import { useState, useCallback } from "react"
@@ -28,17 +29,15 @@ const COL_CLASSES: Record<ColCount, string> = {
   3: 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3',
 }
 
-const COL_ICONS = {
-  1: Square,
-  2: Columns2,
-  3: LayoutGrid,
-}
+const COL_ICONS = { 1: Square, 2: Columns2, 3: LayoutGrid }
 
 interface DragDropCanvasProps {
-  viewMode?: boolean
+  viewMode?:        boolean
+  selectedWidgetId?: string | null       // Phase 2 — AI style scoping
+  onSelectWidget?:  (id: string | null) => void
 }
 
-// ── Empty State ───────────────────────────────────────────────────────────────
+// ── Empty State ───────────────────────────────────────────────
 function EmptyCanvas({
   onAddWidget, onMagicBuild, hasEndpoints,
 }: {
@@ -62,14 +61,12 @@ function EmptyCanvas({
           <PieChart className="w-3 h-3 text-orange-500" />
         </div>
       </div>
-
       <h3 className="text-xl font-semibold mb-1.5">Your canvas is empty</h3>
       <p className="text-sm text-muted-foreground max-w-sm mb-6">
         {hasEndpoints
           ? "Add a widget manually or use Magic Auto-Build to instantly generate charts."
           : "Connect an API first from API Config, then come back to add widgets."}
       </p>
-
       <div className="flex flex-col sm:flex-row items-center gap-3">
         <Button onClick={onAddWidget} disabled={!hasEndpoints} className="gap-2 min-w-[160px]">
           <Plus className="w-4 h-4" />Add Widget
@@ -81,7 +78,6 @@ function EmptyCanvas({
           <Wand2 className="w-4 h-4" />Magic Auto-Build
         </Button>
       </div>
-
       {!hasEndpoints && (
         <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1.5">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
@@ -93,7 +89,7 @@ function EmptyCanvas({
   )
 }
 
-// ── Add Widget Tile ───────────────────────────────────────────────────────────
+// ── Add Widget Tile ───────────────────────────────────────────
 function AddWidgetTile({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -108,7 +104,7 @@ function AddWidgetTile({ onClick }: { onClick: () => void }) {
   )
 }
 
-// ── Layout Selector ───────────────────────────────────────────────────────────
+// ── Layout Selector ───────────────────────────────────────────
 function LayoutSelector({ cols, onChange }: { cols: ColCount; onChange: (c: ColCount) => void }) {
   return (
     <div className="flex items-center gap-1 mb-4">
@@ -134,14 +130,18 @@ function LayoutSelector({ cols, onChange }: { cols: ColCount; onChange: (c: ColC
   )
 }
 
-// ── Main Canvas ───────────────────────────────────────────────────────────────
-export function DragDropCanvas({ viewMode = false }: DragDropCanvasProps) {
+// ── Main Canvas ───────────────────────────────────────────────
+export function DragDropCanvas({
+  viewMode = false,
+  selectedWidgetId = null,
+  onSelectWidget,
+}: DragDropCanvasProps) {
   const { widgets, endpoints, currentDashboardId, reorderWidgets } = useDashboardStore()
 
   const [activeWidget, setActiveWidget]   = useState<Widget | null>(null)
   const [addWidgetOpen, setAddWidgetOpen] = useState(false)
   const [magicOpen, setMagicOpen]         = useState(false)
-  const [cols, setCols]                   = useState<ColCount>(2)  // ✅ layout selector
+  const [cols, setCols]                   = useState<ColCount>(2)
 
   const dashboardWidgets = widgets.filter(w => w.dashboardId === currentDashboardId)
   const hasEndpoints     = endpoints.length > 0
@@ -162,6 +162,12 @@ export function DragDropCanvas({ viewMode = false }: DragDropCanvasProps) {
     if (!over || active.id === over.id || !currentDashboardId) return
     reorderWidgets(currentDashboardId, String(active.id), String(over.id))
   }, [currentDashboardId, reorderWidgets])
+
+  // Click on widget — select it for AI styling
+  const handleWidgetClick = useCallback((e: React.MouseEvent, widgetId: string) => {
+    e.stopPropagation() // prevent canvas deselect
+    onSelectWidget?.(selectedWidgetId === widgetId ? null : widgetId) // toggle
+  }, [onSelectWidget, selectedWidgetId])
 
   if (dashboardWidgets.length === 0 && !viewMode) {
     return (
@@ -188,10 +194,7 @@ export function DragDropCanvas({ viewMode = false }: DragDropCanvasProps) {
 
   return (
     <>
-      {/* ✅ Layout selector — hidden in viewMode */}
-      {!viewMode && (
-        <LayoutSelector cols={cols} onChange={setCols} />
-      )}
+      {!viewMode && <LayoutSelector cols={cols} onChange={setCols} />}
 
       <DndContext
         sensors={sensors}
@@ -202,7 +205,17 @@ export function DragDropCanvas({ viewMode = false }: DragDropCanvasProps) {
         <SortableContext items={dashboardWidgets.map(w => w.id)} strategy={rectSortingStrategy}>
           <div className={`grid gap-5 ${COL_CLASSES[cols]}`}>
             {dashboardWidgets.map(widget => (
-              <WidgetCard key={widget.id} widget={widget} viewMode={viewMode} />
+              <div
+                key={widget.id}
+                onClick={(e) => handleWidgetClick(e, widget.id)}
+                className={`rounded-xl transition-all duration-150 ${
+                  selectedWidgetId === widget.id
+                    ? 'ring-2 ring-purple-500 ring-offset-2 ring-offset-background'
+                    : 'ring-0'
+                }`}
+              >
+                <WidgetCard widget={widget} viewMode={viewMode} />
+              </div>
             ))}
             {!viewMode && <AddWidgetTile onClick={() => setAddWidgetOpen(true)} />}
           </div>
