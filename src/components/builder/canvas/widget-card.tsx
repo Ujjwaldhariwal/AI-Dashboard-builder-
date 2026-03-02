@@ -1,5 +1,6 @@
 'use client'
 
+// Module: Widget Card — renders 3-layer chart with style injection
 // src/components/builder/canvas/widget-card.tsx
 
 import { useEffect, useState, useCallback } from 'react'
@@ -19,7 +20,7 @@ import {
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
-import { Widget } from '@/types/widget'
+import { Widget, DEFAULT_STYLE } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
 import { toast } from 'sonner'
 import { useSortable } from '@dnd-kit/sortable'
@@ -51,7 +52,7 @@ const chartTypeIcon: Record<string, any> = {
   table:            Table2,
 }
 
-// ── Skeleton shimmer ──────────────────────────────────────────────────────────
+// ── Skeleton shimmer ──────────────────────────────────────────
 function WidgetSkeleton() {
   return (
     <div className="space-y-3 animate-pulse">
@@ -74,7 +75,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState<string | null>(null)
   const [editOpen, setEditOpen]       = useState(false)
-  const [deleteOpen, setDeleteOpen]   = useState(false)   // ✅ AlertDialog
+  const [deleteOpen, setDeleteOpen]   = useState(false)
   const [lastFetched, setLastFetched] = useState<Date | null>(null)
   const [latency, setLatency]         = useState<number | null>(null)
 
@@ -92,7 +93,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon     = chartTypeIcon[widget.type] ?? BarChart3
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // Merge stored style with defaults — safe even for old widgets missing style
+  const style = { ...DEFAULT_STYLE, ...widget.style }
+
+  // ── Fetch ─────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     if (!endpoint) {
       setError('Endpoint not found')
@@ -125,8 +129,8 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       addLog({
         widgetId: widget.id, widgetTitle: widget.title,
         endpointId: endpoint.id, endpointUrl: endpoint.url,
-        level:     ms > 2000 ? 'warn' : 'success',
-        message:   ms > 2000
+        level:   ms > 2000 ? 'warn' : 'success',
+        message: ms > 2000
           ? `Slow response: ${ms}ms — ${arr.length} rows`
           : `Fetched ${arr.length} rows in ${ms}ms`,
         latencyMs: ms, statusCode: res.status,
@@ -148,8 +152,8 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       })
       updateEndpointHealth(endpoint.id, {
         endpointName: endpoint.name, url: endpoint.url,
-        status:       'down', lastError: err.message,
-        errorCount:   (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
+        status: 'down', lastError: err.message,
+        errorCount: (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
       })
       toast.error(`"${widget.title}": ${err.message}`)
     } finally {
@@ -159,28 +163,36 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Auto-refresh ──────────────────────────────────────────────────────────
+  // ── Auto-refresh ──────────────────────────────────────────────
   useEffect(() => {
     if (!endpoint?.refreshInterval || endpoint.refreshInterval <= 0) return
     const id = setInterval(fetchData, endpoint.refreshInterval * 1000)
     return () => clearInterval(id)
   }, [endpoint?.refreshInterval, fetchData])
 
-  // ── Chart renderer ────────────────────────────────────────────────────────
+  // ── Chart renderer — style passed to every chart ──────────────
   const renderChart = () => {
     if (!rawData?.length) return null
     const x = widget.dataMapping.xAxis
     const y = widget.dataMapping.yAxis ?? ''
 
     switch (widget.type) {
-      case 'bar':            return <ModernBarChart data={rawData} xField={x} yField={y} />
-      case 'line':           return <ModernLineChart data={rawData} xField={x} yField={y} />
-      case 'area':           return <ModernAreaChart data={rawData} xField={x} yField={y} />
-      case 'pie':            return <ModernPieChart data={rawData} nameField={x} valueField={y} />
-      case 'donut':          return <ModernPieChart data={rawData} nameField={x} valueField={y} donut />
-      case 'horizontal-bar': return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} />
-      case 'gauge':          return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} />
-      case 'status-card':    return <ModernStatusCard data={rawData} yField={y} label={widget.title} />
+      case 'bar':
+        return <ModernBarChart data={rawData} xField={x} yField={y} style={style} />
+      case 'line':
+        return <ModernLineChart data={rawData} xField={x} yField={y} style={style} />
+      case 'area':
+        return <ModernAreaChart data={rawData} xField={x} yField={y} style={style} />
+      case 'pie':
+        return <ModernPieChart data={rawData} nameField={x} valueField={y} style={style} />
+      case 'donut':
+        return <ModernPieChart data={rawData} nameField={x} valueField={y} donut style={style} />
+      case 'horizontal-bar':
+        return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} style={style} />
+      case 'gauge':
+        return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} style={style} />
+      case 'status-card':
+        return <ModernStatusCard data={rawData} yField={y} label={widget.title} style={style} />
       case 'table': {
         const cols = Object.keys(rawData[0]).slice(0, 6)
         return (
@@ -273,7 +285,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                   <Button
                     variant="ghost" size="icon"
                     className="h-6 w-6 text-red-500 hover:text-red-700"
-                    onClick={() => setDeleteOpen(true)}   // ✅ no window.confirm
+                    onClick={() => setDeleteOpen(true)}
                   >
                     <Trash2 className="w-3 h-3" />
                   </Button>
@@ -313,10 +325,8 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         </CardHeader>
 
         <CardContent className="px-4 pb-4 flex-1">
-          {/* ✅ Skeleton shimmer on first load */}
           {loading && !rawData && <WidgetSkeleton />}
 
-          {/* Error state with retry */}
           {error && (
             <div className="flex flex-col items-start gap-2 p-3 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
               <div className="flex items-start gap-2">
@@ -324,13 +334,14 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                 <p className="text-[11px] text-red-700 dark:text-red-400">{error}</p>
               </div>
               <Button
-                variant="outline"
-                size="sm"
+                variant="outline" size="sm"
                 className="h-6 text-[11px] border-red-300 text-red-600 hover:bg-red-50"
-                onClick={fetchData}
-                disabled={loading}
+                onClick={fetchData} disabled={loading}
               >
-                {loading ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                {loading
+                  ? <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                  : <RefreshCw className="w-3 h-3 mr-1" />
+                }
                 Retry
               </Button>
             </div>
@@ -345,7 +356,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         </CardContent>
       </Card>
 
-      {/* ✅ AlertDialog delete — no window.confirm */}
+      {/* AlertDialog delete */}
       <AlertDialog open={deleteOpen} onOpenChange={(v: boolean) => !v && setDeleteOpen(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
