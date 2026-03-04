@@ -35,6 +35,10 @@ export function ModernLineChart({ data, xField, yField, style }: ModernLineChart
   const tt     = getTooltipStyle(s)
 
   const option = useMemo(() => ({
+    animation:         true,
+  animationDuration: 700,
+  animationEasing:   'cubicOut' as const,
+  backgroundColor:   'transparent',
     color: colors,
     grid: {
       top: 8, right: 28,
@@ -112,7 +116,7 @@ export function ModernLineChart({ data, xField, yField, style }: ModernLineChart
       theme="enterprise"
       style={{ height: h, width: '100%' }}
       opts={{ renderer: 'svg' }}
-      notMerge
+      
     />
   )
 }

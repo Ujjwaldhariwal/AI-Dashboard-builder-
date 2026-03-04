@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { graphic } from 'echarts/core'
+import { graphic } from 'echarts'
 import { getChartHeight } from './chart-registry'
 import { WidgetStyle, DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
@@ -47,6 +47,10 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Props)
   const h = getChartHeight(chartData.length)
 
   const option = useMemo(() => ({
+    animation:         true,
+  animationDuration: 700,
+  animationEasing:   'cubicOut' as const,
+  backgroundColor:   'transparent',
     color: colors,
     grid: { top: 4, right: 56, bottom: 4, left: 8, containLabel: true },
     tooltip: {
@@ -112,7 +116,7 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Props)
       theme="enterprise"
       style={{ height: h, width: '100%' }}
       opts={{ renderer: 'svg' }}
-      notMerge
+      
     />
   )
 }

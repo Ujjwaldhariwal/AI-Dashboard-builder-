@@ -48,6 +48,10 @@ export function ModernPieChart({ data, nameField, valueField, donut = false, sty
   }, [data, nameField, valueField])
 
   const option = useMemo(() => ({
+    animation:         true,
+  animationDuration: 700,
+  animationEasing:   'cubicOut' as const,
+  backgroundColor:   'transparent',
     color: colors,
     tooltip: {
       trigger: 'item',
@@ -90,7 +94,7 @@ export function ModernPieChart({ data, nameField, valueField, donut = false, sty
       theme="enterprise"
       style={{ height: 340, width: '100%' }}
       opts={{ renderer: 'svg' }}
-      notMerge
+      
     />
   )
 }

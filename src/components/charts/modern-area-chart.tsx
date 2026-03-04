@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { graphic } from 'echarts/core'
+import { graphic } from 'echarts'
 import { getChartHeight, getTickInterval, getBottomMargin } from './chart-registry'
 import { WidgetStyle, DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
@@ -33,6 +33,10 @@ export function ModernAreaChart({ data, xField, yField, style }: ModernAreaChart
   const tt     = getTooltipStyle(s)
 
   const option = useMemo(() => ({
+    animation:         true,
+  animationDuration: 700,
+  animationEasing:   'cubicOut' as const,
+  backgroundColor:   'transparent',
     color: colors,
     grid: {
       top: 8, right: 12,
@@ -100,7 +104,7 @@ export function ModernAreaChart({ data, xField, yField, style }: ModernAreaChart
       theme="enterprise"
       style={{ height: h, width: '100%' }}
       opts={{ renderer: 'svg' }}
-      notMerge
+      
     />
   )
 }

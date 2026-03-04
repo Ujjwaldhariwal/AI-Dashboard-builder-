@@ -37,6 +37,10 @@ export function ModernGaugeChart({
   const labelColor = dark ? '#94a3b8' : '#64748b'
 
   const option = useMemo(() => ({
+    animation:         true,
+  animationDuration: 700,
+  animationEasing:   'cubicOut' as const,
+  backgroundColor:   'transparent',
     series: [{
       type:       'gauge',
       startAngle: 180,
@@ -84,7 +88,7 @@ export function ModernGaugeChart({
       theme="enterprise"
       style={{ height: 200, width: '100%' }}
       opts={{ renderer: 'svg' }}
-      notMerge
+      
     />
   )
 }
