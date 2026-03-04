@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Database, FolderTree,
   Settings, LogOut, User, Search,
   Activity, ChevronRight, FolderKanban,
-  Shield, BadgeCheck, X,
+  Shield, BadgeCheck, X,GitBranch
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -55,13 +55,15 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [searchFocused, setSearchFocused]   = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const navigation = [
-    { name: 'Dashboards', href: '/workspaces',  icon: LayoutDashboard, show: true },
-    { name: 'Builder',    href: '/builder',      icon: FolderTree,      show: !!currentDashboardId },
-    { name: 'API Config', href: '/api-config',   icon: Database,        show: !!currentDashboardId },
-    { name: 'Monitoring', href: '/monitoring',   icon: Activity,        show: !!currentDashboardId },
-    { name: 'Settings',   href: '/settings',     icon: Settings,        show: true },
-  ]
+const navigation = [
+  { name: 'Dashboards', href: '/workspaces',  icon: LayoutDashboard, show: true },
+  { name: 'Builder',    href: '/builder',      icon: FolderTree,      show: !!currentDashboardId },
+  { name: 'API Config', href: '/api-config',   icon: Database,        show: !!currentDashboardId },
+  { name: 'Auth Flow',  href: '/auth-flow',    icon: GitBranch,       show: !!currentDashboardId }, 
+  { name: 'Monitoring', href: '/monitoring',   icon: Activity,        show: !!currentDashboardId },
+  { name: 'Settings',   href: '/settings',     icon: Settings,        show: true },
+]
+
 
   const handleLogout = async () => {
     await logout()
