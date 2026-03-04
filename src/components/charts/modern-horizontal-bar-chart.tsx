@@ -1,94 +1,118 @@
 'use client'
 
-// Module: Modern Horizontal Bar Chart — style-layer aware
-// src/components/charts/modern-horizontal-bar-chart.tsx
-
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell, LabelList,
-} from 'recharts'
+import { useMemo } from 'react'
+import ReactECharts from 'echarts-for-react'
+import { graphic } from 'echarts/core'
 import { getChartHeight } from './chart-registry'
 import { WidgetStyle, DEFAULT_STYLE } from '@/types/widget'
+import { registerEnterpriseTheme } from '@/lib/echarts/theme'
+import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+
+registerEnterpriseTheme()
 
 interface Props {
-  data: any[]
-  xField: string
-  yField: string
+  data:     any[]
+  xField:   string
+  yField:   string
   stacked?: boolean
-  style?: WidgetStyle
+  style?:   WidgetStyle
 }
 
-const CustomTooltip = ({ active, payload, label, style }: any) => {
-  if (!active || !payload?.length) return null
-  return (
-    <div
-      className="border rounded-lg shadow-lg p-2.5 text-xs"
-      style={{
-        background: style?.tooltipBg ?? 'hsl(var(--card))',
-        borderColor: style?.tooltipBorder ?? 'hsl(var(--border))',
-      }}
-    >
-      <p className="font-medium mb-1 text-foreground">{label}</p>
-      {payload.map((e: any, i: number) => (
-        <p key={i} style={{ color: e.fill }}>
-          {e.name}: <span className="font-semibold">{e.value}</span>
-        </p>
-      ))}
-    </div>
-  )
-}
-
-export function ModernHorizontalBarChart({ data, xField, yField, stacked = false, style }: Props) {
+export function ModernHorizontalBarChart({ data, xField, yField, style }: Props) {
   const s      = { ...DEFAULT_STYLE, ...style }
   const colors = s.colors
+  const r      = s.barRadius ?? 6
+  const axis   = getAxisColors()
+  const tt     = getTooltipStyle(s)
 
-  const isNumeric = data.length > 0 && !isNaN(Number(data[0][yField]))
-
-  const chartData = isNumeric
-    ? data.slice(0, 25).map((item, i) => ({
+  const chartData = useMemo(() => {
+    const isNumeric = data.length > 0 && !isNaN(Number(data[0]?.[yField]))
+    if (isNumeric) {
+      return data.slice(0, 25).map((item, i) => ({
         name:  String(item[xField] ?? `#${i}`).slice(0, 24),
         value: parseFloat(item[yField]) || 0,
       }))
-    : (() => {
-        const counts: Record<string, number> = {}
-        data.forEach(item => {
-          const k = String(item[xField] ?? 'Unknown').slice(0, 24)
-          counts[k] = (counts[k] ?? 0) + 1
-        })
-        return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([name, value]) => ({ name, value }))
-      })()
+    }
+    const counts: Record<string, number> = {}
+    data.forEach(item => {
+      const k = String(item[xField] ?? 'Unknown').slice(0, 24)
+      counts[k] = (counts[k] ?? 0) + 1
+    })
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([name, value]) => ({ name, value }))
+  }, [data, xField, yField])
 
   const h = getChartHeight(chartData.length)
 
+  const option = useMemo(() => ({
+    color: colors,
+    grid: { top: 4, right: 56, bottom: 4, left: 8, containLabel: true },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      ...tt,
+      formatter: (params: any[]) => {
+        const p = params[0]
+        return `<b style="font-size:12px">${p.name}</b><br/>${p.seriesName}: <strong>${fmtValue(p.value, s.labelFormat)}</strong>`
+      },
+    },
+    xAxis: {
+      type: 'value',
+      axisLabel: {
+        color:     axis.label,
+        fontSize:  11,
+        formatter: (v: number) => fmtValue(v, s.labelFormat),
+      },
+      axisLine:  { show: false },
+      axisTick:  { show: false },
+      splitLine: {
+        show: s.showGrid,
+        lineStyle: { type: 'dashed' as const, color: axis.splitLine },
+      },
+    },
+    yAxis: {
+      type:      'category',
+      data:      chartData.map(d => d.name),
+      axisLabel: { color: axis.label, fontSize: 11 },
+      axisLine:  { show: false },
+      axisTick:  { show: false },
+    },
+    series: [{
+      type:        'bar',
+      name:        yField,
+      barMaxWidth: 28,
+      data: chartData.map((d, i) => ({
+        value:     d.value,
+        itemStyle: {
+          color: new graphic.LinearGradient(1, 0, 0, 0, [
+            { offset: 0, color: colors[i % colors.length] },
+            { offset: 1, color: colors[i % colors.length] + 'aa' },
+          ]),
+          borderRadius: [0, r, r, 0],
+        },
+      })),
+      label: {
+        show:      true,
+        position:  'right' as const,
+        formatter: (p: any) => fmtValue(p.value, s.labelFormat),
+        fontSize:  10,
+        color:     axis.label,
+      },
+      emphasis: {
+        itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' },
+      },
+    }],
+  }), [data, xField, yField, style]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <div className="w-full" style={{ height: h }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart layout="vertical" data={chartData} margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
-          {s.showGrid && (
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" opacity={0.3} />
-          )}
-          <XAxis
-            type="number"
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-            tickLine={false} axisLine={false}
-          />
-          <YAxis
-            type="category" dataKey="name" width={110}
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-            tickLine={false}
-          />
-          <Tooltip content={<CustomTooltip style={s} />} />
-          <Bar dataKey="value" name={yField} radius={[0, s.barRadius ?? 6, s.barRadius ?? 6, 0]}>
-            {chartData.map((_, i) => (
-              <Cell key={i} fill={colors[i % colors.length]} />
-            ))}
-            <LabelList
-              dataKey="value" position="right"
-              style={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-            />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <ReactECharts
+      option={option}
+      theme="enterprise"
+      style={{ height: h, width: '100%' }}
+      opts={{ renderer: 'svg' }}
+      notMerge
+    />
   )
 }
