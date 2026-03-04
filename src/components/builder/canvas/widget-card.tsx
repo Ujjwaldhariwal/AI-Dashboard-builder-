@@ -159,7 +159,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     } finally {
       setLoading(false)
     }
-  }, [widget.endpointId, widget.dataMapping.xAxis])
+}, [widget.endpointId, widget.dataMapping.xAxis, endpoint?.url, endpoint?.method])
 
   useEffect(() => { fetchData() }, [fetchData])
 

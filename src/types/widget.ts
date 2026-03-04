@@ -12,7 +12,7 @@ export type ChartType =
   | 'status-card'
   | 'table'
 
-export type ChartDeps = 'recharts' // frozen — never changes
+export type ChartDeps = 'echarts' // frozen — never changes
 
 // ─── Layer 3: AI edits ONLY this ─────────────────────────────
 export interface WidgetStyle {

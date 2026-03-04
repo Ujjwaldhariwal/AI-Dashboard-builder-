@@ -180,7 +180,7 @@ export const useDashboardStore = create<DashboardStore>()(
           dashboardId: currentDashboardId,
           title: config.title,
           type: config.type,
-          deps: "recharts",                               // Layer 1 — frozen
+          deps: "echarts",                               // Layer 1 — frozen
           endpointId: config.endpointId,                  // Layer 2 — base
           dataMapping: resolvedMapping,                   // Layer 2 — base
           style: { ...DEFAULT_STYLE, ...config.style },   // Layer 3 — AI edits only
