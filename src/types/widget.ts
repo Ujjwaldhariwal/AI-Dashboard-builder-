@@ -72,6 +72,8 @@ export interface Widget {
 
   // Layer 3 — AI edits only this
   style: WidgetStyle
+  groupId?:     string
+  sectionName?: string
 
   position?: WidgetPosition
   createdAt?: string
@@ -89,4 +91,5 @@ export interface WidgetConfigInput {
   yAxis?: string
   dataMapping?: DataMapping
   style?: Partial<WidgetStyle> // optional override at creation
+  groupId?:     string
 }

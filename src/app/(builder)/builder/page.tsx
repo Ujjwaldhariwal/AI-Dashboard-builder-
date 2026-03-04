@@ -63,32 +63,35 @@ export default function BuilderPage() {
 
   const handleCanvasClick = () => setSelectedWidgetId(null)
 
-  const handleExport = async () => {
-    if (!currentDash)    { toast.error('No active dashboard'); return }
-    if (!widgets.length) { toast.error('Add at least one widget first'); return }
-    setExporting(true)
-    toast.loading('Generating project…', { id: 'export' })
-    try {
-      const config = buildDashboardConfig(currentDash, endpoints, allWidgets)
-      const files  = generateProjectFromConfig(config)
-      const blob   = await packageProjectAsZip(files)
-      const url    = URL.createObjectURL(blob)
-      const a      = document.createElement('a')
-      a.href       = url
-      a.download   = `${slugifyDashboardName(currentDash.name)}-dashboard.zip`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      toast.success('Export ready!', { id: 'export' })
-      setLastSavedCount(widgets.length)
-      setUnsaved(false)
-    } catch (err: any) {
-      toast.error('Export failed: ' + err.message, { id: 'export' })
-    } finally {
-      setExporting(false)
-    }
+const handleExport = async () => {
+  if (!currentDash)    { toast.error('No active dashboard'); return }
+  if (!widgets.length) { toast.error('Add at least one widget first'); return }
+  setExporting(true)
+  toast.loading('Generating project…', { id: 'export' })
+  try {
+    const projectConfig = useDashboardStore.getState().getProjectConfig(currentDash.id)
+    const chartGroups   = useDashboardStore.getState().getGroupsByDashboard(currentDash.id)
+    const config        = buildDashboardConfig(currentDash, endpoints, allWidgets, projectConfig, chartGroups)
+    const files         = generateProjectFromConfig(config)
+    const blob          = await packageProjectAsZip(files)
+    const url           = URL.createObjectURL(blob)
+    const a             = document.createElement('a')
+    a.href              = url
+    a.download          = `${slugifyDashboardName(currentDash.name)}-dashboard.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('Export ready!', { id: 'export' })
+    setLastSavedCount(widgets.length)
+    setUnsaved(false)
+  } catch (err: any) {
+    toast.error('Export failed: ' + err.message, { id: 'export' })
+  } finally {
+    setExporting(false)
   }
+}
+
 
   // ── No dashboard ──────────────────────────────────────────────
   if (dashboards.length === 0) {

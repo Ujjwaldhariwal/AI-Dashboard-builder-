@@ -1,5 +1,4 @@
 // src/lib/code-generator/template-generator.ts
-
 import type { DashboardExportConfig } from './config-builder'
 
 export type GeneratedFileMap = Record<string, string>
@@ -8,321 +7,914 @@ export function generateProjectFromConfig(
   config: DashboardExportConfig,
 ): GeneratedFileMap {
   const files: GeneratedFileMap = {}
+  const { projectConfig: pc } = config
 
-  // ── package.json ────────────────────────────────────────────────────────
-  files['package.json'] = JSON.stringify(
-    {
-      name: slugify(config.meta.name),
-      version: '0.1.0',
-      private: true,
-      scripts: { dev: 'next dev', build: 'next build', start: 'next start' },
-      dependencies: {
-        next: '^14.0.0',
-        react: '^18.0.0',
-        'react-dom': '^18.0.0',
-        recharts: '^2.10.0',
-      },
-      devDependencies: {
-        typescript: '^5.0.0',
-        '@types/node': '^20.0.0',
-        '@types/react': '^18.0.0',
-        '@types/react-dom': '^18.0.0',
-      },
+  // ── package.json ──────────────────────────────────────────────
+  files['package.json'] = JSON.stringify({
+    name:    slugify(config.meta.name),
+    version: '0.1.0',
+    private: true,
+    scripts: { dev: 'next dev', build: 'next build', start: 'next start' },
+    dependencies: {
+      next:        '^14.0.0',
+      react:       '^18.0.0',
+      'react-dom': '^18.0.0',
+      echarts:     '^5.4.3',
+      'echarts-for-react': '^3.0.2',
+      axios:       '^1.6.0',
+      jspdf:       '^2.5.1',
+      html2canvas: '^1.4.1',
     },
-    null,
-    2,
-  )
+    devDependencies: {
+      typescript:          '^5.0.0',
+      '@types/node':       '^20.0.0',
+      '@types/react':      '^18.0.0',
+      '@types/react-dom':  '^18.0.0',
+    },
+  }, null, 2)
 
-  // ── next.config.mjs ─────────────────────────────────────────────────────
+  // ── next.config.mjs ───────────────────────────────────────────
   files['next.config.mjs'] = `/** @type {import('next').NextConfig} */
 const nextConfig = {}
 export default nextConfig
 `
 
-  // ── tsconfig.json ───────────────────────────────────────────────────────
-  files['tsconfig.json'] = JSON.stringify(
-    {
-      compilerOptions: {
-        target: 'ES2017',
-        lib: ['dom', 'dom.iterable', 'esnext'],
-        allowJs: true,
-        skipLibCheck: true,
-        strict: false,
-        noEmit: true,
-        esModuleInterop: true,
-        module: 'esnext',
-        moduleResolution: 'bundler',
-        resolveJsonModule: true,
-        isolatedModules: true,
-        jsx: 'preserve',
-        incremental: true,
-        plugins: [{ name: 'next' }],
-        paths: { '@/*': ['./src/*'] },
-      },
-      include: ['next-env.d.ts', '**/*.ts', '**/*.tsx', '.next/types/**/*.ts'],
-      exclude: ['node_modules'],
+  // ── tsconfig.json ─────────────────────────────────────────────
+  files['tsconfig.json'] = JSON.stringify({
+    compilerOptions: {
+      target:           'ES2017',
+      lib:              ['dom', 'dom.iterable', 'esnext'],
+      allowJs:          true,
+      skipLibCheck:     true,
+      strict:           false,
+      noEmit:           true,
+      esModuleInterop:  true,
+      module:           'esnext',
+      moduleResolution: 'bundler',
+      resolveJsonModule: true,
+      isolatedModules:  true,
+      jsx:              'preserve',
+      incremental:      true,
+      plugins:          [{ name: 'next' }],
+      paths:            { '@/*': ['./src/*'] },
     },
-    null,
-    2,
-  )
+    include: ['next-env.d.ts', '**/*.ts', '**/*.tsx', '.next/types/**/*.ts'],
+    exclude: ['node_modules'],
+  }, null, 2)
 
-  // ── layout ──────────────────────────────────────────────────────────────
+  // ── globals.css ───────────────────────────────────────────────
+  files['src/app/globals.css'] = `*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', system-ui, sans-serif; background: #f1f5f9; color: #0f172a; }
+input, button, select { font-family: inherit; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+`
+
+  // ── layout ────────────────────────────────────────────────────
   files['src/app/layout.tsx'] = `import type { Metadata } from 'next'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: '${config.meta.name}',
-  description: '${config.meta.description ?? 'Exported dashboard'}',
+  title: '${pc.projectTitle}',
+  description: '${config.meta.description ?? pc.clientName + ' Dashboard'}',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f8f9fa' }}>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   )
 }
 `
 
-  // ── page ────────────────────────────────────────────────────────────────
-  files['src/app/page.tsx'] = `import { dashboardConfig } from '@/lib/config'
-import { WidgetChart } from '@/components/WidgetChart'
+  // ── root page → redirect ──────────────────────────────────────
+  files['src/app/page.tsx'] = `'use client'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
-export default function DashboardPage() {
-  return (
-    <main style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.25rem', color: '#111827' }}>
-        {dashboardConfig.meta.name}
-      </h1>
-      {dashboardConfig.meta.description && (
-        <p style={{ color: '#6b7280', marginBottom: '2rem', marginTop: '0.25rem' }}>
-          {dashboardConfig.meta.description}
-        </p>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))', gap: '1.5rem' }}>
-        {dashboardConfig.widgets.map((widget) => (
-          <WidgetChart key={widget.id} widget={widget} endpoints={dashboardConfig.endpoints} />
-        ))}
-      </div>
-    </main>
-  )
+export default function RootPage() {
+  const router = useRouter()
+  useEffect(() => {
+    const user = localStorage.getItem('authUser')
+    router.replace(user ? '/dashboard' : '/login')
+  }, [router])
+  return null
 }
 `
 
-  // ── config ──────────────────────────────────────────────────────────────
+  // ── login page ────────────────────────────────────────────────
+  files['src/app/login/page.tsx'] = generateLoginPage(config)
+
+  // ── dashboard layout ──────────────────────────────────────────
+  files['src/app/dashboard/layout.tsx'] = generateDashboardLayout(config)
+
+  // ── dashboard page ────────────────────────────────────────────
+  files['src/app/dashboard/page.tsx'] = generateDashboardPage(config)
+
+  // ── config ────────────────────────────────────────────────────
   files['src/lib/config.ts'] = `// Auto-generated by Analytics AI Dashboard Builder
-// Exported on: ${new Date(config.meta.exportedAt).toLocaleString()}
-export const dashboardConfig = ${JSON.stringify(config, null, 2)} as const
+// Exported: ${new Date(config.meta.exportedAt).toLocaleString()}
+// Client: ${pc.clientName}
+
+import type { DashboardConfig } from './types'
+
+export const dashboardConfig: DashboardConfig = ${JSON.stringify(config, null, 2)} as const
 `
 
-  // ── WidgetChart component ────────────────────────────────────────────────
-  files['src/components/WidgetChart.tsx'] = buildWidgetChartComponent()
+  // ── types ─────────────────────────────────────────────────────
+  files['src/lib/types.ts'] = generateTypes()
 
-  // ── README ───────────────────────────────────────────────────────────────
-  files['README.md'] = `# ${config.meta.name}
+  // ── apiClient ─────────────────────────────────────────────────
+  files['src/lib/apiClient.ts'] = generateApiClient(config)
 
-> Exported from **Analytics AI Dashboard Builder** on ${new Date(config.meta.exportedAt).toLocaleDateString()}.
+  // ── useChartData hook ─────────────────────────────────────────
+  files['src/hooks/useChartData.ts'] = generateUseChartData()
 
-## Getting Started
+  // ── Components ───────────────────────────────────────────────
+  files['src/components/Sidebar.tsx']     = generateSidebar(config)
+  files['src/components/Header.tsx']      = generateHeader(config)
+  files['src/components/WidgetChart.tsx'] = generateWidgetChart()
+  files['src/components/PDFExport.tsx']   = generatePDFExport(config)
+  files['src/components/AuthGuard.tsx']   = generateAuthGuard()
+
+  // ── README ────────────────────────────────────────────────────
+  files['README.md'] = generateReadme(config)
+
+  return files
+}
+
+// ─────────────────────────────────────────────────────────────
+// GENERATORS
+// ─────────────────────────────────────────────────────────────
+
+function generateLoginPage(config: DashboardExportConfig): string {
+  const { projectConfig: pc } = config
+  const isBasic  = pc.authStrategy === 'basic'
+  const isBtoa   = pc.login.encodingType === 'btoa'
+
+  return `'use client'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { apiClient } from '@/lib/apiClient'
+
+export default function LoginPage() {
+  const router = useRouter()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      const body: Record<string, string> = {
+        ${pc.login.usernameField}: ${isBtoa ? "btoa(username + ':' + password)" : 'username'},
+        ${isBasic ? `${pc.login.passwordField}: password,` : ''}
+      }
+      const res  = await apiClient.post('${pc.login.endpoint}', body)
+      const data = res.data
+      // Extract token via dot-path: "${pc.login.tokenPath}"
+      const token = '${pc.login.tokenPath}'.split('.').reduce((o: any, k) => o?.[k], data)
+      localStorage.setItem('authUser', JSON.stringify({ ...data?.data, token, username }))
+      router.push('/dashboard')
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Login failed. Check credentials.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.logoBar}>
+          <div style={{ ...styles.logoCircle, background: '${pc.header.accentColor}' }}>
+            <span style={{ color: '#fff', fontWeight: 800, fontSize: 18 }}>
+              {('${pc.projectTitle}').charAt(0)}
+            </span>
+          </div>
+        </div>
+        <h1 style={styles.title}>${pc.projectTitle}</h1>
+        <p style={styles.sub}>${pc.clientName ? pc.clientName + ' · ' : ''}Sign in to continue</p>
+
+        <form onSubmit={handleLogin} style={styles.form}>
+          <div style={styles.field}>
+            <label style={styles.label}>Username</label>
+            <input
+              style={styles.input}
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              required autoFocus
+              placeholder="Enter username"
+            />
+          </div>
+          <div style={styles.field}>
+            <label style={styles.label}>Password</label>
+            <input
+              style={styles.input}
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              placeholder="Enter password"
+            />
+          </div>
+          {error && <p style={styles.error}>{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ ...styles.btn, background: loading ? '#94a3b8' : '${pc.header.accentColor}' }}
+          >
+            {loading ? 'Signing in…' : 'Sign In'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  page:        { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9' },
+  card:        { background: '#fff', borderRadius: 16, padding: '2.5rem 2rem', width: '100%', maxWidth: 400, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' },
+  logoBar:     { display: 'flex', justifyContent: 'center', marginBottom: '1.25rem' },
+  logoCircle:  { width: 52, height: 52, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  title:       { fontSize: '1.4rem', fontWeight: 700, textAlign: 'center', color: '#0f172a', marginBottom: 4 },
+  sub:         { fontSize: '0.82rem', color: '#64748b', textAlign: 'center', marginBottom: '1.75rem' },
+  form:        { display: 'flex', flexDirection: 'column', gap: '1rem' },
+  field:       { display: 'flex', flexDirection: 'column', gap: 6 },
+  label:       { fontSize: '0.78rem', fontWeight: 600, color: '#374151' },
+  input:       { padding: '0.6rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: '0.88rem', outline: 'none', transition: 'border 0.2s' },
+  error:       { fontSize: '0.78rem', color: '#ef4444', textAlign: 'center' },
+  btn:         { padding: '0.7rem', borderRadius: 9, border: 'none', color: '#fff', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', marginTop: 4 },
+}
+`
+}
+
+function generateDashboardLayout(config: DashboardExportConfig): string {
+  return `'use client'
+import { AuthGuard } from '@/components/AuthGuard'
+import { Sidebar }   from '@/components/Sidebar'
+import { Header }    from '@/components/Header'
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthGuard>
+      <div style={{ display: 'flex', minHeight: '100vh' }}>
+        <Sidebar />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <Header />
+          <main style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 2rem', background: '#f1f5f9' }}>
+            {children}
+          </main>
+        </div>
+      </div>
+    </AuthGuard>
+  )
+}
+`
+}
+
+function generateDashboardPage(config: DashboardExportConfig): string {
+  const { groups, widgets } = config
+
+  // Build section structure: grouped + ungrouped
+  const groupedIds  = new Set(groups.flatMap(g => g.widgetIds))
+  const ungrouped   = widgets.filter(w => !groupedIds.has(w.id))
+
+  return `'use client'
+import { useState }      from 'react'
+import { dashboardConfig } from '@/lib/config'
+import { WidgetChart }   from '@/components/WidgetChart'
+import { PDFExport }     from '@/components/PDFExport'
+
+export default function DashboardPage() {
+  const { groups, widgets, endpoints, projectConfig: pc } = dashboardConfig
+  const [activeGroup, setActiveGroup] = useState<string | 'all'>('all')
+
+  const visibleWidgets = activeGroup === 'all'
+    ? widgets
+    : widgets.filter(w => {
+        const g = groups.find(g => g.id === activeGroup)
+        return g?.widgetIds.includes(w.id)
+      })
+
+  return (
+    <div>
+      {/* Group filter tabs */}
+      {groups.length > 0 && (
+        <div style={styles.tabs}>
+          <button
+            style={{ ...styles.tab, ...(activeGroup === 'all' ? styles.tabActive : {}) }}
+            onClick={() => setActiveGroup('all')}
+          >
+            All Charts
+          </button>
+          {groups.map(g => (
+            <button
+              key={g.id}
+              style={{ ...styles.tab, ...(activeGroup === g.id ? styles.tabActive : {}) }}
+              onClick={() => setActiveGroup(g.id)}
+            >
+              {g.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* PDF export */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <PDFExport widgets={visibleWidgets} />
+      </div>
+
+      {/* Chart grid */}
+      <div id="dashboard-charts" style={styles.grid}>
+        {visibleWidgets.map(widget => (
+          <WidgetChart
+            key={widget.id}
+            widget={widget}
+            endpoints={endpoints}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  tabs:      { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: '1.25rem' },
+  tab:       { padding: '0.4rem 1rem', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#fff', fontSize: '0.8rem', fontWeight: 500, cursor: 'pointer', color: '#475569' },
+  tabActive: { background: '${config.projectConfig.header.accentColor}', color: '#fff', borderColor: '${config.projectConfig.header.accentColor}' },
+  grid:      { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))', gap: '1.25rem' },
+}
+`
+}
+
+function generateTypes(): string {
+  return `// Auto-generated types
+export interface ExportWidget {
+  id: string; title: string; type: string;
+  endpointId: string; xAxis: string; yAxis: string;
+  groupId?: string; colors: string[]; barRadius: number;
+  showLegend: boolean; showGrid: boolean;
+}
+export interface ExportEndpoint { id: string; name: string; url: string; method: string; authType?: string }
+export interface ExportGroup    { id: string; name: string; order: number; widgetIds: string[] }
+export interface DashboardConfig { meta: any; projectConfig: any; endpoints: ExportEndpoint[]; widgets: ExportWidget[]; groups: ExportGroup[] }
+`
+}
+
+function generateApiClient(config: DashboardExportConfig): string {
+  const { projectConfig: pc } = config
+  return `import axios from 'axios'
+
+export const apiClient = axios.create({
+  baseURL:         '${pc.baseUrl}',
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+// Attach Bearer token on every private request
+apiClient.interceptors.request.use(config => {
+  try {
+    const raw  = localStorage.getItem('authUser')
+    const user = raw ? JSON.parse(raw) : null
+    if (user?.token) config.headers['Authorization'] = \`Bearer \${user.token}\`
+  } catch {}
+  return config
+})
+
+// Auto-logout on 401 or expired message
+apiClient.interceptors.response.use(
+  res => res,
+  err => {
+    const status  = err?.response?.status
+    const message = err?.response?.data?.message ?? ''
+    if (status === ${pc.session.logoutOn401 ? 401 : 999} || message.includes('${pc.session.logoutOnMessage}')) {
+      localStorage.removeItem('authUser')
+      window.location.href = '/login'
+    }
+    return Promise.reject(err)
+  },
+)
+`
+}
+
+function generateUseChartData(): string {
+  return `'use client'
+import { useState, useEffect, useRef } from 'react'
+import { apiClient } from '@/lib/apiClient'
+
+export function useChartData(endpoint: { id: string; url: string; method: string } | undefined) {
+  const [data, setData]       = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
+  const hasFetched            = useRef(false)
+
+  useEffect(() => {
+    if (!endpoint || hasFetched.current) return
+    hasFetched.current = true
+    setLoading(true)
+    const req = endpoint.method === 'POST'
+      ? apiClient.post(endpoint.url)
+      : apiClient.get(endpoint.url)
+
+    req.then(res => {
+      const json = res.data
+      const arr  = Array.isArray(json) ? json
+        : json?.data || json?.results || json?.items || json?.list || [json]
+      setData(arr)
+    })
+    .catch(e => setError(e.message))
+    .finally(() => setLoading(false))
+  }, [endpoint?.id])
+
+  return { data, loading, error }
+}
+`
+}
+
+function generateSidebar(config: DashboardExportConfig): string {
+  const { projectConfig: pc, groups } = config
+  return `'use client'
+import { useState }   from 'react'
+import { useRouter }  from 'next/navigation'
+import { dashboardConfig } from '@/lib/config'
+
+export function Sidebar() {
+  const router = useRouter()
+  const { groups, projectConfig: pc } = dashboardConfig
+  const [collapsed, setCollapsed] = useState(false)
+
+  const handleLogout = () => {
+    localStorage.removeItem('authUser')
+    router.push('/login')
+  }
+
+  return (
+    <aside style={{
+      width:      collapsed ? 60 : 240,
+      minHeight:  '100vh',
+      background: '${pc.header.primaryColor}',
+      display:    'flex',
+      flexDirection: 'column',
+      transition: 'width 0.25s ease',
+      flexShrink: 0,
+    }}>
+      {/* Logo */}
+      <div style={{ padding: '1.25rem 1rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: '${pc.header.accentColor}', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <span style={{ color: '#fff', fontWeight: 800, fontSize: 14 }}>{('${pc.projectTitle}').charAt(0)}</span>
+        </div>
+        {!collapsed && (
+          <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            ${pc.projectTitle}
+          </span>
+        )}
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16 }}
+        >
+          {collapsed ? '→' : '←'}
+        </button>
+      </div>
+
+      {/* Nav groups */}
+      <nav style={{ flex: 1, padding: '0.75rem 0', overflowY: 'auto' }}>
+        {groups.length > 0 ? groups.map(group => (
+          <div key={group.id}>
+            {!collapsed && (
+              <p style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+                {group.name}
+              </p>
+            )}
+            {group.widgetIds.slice(0, 3).map(wid => {
+              const w = dashboardConfig.widgets.find(w => w.id === wid)
+              if (!w) return null
+              return (
+                <a
+                  key={wid}
+                  href={\`#widget-\${w.id}\`}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '0.6rem' : '0.5rem 1rem', color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem', textDecoration: 'none', borderRadius: 8, margin: '1px 8px', transition: 'background 0.15s' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ fontSize: 12 }}>📊</span>
+                  {!collapsed && <span style={{ truncate: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>{w.title}</span>}
+                </a>
+              )
+            })}
+          </div>
+        )) : (
+          dashboardConfig.widgets.map(w => (
+            <a
+              key={w.id}
+              href={\`#widget-\${w.id}\`}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '0.6rem' : '0.5rem 1rem', color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem', textDecoration: 'none', borderRadius: 8, margin: '1px 8px' }}
+            >
+              <span style={{ fontSize: 12 }}>📊</span>
+              {!collapsed && w.title}
+            </a>
+          ))
+        )}
+      </nav>
+
+      {/* Logout */}
+      <div style={{ padding: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <button
+          onClick={handleLogout}
+          style={{ width: '100%', padding: collapsed ? '0.5rem' : '0.5rem 1rem', background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 8 }}
+        >
+          🚪 {!collapsed && 'Logout'}
+        </button>
+      </div>
+    </aside>
+  )
+}
+`
+}
+
+function generateHeader(config: DashboardExportConfig): string {
+  const { projectConfig: pc } = config
+  return `'use client'
+import { dashboardConfig } from '@/lib/config'
+
+export function Header() {
+  const { projectConfig: pc } = dashboardConfig
+  let username = ''
+  try { username = JSON.parse(localStorage.getItem('authUser') || '{}')?.username || '' } catch {}
+
+  return (
+    <header style={{
+      height:       56,
+      background:   '#fff',
+      borderBottom: '1px solid #e2e8f0',
+      display:      'flex',
+      alignItems:   'center',
+      justifyContent: 'space-between',
+      padding:      '0 1.5rem',
+      flexShrink:   0,
+    }}>
+      <h1 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+        ${pc.projectTitle}
+      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {username && (
+          <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            Welcome, {username}
+          </span>
+        )}
+        <div style={{
+          width: 34, height: 34, borderRadius: '50%',
+          background: '${pc.header.accentColor}',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontWeight: 700, fontSize: 13,
+        }}>
+          {username ? username.charAt(0).toUpperCase() : '?'}
+        </div>
+      </div>
+    </header>
+  )
+}
+`
+}
+
+function generateWidgetChart(): string {
+  return `'use client'
+import { useRef }            from 'react'
+import ReactECharts           from 'echarts-for-react'
+import { useChartData }       from '@/hooks/useChartData'
+import type { ExportWidget, ExportEndpoint } from '@/lib/types'
+
+interface Props {
+  widget:    ExportWidget
+  endpoints: ExportEndpoint[]
+}
+
+export function WidgetChart({ widget, endpoints }: Props) {
+  const endpoint = endpoints.find(e => e.id === widget.endpointId)
+  const { data, loading, error } = useChartData(endpoint)
+  const chartRef = useRef<any>(null)
+
+  const cardStyle: React.CSSProperties = {
+    background:   '#fff',
+    border:       '1px solid #e5e7eb',
+    borderRadius: 12,
+    padding:      '1.25rem',
+    boxShadow:    '0 1px 4px rgba(0,0,0,0.05)',
+    display:      'flex',
+    flexDirection: 'column',
+    gap:          12,
+  }
+
+  if (loading) return (
+    <div id={\`widget-\${widget.id}\`} style={{ ...cardStyle, minHeight: 240, alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 8 }}>Loading {widget.title}…</p>
+      <style>{'@keyframes spin { to { transform: rotate(360deg) } }'}</style>
+    </div>
+  )
+
+  if (error) return (
+    <div id={\`widget-\${widget.id}\`} style={cardStyle}>
+      <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>{widget.title}</p>
+      <p style={{ color: '#ef4444', fontSize: '0.8rem' }}>Error: {error}</p>
+    </div>
+  )
+
+  const option = buildEChartsOption(widget, data)
+
+  return (
+    <div id={\`widget-\${widget.id}\`} style={cardStyle}>
+      <p style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>{widget.title}</p>
+      {widget.type === 'table'
+        ? <DataTable data={data} xAxis={widget.xAxis} />
+        : <ReactECharts
+            ref={chartRef}
+            option={option}
+            style={{ height: 260, width: '100%' }}
+            opts={{ renderer: 'svg' }}
+          />
+      }
+    </div>
+  )
+}
+
+function buildEChartsOption(widget: ExportWidget, data: any[]) {
+  const colors   = widget.colors
+  const isNum    = data.length > 0 && !isNaN(Number(data[0]?.[widget.yAxis]))
+  const prepared = isNum
+    ? data.slice(0, 30).map((r, i) => ({
+        name:  String(r[widget.xAxis] ?? i).slice(0, 20),
+        value: parseFloat(r[widget.yAxis]) || 0,
+      }))
+    : (() => {
+        const counts: Record<string, number> = {}
+        data.forEach(r => { const k = String(r[widget.xAxis] ?? 'Unknown'); counts[k] = (counts[k] ?? 0) + 1 })
+        return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([name, value]) => ({ name, value }))
+      })()
+
+  const xData = prepared.map(d => d.name)
+  const yData = prepared.map(d => d.value)
+
+  const grid   = { top: 32, right: 16, bottom: 48, left: 52, containLabel: true }
+  const tooltip = { trigger: 'axis', backgroundColor: '#1e293b', borderColor: '#334155', textStyle: { color: '#f1f5f9', fontSize: 12 } }
+
+  switch (widget.type) {
+    case 'bar':
+    case 'horizontal-bar': return {
+      color: colors, tooltip, grid,
+      legend: widget.showLegend ? {} : { show: false },
+      xAxis: widget.type === 'horizontal-bar'
+        ? { type: 'value', splitLine: { show: widget.showGrid } }
+        : { type: 'category', data: xData, axisLabel: { fontSize: 11, rotate: xData.length > 8 ? 30 : 0 } },
+      yAxis: widget.type === 'horizontal-bar'
+        ? { type: 'category', data: xData }
+        : { type: 'value', splitLine: { show: widget.showGrid } },
+      series: [{ type: 'bar', data: yData, barMaxWidth: 48, itemStyle: { borderRadius: [widget.barRadius, widget.barRadius, 0, 0] }, name: widget.yAxis }],
+    }
+    case 'line':
+    case 'area': return {
+      color: colors, tooltip, grid,
+      legend: widget.showLegend ? {} : { show: false },
+      xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 11 } },
+      yAxis: { type: 'value', splitLine: { show: widget.showGrid } },
+      series: [{ type: 'line', data: yData, smooth: true, name: widget.yAxis,
+        areaStyle: widget.type === 'area' ? { opacity: 0.2 } : undefined,
+        lineStyle: { width: 2 },
+      }],
+    }
+    case 'pie':
+    case 'donut': return {
+      color: colors, tooltip: { trigger: 'item' },
+      legend: widget.showLegend ? { orient: 'vertical', right: 0 } : { show: false },
+      series: [{
+        type: 'pie', radius: widget.type === 'donut' ? ['40%', '70%'] : '70%',
+        data: prepared, label: { fontSize: 11 },
+        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' } },
+        name: widget.title,
+      }],
+    }
+    case 'gauge': return {
+      series: [{
+        type: 'gauge', min: 0, max: Math.max(...yData, 100),
+        data: [{ value: yData[0] ?? 0, name: widget.yAxis }],
+        detail: { fontSize: 18, color: colors[0] },
+        axisLine: { lineStyle: { color: [[1, colors[0]]] } },
+      }],
+    }
+    default: return { title: { text: widget.title } }
+  }
+}
+
+function DataTable({ data, xAxis }: { data: any[]; xAxis: string }) {
+  if (!data.length) return <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>No data</p>
+  const cols = Object.keys(data[0])
+  return (
+    <div style={{ overflowX: 'auto', maxHeight: 280, overflowY: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+        <thead>
+          <tr>{cols.map(c => (
+            <th key={c} style={{ padding: '6px 10px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left', color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>{c}</th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {data.slice(0, 100).map((row, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              {cols.map((c, j) => (
+                <td key={j} style={{ padding: '6px 10px', color: '#374151', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(row[c] ?? '')}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+`
+}
+
+function generatePDFExport(config: DashboardExportConfig): string {
+  return `'use client'
+import { useState }    from 'react'
+import type { ExportWidget } from '@/lib/types'
+
+interface Props { widgets: ExportWidget[] }
+
+export function PDFExport({ widgets }: Props) {
+  const [open, setOpen]         = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set(widgets.map(w => w.id)))
+  const [loading, setLoading]   = useState(false)
+
+  const toggle = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const handleExport = async () => {
+    setLoading(true)
+    try {
+      const { default: jsPDF }          = await import('jspdf')
+      const { default: html2canvas }    = await import('html2canvas')
+      const doc  = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const W    = doc.internal.pageSize.getWidth()
+      const H    = doc.internal.pageSize.getHeight()
+      let first  = true
+
+      // Title page
+      doc.setFillColor(15, 23, 42)
+      doc.rect(0, 0, W, H, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(24)
+      doc.text('${config.meta.name}', W / 2, H / 2 - 10, { align: 'center' })
+      doc.setFontSize(11)
+      doc.setTextColor(148, 163, 184)
+      doc.text('Generated: ' + new Date().toLocaleDateString(), W / 2, H / 2 + 8, { align: 'center' })
+
+      for (const wid of Array.from(selected)) {
+        const el = document.getElementById(\`widget-\${wid}\`)
+        if (!el) continue
+        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true })
+        const img    = canvas.toDataURL('image/png')
+        const ratio  = canvas.height / canvas.width
+        const imgW   = W - 20
+        const imgH   = Math.min(imgW * ratio, H - 30)
+        if (!first || true) doc.addPage()
+        first = false
+        doc.addImage(img, 'PNG', 10, 10, imgW, imgH)
+      }
+
+      doc.save('${slugify(config.meta.name)}-report.pdf')
+      setOpen(false)
+    } catch (e) {
+      console.error('PDF export failed:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        style={{ padding: '0.5rem 1.25rem', background: '${config.projectConfig.header.accentColor}', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+      >
+        📄 Export PDF
+      </button>
+
+      {open && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontWeight: 700, fontSize: '1.1rem' }}>Select Charts for PDF</h2>
+              <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}>✕</button>
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.4rem', cursor: 'pointer', borderRadius: 6, background: '#f8fafc' }}>
+                <input type="checkbox"
+                  checked={selected.size === widgets.length}
+                  onChange={() => setSelected(selected.size === widgets.length ? new Set() : new Set(widgets.map(w => w.id)))}
+                />
+                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Select All</span>
+              </label>
+              {widgets.map(w => (
+                <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.4rem 0.6rem', cursor: 'pointer', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                  <input type="checkbox" checked={selected.has(w.id)} onChange={() => toggle(w.id)} />
+                  <span style={{ fontSize: '0.82rem' }}>{w.title}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: '#94a3b8', textTransform: 'capitalize' }}>{w.type}</span>
+                </label>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setOpen(false)}
+                style={{ flex: 1, padding: '0.6rem', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#fff', cursor: 'pointer', fontWeight: 500 }}>
+                Cancel
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={loading || selected.size === 0}
+                style={{ flex: 2, padding: '0.6rem', background: selected.size === 0 ? '#94a3b8' : '${config.projectConfig.header.accentColor}', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {loading ? 'Generating…' : \`Export \${selected.size} Chart\${selected.size !== 1 ? 's' : ''}\`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+`
+}
+
+function generateAuthGuard(): string {
+  return `'use client'
+import { useEffect, useState } from 'react'
+import { useRouter }           from 'next/navigation'
+
+export function AuthGuard({ children }: { children: React.ReactNode }) {
+  const router   = useRouter()
+  const [ok, setOk] = useState(false)
+
+  useEffect(() => {
+    const user = localStorage.getItem('authUser')
+    if (!user) { router.replace('/login') } else { setOk(true) }
+  }, [router])
+
+  if (!ok) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 36, height: 36, border: '3px solid #e2e8f0', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <style>{'@keyframes spin { to { transform: rotate(360deg) } }'}</style>
+    </div>
+  )
+  return <>{children}</>
+}
+`
+}
+
+function generateReadme(config: DashboardExportConfig): string {
+  const { projectConfig: pc } = config
+  return `# ${config.meta.name}
+
+> Generated by **Analytics AI Dashboard Builder** · ${new Date(config.meta.exportedAt).toLocaleDateString()}
+> Client: **${pc.clientName}** · Auth: **${pc.authStrategy}**
+
+## Quick Start
 
 \`\`\`bash
 npm install
 npm run dev
 \`\`\`
 
-Open [http://localhost:3000](http://localhost:3000) to view your dashboard.
+Open [http://localhost:3000](http://localhost:3000)
 
----
+## Login
+
+- Endpoint: \`${pc.login.endpoint}\`
+- Username field: \`${pc.login.usernameField}\`
+- Token path: \`${pc.login.tokenPath}\`
 
 ## Widgets (${config.widgets.length})
 
-${config.widgets.map(w => `- **${w.title}** — \`${w.type}\` · X: \`${w.xAxis}\` · Y: \`${w.yAxis}\``).join('\n')}
+${config.widgets.map(w => `- **${w.title}** — \`${w.type}\` · X: \`${w.xAxis}\` · Y: \`${w.yAxis || '—'}\``).join('\n')}
 
-## Endpoints (${config.endpoints.length})
+## Groups (${config.groups.length})
+
+${config.groups.map(g => `- **${g.name}** — ${g.widgetIds.length} charts`).join('\n') || '_No groups defined_'}
+
+## Endpoints
 
 ${config.endpoints.map(e => `- **${e.name}**: \`${e.method} ${e.url}\``).join('\n')}
 `
-
-  return files
 }
-
-// ── helpers ──────────────────────────────────────────────────────────────────
 
 function slugify(name: string): string {
-  return (
-    name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
-    'dashboard'
-  )
-}
-
-function buildWidgetChartComponent(): string {
-  return `'use client'
-
-import { useEffect, useState } from 'react'
-import {
-  LineChart, BarChart, AreaChart, PieChart,
-  Line, Bar, Area, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from 'recharts'
-
-const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444']
-
-interface WidgetConfig {
-  id: string
-  title: string
-  type: string
-  endpointId: string
-  xAxis: string
-  yAxis: string
-}
-
-interface EndpointConfig {
-  id: string
-  name: string
-  url: string
-  method: string
-}
-
-interface Props {
-  widget: WidgetConfig
-  endpoints: EndpointConfig[]
-}
-
-export function WidgetChart({ widget, endpoints }: Props) {
-  const [data, setData] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const endpoint = endpoints.find((e) => e.id === widget.endpointId)
-    if (!endpoint) { setError('Endpoint not found'); setLoading(false); return }
-
-    fetch(endpoint.url, { method: endpoint.method })
-      .then((r) => { if (!r.ok) throw new Error(\`HTTP \${r.status}\`); return r.json() })
-      .then((json) => {
-        const arr = Array.isArray(json) ? json : json.data || json.results || json.items || [json]
-        setData(arr)
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [widget.endpointId])
-
-  const cardStyle: React.CSSProperties = {
-    background: '#ffffff', border: '1px solid #e5e7eb',
-    borderRadius: '12px', padding: '1.25rem',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-  }
-  const titleStyle: React.CSSProperties = {
-    fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', color: '#111827',
-  }
-
-  if (loading) return (
-    <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 220 }}>
-      <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>Loading...</p>
-    </div>
-  )
-
-  if (error) return (
-    <div style={{ ...cardStyle, minHeight: 220 }}>
-      <p style={titleStyle}>{widget.title}</p>
-      <p style={{ color: '#ef4444', fontSize: '0.8rem' }}>Error: {error}</p>
-    </div>
-  )
-
-  const isNumeric = data.length > 0 && !isNaN(Number(data[0][widget.yAxis]))
-  const chartData = isNumeric
-    ? data.slice(0, 30).map((item, i) => ({
-        name: String(item[widget.xAxis] ?? \`#\${i}\`).slice(0, 20),
-        value: parseFloat(item[widget.yAxis]) || 0,
-      }))
-    : (() => {
-        const counts: Record<string, number> = {}
-        data.forEach(item => {
-          const k = String(item[widget.xAxis] ?? 'Unknown').slice(0, 20)
-          counts[k] = (counts[k] ?? 0) + 1
-        })
-        return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 20)
-          .map(([name, value]) => ({ name, value }))
-      })()
-
-  const renderChart = () => {
-    switch (widget.type) {
-      case 'line': return (
-        <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip /><Legend />
-          <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={false} name={widget.yAxis} />
-        </LineChart>
-      )
-      case 'area': return (
-        <AreaChart data={chartData}>
-          <defs>
-            <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip /><Legend />
-          <Area type="monotone" dataKey="value" stroke="#6366f1" fill="url(#grad)" strokeWidth={2} name={widget.yAxis} />
-        </AreaChart>
-      )
-      case 'bar': return (
-        <BarChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip /><Legend />
-          <Bar dataKey="value" radius={[4,4,0,0]} name={widget.yAxis}>
-            {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-          </Bar>
-        </BarChart>
-      )
-      case 'pie': return (
-        <PieChart>
-          <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
-            {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-          </Pie>
-          <Tooltip /><Legend />
-        </PieChart>
-      )
-      case 'table': return (
-        <div style={{ overflowX: 'auto', maxHeight: 260, overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-            <thead>
-              <tr>{Object.keys(data[0] || {}).map(col => (
-                <th key={col} style={{ padding: '6px 10px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', textAlign: 'left', color: '#6b7280', fontWeight: 600 }}>{col}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {data.map((row, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  {Object.values(row).map((val, j) => (
-                    <td key={j} style={{ padding: '6px 10px', color: '#374151' }}>{String(val)}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )
-      default: return <p style={{ color: '#9ca3af' }}>Unknown type: {widget.type}</p>
-    }
-  }
-
-  return (
-    <div style={cardStyle}>
-      <p style={titleStyle}>{widget.title}</p>
-      <ResponsiveContainer width="100%" height={240}>
-        {renderChart() as React.ReactElement}
-      </ResponsiveContainer>
-    </div>
-  )
-}
-`
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'dashboard'
 }
