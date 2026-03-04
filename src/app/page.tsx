@@ -122,13 +122,11 @@ function DashboardMockup() {
             <p className="text-[9px] text-white/40 mb-2">Revenue by Month</p>
             <div className="flex items-end gap-1 h-16">
               {bars.map((h, i) => (
-                <motion.div
+                <div
                   key={i}
-                  initial={{ height: 0 }}
-                  animate={{ height: `${h}%` }}
-                  transition={{ delay: 0.5 + i * 0.06, duration: 0.4, ease: 'easeOut' }}
                   className="flex-1 rounded-t-sm"
                   style={{
+                    height: `${h}%`,
                     background: `linear-gradient(to top, ${['#3b82f6','#8b5cf6','#06b6d4','#10b981'][i % 4]}, ${['#3b82f6','#8b5cf6','#06b6d4','#10b981'][i % 4]}88)`,
                     minHeight: 4,
                   }}
@@ -257,8 +255,8 @@ function LandingPage() {
               <Link href="/login">
                 <Button
                   size="lg"
-                  variant="outline"
-                  className="border-white/20 text-white/80 hover:bg-white/5 hover:text-white px-8 h-12 text-base"
+                  variant="ghost"
+                  className="border-white/20 bg-transparent text-white/80 hover:bg-white/8 hover:text-white hover:border-white/40 px-8 h-12 text-base"
                 >
                   View Live Demo <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
@@ -288,9 +286,7 @@ function LandingPage() {
             <motion.div
               key={s.label}
               initial={{ opacity: 0, y: 10 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              viewport={{ once: true }}
+              animate={{ opacity: 1, y: 0 }}
             >
               <p className="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                 {s.value}
@@ -318,9 +314,7 @@ function LandingPage() {
               <motion.div
                 key={f.title}
                 initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-                viewport={{ once: true }}
+                animate={{ opacity: 1, y: 0 }}
                 className="group relative rounded-2xl border border-white/8 bg-white/3 p-6 hover:border-white/15 hover:bg-white/5 transition-all duration-300"
               >
                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${f.color} flex items-center justify-center mb-4 shadow-lg`}>

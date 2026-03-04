@@ -32,8 +32,9 @@
     "@tanstack/react-table": "^8.21.3",
     "@tremor/react": "^3.18.7",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@xyflow/react": "^12.10.1",
     "ajv": "^8.18.0",
-    "axios": "^1.13.5",
+    "axios": "^1.13.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
@@ -57,6 +58,7 @@
     "socket.io-client": "^4.8.3",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.1",
+    "undici": "^7.22.0",
     "zod": "^3.25.76",
     "zustand": "^4.5.7"
   },

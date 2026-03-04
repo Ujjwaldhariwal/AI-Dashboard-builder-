@@ -249,7 +249,7 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
               {selectedWidget.title}
             </Badge>
           )}
-          <Badge variant="secondary" className="text-[10px]">GPT-4o mini</Badge>
+          <Badge variant="secondary" className="text-[10px]">Gemeni</Badge>
           {onClose && (
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
               <X className="w-4 h-4" />
