@@ -18,18 +18,18 @@ interface EndpointShape {
 }
 
 export interface ExportWidget {
-  id:          string
-  title:       string
-  type:        ChartType
-  endpointId:  string
-  xAxis:       string
-  yAxis:       string
-  groupId?:    string
+  id:           string
+  title:        string
+  type:         ChartType
+  endpointId:   string
+  xAxis:        string
+  yAxis:        string
+  groupId?:     string
   sectionName?: string
-  colors:      string[]
-  barRadius:   number
-  showLegend:  boolean
-  showGrid:    boolean
+  colors:       string[]
+  barRadius:    number
+  showLegend:   boolean
+  showGrid:     boolean
 }
 
 export interface ExportEndpoint {
@@ -54,10 +54,10 @@ export interface DashboardExportConfig {
     description?: string
     exportedAt:   string
   }
-  projectConfig:  ProjectConfig
-  endpoints:      ExportEndpoint[]
-  widgets:        ExportWidget[]
-  groups:         ExportGroup[]
+  projectConfig: ProjectConfig
+  endpoints:     ExportEndpoint[]
+  widgets:       ExportWidget[]
+  groups:        ExportGroup[]
 }
 
 export function buildDashboardConfig(
@@ -67,10 +67,10 @@ export function buildDashboardConfig(
   projectConfig: ProjectConfig,
   chartGroups:   ChartGroup[],
 ): DashboardExportConfig {
-  const dashboardWidgets  = widgets.filter(w => w.dashboardId === dashboard.id)
-  const dashboardGroups   = chartGroups.filter(g => g.dashboardId === dashboard.id)
-  const endpointMap       = new Map(endpoints.map(e => [e.id, e]))
-  const usedEndpointIds   = new Set(dashboardWidgets.map(w => w.endpointId))
+  const dashboardWidgets = widgets.filter(w => w.dashboardId === dashboard.id)
+  const dashboardGroups  = chartGroups.filter(g => g.dashboardId === dashboard.id)
+  const endpointMap      = new Map(endpoints.map(e => [e.id, e]))
+  const usedEndpointIds  = new Set(dashboardWidgets.map(w => w.endpointId))
 
   return {
     meta: {
@@ -81,8 +81,7 @@ export function buildDashboardConfig(
     },
     projectConfig: {
       ...projectConfig,
-      dashboardId: dashboard.id,
-      // Ensure projectTitle falls back to dashboard name
+      dashboardId:  dashboard.id,
       projectTitle: projectConfig.projectTitle || dashboard.name,
     },
     endpoints: Array.from(usedEndpointIds)
@@ -105,9 +104,9 @@ export function buildDashboardConfig(
       groupId:     w.groupId,
       sectionName: w.sectionName,
       colors:      w.style.colors,
-      barRadius:   w.style.barRadius   ?? 5,
-      showLegend:  w.style.showLegend  ?? true,
-      showGrid:    w.style.showGrid    ?? true,
+      barRadius:   w.style.barRadius  ?? 5,
+      showLegend:  w.style.showLegend ?? true,
+      showGrid:    w.style.showGrid   ?? true,
     })),
     groups: dashboardGroups
       .sort((a, b) => a.order - b.order)
