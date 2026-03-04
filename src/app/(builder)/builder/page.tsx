@@ -1,3 +1,4 @@
+//src/app/(builder)/builder/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -22,6 +23,9 @@ import { buildDashboardConfig, slugifyDashboardName } from '@/lib/code-generator
 import { generateProjectFromConfig } from '@/lib/code-generator/template-generator'
 import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
 import { motion, AnimatePresence } from 'framer-motion'
+import { WidgetStylePanel } from '@/components/builder/style-panel/widget-style-panel'
+import { Palette } from 'lucide-react'
+
 
 export default function BuilderPage() {
   const router = useRouter()
@@ -180,95 +184,78 @@ export default function BuilderPage() {
         />
       </div>
 
-      {/* ── Floating AI Overlay ─────────────────────────────────
-          ✅ FIX: Single <Tabs> context wraps both header TabsList
-          and body TabsContent — they are now correctly connected.
-      ─────────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {aiOpen && (
-          <motion.div
-            key="ai-overlay"
-            initial={{ opacity: 0, y: 24, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            className="fixed bottom-5 right-5 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-card"
-            style={{ width: 380, height: aiMinimized ? 'auto' : 560 }}
-          >
-            {/* Single Tabs instance — TabsList in header, TabsContent in body */}
-            <Tabs defaultValue="chat" className="flex flex-col h-full">
+{/* ── Floating AI Overlay ─────────────────────────────────
+    Style tab added as 3rd tab — visual alternative to AI chat
+─────────────────────────────────────────────────────────── */}
+<AnimatePresence>
+  {aiOpen && (
+    <motion.div
+      key="ai-overlay"
+      initial={{ opacity: 0, y: 24, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 24, scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+      className="fixed bottom-5 right-5 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-card"
+      style={{ width: 380, height: aiMinimized ? 'auto' : 580 }}
+    >
+      <Tabs defaultValue="chat" className="flex flex-col h-full">
 
-              {/* Overlay header */}
-              <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gradient-to-r from-blue-600/10 to-purple-600/10 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-                    <Sparkles className="w-3 h-3 text-white" />
-                  </div>
-                  <span className="text-sm font-semibold">AI Assistant</span>
-                  {selectedWidgetId && !aiMinimized && (
-                    <Badge variant="secondary" className="text-[10px]">
-                      Styling widget
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <TabsList className="h-6">
-                    <TabsTrigger value="chat" className="text-[10px] h-5 px-2 gap-1">
-                      <Bot className="w-2.5 h-2.5" />
-                      Chat
-                    </TabsTrigger>
-                    <TabsTrigger value="suggest" className="text-[10px] h-5 px-2 gap-1">
-                      <LayoutGrid className="w-2.5 h-2.5" />
-                      Suggest
-                    </TabsTrigger>
-                  </TabsList>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setAiMinimized(v => !v)}
-                  >
-                    {aiMinimized
-                      ? <Maximize2 className="w-3 h-3" />
-                      : <Minimize2 className="w-3 h-3" />
-                    }
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => { setAiOpen(false); setAiMinimized(false) }}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gradient-to-r from-blue-600/10 to-purple-600/10 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
+              <Sparkles className="w-3 h-3 text-white" />
+            </div>
+            <span className="text-sm font-semibold">AI Assistant</span>
+            {selectedWidgetId && !aiMinimized && (
+              <Badge variant="secondary" className="text-[10px]">Styling widget</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <TabsList className="h-6">
+              <TabsTrigger value="chat" className="text-[10px] h-5 px-2 gap-1">
+                <Bot className="w-2.5 h-2.5" />Chat
+              </TabsTrigger>
+              <TabsTrigger value="suggest" className="text-[10px] h-5 px-2 gap-1">
+                <LayoutGrid className="w-2.5 h-2.5" />Suggest
+              </TabsTrigger>
+              <TabsTrigger value="style" className="text-[10px] h-5 px-2 gap-1">
+                <Palette className="w-2.5 h-2.5" />Style
+              </TabsTrigger>
+            </TabsList>
+            <Button variant="ghost" size="icon" className="h-6 w-6"
+              onClick={() => setAiMinimized(v => !v)}>
+              {aiMinimized ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
+            </Button>
+            <Button variant="ghost" size="icon" className="h-6 w-6"
+              onClick={() => { setAiOpen(false); setAiMinimized(false) }}>
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+        </div>
 
-              {/* Overlay body — hidden when minimized */}
-              {!aiMinimized && (
-                <div className="flex-1 overflow-hidden min-h-0">
-                  <TabsContent
-                    value="chat"
-                    className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-                  >
-                    <ConfigChatbot
-                      selectedWidgetId={selectedWidgetId}
-                      onClose={() => { setAiOpen(false); setAiMinimized(false) }}
-                    />
-                  </TabsContent>
-                  <TabsContent
-                    value="suggest"
-                    className="mt-0 h-full overflow-y-auto p-4"
-                  >
-                    <ChartSuggester />
-                  </TabsContent>
-                </div>
-              )}
-
-            </Tabs>
-          </motion.div>
+        {/* Body */}
+        {!aiMinimized && (
+          <div className="flex-1 overflow-hidden min-h-0">
+            <TabsContent value="chat"
+              className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+              <ConfigChatbot selectedWidgetId={selectedWidgetId}
+                onClose={() => { setAiOpen(false); setAiMinimized(false) }} />
+            </TabsContent>
+            <TabsContent value="suggest" className="mt-0 h-full overflow-y-auto p-4">
+              <ChartSuggester />
+            </TabsContent>
+            <TabsContent value="style"
+              className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
+              <WidgetStylePanel selectedWidgetId={selectedWidgetId} />
+            </TabsContent>
+          </div>
         )}
-      </AnimatePresence>
+      </Tabs>
+    </motion.div>
+  )}
+</AnimatePresence>
+
 
       {/* Floating trigger button — only source of truth for opening AI */}
       {!aiOpen && (
