@@ -1,117 +1,126 @@
-// Module: Modern Bar Chart — style-layer aware
-// src/components/charts/modern-bar-chart.tsx
 'use client'
 
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, Cell,
-} from 'recharts'
+import { useMemo } from 'react'
+import ReactECharts from 'echarts-for-react'
+import { graphic } from 'echarts/core'
 import { getChartHeight, getTickInterval, getBottomMargin } from './chart-registry'
 import { WidgetStyle, DEFAULT_STYLE } from '@/types/widget'
+import { registerEnterpriseTheme } from '@/lib/echarts/theme'
+import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+
+registerEnterpriseTheme()
 
 interface ModernBarChartProps {
-  data: any[]
+  data:   any[]
   xField: string
   yField: string
   title?: string
-  style?: WidgetStyle  // ← Layer 3 injected here
-}
-
-const CustomTooltip = ({ active, payload, label, style }: any) => {
-  if (!active || !payload?.length) return null
-  return (
-    <div
-      className="border rounded-lg shadow-lg p-2.5 text-xs max-w-[200px]"
-      style={{
-        background: style?.tooltipBg ?? 'hsl(var(--card))',
-        borderColor: style?.tooltipBorder ?? 'hsl(var(--border))',
-      }}
-    >
-      <p className="font-medium mb-1 text-foreground truncate">{label}</p>
-      {payload.map((e: any, i: number) => (
-        <p key={i} style={{ color: e.fill }}>
-          {e.name}: <span className="font-semibold">{e.value?.toLocaleString()}</span>
-        </p>
-      ))}
-    </div>
-  )
+  style?: WidgetStyle
 }
 
 export function ModernBarChart({ data, xField, yField, style }: ModernBarChartProps) {
-  const s = { ...DEFAULT_STYLE, ...style }  // merge with defaults
+  const s      = { ...DEFAULT_STYLE, ...style }
   const colors = s.colors
+  const r      = s.barRadius ?? 5
 
-  const isNumeric = data.length > 0 && !isNaN(Number(data[0][yField]))
-
-  const chartData = isNumeric
-    ? data.slice(0, 30).map((item, i) => ({
-        name: String(item[xField] ?? `#${i + 1}`).slice(0, 18),
+  const chartData = useMemo(() => {
+    const isNumeric = data.length > 0 && !isNaN(Number(data[0]?.[yField]))
+    if (isNumeric) {
+      return data.slice(0, 30).map((item, i) => ({
+        name:  String(item[xField] ?? `#${i + 1}`).slice(0, 18),
         value: parseFloat(item[yField]) || 0,
       }))
-    : (() => {
-        const counts: Record<string, number> = {}
-        data.forEach(item => {
-          const k = String(item[xField] ?? 'Unknown').slice(0, 18)
-          counts[k] = (counts[k] ?? 0) + 1
-        })
-        return Object.entries(counts)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 20)
-          .map(([name, value]) => ({ name, value }))
-      })()
+    }
+    const counts: Record<string, number> = {}
+    data.forEach(item => {
+      const k = String(item[xField] ?? 'Unknown').slice(0, 18)
+      counts[k] = (counts[k] ?? 0) + 1
+    })
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([name, value]) => ({ name, value }))
+  }, [data, xField, yField])
 
-  const h            = getChartHeight(chartData.length)
-  const interval     = getTickInterval(chartData.length)
-  const bottomMargin = getBottomMargin(chartData.length)
-  const rotate       = chartData.length > 8
+  const h      = getChartHeight(chartData.length)
+  const rotate = chartData.length > 8
+  const axis   = getAxisColors()
+  const tt     = getTooltipStyle(s)
+
+  const option = useMemo(() => ({
+    color: colors,
+    grid: {
+      top: 8, right: 12,
+      bottom: getBottomMargin(chartData.length),
+      left: 8, containLabel: true,
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      ...tt,
+      formatter: (params: any[]) => {
+        const p = params[0]
+        return `<b style="font-size:12px">${p.name}</b><br/>${p.seriesName}: <strong>${fmtValue(p.value, s.labelFormat)}</strong>`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: chartData.map(d => d.name),
+      axisLabel: {
+        color:     axis.label,
+        fontSize:  chartData.length > 15 ? 10 : 11,
+        rotate:    rotate ? -35 : 0,
+        interval:  getTickInterval(chartData.length),
+        formatter: (v: string) => v.length > 14 ? v.slice(0, 12) + '…' : v,
+      },
+      axisLine:  { show: false },
+      axisTick:  { show: false },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        color:     axis.label,
+        fontSize:  11,
+        formatter: (v: number) => fmtValue(v, s.labelFormat),
+      },
+      axisLine:  { show: false },
+      axisTick:  { show: false },
+      splitLine: {
+        show: s.showGrid,
+        lineStyle: { type: 'dashed' as const, color: axis.splitLine },
+      },
+    },
+    legend: s.showLegend
+      ? { show: true, bottom: 0, textStyle: { fontSize: 11, color: axis.label } }
+      : { show: false },
+    series: [{
+      type:        'bar',
+      name:        yField,
+      barMaxWidth: 48,
+      data: chartData.map((d, i) => ({
+        value:     d.value,
+        itemStyle: {
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: colors[i % colors.length] },
+            { offset: 1, color: colors[i % colors.length] + 'aa' },
+          ]),
+          borderRadius: [r, r, 0, 0],
+        },
+      })),
+      emphasis: {
+        itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' },
+      },
+    }],
+  }), [data, xField, yField, style]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="w-full" style={{ height: h }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={chartData}
-          margin={{ top: 8, right: 12, left: 0, bottom: bottomMargin }}
-          barCategoryGap="30%"
-        >
-          {s.showGrid && (
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="hsl(var(--border))"
-              opacity={0.4}
-              vertical={false}
-            />
-          )}
-          <XAxis
-            dataKey="name"
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: chartData.length > 15 ? 10 : 11 }}
-            tickLine={false}
-            axisLine={false}
-            angle={rotate ? -35 : 0}
-            textAnchor={rotate ? 'end' : 'middle'}
-            interval={interval}
-            tickFormatter={(v: string) => v.length > 14 ? v.slice(0, 12) + '…' : v}
-          />
-          <YAxis
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-            tickLine={false}
-            axisLine={false}
-            width={40}
-            tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
-          />
-          <Tooltip
-            content={<CustomTooltip style={s} />}
-            cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }}
-          />
-          {s.showLegend && (
-            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="square" iconSize={8} />
-          )}
-          <Bar dataKey="value" name={yField} radius={[s.barRadius ?? 5, s.barRadius ?? 5, 0, 0]} maxBarSize={48}>
-            {chartData.map((_, i) => (
-              <Cell key={i} fill={colors[i % colors.length]} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <ReactECharts
+      option={option}
+      theme="enterprise"
+      style={{ height: h, width: '100%' }}
+      opts={{ renderer: 'svg' }}
+      notMerge
+    />
   )
 }
