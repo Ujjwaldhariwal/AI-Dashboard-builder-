@@ -50,19 +50,29 @@
 }
 
 @layer base {
+  /* ✅ FIX: Scale entire UI to ~87% — fixes oversized components */
+  html {
+    font-size: 14px;
+  }
+
   * {
     @apply border-border;
+    /* ✅ FIX: Scope transition to non-layout properties only — prevents jank */
+    transition-property: color, background-color, border-color, opacity, box-shadow;
+    transition-duration: 0.2s;
+    transition-timing-function: ease;
   }
+
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-/* Clean Scrollbars */
+/* ── Scrollbars ─────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -70,42 +80,37 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: hsl(var(--border));
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: hsl(var(--muted-foreground) / 0.4);
 }
 
-/* Smooth Transitions */
-* {
-  transition: background-color 0.2s ease, border-color 0.2s ease;
-}
-
-/* Professional Card Shadows */
+/* ── Shadows ────────────────────────────────────────────────── */
 .card-shadow {
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px 0 rgba(0, 0, 0, 0.04);
 }
 
 .card-shadow:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.1), 0 2px 6px -1px rgba(0, 0, 0, 0.06);
 }
 
-/* Grid Layouts */
+/* ── Dashboard grid ─────────────────────────────────────────── */
 .dashboard-grid {
   display: grid;
   gap: 1.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
-/* Better Tables */
+/* ── Data table ─────────────────────────────────────────────── */
 .data-table {
   @apply w-full border-collapse;
 }
 
 .data-table th {
-  @apply bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground;
+  @apply bg-muted/50 px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide;
 }
 
 .data-table td {
@@ -113,5 +118,5 @@
 }
 
 .data-table tr:hover {
-  @apply bg-muted/50;
+  @apply bg-muted/30;
 }
