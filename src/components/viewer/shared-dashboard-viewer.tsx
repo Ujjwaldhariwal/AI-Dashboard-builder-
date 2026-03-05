@@ -2,8 +2,8 @@
 
 // src/components/viewer/shared-dashboard-viewer.tsx
 
-import { useState, useEffect } from 'react'
-import { SharePayload } from '@/lib/share-utils'
+import { useState, useEffect, useCallback } from 'react'
+import type { SharePayload } from '@/lib/share-utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,24 +14,24 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-// ── Inline chart renderer (no store dependency — reads from token payload) ──
-import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area,
-  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend,
-} from 'recharts'
+// ── Fix #1 — ECharts components replacing Recharts ────────────
+import { ModernBarChart }           from '@/components/charts/modern-bar-chart'
+import { ModernLineChart }          from '@/components/charts/modern-line-chart'
+import { ModernAreaChart }          from '@/components/charts/modern-area-chart'
+import { ModernPieChart }           from '@/components/charts/modern-pie-chart'
+import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
+import { DEFAULT_STYLE }            from '@/types/widget'
 
-const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4']
-
+// ── Fix #9 — typed data rows ──────────────────────────────────
 interface SharedWidgetData {
-  id: string
-  title: string
-  type: string
-  data: any[]
-  xAxis: string
-  yAxis: string
+  id:      string
+  title:   string
+  type:    string
+  data:    Record<string, unknown>[]
+  xAxis:   string
+  yAxis:   string
   loading: boolean
-  error: string | null
+  error:   string | null
 }
 
 interface Props {
@@ -54,15 +54,16 @@ export function SharedDashboardViewer({ payload }: Props) {
   const [lastRefreshed, setLastRefreshed] = useState(new Date())
   const [refreshKey, setRefreshKey]       = useState(0)
 
-  const fetchAll = async () => {
+  // ── Fix #2 — useCallback so fetchAll can be in deps ──────────
+  const fetchAll = useCallback(async () => {
     const results = await Promise.allSettled(
       payload.widgets.map(async w => {
-        const res  = await fetch(w.endpointUrl, { method: w.method })
+        const res = await fetch(w.endpointUrl, { method: w.method })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
-        const arr  = Array.isArray(json)
+        const arr: Record<string, unknown>[] = Array.isArray(json)
           ? json
-          : Array.isArray(json?.data) ? json.data
+          : Array.isArray(json?.data)    ? json.data
           : Array.isArray(json?.results) ? json.results
           : [json]
         return { id: w.id, data: arr }
@@ -74,17 +75,21 @@ export function SharedDashboardViewer({ payload }: Props) {
         const r = results[i]
         if (r.status === 'fulfilled') {
           return { ...wd, data: r.value.data, loading: false, error: null }
-        } else {
-          return { ...wd, loading: false, error: (r.reason as Error).message }
         }
+        // ── Fix #8 — safe error message extraction ────────────
+        const message = r.reason instanceof Error
+          ? r.reason.message
+          : String(r.reason)
+        return { ...wd, loading: false, error: message }
       }),
     )
     setLastRefreshed(new Date())
-  }
+  }, [payload.widgets]) // ← Fix #2
 
+  // ── Fix #2 — fetchAll now stable and safe in deps ─────────────
   useEffect(() => {
     fetchAll()
-  }, [refreshKey])
+  }, [fetchAll, refreshKey])
 
   const handleRefresh = () => {
     setWidgetData(prev => prev.map(w => ({ ...w, loading: true, error: null })))
@@ -92,6 +97,7 @@ export function SharedDashboardViewer({ payload }: Props) {
     toast.success('Refreshing all widgets...')
   }
 
+  // ── Fix #1 — ECharts chart renderer ──────────────────────────
   const renderChart = (wd: SharedWidgetData) => {
     if (wd.loading) {
       return (
@@ -115,74 +121,22 @@ export function SharedDashboardViewer({ payload }: Props) {
       )
     }
 
+    // All chart components use DEFAULT_STYLE (no WidgetStyle in share payload)
+    const s = DEFAULT_STYLE
+
     switch (wd.type) {
       case 'bar':
-        return (
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={wd.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey={wd.xAxis} tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Bar dataKey={wd.yAxis} fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        )
-
+        return <ModernBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
       case 'line':
-        return (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={wd.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey={wd.xAxis} tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Line dataKey={wd.yAxis} stroke="#3b82f6" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        )
-
+        return <ModernLineChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
       case 'area':
-        return (
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={wd.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey={wd.xAxis} tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Area dataKey={wd.yAxis} stroke="#3b82f6" fill="#3b82f620" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        )
-
+        return <ModernAreaChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
       case 'pie':
-      case 'donut': {
-        const pieData = wd.data.slice(0, 8).map(d => ({
-          name:  d[wd.xAxis],
-          value: Number(d[wd.yAxis]) || 0,
-        }))
-        return (
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie
-                data={pieData}
-                dataKey="value"
-                nameKey="name"
-                cx="50%" cy="50%"
-                innerRadius={wd.type === 'donut' ? 50 : 0}
-                outerRadius={80}
-              >
-                {pieData.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        )
-      }
-
+        return <ModernPieChart data={wd.data} nameField={wd.xAxis} valueField={wd.yAxis} style={s} />
+      case 'donut':
+        return <ModernPieChart data={wd.data} nameField={wd.xAxis} valueField={wd.yAxis} donut style={s} />
+      case 'horizontal-bar':
+        return <ModernHorizontalBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
       case 'table': {
         const cols = Object.keys(wd.data[0] ?? {}).slice(0, 5)
         return (
@@ -191,9 +145,7 @@ export function SharedDashboardViewer({ payload }: Props) {
               <thead className="sticky top-0 bg-muted">
                 <tr>
                   {cols.map(c => (
-                    <th key={c} className="text-left p-2 font-medium border-b whitespace-nowrap">
-                      {c}
-                    </th>
+                    <th key={c} className="text-left p-2 font-medium border-b whitespace-nowrap">{c}</th>
                   ))}
                 </tr>
               </thead>
@@ -212,7 +164,6 @@ export function SharedDashboardViewer({ payload }: Props) {
           </div>
         )
       }
-
       default:
         return (
           <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
@@ -300,7 +251,6 @@ export function SharedDashboardViewer({ payload }: Props) {
           ))}
         </div>
 
-        {/* Footer */}
         <div className="mt-8 text-center">
           <p className="text-xs text-muted-foreground">
             Shared from Analytics AI Dashboard Builder ·{' '}

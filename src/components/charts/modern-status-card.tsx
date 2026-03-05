@@ -4,10 +4,11 @@
 // src/components/charts/modern-status-card.tsx
 
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
-import { WidgetStyle, DEFAULT_STYLE } from '@/types/widget'
+import type { WidgetStyle } from '@/types/widget'
+import { DEFAULT_STYLE } from '@/types/widget'
 
 interface ModernStatusCardProps {
-  data: any[]
+  data:   Record<string, unknown>[]  // ← Fix #5
   yField: string
   label?: string
   style?: WidgetStyle
@@ -17,7 +18,10 @@ export function ModernStatusCard({ data, yField, label, style }: ModernStatusCar
   const s      = { ...DEFAULT_STYLE, ...style }
   const colors = s.colors
 
-  const values = data.map(d => parseFloat(d[yField])).filter(v => !isNaN(v))
+  // ← Fix #5 — safe string coerce before parseFloat
+  const values = data
+    .map(d => parseFloat(String(d[yField])))
+    .filter(v => !isNaN(v))
 
   if (!values.length) {
     return (
@@ -36,7 +40,18 @@ export function ModernStatusCard({ data, yField, label, style }: ModernStatusCar
   const min    = Math.min(...values)
 
   const TrendIcon  = change > 1 ? TrendingUp : change < -1 ? TrendingDown : Minus
-  const trendColor = change > 1 ? 'text-green-500' : change < -1 ? 'text-red-500' : 'text-muted-foreground'
+  const trendColor = change > 1
+    ? 'text-green-500'
+    : change < -1
+    ? 'text-red-500'
+    : 'text-muted-foreground'
+
+  const stats = [
+    { label: 'Avg',   value: avg.toFixed(1)        },
+    { label: 'Max',   value: max.toLocaleString()   },
+    { label: 'Min',   value: min.toLocaleString()   },
+    { label: 'Total', value: total.toLocaleString() },
+  ]
 
   return (
     <div className="grid grid-cols-2 gap-3 p-1">
@@ -56,12 +71,7 @@ export function ModernStatusCard({ data, yField, label, style }: ModernStatusCar
       </div>
 
       {/* Stats row */}
-      {[
-        { label: 'Avg',   value: avg.toFixed(1) },
-        { label: 'Max',   value: max.toLocaleString() },
-        { label: 'Min',   value: min.toLocaleString() },
-        { label: 'Total', value: total.toLocaleString() },
-      ].map(stat => (
+      {stats.map(stat => (
         <div key={stat.label} className="p-2.5 rounded-lg bg-muted/50 border text-center">
           <p className="text-[10px] text-muted-foreground">{stat.label}</p>
           <p className="text-sm font-semibold mt-0.5">{stat.value}</p>

@@ -1,14 +1,19 @@
-'use client'
+// src/components/charts/chart-registry.ts
+// Pure utility — NO 'use client' needed, safe to import anywhere including server components
+
+// ── Fix #3 — re-export ChartType from single source of truth ──
+export type { ChartType as SupportedChartType } from '@/types/widget'
+
+// ── Fix #4 — reference DEFAULT_STYLE so colors stay in sync ───
+// Keep CHART_COLORS as a standalone const only for places that
+// need colors without a full WidgetStyle (e.g. legacy imports).
+// New chart components should use DEFAULT_STYLE.colors directly.
+export { DEFAULT_STYLE } from '@/types/widget'
 
 export const CHART_COLORS = [
   '#3b82f6', '#8b5cf6', '#06b6d4', '#10b981',
   '#f59e0b', '#ef4444', '#ec4899', '#14b8a6',
 ]
-
-export type SupportedChartType =
-  | 'bar' | 'line' | 'area' | 'pie'
-  | 'donut' | 'horizontal-bar'
-  | 'gauge' | 'status-card' | 'table'
 
 export function getChartHeight(dataLen: number): number {
   if (dataLen > 50) return 440

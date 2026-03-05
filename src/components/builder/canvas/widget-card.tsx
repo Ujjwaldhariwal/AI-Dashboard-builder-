@@ -4,6 +4,7 @@
 // src/components/builder/canvas/widget-card.tsx
 
 import { useEffect, useState, useCallback } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,27 +21,29 @@ import {
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
-import { Widget, DEFAULT_STYLE } from '@/types/widget'
+import type { Widget } from '@/types/widget'
+import { DEFAULT_STYLE } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
 import { toast } from 'sonner'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 
-import { ModernBarChart } from '@/components/charts/modern-bar-chart'
-import { ModernLineChart } from '@/components/charts/modern-line-chart'
-import { ModernAreaChart } from '@/components/charts/modern-area-chart'
-import { ModernPieChart } from '@/components/charts/modern-pie-chart'
-import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'
-import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
-import { ModernStatusCard } from '@/components/charts/modern-status-card'
+import { ModernBarChart }            from '@/components/charts/modern-bar-chart'
+import { ModernLineChart }           from '@/components/charts/modern-line-chart'
+import { ModernAreaChart }           from '@/components/charts/modern-area-chart'
+import { ModernPieChart }            from '@/components/charts/modern-pie-chart'
+import { ModernGaugeChartFromData }  from '@/components/charts/modern-gauge-chart'
+import { ModernHorizontalBarChart }  from '@/components/charts/modern-horizontal-bar-chart'
+import { ModernStatusCard }          from '@/components/charts/modern-status-card'
 
 interface WidgetCardProps {
   widget:    Widget
   viewMode?: boolean
 }
 
-const chartTypeIcon: Record<string, any> = {
+// ── Fix #5 — typed icon map ───────────────────────────────────
+const chartTypeIcon: Record<string, LucideIcon> = {
   bar:              BarChart3,
   line:             LineChart,
   area:             AreaChart,
@@ -52,7 +55,6 @@ const chartTypeIcon: Record<string, any> = {
   table:            Table2,
 }
 
-// ── Skeleton shimmer ──────────────────────────────────────────
 function WidgetSkeleton() {
   return (
     <div className="space-y-3 animate-pulse">
@@ -71,7 +73,8 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { endpoints, removeWidget } = useDashboardStore()
   const { addLog, updateEndpointHealth } = useMonitoringStore()
 
-  const [rawData, setRawData]         = useState<any[] | null>(null)
+  // ── Fix #6 — typed data state ─────────────────────────────
+  const [rawData, setRawData]         = useState<Record<string, unknown>[] | null>(null)
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState<string | null>(null)
   const [editOpen, setEditOpen]       = useState(false)
@@ -82,21 +85,20 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id })
 
-  const dragStyle = {
+  // ── Fix #1 — no 'as any', undefined removes the CSS property ─
+  const dragStyle: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity:  isDragging ? 0.4 : 1,
-    zIndex:   isDragging ? 50 : ('auto' as any),
-    position: 'relative' as const,
+    zIndex:   isDragging ? 50 : undefined,
+    position: 'relative',
   }
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon     = chartTypeIcon[widget.type] ?? BarChart3
+  const style    = { ...DEFAULT_STYLE, ...widget.style }
 
-  // Merge stored style with defaults — safe even for old widgets missing style
-  const style = { ...DEFAULT_STYLE, ...widget.style }
-
-  // ── Fetch ─────────────────────────────────────────────────────
+  // ── Fix #3 — complete useCallback deps ───────────────────────
   const fetchData = useCallback(async () => {
     if (!endpoint) {
       setError('Endpoint not found')
@@ -119,7 +121,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
 
       const result = await res.json()
-      const arr    =
+      const arr: Record<string, unknown>[] =
         DataAnalyzer.extractDataArray(result) ??
         (Array.isArray(result) ? result : [result])
 
@@ -136,41 +138,48 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         latencyMs: ms, statusCode: res.status,
       })
 
+      // Zustand .getState() inside callback is valid — avoids stale closure
+      // without adding store slices as deps
       updateEndpointHealth(endpoint.id, {
         endpointName: endpoint.name, url: endpoint.url,
         status:       ms > 3000 ? 'degraded' : 'healthy',
         latencyMs:    ms,
         successCount: (useMonitoringStore.getState().endpointHealth[endpoint.id]?.successCount ?? 0) + 1,
       })
-    } catch (err: any) {
-      const ms = Math.round(performance.now() - t0)
-      setError(err.message)
+    } catch (err) {
+      // ── Fix #2 — safe error handling, no any ───────────────
+      const ms      = Math.round(performance.now() - t0)
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
       addLog({
         widgetId: widget.id, widgetTitle: widget.title,
         endpointId: endpoint.id, endpointUrl: endpoint.url,
-        level: 'error', message: err.message, latencyMs: ms,
+        level: 'error', message, latencyMs: ms,
       })
       updateEndpointHealth(endpoint.id, {
         endpointName: endpoint.name, url: endpoint.url,
-        status: 'down', lastError: err.message,
+        status: 'down', lastError: message,
         errorCount: (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
       })
-      toast.error(`"${widget.title}": ${err.message}`)
+      toast.error(`"${widget.title}": ${message}`)
     } finally {
       setLoading(false)
     }
-}, [widget.endpointId, widget.dataMapping.xAxis, endpoint?.url, endpoint?.method])
+  }, [
+    // ── Fix #3 — all used values listed ──────────────────────
+    widget.id, widget.title, widget.endpointId,
+    endpoint,   // full object — stable reference from store
+    addLog, updateEndpointHealth,
+  ])
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Auto-refresh ──────────────────────────────────────────────
   useEffect(() => {
     if (!endpoint?.refreshInterval || endpoint.refreshInterval <= 0) return
     const id = setInterval(fetchData, endpoint.refreshInterval * 1000)
     return () => clearInterval(id)
   }, [endpoint?.refreshInterval, fetchData])
 
-  // ── Chart renderer — style passed to every chart ──────────────
   const renderChart = () => {
     if (!rawData?.length) return null
     const x = widget.dataMapping.xAxis
@@ -223,7 +232,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         )
       }
       default:
-        return <p className="text-xs text-muted-foreground">Unknown: {widget.type}</p>
+        return <p className="text-xs text-muted-foreground">Unknown chart type: {widget.type}</p>
     }
   }
 
@@ -232,6 +241,16 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     : latency && latency > 2000
     ? 'text-amber-500'
     : 'text-green-500'
+
+  // ── Fix #9 — collapsed duplicate refresh button ───────────
+  const RefreshButton = (
+    <Button variant="ghost" size="icon" className="h-6 w-6"
+      onClick={fetchData} disabled={loading}>
+      {loading
+        ? <Loader2 className="w-3 h-3 animate-spin" />
+        : <RefreshCw className="w-3 h-3" />}
+    </Button>
+  )
 
   return (
     <>
@@ -275,13 +294,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                     onClick={() => setEditOpen(true)}>
                     <Pencil className="w-3 h-3" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6"
-                    onClick={fetchData} disabled={loading}>
-                    {loading
-                      ? <Loader2 className="w-3 h-3 animate-spin" />
-                      : <RefreshCw className="w-3 h-3" />
-                    }
-                  </Button>
+                  {RefreshButton}
                   <Button
                     variant="ghost" size="icon"
                     className="h-6 w-6 text-red-500 hover:text-red-700"
@@ -291,19 +304,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                   </Button>
                 </>
               )}
-              {viewMode && (
-                <Button variant="ghost" size="icon" className="h-6 w-6"
-                  onClick={fetchData} disabled={loading}>
-                  {loading
-                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : <RefreshCw className="w-3 h-3" />
-                  }
-                </Button>
-              )}
+              {viewMode && RefreshButton}
             </div>
           </div>
 
-          {/* Sub-line */}
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-[10px] text-muted-foreground truncate flex-1">
               {endpoint?.name ?? 'Unknown'} · {widget.dataMapping.xAxis} → {widget.dataMapping.yAxis}
@@ -356,11 +360,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         </CardContent>
       </Card>
 
-      {/* AlertDialog delete */}
       <AlertDialog open={deleteOpen} onOpenChange={(v: boolean) => !v && setDeleteOpen(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{widget.title}"?</AlertDialogTitle>
+            <AlertDialogTitle>Delete &quot;{widget.title}&quot;?</AlertDialogTitle>
             <AlertDialogDescription>
               This widget will be permanently removed from the dashboard.
             </AlertDialogDescription>

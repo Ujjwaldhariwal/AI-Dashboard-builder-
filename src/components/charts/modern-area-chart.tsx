@@ -1,17 +1,28 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { graphic } from 'echarts'
 import { getChartHeight, getTickInterval, getBottomMargin } from './chart-registry'
-import { WidgetStyle, DEFAULT_STYLE } from '@/types/widget'
+import type { WidgetStyle } from '@/types/widget'
+import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { withAlpha } from '@/lib/echarts/utils'
 
-registerEnterpriseTheme()
+// ── Fix #1 — browser-only theme registration ──────────────────
+function useEnterpriseTheme() {
+  useEffect(() => { registerEnterpriseTheme() }, [])
+}
+
+interface TooltipParam {
+  name:       string
+  seriesName: string
+  value:      number
+}
 
 interface ModernAreaChartProps {
-  data:   any[]
+  data:   Record<string, unknown>[]
   xField: string
   yField: string
   title?: string
@@ -19,12 +30,14 @@ interface ModernAreaChartProps {
 }
 
 export function ModernAreaChart({ data, xField, yField, style }: ModernAreaChartProps) {
+  useEnterpriseTheme() // ← Fix #1
+
   const s      = { ...DEFAULT_STYLE, ...style }
   const colors = s.colors
 
   const chartData = useMemo(() => data.map((item, i) => ({
     name:  String(item[xField] ?? `#${i + 1}`).slice(0, 18),
-    value: parseFloat(item[yField]) || 0,
+    value: parseFloat(String(item[yField])) || 0,
   })), [data, xField, yField])
 
   const h      = getChartHeight(chartData.length)
@@ -34,9 +47,9 @@ export function ModernAreaChart({ data, xField, yField, style }: ModernAreaChart
 
   const option = useMemo(() => ({
     animation:         true,
-  animationDuration: 700,
-  animationEasing:   'cubicOut' as const,
-  backgroundColor:   'transparent',
+    animationDuration: 700,
+    animationEasing:   'cubicOut' as const,
+    backgroundColor:   'transparent',
     color: colors,
     grid: {
       top: 8, right: 12,
@@ -46,7 +59,8 @@ export function ModernAreaChart({ data, xField, yField, style }: ModernAreaChart
     tooltip: {
       trigger: 'axis',
       ...tt,
-      formatter: (params: any[]) => {
+      // ── Fix #5 — typed formatter ──────────────────────────
+      formatter: (params: TooltipParam[]) => {
         const p = params[0]
         return `<b style="font-size:12px">${p.name}</b><br/>${p.seriesName}: <strong>${fmtValue(p.value, s.labelFormat)}</strong>`
       },
@@ -80,6 +94,9 @@ export function ModernAreaChart({ data, xField, yField, style }: ModernAreaChart
         lineStyle: { type: 'dashed' as const, color: axis.splitLine },
       },
     },
+    legend: s.showLegend
+      ? { show: true, bottom: 0, textStyle: { fontSize: 11, color: axis.label } }
+      : { show: false },
     series: [{
       type:       'line',
       name:       yField,
@@ -90,21 +107,23 @@ export function ModernAreaChart({ data, xField, yField, style }: ModernAreaChart
       lineStyle:  { width: 2.5, color: colors[0] },
       itemStyle:  { color: colors[0] },
       areaStyle: {
+        // ── Fix #6 — withAlpha from shared utils ─────────────
         color: new graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: colors[0] + '66' },
-          { offset: 1, color: colors[0] + '08' },
+          { offset: 0, color: withAlpha(colors[0], 0.4) },
+          { offset: 1, color: withAlpha(colors[0], 0.03) },
         ]),
       },
     }],
-  }), [data, xField, yField, style]) // eslint-disable-line react-hooks/exhaustive-deps
+  // deps are intentionally coarse — s/colors/axis/tt derive from listed deps
+  }), [chartData, colors, s, axis, tt, yField]) // ← Fix #7: removed eslint-disable
 
   return (
     <ReactECharts
       option={option}
       theme="enterprise"
+      notMerge={true}           // ← Fix #2
       style={{ height: h, width: '100%' }}
       opts={{ renderer: 'svg' }}
-      
     />
   )
 }

@@ -1,13 +1,16 @@
 'use client'
 
 // Component: ChartWrapper
+// src/components/charts/chart-wrapper.tsx
+
+import type { ReactNode } from 'react'  // ← Fix #2 — proper ReactNode import
 import { RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 interface ChartWrapperProps {
-  title: string
-  children: React.ReactNode
+  title:      string
+  children:   ReactNode        // ← Fix #2
   onRefresh?: () => void
   isLoading?: boolean
   className?: string
@@ -37,12 +40,15 @@ export function ChartWrapper({
         )}
       </div>
       <div className="flex-1 relative">
+        {/* ── Fix #5 — pointer-events-none on children while loading ── */}
+        <div className={cn('h-full', isLoading && 'pointer-events-none select-none')}>
+          {children}
+        </div>
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10 rounded">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         )}
-        {children}
       </div>
     </div>
   )
