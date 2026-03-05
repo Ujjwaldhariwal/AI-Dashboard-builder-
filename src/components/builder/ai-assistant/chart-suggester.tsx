@@ -90,8 +90,10 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
       title:      suggestion.title,
       type:       suggestion.type,
       endpointId: endpoint.id,
-      xAxis:      suggestion.xAxis,
-      yAxis:      suggestion.yAxis,
+      dataMapping: {
+        xAxis: suggestion.xAxis,
+        yAxis: suggestion.yAxis,
+      },
     })
 
     setAddedIds(prev => new Set(prev).add(index))

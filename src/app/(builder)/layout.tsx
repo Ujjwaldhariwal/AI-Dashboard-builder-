@@ -14,12 +14,14 @@ export default function BuilderGroupLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { isAuthenticated, isLoading, checkSession } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const isLoading = useAuthStore(s => s.isLoading)
+  const checkSession = useAuthStore(s => s.checkSession)
 
   // ✅ On every fresh page load, re-hydrate auth from Supabase cookie
   useEffect(() => {
     checkSession()
-  }, [])
+  }, [checkSession])
 
   // ✅ Only redirect AFTER session check is complete
   useEffect(() => {

@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type LogLevel = 'info' | 'warn' | 'error' | 'success'
+const STORE_VERSION = 1
 
 export interface WidgetLog {
   id: string
@@ -55,7 +56,10 @@ export const useMonitoringStore = create<MonitoringStore>()(
   persist(
     (set, get) => ({
       logs: [],
+      
       endpointHealth: {},
+      
+      
 
       addLog: (log) => {
         const entry: WidgetLog = {
@@ -112,6 +116,9 @@ export const useMonitoringStore = create<MonitoringStore>()(
       getErrorCount: () =>
         get().logs.filter(l => l.level === 'error').length,
     }),
-    { name: 'monitoring-storage' },
+    {
+      name: 'monitoring-storage',
+      version: STORE_VERSION,
+    },
   ),
 )

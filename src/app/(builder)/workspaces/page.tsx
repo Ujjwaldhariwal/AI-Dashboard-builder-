@@ -40,11 +40,8 @@ const GRADIENTS = [
   'from-indigo-600 to-violet-600',
 ]
 
-// ── Inline rename input ───────────────────────────────────────────────────────
 function InlineRename({
-  value,
-  onSave,
-  onCancel,
+  value, onSave, onCancel,
 }: {
   value:    string
   onSave:   (v: string) => void
@@ -103,7 +100,7 @@ export default function WorkspacesPage() {
   const [mounted, setMounted]          = useState(false)
   const [createOpen, setCreateOpen]    = useState(false)
   const [deleteId, setDeleteId]        = useState<string | null>(null)
-  const [renamingId, setRenamingId]    = useState<string | null>(null)  // ✅ inline rename
+  const [renamingId, setRenamingId]    = useState<string | null>(null)
   const [name, setName]                = useState('')
   const [description, setDescription] = useState('')
   const [search, setSearch]            = useState('')
@@ -127,13 +124,23 @@ export default function WorkspacesPage() {
     )
   }
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleCreate = () => {
-    if (!name.trim()) { toast.error('Dashboard name is required'); return }
+  if (!name.trim()) { toast.error('Dashboard name is required'); return }
+
+  // ✅ S1-4 — duplicate name check
+  const isDuplicate = dashboards.some(
+    d => d.name.toLowerCase() === name.trim().toLowerCase()
+  )
+  if (isDuplicate) {
+    toast.error(`A dashboard named "${name.trim()}" already exists`)
+    return
+  }
+
+  try {
     const id = addDashboard({
       name:        name.trim(),
       description: description.trim(),
-      ownerId:     user?.id || 'unknown',
+      ownerId:     user?.id ?? 'unknown',
     })
     setCreateOpen(false)
     setName('')
@@ -141,7 +148,12 @@ export default function WorkspacesPage() {
     toast.success('Dashboard created')
     setCurrentDashboard(id)
     router.push('/builder')
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    toast.error(`Failed to create dashboard: ${message}`)
   }
+}
+
 
   const handleRename = (id: string, newName: string) => {
     updateDashboard(id, { name: newName })
@@ -149,10 +161,11 @@ export default function WorkspacesPage() {
     toast.success('Dashboard renamed')
   }
 
-  const handleDuplicate = (d: typeof dashboards[0]) => {
-    const newId = duplicateDashboard(d.id)
-    if (!newId) return
-    toast.success(`"${d.name}" duplicated`)
+  // ── Fix #1 — use Dashboard type, not typeof dashboards[0] ───
+  const handleDuplicate = (id: string, name: string) => {
+    const newId = duplicateDashboard(id)
+    if (!newId) { toast.error('Failed to duplicate dashboard'); return }
+    toast.success(`"${name}" duplicated`)
     setCurrentDashboard(newId)
     router.push('/builder')
   }
@@ -164,11 +177,23 @@ export default function WorkspacesPage() {
     toast.success('Dashboard deleted')
   }
 
+  // ── Fix #2 — consistent with builder page: filter directly ───
   const getWidgetCount   = (id: string) => widgets.filter(w => w.dashboardId === id).length
-  const getEndpointCount = (id: string) =>
-    endpoints.filter(e => widgets.some(w => w.dashboardId === id && w.endpointId === e.id)).length
+  const endpointCountMap = useMemo(() => {
+  const map = new Map<string, number>()
+  dashboards.forEach(d => {
+    const used = new Set(
+      widgets.filter(w => w.dashboardId === d.id).map(w => w.endpointId)
+    )
+    map.set(d.id, used.size)
+  })
+  return map
+}, [dashboards, widgets, endpoints])
 
-  // ── Render ────────────────────────────────────────────────────────────────
+// Then use:
+const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
+
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto">
 
@@ -245,9 +270,8 @@ export default function WorkspacesPage() {
               >
                 <Card className="flex flex-col hover:shadow-md transition-shadow overflow-hidden">
                   <div className={`h-1.5 w-full bg-gradient-to-r ${gradient}`} />
-
                   <CardHeader
-                    className={`pb-2 ${!isRenaming ? 'cursor-pointer' : ''}`}
+                    className={!isRenaming ? 'pb-2 cursor-pointer' : 'pb-2'}
                     onClick={() => {
                       if (isRenaming) return
                       setCurrentDashboard(d.id)
@@ -258,9 +282,7 @@ export default function WorkspacesPage() {
                       <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center flex-shrink-0 mt-0.5`}>
                         <FolderKanban className="w-4 h-4 text-white" />
                       </div>
-
                       <div className="flex-1 min-w-0">
-                        {/* ✅ Inline rename — swaps title for input */}
                         {isRenaming ? (
                           <InlineRename
                             value={d.name}
@@ -273,10 +295,7 @@ export default function WorkspacesPage() {
                             <button
                               className="opacity-0 group-hover/title:opacity-100 p-1 rounded hover:bg-muted transition-all flex-shrink-0"
                               title="Rename"
-                              onClick={e => {
-                                e.stopPropagation()
-                                setRenamingId(d.id)
-                              }}
+                              onClick={e => { e.stopPropagation(); setRenamingId(d.id) }}
                             >
                               <Pencil className="w-3 h-3 text-muted-foreground" />
                             </button>
@@ -287,7 +306,6 @@ export default function WorkspacesPage() {
                         </CardDescription>
                       </div>
                     </div>
-
                     <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                       <Badge variant="secondary" className="text-[10px] px-1.5">
                         <LayoutGrid className="w-2.5 h-2.5 mr-1" />
@@ -299,13 +317,11 @@ export default function WorkspacesPage() {
                       </Badge>
                       {createdDate && (
                         <Badge variant="outline" className="text-[10px] px-1.5 hidden sm:flex">
-                          <CalendarDays className="w-2.5 h-2.5 mr-1" />
-                          {createdDate}
+                          <CalendarDays className="w-2.5 h-2.5 mr-1" />{createdDate}
                         </Badge>
                       )}
                     </div>
                   </CardHeader>
-
                   <CardContent className="pt-0 pb-3 px-4">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <Button
@@ -322,9 +338,11 @@ export default function WorkspacesPage() {
                           <Eye className="w-3 h-3 mr-1" />View
                         </Button>
                       </Link>
+                      {/* ── Fix #1 — pass id + name, not full object ─── */}
                       <Button
                         size="sm" variant="ghost" className="h-7 w-7 p-0"
-                        title="Duplicate" onClick={() => handleDuplicate(d)}
+                        title="Duplicate"
+                        onClick={() => handleDuplicate(d.id, d.name)}
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </Button>
@@ -346,7 +364,7 @@ export default function WorkspacesPage() {
         {filtered.length === 0 && dashboards.length > 0 && (
           <div className="col-span-full py-12 text-center">
             <Search className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No dashboards match "{search}"</p>
+            <p className="text-sm text-muted-foreground">No dashboards match &quot;{search}&quot;</p>
             <Button variant="ghost" size="sm" className="mt-2" onClick={() => setSearch('')}>
               Clear search
             </Button>

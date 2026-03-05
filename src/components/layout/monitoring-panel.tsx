@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { useMonitoringStore } from '@/store/monitoring-store'
+import { useMonitoringStore, type LogLevel } from '@/store/monitoring-store'
 import { useDashboardStore } from '@/store/builder-store'
 
 interface MonitoringPanelProps {
@@ -35,7 +35,7 @@ export function MonitoringPanel({ onClose }: MonitoringPanelProps) {
   const { logs, endpointHealth, clearLogs, getErrorCount } = useMonitoringStore()
   const { endpoints } = useDashboardStore()
   const [tab, setTab] = useState<'logs' | 'health'>('logs')
-  const [levelFilter, setLevelFilter] = useState<string>('all')
+  const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all')
 
   const filteredLogs = levelFilter === 'all'
     ? logs
@@ -94,7 +94,7 @@ export function MonitoringPanel({ onClose }: MonitoringPanelProps) {
         <>
           {/* Level filter */}
           <div className="flex gap-1.5 px-3 py-2 border-b flex-shrink-0 flex-wrap">
-            {['all', 'success', 'info', 'warn', 'error'].map(lvl => (
+            {(['all', 'success', 'info', 'warn', 'error'] as const).map(lvl => (
               <button
                 key={lvl}
                 onClick={() => setLevelFilter(lvl)}

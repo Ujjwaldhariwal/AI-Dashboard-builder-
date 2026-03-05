@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type NotifType = 'success' | 'warning' | 'error' | 'info'
+const STORE_VERSION = 1
 
 export interface AppNotification {
   id: string
@@ -61,6 +62,9 @@ export const useNotificationStore = create<NotificationStore>()(
 
       unreadCount: () => get().notifications.filter(n => !n.read).length,
     }),
-    { name: 'notification-storage' },
+    {
+      name: 'notification-storage',
+      version: STORE_VERSION,
+    },
   ),
 )

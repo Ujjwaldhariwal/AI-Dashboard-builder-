@@ -6,9 +6,9 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Database, FolderTree,
-  Settings, LogOut, User, Search,
+  Settings, LogOut, Search,
   Activity, ChevronRight, FolderKanban,
-  Shield, BadgeCheck, X,GitBranch
+  Shield, BadgeCheck, X, GitBranch,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -23,9 +23,9 @@ import { useAuthStore } from '@/store/auth-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
 import { NotificationBell } from '@/components/layout/notification-bell'
 import { MonitoringPanel } from '@/components/layout/monitoring-panel'
-import { OnboardingWizard }    from '@/components/layout/onboarding-wizard'
-import { KeyboardShortcuts }   from '@/components/layout/keyboard-shortcuts'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { OnboardingWizard } from '@/components/layout/onboarding-wizard'
+import { KeyboardShortcuts } from '@/components/layout/keyboard-shortcuts'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -33,12 +33,12 @@ interface AppLayoutProps {
 
 // ── Search result type ────────────────────────────────────────────────────
 interface SearchResult {
-  id:       string
-  label:    string
-  sub:      string
-  href:     string
-  type:     'dashboard' | 'api' | 'page'
-  action?:  () => void
+  id:      string
+  label:   string
+  sub:     string
+  href:    string
+  type:    'dashboard' | 'api' | 'page'
+  action?: () => void
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -55,20 +55,21 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [searchFocused, setSearchFocused]   = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
-const navigation = [
-  { name: 'Dashboards', href: '/workspaces',  icon: LayoutDashboard, show: true },
-  { name: 'Builder',    href: '/builder',      icon: FolderTree,      show: !!currentDashboardId },
-  { name: 'API Config', href: '/api-config',   icon: Database,        show: !!currentDashboardId },
-  { name: 'Auth Flow',  href: '/auth-flow',    icon: GitBranch,       show: !!currentDashboardId }, 
-  { name: 'Monitoring', href: '/monitoring',   icon: Activity,        show: !!currentDashboardId },
-  { name: 'Settings',   href: '/settings',     icon: Settings,        show: true },
-]
+  // ✅ Fix 1: useMemo — only recomputes when currentDashboardId changes
+  const navigation = useMemo(() => [
+    { name: 'Dashboards', href: '/workspaces', icon: LayoutDashboard, show: true },
+    { name: 'Builder',    href: '/builder',    icon: FolderTree,      show: !!currentDashboardId },
+    { name: 'API Config', href: '/api-config', icon: Database,        show: !!currentDashboardId },
+    { name: 'Auth Flow',  href: '/auth-flow',  icon: GitBranch,       show: !!currentDashboardId },
+    { name: 'Monitoring', href: '/monitoring', icon: Activity,        show: !!currentDashboardId },
+    { name: 'Settings',   href: '/settings',   icon: Settings,        show: true },
+  ], [currentDashboardId])
 
-
-  const handleLogout = async () => {
+  // ✅ Fix 2: useCallback on handleLogout
+  const handleLogout = useCallback(async () => {
     await logout()
     router.push('/login')
-  }
+  }, [logout, router])
 
   const currentDashboard  = dashboards.find(d => d.id === currentDashboardId)
   const activeWidgetCount = currentDashboardId
@@ -77,8 +78,8 @@ const navigation = [
   const errorCount     = getErrorCount()
   const recentLogCount = logs.length
 
-  // ── Global search results ─────────────────────────────────────────────
-  const searchResults: SearchResult[] = (() => {
+  // ✅ Fix 3: useMemo — only recomputes when query or data changes
+  const searchResults = useMemo<SearchResult[]>(() => {
     if (!searchQuery.trim()) return []
     const q = searchQuery.toLowerCase()
 
@@ -89,11 +90,11 @@ const navigation = [
       )
       .slice(0, 4)
       .map(d => ({
-        id:    `dash-${d.id}`,
-        label: d.name,
-        sub:   d.description || 'Dashboard',
-        href:  '/builder',
-        type:  'dashboard' as const,
+        id:     `dash-${d.id}`,
+        label:  d.name,
+        sub:    d.description || 'Dashboard',
+        href:   '/builder',
+        type:   'dashboard' as const,
         action: () => { setCurrentDashboard(d.id); router.push('/builder') },
       }))
 
@@ -111,28 +112,28 @@ const navigation = [
         type:  'api' as const,
       }))
 
-    
-const pageResults: SearchResult[] = (
-  [
-    { id: 'p-ws',  label: 'Dashboards', sub: 'All dashboards',   href: '/workspaces', type: 'page' as const },
-    { id: 'p-api', label: 'API Config', sub: 'Manage endpoints', href: '/api-config', type: 'page' as const },
-    { id: 'p-mon', label: 'Monitoring', sub: 'Logs & health',    href: '/monitoring', type: 'page' as const },
-    { id: 'p-set', label: 'Settings',   sub: 'App settings',     href: '/settings',   type: 'page' as const },
-  ] satisfies SearchResult[]
-).filter(p => p.label.toLowerCase().includes(q))
-
+    // ✅ Fix 4: consistent 4-space indentation inside useMemo
+    const pageResults: SearchResult[] = (
+      [
+        { id: 'p-ws',  label: 'Dashboards', sub: 'All dashboards',   href: '/workspaces', type: 'page' as const },
+        { id: 'p-api', label: 'API Config', sub: 'Manage endpoints', href: '/api-config', type: 'page' as const },
+        { id: 'p-mon', label: 'Monitoring', sub: 'Logs & health',    href: '/monitoring', type: 'page' as const },
+        { id: 'p-set', label: 'Settings',   sub: 'App settings',     href: '/settings',   type: 'page' as const },
+      ] satisfies SearchResult[]
+    ).filter(p => p.label.toLowerCase().includes(q))
 
     return [...dashResults, ...apiResults, ...pageResults].slice(0, 8)
-  })()
+  }, [searchQuery, dashboards, endpoints, setCurrentDashboard, router])
 
-  const handleSearchSelect = (result: SearchResult) => {
+  // ✅ Fix 5: useCallback on handleSearchSelect
+  const handleSearchSelect = useCallback((result: SearchResult) => {
     if (result.action) result.action()
     else router.push(result.href)
     setSearchQuery('')
     setSearchFocused(false)
-  }
+  }, [router])
 
-  // Close search on Escape
+  // Close search on Escape / open on ⌘K
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setSearchQuery(''); setSearchFocused(false) }
@@ -194,7 +195,7 @@ const pageResults: SearchResult[] = (
           )}
 
           {/* Search */}
-          <div className="flex-1 max-w-md relative" >
+          <div className="flex-1 max-w-md relative">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input
@@ -226,12 +227,12 @@ const pageResults: SearchResult[] = (
                   transition={{ duration: 0.12 }}
                   className="absolute top-full mt-1 left-0 right-0 z-50 rounded-lg border bg-card shadow-xl overflow-hidden"
                 >
-                  {['dashboard', 'api', 'page'].map(group => {
+                  {(['dashboard', 'api', 'page'] as const).map(group => {
                     const items = searchResults.filter(r => r.type === group)
                     if (!items.length) return null
                     const groupLabel =
                       group === 'dashboard' ? 'Dashboards'
-                      : group === 'api' ? 'APIs'
+                      : group === 'api'     ? 'APIs'
                       : 'Pages'
                     return (
                       <div key={group}>
@@ -302,7 +303,6 @@ const pageResults: SearchResult[] = (
                   className="h-8 w-8 rounded-full relative"
                   title={user?.name ?? 'Profile'}
                 >
-                  {/* Avatar circle with initials */}
                   <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
                     <span className="text-[11px] font-bold text-white">
                       {user?.name
@@ -310,13 +310,11 @@ const pageResults: SearchResult[] = (
                         : 'U'}
                     </span>
                   </div>
-                  {/* Online dot */}
                   <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-card" />
                 </Button>
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end" className="w-64" sideOffset={8}>
-                {/* User info header */}
                 <DropdownMenuLabel className="p-0">
                   <div className="flex items-center gap-3 p-3 border-b">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
@@ -346,9 +344,9 @@ const pageResults: SearchResult[] = (
                 {/* Stats row */}
                 <div className="grid grid-cols-3 gap-0 border-b">
                   {[
-                    { label: 'Boards', value: dashboards.length },
-                    { label: 'APIs',   value: endpoints.length },
-                    { label: 'Widgets',value: widgets.length },
+                    { label: 'Boards',  value: dashboards.length },
+                    { label: 'APIs',    value: endpoints.length },
+                    { label: 'Widgets', value: widgets.length },
                   ].map(s => (
                     <div key={s.label} className="flex flex-col items-center py-2 px-1">
                       <span className="text-sm font-bold">{s.value}</span>
@@ -389,7 +387,6 @@ const pageResults: SearchResult[] = (
                 <DropdownMenuSeparator />
 
                 <div className="py-1">
-                  {/* Session info */}
                   <div className="px-2 py-1.5 flex items-center gap-2">
                     <BadgeCheck className="w-3.5 h-3.5 text-green-500" />
                     <span className="text-[11px] text-muted-foreground">Session active</span>
@@ -445,10 +442,10 @@ const pageResults: SearchResult[] = (
             </h3>
             <div className="space-y-1.5">
               {[
-                { label: 'Active APIs',  value: endpoints.length },
-                { label: 'Dashboards',   value: dashboards.length },
-                { label: 'Widgets',      value: activeWidgetCount },
-                { label: 'Log entries',  value: recentLogCount },
+                { label: 'Active APIs', value: endpoints.length },
+                { label: 'Dashboards',  value: dashboards.length },
+                { label: 'Widgets',     value: activeWidgetCount },
+                { label: 'Log entries', value: recentLogCount },
               ].map(stat => (
                 <div key={stat.label} className="flex justify-between text-xs">
                   <span className="text-muted-foreground">{stat.label}</span>
@@ -502,8 +499,9 @@ const pageResults: SearchResult[] = (
         )}
       </AnimatePresence>
 
+      {/* ✅ Fix 6: consistent indentation */}
       <OnboardingWizard />
-<KeyboardShortcuts />
+      <KeyboardShortcuts />
     </div>
   )
 }

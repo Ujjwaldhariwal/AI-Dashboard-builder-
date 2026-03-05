@@ -65,7 +65,7 @@ export function buildDashboardConfig(
   endpoints:     EndpointShape[],
   widgets:       Widget[],
   projectConfig: ProjectConfig,
-  chartGroups:   ChartGroup[],
+  chartGroups:   ChartGroup[] = [],
 ): DashboardExportConfig {
   const dashboardWidgets = widgets.filter(w => w.dashboardId === dashboard.id)
   const dashboardGroups  = chartGroups.filter(g => g.dashboardId === dashboard.id)
@@ -120,8 +120,9 @@ export function buildDashboardConfig(
 }
 
 export function slugifyDashboardName(name: string): string {
-  return (
-    name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
-    'dashboard'
-  )
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+  if (!slug) return 'dashboard'
+  return slug.endsWith('-dashboard')
+    ? (slug.replace(/-dashboard$/, '') || 'dashboard')
+    : slug
 }

@@ -2,7 +2,7 @@
 
 // src/components/viewer/shared-dashboard-viewer.tsx
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'  // ✅ added useMemo
 import type { SharePayload } from '@/lib/share-utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,19 +10,19 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { motion } from 'framer-motion'
 import {
   LayoutGrid, RefreshCw, Clock,
-  ExternalLink, Shield, Loader2,
+  ExternalLink, Shield, Loader2, AlertCircle,  // ✅ added AlertCircle
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-// ── Fix #1 — ECharts components replacing Recharts ────────────
 import { ModernBarChart }           from '@/components/charts/modern-bar-chart'
 import { ModernLineChart }          from '@/components/charts/modern-line-chart'
 import { ModernAreaChart }          from '@/components/charts/modern-area-chart'
 import { ModernPieChart }           from '@/components/charts/modern-pie-chart'
 import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
+import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'   // ✅ S4-1
+import { ModernStatusCard }         from '@/components/charts/modern-status-card'   // ✅ S4-1
 import { DEFAULT_STYLE }            from '@/types/widget'
 
-// ── Fix #9 — typed data rows ──────────────────────────────────
 interface SharedWidgetData {
   id:      string
   title:   string
@@ -39,8 +39,11 @@ interface Props {
 }
 
 export function SharedDashboardViewer({ payload }: Props) {
+  // ✅ Fix #5 — stable widget list reference so useCallback dep doesn't change
+  const widgets = useMemo(() => payload.widgets, [payload.widgets])
+
   const [widgetData, setWidgetData] = useState<SharedWidgetData[]>(
-    payload.widgets.map(w => ({
+    widgets.map(w => ({
       id:      w.id,
       title:   w.title,
       type:    w.type,
@@ -54,15 +57,18 @@ export function SharedDashboardViewer({ payload }: Props) {
   const [lastRefreshed, setLastRefreshed] = useState(new Date())
   const [refreshKey, setRefreshKey]       = useState(0)
 
-  // ── Fix #2 — useCallback so fetchAll can be in deps ──────────
+  // ✅ Fix #4 — fetchAll itself resets loading state, handleRefresh doesn't need to
   const fetchAll = useCallback(async () => {
+    // Reset all to loading at fetch start
+    setWidgetData(prev => prev.map(w => ({ ...w, loading: true, error: null })))
+
     const results = await Promise.allSettled(
-      payload.widgets.map(async w => {
+      widgets.map(async w => {
         const res = await fetch(w.endpointUrl, { method: w.method })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
-        const arr: Record<string, unknown>[] = Array.isArray(json)
-          ? json
+        const arr: Record<string, unknown>[] =
+          Array.isArray(json)          ? json
           : Array.isArray(json?.data)    ? json.data
           : Array.isArray(json?.results) ? json.results
           : [json]
@@ -76,7 +82,6 @@ export function SharedDashboardViewer({ payload }: Props) {
         if (r.status === 'fulfilled') {
           return { ...wd, data: r.value.data, loading: false, error: null }
         }
-        // ── Fix #8 — safe error message extraction ────────────
         const message = r.reason instanceof Error
           ? r.reason.message
           : String(r.reason)
@@ -84,20 +89,18 @@ export function SharedDashboardViewer({ payload }: Props) {
       }),
     )
     setLastRefreshed(new Date())
-  }, [payload.widgets]) // ← Fix #2
+  }, [widgets])
 
-  // ── Fix #2 — fetchAll now stable and safe in deps ─────────────
   useEffect(() => {
     fetchAll()
   }, [fetchAll, refreshKey])
 
+  // ✅ Fix #4 — no duplicate state reset here, fetchAll handles it
   const handleRefresh = () => {
-    setWidgetData(prev => prev.map(w => ({ ...w, loading: true, error: null })))
     setRefreshKey(k => k + 1)
     toast.success('Refreshing all widgets...')
   }
 
-  // ── Fix #1 — ECharts chart renderer ──────────────────────────
   const renderChart = (wd: SharedWidgetData) => {
     if (wd.loading) {
       return (
@@ -106,22 +109,25 @@ export function SharedDashboardViewer({ payload }: Props) {
         </div>
       )
     }
+
     if (wd.error) {
       return (
-        <div className="flex items-center justify-center h-48 text-red-500 text-sm">
-          Failed: {wd.error}
-        </div>
-      )
-    }
-    if (!wd.data.length) {
-      return (
-        <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
-          No data
+        <div className="flex flex-col items-center justify-center h-48 gap-2">
+          <AlertCircle className="w-5 h-5 text-red-500" />  {/* ✅ icon not just text */}
+          <p className="text-sm text-red-500">Failed to load</p>
+          <p className="text-xs text-muted-foreground">{wd.error}</p>
         </div>
       )
     }
 
-    // All chart components use DEFAULT_STYLE (no WidgetStyle in share payload)
+    if (!wd.data.length) {
+      return (
+        <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+          No data returned
+        </div>
+      )
+    }
+
     const s = DEFAULT_STYLE
 
     switch (wd.type) {
@@ -137,6 +143,11 @@ export function SharedDashboardViewer({ payload }: Props) {
         return <ModernPieChart data={wd.data} nameField={wd.xAxis} valueField={wd.yAxis} donut style={s} />
       case 'horizontal-bar':
         return <ModernHorizontalBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+      // ✅ S4-1 — gauge and status-card now render correctly
+      case 'gauge':
+        return <ModernGaugeChartFromData data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
+      case 'status-card':
+        return <ModernStatusCard data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
       case 'table': {
         const cols = Object.keys(wd.data[0] ?? {}).slice(0, 5)
         return (
@@ -145,7 +156,9 @@ export function SharedDashboardViewer({ payload }: Props) {
               <thead className="sticky top-0 bg-muted">
                 <tr>
                   {cols.map(c => (
-                    <th key={c} className="text-left p-2 font-medium border-b whitespace-nowrap">{c}</th>
+                    <th key={c} className="text-left p-2 font-medium border-b whitespace-nowrap">
+                      {c}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -167,7 +180,7 @@ export function SharedDashboardViewer({ payload }: Props) {
       default:
         return (
           <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
-            Chart type: {wd.type}
+            Unsupported chart type: {wd.type}
           </div>
         )
     }
@@ -188,7 +201,7 @@ export function SharedDashboardViewer({ payload }: Props) {
               <p className="text-xs text-muted-foreground">Shared read-only view</p>
             </div>
             <Badge variant="secondary" className="text-[10px] flex-shrink-0">
-              {payload.widgets.length} widget{payload.widgets.length !== 1 ? 's' : ''}
+              {widgets.length} widget{widgets.length !== 1 ? 's' : ''}
             </Badge>
           </div>
 
@@ -239,8 +252,12 @@ export function SharedDashboardViewer({ payload }: Props) {
                       {wd.type.toUpperCase()}
                     </Badge>
                   </div>
+                  {/* ✅ Fix #3 — hide arrow when xAxis empty (gauge/status-card) */}
                   <p className="text-[10px] text-muted-foreground">
-                    {wd.xAxis} → {wd.yAxis}
+                    {wd.xAxis
+                      ? `${wd.xAxis} → ${wd.yAxis}`
+                      : wd.yAxis
+                    }
                   </p>
                 </CardHeader>
                 <CardContent className="px-4 pb-4">

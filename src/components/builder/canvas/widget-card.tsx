@@ -17,7 +17,7 @@ import {
   Trash2, RefreshCw, Loader2, AlertCircle,
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
-  AlignLeft, Clock, Wifi, WifiOff,
+  AlignLeft, Clock, Wifi, WifiOff, Circle,        // ✅ Circle added
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
@@ -29,26 +29,25 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 
-import { ModernBarChart }            from '@/components/charts/modern-bar-chart'
-import { ModernLineChart }           from '@/components/charts/modern-line-chart'
-import { ModernAreaChart }           from '@/components/charts/modern-area-chart'
-import { ModernPieChart }            from '@/components/charts/modern-pie-chart'
-import { ModernGaugeChartFromData }  from '@/components/charts/modern-gauge-chart'
-import { ModernHorizontalBarChart }  from '@/components/charts/modern-horizontal-bar-chart'
-import { ModernStatusCard }          from '@/components/charts/modern-status-card'
+import { ModernBarChart }           from '@/components/charts/modern-bar-chart'
+import { ModernLineChart }          from '@/components/charts/modern-line-chart'
+import { ModernAreaChart }          from '@/components/charts/modern-area-chart'
+import { ModernPieChart }           from '@/components/charts/modern-pie-chart'
+import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'
+import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
+import { ModernStatusCard }         from '@/components/charts/modern-status-card'
 
 interface WidgetCardProps {
   widget:    Widget
   viewMode?: boolean
 }
 
-// ── Fix #5 — typed icon map ───────────────────────────────────
 const chartTypeIcon: Record<string, LucideIcon> = {
   bar:              BarChart3,
   line:             LineChart,
   area:             AreaChart,
   pie:              PieChart,
-  donut:            PieChart,
+  donut:            Circle,           // ✅ was PieChart
   'horizontal-bar': AlignLeft,
   gauge:            Gauge,
   'status-card':    TrendingUp,
@@ -73,7 +72,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { endpoints, removeWidget } = useDashboardStore()
   const { addLog, updateEndpointHealth } = useMonitoringStore()
 
-  // ── Fix #6 — typed data state ─────────────────────────────
   const [rawData, setRawData]         = useState<Record<string, unknown>[] | null>(null)
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState<string | null>(null)
@@ -85,28 +83,37 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id })
 
-  // ── Fix #1 — no 'as any', undefined removes the CSS property ─
+  // ✅ Clean zIndex pattern — no undefined property
   const dragStyle: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform:  CSS.Transform.toString(transform),
     transition,
-    opacity:  isDragging ? 0.4 : 1,
-    zIndex:   isDragging ? 50 : undefined,
-    position: 'relative',
+    opacity:    isDragging ? 0.4 : 1,
+    position:   'relative',
+    ...(isDragging && { zIndex: 50 }),
   }
 
-  const endpoint = endpoints.find(e => e.id === widget.endpointId)
-  const Icon     = chartTypeIcon[widget.type] ?? BarChart3
-  const style    = { ...DEFAULT_STYLE, ...widget.style }
-
-  // ── Fix #3 — complete useCallback deps ───────────────────────
+  // ✅ endpoint resolved INSIDE callback — no stale closure, no refetch loop
   const fetchData = useCallback(async () => {
+    const endpoint = endpoints.find(e => e.id === widget.endpointId)
+
     if (!endpoint) {
       setError('Endpoint not found')
+      setLoading(false)
       addLog({
-        widgetId: widget.id, widgetTitle: widget.title,
-        endpointId: widget.endpointId, endpointUrl: '',
-        level: 'error', message: 'Endpoint not found in store',
+        widgetId:    widget.id,
+        widgetTitle: widget.title,
+        endpointId:  widget.endpointId,
+        endpointUrl: '',
+        level:       'error',
+        message:     'Endpoint not found in store',
       })
+      return
+    }
+
+    // ✅ S2-1 — inactive guard
+    if (endpoint.status !== 'active') {
+      setError(`Endpoint "${endpoint.name}" is inactive`)
+      setLoading(false)
       return
     }
 
@@ -115,8 +122,12 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     const t0 = performance.now()
 
     try {
-      const res = await fetch(endpoint.url, { method: endpoint.method })
-      const ms  = Math.round(performance.now() - t0)
+      // ✅ S2-1 — auth headers passed
+      const res = await fetch(endpoint.url, {
+        method:  endpoint.method,
+        headers: endpoint.headers ?? {},
+      })
+      const ms = Math.round(performance.now() - t0)
       setLatency(ms)
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
 
@@ -129,56 +140,68 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       setLastFetched(new Date())
 
       addLog({
-        widgetId: widget.id, widgetTitle: widget.title,
-        endpointId: endpoint.id, endpointUrl: endpoint.url,
-        level:   ms > 2000 ? 'warn' : 'success',
-        message: ms > 2000
+        widgetId:    widget.id,
+        widgetTitle: widget.title,
+        endpointId:  endpoint.id,
+        endpointUrl: endpoint.url,
+        level:       ms > 2000 ? 'warn' : 'success',
+        message:     ms > 2000
           ? `Slow response: ${ms}ms — ${arr.length} rows`
           : `Fetched ${arr.length} rows in ${ms}ms`,
-        latencyMs: ms, statusCode: res.status,
+        latencyMs:  ms,
+        statusCode: res.status,
       })
 
-      // Zustand .getState() inside callback is valid — avoids stale closure
-      // without adding store slices as deps
       updateEndpointHealth(endpoint.id, {
-        endpointName: endpoint.name, url: endpoint.url,
+        endpointName: endpoint.name,
+        url:          endpoint.url,
         status:       ms > 3000 ? 'degraded' : 'healthy',
         latencyMs:    ms,
         successCount: (useMonitoringStore.getState().endpointHealth[endpoint.id]?.successCount ?? 0) + 1,
       })
     } catch (err) {
-      // ── Fix #2 — safe error handling, no any ───────────────
       const ms      = Math.round(performance.now() - t0)
       const message = err instanceof Error ? err.message : String(err)
       setError(message)
       addLog({
-        widgetId: widget.id, widgetTitle: widget.title,
-        endpointId: endpoint.id, endpointUrl: endpoint.url,
-        level: 'error', message, latencyMs: ms,
+        widgetId:    widget.id,
+        widgetTitle: widget.title,
+        endpointId:  endpoint.id,
+        endpointUrl: endpoint.url,
+        level:       'error',
+        message,
+        latencyMs:   ms,
       })
       updateEndpointHealth(endpoint.id, {
-        endpointName: endpoint.name, url: endpoint.url,
-        status: 'down', lastError: message,
-        errorCount: (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
+        endpointName: endpoint.name,
+        url:          endpoint.url,
+        status:       'down',
+        lastError:    message,
+        errorCount:   (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
       })
       toast.error(`"${widget.title}": ${message}`)
     } finally {
       setLoading(false)
     }
   }, [
-    // ── Fix #3 — all used values listed ──────────────────────
     widget.id, widget.title, widget.endpointId,
-    endpoint,   // full object — stable reference from store
+    endpoints,                     // ✅ array ref — stable unless store changes
     addLog, updateEndpointHealth,
   ])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   useEffect(() => {
+    const endpoint = endpoints.find(e => e.id === widget.endpointId)
     if (!endpoint?.refreshInterval || endpoint.refreshInterval <= 0) return
     const id = setInterval(fetchData, endpoint.refreshInterval * 1000)
     return () => clearInterval(id)
-  }, [endpoint?.refreshInterval, fetchData])
+  }, [endpoints, widget.endpointId, fetchData])
+
+  // ── UI-only endpoint resolution (display name, mapping label) ─
+  const endpoint = endpoints.find(e => e.id === widget.endpointId)
+  const Icon     = chartTypeIcon[widget.type] ?? BarChart3
+  const style    = { ...DEFAULT_STYLE, ...widget.style }
 
   const renderChart = () => {
     if (!rawData?.length) return null
@@ -210,7 +233,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               <thead className="sticky top-0 bg-muted z-10">
                 <tr>
                   {cols.map(col => (
-                    <th key={col} className="text-left p-2 font-medium border-b text-[11px] whitespace-nowrap">
+                    <th
+                      key={col}
+                      className="text-left p-2 font-medium border-b text-[11px] whitespace-nowrap"
+                    >
                       {col}
                     </th>
                   ))}
@@ -232,23 +258,28 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         )
       }
       default:
-        return <p className="text-xs text-muted-foreground">Unknown chart type: {widget.type}</p>
+        return (
+          <p className="text-xs text-muted-foreground">
+            Unknown chart type: {widget.type}
+          </p>
+        )
     }
   }
 
-  const healthColor = error
-    ? 'text-red-500'
-    : latency && latency > 2000
-    ? 'text-amber-500'
+  const healthColor =
+    error                        ? 'text-red-500'
+    : latency && latency > 2000  ? 'text-amber-500'
     : 'text-green-500'
 
-  // ── Fix #9 — collapsed duplicate refresh button ───────────
   const RefreshButton = (
-    <Button variant="ghost" size="icon" className="h-6 w-6"
-      onClick={fetchData} disabled={loading}>
+    <Button
+      variant="ghost" size="icon" className="h-6 w-6"
+      onClick={fetchData} disabled={loading}
+    >
       {loading
         ? <Loader2 className="w-3 h-3 animate-spin" />
-        : <RefreshCw className="w-3 h-3" />}
+        : <RefreshCw className="w-3 h-3" />
+      }
     </Button>
   )
 
@@ -290,8 +321,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               }
               {!viewMode && (
                 <>
-                  <Button variant="ghost" size="icon" className="h-6 w-6"
-                    onClick={() => setEditOpen(true)}>
+                  <Button
+                    variant="ghost" size="icon" className="h-6 w-6"
+                    onClick={() => setEditOpen(true)}
+                  >
                     <Pencil className="w-3 h-3" />
                   </Button>
                   {RefreshButton}
@@ -310,7 +343,8 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-[10px] text-muted-foreground truncate flex-1">
-              {endpoint?.name ?? 'Unknown'} · {widget.dataMapping.xAxis} → {widget.dataMapping.yAxis}
+              {endpoint?.name ?? 'Unknown'} · {widget.dataMapping.xAxis}
+              {widget.dataMapping.yAxis ? ` → ${widget.dataMapping.yAxis}` : ''}
             </p>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {latency !== null && (
@@ -321,7 +355,11 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               {lastFetched && (
                 <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
                   <Clock className="w-2.5 h-2.5" />
-                  {lastFetched.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {lastFetched.toLocaleTimeString([], {
+                    hour:   '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })}
                 </span>
               )}
             </div>
@@ -340,7 +378,8 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               <Button
                 variant="outline" size="sm"
                 className="h-6 text-[11px] border-red-300 text-red-600 hover:bg-red-50"
-                onClick={fetchData} disabled={loading}
+                onClick={fetchData}
+                disabled={loading}
               >
                 {loading
                   ? <Loader2 className="w-3 h-3 animate-spin mr-1" />
@@ -352,6 +391,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
           )}
 
           {!loading && !error && rawData && renderChart()}
+
           {!loading && !error && rawData?.length === 0 && (
             <div className="flex items-center justify-center h-[200px]">
               <p className="text-xs text-muted-foreground">No data returned</p>

@@ -18,7 +18,7 @@ export interface SharePayload {
 // Encode dashboard state into a base64 URL token
 export function encodeShareToken(payload: SharePayload): string {
   const json    = JSON.stringify(payload)
-  const encoded = btoa(unescape(encodeURIComponent(json)))
+  const encoded = btoa(encodeURIComponent(json))
   // Make URL-safe
   return encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
@@ -28,7 +28,7 @@ export function decodeShareToken(token: string): SharePayload | null {
   try {
     const base64  = token.replace(/-/g, '+').replace(/_/g, '/')
     const padded  = base64 + '='.repeat((4 - base64.length % 4) % 4)
-    const json    = decodeURIComponent(escape(atob(padded)))
+    const json    = decodeURIComponent(atob(padded))
     return JSON.parse(json) as SharePayload
   } catch {
     return null

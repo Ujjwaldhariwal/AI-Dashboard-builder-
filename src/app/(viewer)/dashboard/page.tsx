@@ -24,7 +24,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 export default function ViewerPage() {
   const {
     dashboards, currentDashboardId,
-    getWidgetsByDashboard, endpoints, widgets: allWidgets,
+    endpoints, widgets: allWidgets,
+    getProjectConfig, getGroupsByDashboard,
   } = useDashboardStore()
 
   const [refreshKey, setRefreshKey]   = useState(0)
@@ -34,7 +35,7 @@ export default function ViewerPage() {
   const [shareCopied, setShareCopied] = useState(false)
 
   const currentDash   = dashboards.find(d => d.id === currentDashboardId)
-  const widgets       = currentDashboardId ? getWidgetsByDashboard(currentDashboardId) : []
+const widgets = allWidgets.filter(w => w.dashboardId === currentDashboardId)
   const usedEndpoints = endpoints.filter(e => widgets.some(w => w.endpointId === e.id))
 
   // ── Auto-refresh countdown ──────────────────────────────────────────────
@@ -104,7 +105,15 @@ export default function ViewerPage() {
     setExporting(true)
     toast.loading('Generating project...', { id: 'export' })
     try {
-      const config = buildDashboardConfig(currentDash, endpoints, allWidgets)
+      const projectConfig = getProjectConfig(currentDash.id)
+      const chartGroups = getGroupsByDashboard(currentDash.id)
+      const config = buildDashboardConfig(
+        currentDash,
+        endpoints,
+        allWidgets,
+        projectConfig,
+        chartGroups,
+      )
       const files  = generateProjectFromConfig(config)
       const blob   = await packageProjectAsZip(files)
       const url    = URL.createObjectURL(blob)
@@ -116,8 +125,9 @@ export default function ViewerPage() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
       toast.success('Export ready!', { id: 'export' })
-    } catch (err: any) {
-      toast.error('Export failed: ' + err.message, { id: 'export' })
+    } catch (err) {
+  const message = err instanceof Error ? err.message : String(err)
+  toast.error(`Export failed: ${message}`, { id: 'export' })
     } finally {
       setExporting(false)
     }

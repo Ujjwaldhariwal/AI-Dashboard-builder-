@@ -102,17 +102,23 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
       styleOnlyMode: !!selectedWidget,
     }
 
-    const first = endpoints[0]
-    if (first) {
+    const endpointForContext = selectedWidget
+      ? endpoints.find(e => e.id === selectedWidget.endpointId) ?? endpoints[0]
+      : endpoints[0]
+
+    if (endpointForContext) {
       try {
-        const res = await fetch(first.url, { method: first.method })
+        const res = await fetch(endpointForContext.url, {
+          method: endpointForContext.method,
+          headers: endpointForContext.headers,
+        })
         if (res.ok) {
           const raw  = await res.json()
           const arr  = DataAnalyzer.extractDataArray(raw) ?? []
           context.fields           = DataAnalyzer.inferTypes(arr)
           context.sampleRows       = arr.slice(0, 3)
           context.totalRows        = arr.length
-          context.activeEndpointName = first.name
+          context.activeEndpointName = endpointForContext.name
         }
       } catch {}
     }
@@ -128,6 +134,8 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setLoading(true)
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 30_000)
 
     try {
       const context = await buildContext()
@@ -135,6 +143,7 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           messages: [...messages, userMsg].map(m => ({
             role: m.role,
@@ -156,15 +165,22 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
           styleAction:  data.styleAction  ?? null,
         },
       ])
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message =
+        err instanceof DOMException && err.name === 'AbortError'
+          ? 'Request timed out after 30s. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Unknown error'
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          content: `Sorry, I hit an error: ${err.message}. Make sure your OpenAI API key is set in .env.local.`,
+          content: `Sorry, I hit an error: ${message}.`,
         },
       ])
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }
@@ -179,8 +195,10 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
       title: action.title,
       type:  action.type,
       endpointId: endpoint.id,
-      xAxis: action.xAxis,
-      yAxis: action.yAxis,
+      dataMapping: {
+        xAxis: action.xAxis,
+        yAxis: action.yAxis,
+      },
     })
 
     toast.success(`Widget "${action.title}" added!`)
@@ -202,7 +220,7 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
     const safeStyle: Partial<WidgetStyle> = {}
     const allowed: (keyof WidgetStyle)[] = [
       'colors', 'tooltipBg', 'tooltipBorder',
-      'labelFormat', 'customCSS', 'barRadius',
+      'labelFormat', 'barRadius',
       'showLegend', 'showGrid',
     ]
     allowed.forEach(key => {
@@ -249,7 +267,7 @@ export function ConfigChatbot({ onClose, selectedWidgetId }: ConfigChatbotProps)
               {selectedWidget.title}
             </Badge>
           )}
-          <Badge variant="secondary" className="text-[10px]">Gemeni</Badge>
+          <Badge variant="secondary" className="text-[10px]">Gemini</Badge>
           {onClose && (
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
               <X className="w-4 h-4" />

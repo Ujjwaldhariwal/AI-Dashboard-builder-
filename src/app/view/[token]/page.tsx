@@ -6,11 +6,12 @@ import { decodeShareToken } from '@/lib/share-utils'
 import { SharedDashboardViewer } from '@/components/viewer/shared-dashboard-viewer'
 
 interface Props {
-  params: { token: string }
+  params: Promise<{ token: string }>
 }
 
-export default function SharedViewPage({ params }: Props) {
-  const payload = decodeShareToken(params.token)
+export default async function SharedViewPage({ params }: Props) {
+  const { token } = await params
+  const payload = decodeShareToken(token)
 
   if (!payload) {
     return (

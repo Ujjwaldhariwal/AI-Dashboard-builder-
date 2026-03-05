@@ -89,7 +89,10 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     if (!endpoint) return
     setLoadingFields(true)
     try {
-      const res = await fetch(endpoint.url, { method: endpoint.method })
+      const res = await fetch(endpoint.url, {
+        method: endpoint.method,
+        headers: endpoint.headers ?? {},
+      })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const result = await res.json()
 

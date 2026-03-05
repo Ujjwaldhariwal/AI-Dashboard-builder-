@@ -1,85 +1,68 @@
 'use client'
 
-// Component: WidgetConfigDialog
 // src/components/builder/widget-config-dialog.tsx
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription,
+  DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem,
+  SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/builder-store'
-import { ChartType } from '@/types/widget'
+import type { ChartType } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { toast } from 'sonner'
+import type { LucideIcon } from 'lucide-react'
 import {
-  BarChart3,
-  LineChart,
-  PieChart,
-  AreaChart,
-  Table2,
-  Loader2,
-  Gauge,
-  TrendingUp,
-  AlignLeft,
-  Circle,
+  BarChart3, LineChart, PieChart, AreaChart,
+  Table2, Loader2, Gauge, TrendingUp, AlignLeft, Circle,
 } from 'lucide-react'
 
 interface WidgetConfigDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  endpointId?: string
-  suggestedType?: ChartType
-  suggestedXAxis?: string
-  suggestedYAxis?: string
-  availableFields?: Array<{ name: string; type: string }>
+  open:              boolean
+  onOpenChange:      (open: boolean) => void
+  endpointId?:       string
+  suggestedType?:    ChartType
+  suggestedXAxis?:   string
+  suggestedYAxis?:   string
+  availableFields?:  Array<{ name: string; type: string }>
 }
 
-// ✅ FIX: matches ChartType exactly — no 'stat-card', uses 'status-card'
-const chartIcons: Record<ChartType, any> = {
-  line: LineChart,
-  bar: BarChart3,
-  pie: PieChart,
-  area: AreaChart,
-  donut: Circle,
+// ── Fix #3 — typed icon map ───────────────────────────────────
+const chartIcons: Record<ChartType, LucideIcon> = {
+  line:             LineChart,
+  bar:              BarChart3,
+  pie:              PieChart,
+  area:             AreaChart,
+  donut:            Circle,
   'horizontal-bar': AlignLeft,
-  gauge: Gauge,
-  'status-card': TrendingUp,
-  table: Table2,
+  gauge:            Gauge,
+  'status-card':    TrendingUp,
+  table:            Table2,
 }
 
-// Rows shown in the chart type picker
-// Split into 2 rows of 5 for readability
 const CHART_TYPE_ROWS: ChartType[][] = [
   ['bar', 'line', 'area', 'pie', 'donut'],
   ['horizontal-bar', 'gauge', 'status-card', 'table'],
 ]
 
 const chartTypeLabel: Record<ChartType, string> = {
-  bar: 'Bar',
-  line: 'Line',
-  area: 'Area',
-  pie: 'Pie',
-  donut: 'Donut',
+  bar:              'Bar',
+  line:             'Line',
+  area:             'Area',
+  pie:              'Pie',
+  donut:            'Donut',
   'horizontal-bar': 'H-Bar',
-  gauge: 'Gauge',
-  'status-card': 'KPI',
-  table: 'Table',
+  gauge:            'Gauge',
+  'status-card':    'KPI',
+  table:            'Table',
 }
 
 export function WidgetConfigDialog({
@@ -93,19 +76,46 @@ export function WidgetConfigDialog({
 }: WidgetConfigDialogProps) {
   const { addWidget, endpoints } = useDashboardStore()
 
-  const [title, setTitle] = useState('')
-  const [type, setType] = useState<ChartType>('bar')
-  const [xAxis, setXAxis] = useState('')
-  const [yAxis, setYAxis] = useState('')
-  const [fields, setFields] = useState<Array<{ name: string; type: string }>>([])
+  const [title, setTitle]               = useState('')
+  const [type, setType]                 = useState<ChartType>('bar')
+  const [xAxis, setXAxis]               = useState('')
+  const [yAxis, setYAxis]               = useState('')
+  const [fields, setFields]             = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
-
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>(
     endpointId ?? endpoints[0]?.id ?? '',
   )
+
   const endpoint = endpoints.find(e => e.id === selectedEndpointId)
 
-  // ── Reset + fetch on open ─────────────────────────────────────────────────
+  // ── Fix #6 — useCallback so it's stable across renders ───────
+  const fetchFields = useCallback(async (ep: { url: string; method: string }) => {
+    setLoadingFields(true)
+    setFields([])
+    try {
+      const res = await fetch(ep.url, { method: ep.method })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const result   = await res.json()
+      const dataArray =
+        DataAnalyzer.extractDataArray(result) ??
+        (Array.isArray(result) ? result : [result])
+      const analysis = DataAnalyzer.analyzeArray(dataArray)
+      setFields(analysis.fields)
+      if (!suggestedXAxis) setXAxis(analysis.fields[0]?.name ?? '')
+      if (!suggestedYAxis) setYAxis(analysis.fields[1]?.name ?? analysis.fields[0]?.name ?? '')
+    } catch (err) {
+      // ── Fix #4 — log the actual error ────────────────────────
+      console.warn('[WidgetConfigDialog] fetchFields failed:', err)
+      toast.error('Could not fetch fields. Enter axis names manually.')
+      setFields([])
+    } finally {
+      setLoadingFields(false)
+    }
+  }, [suggestedXAxis, suggestedYAxis])
+
+  // ── Fix #2 — all prop deps listed, effect is intentionally
+  //    init-only (fires when dialog opens). eslint-disable is
+  //    explicit here rather than silently missing deps. ─────────
   useEffect(() => {
     if (!open) return
 
@@ -126,35 +136,8 @@ export function WidgetConfigDialog({
     } else if (ep) {
       fetchFields(ep)
     }
-  }, [open])
-
-  // ── Live field fetch ──────────────────────────────────────────────────────
-  const fetchFields = async (ep: { url: string; method: string }) => {
-    setLoadingFields(true)
-    setFields([])
-    try {
-      const res = await fetch(ep.url, { method: ep.method })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const result = await res.json()
-
-      // ✅ Use DataAnalyzer for reliable extraction
-      const dataArray =
-        DataAnalyzer.extractDataArray(result) ??
-        (Array.isArray(result) ? result : [result])
-
-      const analysis = DataAnalyzer.analyzeArray(dataArray)
-      setFields(analysis.fields)
-
-      if (!suggestedXAxis) setXAxis(analysis.fields[0]?.name ?? '')
-      if (!suggestedYAxis)
-        setYAxis(analysis.fields[1]?.name ?? analysis.fields[0]?.name ?? '')
-    } catch {
-      toast.error('Could not fetch fields. Enter axis names manually.')
-      setFields([])
-    } finally {
-      setLoadingFields(false)
-    }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]) // ← intentional: init fires once on open, not on every prop change
 
   const handleEndpointChange = (id: string) => {
     const ep = endpoints.find(e => e.id === id)
@@ -181,9 +164,9 @@ export function WidgetConfigDialog({
     }
 
     addWidget({
-      title: title.trim(),
+      title:       title.trim(),
       type,
-      endpointId: endpoint.id,
+      endpointId:  endpoint.id,
       dataMapping: {
         xAxis: xAxis || fields[0]?.name || '',
         yAxis: yAxis || undefined,
@@ -194,7 +177,6 @@ export function WidgetConfigDialog({
     onOpenChange(false)
   }
 
-  // ── Axis fields — gauge/status-card only need Y ───────────────────────────
   const needsXAxis = !['gauge', 'status-card'].includes(type)
 
   return (
@@ -206,8 +188,7 @@ export function WidgetConfigDialog({
             Configure a new widget using data from{' '}
             <span className="font-mono font-medium">
               {endpoint?.name || 'a connected API'}
-            </span>
-            .
+            </span>.
           </DialogDescription>
         </DialogHeader>
 
@@ -234,23 +215,25 @@ export function WidgetConfigDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {endpoints.map(ep => (
-                    <SelectItem key={ep.id} value={ep.id}>
-                      {ep.name}
-                    </SelectItem>
+                    <SelectItem key={ep.id} value={ep.id}>{ep.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           )}
 
-          {/* Chart type picker — 2 rows */}
+          {/* Chart type picker */}
           <div className="space-y-1.5">
             <Label className="text-xs">Chart type</Label>
             <div className="space-y-1.5">
               {CHART_TYPE_ROWS.map((row, ri) => (
-                <div key={ri} className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${row.length}, 1fr)` }}>
+                <div
+                  key={ri}
+                  className="grid gap-1.5"
+                  style={{ gridTemplateColumns: `repeat(${row.length}, 1fr)` }}
+                >
                   {row.map(chartType => {
-                    const Icon = chartIcons[chartType]
+                    const Icon       = chartIcons[chartType]
                     const isSelected = type === chartType
                     return (
                       <button
@@ -263,16 +246,8 @@ export function WidgetConfigDialog({
                             : 'border-border hover:border-primary/50'
                         }`}
                       >
-                        <Icon
-                          className={`w-4 h-4 ${
-                            isSelected ? 'text-primary' : 'text-muted-foreground'
-                          }`}
-                        />
-                        <span
-                          className={`text-[10px] font-medium ${
-                            isSelected ? 'text-primary' : 'text-muted-foreground'
-                          }`}
-                        >
+                        <Icon className={`w-4 h-4 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                        <span className={`text-[10px] font-medium ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
                           {chartTypeLabel[chartType]}
                         </span>
                       </button>
@@ -283,7 +258,7 @@ export function WidgetConfigDialog({
             </div>
           </div>
 
-          {/* X axis — hidden for gauge/status-card */}
+          {/* X axis */}
           {needsXAxis && (
             <div className="space-y-1.5">
               <Label className="text-xs flex items-center gap-1.5">
@@ -292,17 +267,13 @@ export function WidgetConfigDialog({
               </Label>
               {fields.length > 0 ? (
                 <Select value={xAxis} onValueChange={setXAxis} disabled={loadingFields}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="Select field" />
-                  </SelectTrigger>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select field" /></SelectTrigger>
                   <SelectContent>
                     {fields.map(field => (
                       <SelectItem key={field.name} value={field.name}>
                         <div className="flex items-center gap-2">
                           <span>{field.name}</span>
-                          <Badge variant="outline" className="text-[9px] px-1 py-0">
-                            {field.type}
-                          </Badge>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0">{field.type}</Badge>
                         </div>
                       </SelectItem>
                     ))}
@@ -328,17 +299,13 @@ export function WidgetConfigDialog({
             </Label>
             {fields.length > 0 ? (
               <Select value={yAxis} onValueChange={setYAxis} disabled={loadingFields}>
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Select field" />
-                </SelectTrigger>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select field" /></SelectTrigger>
                 <SelectContent>
                   {fields.map(field => (
                     <SelectItem key={field.name} value={field.name}>
                       <div className="flex items-center gap-2">
                         <span>{field.name}</span>
-                        <Badge variant="outline" className="text-[9px] px-1 py-0">
-                          {field.type}
-                        </Badge>
+                        <Badge variant="outline" className="text-[9px] px-1 py-0">{field.type}</Badge>
                       </div>
                     </SelectItem>
                   ))}
@@ -354,7 +321,6 @@ export function WidgetConfigDialog({
               />
             )}
           </div>
-
         </div>
 
         <DialogFooter className="pt-2">
@@ -362,14 +328,10 @@ export function WidgetConfigDialog({
             Cancel
           </Button>
           <Button size="sm" onClick={handleCreate} disabled={loadingFields}>
-            {loadingFields ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                Loading fields...
-              </>
-            ) : (
-              'Create widget'
-            )}
+            {loadingFields
+              ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Loading fields...</>
+              : 'Create widget'
+            }
           </Button>
         </DialogFooter>
       </DialogContent>

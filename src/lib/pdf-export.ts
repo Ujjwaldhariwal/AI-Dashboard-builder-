@@ -142,6 +142,33 @@ export class PDFExporter {
           yPosition += splitText.length * 5 + 3
         })
       }
+
+      if (warningAlerts.length > 0) {
+        if (yPosition > pageHeight - 40) {
+          pdf.addPage()
+          yPosition = 20
+        }
+
+        pdf.setFontSize(10)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setTextColor(217, 119, 6)
+        pdf.text('⚠ Warning Alerts', 20, yPosition)
+        yPosition += 7
+
+        warningAlerts.slice(0, 5).forEach(alert => {
+          pdf.setFontSize(9)
+          pdf.setFont('helvetica', 'bold')
+          pdf.setTextColor(0, 0, 0)
+          pdf.text(`• ${alert.title}`, 25, yPosition)
+          yPosition += 5
+
+          pdf.setFont('helvetica', 'normal')
+          pdf.setTextColor(60, 60, 60)
+          const splitText = pdf.splitTextToSize(alert.description, pageWidth - 55)
+          pdf.text(splitText, 28, yPosition)
+          yPosition += splitText.length * 5 + 3
+        })
+      }
       
       yPosition += 10
     }

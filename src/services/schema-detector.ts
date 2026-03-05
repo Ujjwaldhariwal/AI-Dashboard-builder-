@@ -1,8 +1,5 @@
 // Module: SchemaDetector
-import Ajv from 'ajv'
 import { ApiSchema } from '@/types'
-
-const ajv = new Ajv()
 
 export class SchemaDetector {
   static async analyzeApiResponse(

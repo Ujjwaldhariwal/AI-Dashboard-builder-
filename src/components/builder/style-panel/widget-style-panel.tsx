@@ -3,7 +3,7 @@
 // src/components/builder/style-panel/widget-style-panel.tsx
 
 import { useDashboardStore } from '@/store/builder-store'
-import type { WidgetStyle } from '@/types/widget'
+import type { WidgetStyle, LabelFormat } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -31,24 +31,21 @@ const TOOLTIP_FIELDS: TooltipField[] = [
   { key: 'tooltipBorder', label: 'Border',     fallback: '#e2e8f0' },
 ]
 
-// ── Fix #10 — explicit format options matching fmtValue() ──────
-type LabelFormat = 'number' | 'currency' | 'percent'
-const FORMAT_OPTIONS: { value: LabelFormat; label: string }[] = [
+type LabelFormatOption = LabelFormat | 'number'
+const FORMAT_OPTIONS: { value: LabelFormatOption; label: string }[] = [
   { value: 'number',   label: 'Number  (1,234)'  },
   { value: 'currency', label: 'Currency  ($1.2k)' },
   { value: 'percent',  label: 'Percent  (42.0%)'  },
 ]
 
 export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
-  const { widgets, updateWidgetStyle } = useDashboardStore()
+  const { widgets, updateWidgetStyle,resetWidgetStyle  } = useDashboardStore()
 
   // ── Fix #3 — resetWidgetStyle may not exist in store ─────────
   // Use updateWidgetStyle with DEFAULT_STYLE as the safe fallback.
   // If your store has resetWidgetStyle, swap this line:
   //   const { widgets, updateWidgetStyle, resetWidgetStyle } = useDashboardStore()
-  const resetWidgetStyle = (id: string) => {
-    updateWidgetStyle(id, { ...DEFAULT_STYLE })
-  }
+ 
 
   const widget = widgets.find(w => w.id === selectedWidgetId)
 
@@ -82,7 +79,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
   }
 
   // ── Fix #10 — resolve stored format to typed value ────────────
-  const currentFormat: LabelFormat =
+  const currentFormat: LabelFormatOption =
     (FORMAT_OPTIONS.find(f => f.value === style.labelFormat)?.value) ?? 'number'
 
   return (
