@@ -1,5 +1,7 @@
 'use client'
 
+// src/app/page.tsx
+
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth-store'
@@ -8,10 +10,11 @@ import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  BarChart3, Sparkles, Database, Download,
+  Sparkles, Database, Download,
   ArrowRight, CheckCircle2, Zap, Shield,
   LayoutDashboard, TrendingUp, Code2,
-  GitBranch, Wand2, RefreshCw,
+  GitBranch, Wand2,
+  // ── Fix #5 — removed unused BarChart3, RefreshCw ──────────
 } from 'lucide-react'
 
 const FEATURES = [
@@ -54,19 +57,18 @@ const FEATURES = [
 ]
 
 const STEPS = [
-  { n: '01', title: 'Connect Your API', desc: 'Paste any REST endpoint URL and set auth. Live preview shows detected fields instantly.' },
-  { n: '02', title: 'AI Builds Charts', desc: 'Type "show revenue by month as a bar chart" — AI creates the widget with correct axes in seconds.' },
-  { n: '03', title: 'Export & Ship', desc: 'Download a production-ready React ZIP. Your team deploys it. No vendor lock-in, ever.' },
+  { n: '01', title: 'Connect Your API',  desc: 'Paste any REST endpoint URL and set auth. Live preview shows detected fields instantly.' },
+  { n: '02', title: 'AI Builds Charts',  desc: 'Type "show revenue by month as a bar chart" — AI creates the widget with correct axes in seconds.' },
+  { n: '03', title: 'Export & Ship',     desc: 'Download a production-ready React ZIP. Your team deploys it. No vendor lock-in, ever.' },
 ]
 
 const STATS = [
-  { value: '9+', label: 'Chart Types' },
-  { value: 'AI', label: 'Gemini 2.5 Flash' },
-  { value: '∞', label: 'API Sources' },
+  { value: '9+',  label: 'Chart Types' },
+  { value: 'AI',  label: 'Gemini 2.5 Flash' },
+  { value: '∞',   label: 'API Sources' },
   { value: 'ZIP', label: 'Export Format' },
 ]
 
-// ── Animated fake dashboard mockup ───────────────────────────
 function DashboardMockup() {
   const bars = [65, 40, 80, 55, 90, 45, 70, 60]
   return (
@@ -77,10 +79,7 @@ function DashboardMockup() {
       className="relative w-full max-w-2xl mx-auto"
       style={{ perspective: '1000px' }}
     >
-      {/* Glow effect */}
       <div className="absolute -inset-4 bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-pink-600/20 rounded-3xl blur-2xl" />
-
-      {/* Main card */}
       <div className="relative rounded-2xl border border-white/10 bg-gray-950/90 backdrop-blur overflow-hidden shadow-2xl">
 
         {/* Fake topbar */}
@@ -140,7 +139,7 @@ function DashboardMockup() {
             </div>
           </div>
 
-          {/* Line chart placeholder */}
+          {/* Line chart */}
           <div className="col-span-2 rounded-xl border border-white/8 bg-white/3 p-3">
             <p className="text-[9px] text-white/40 mb-2">User Growth</p>
             <svg viewBox="0 0 200 48" className="w-full h-10">
@@ -155,7 +154,7 @@ function DashboardMockup() {
             </svg>
           </div>
 
-          {/* Donut placeholder */}
+          {/* Donut */}
           <div className="col-span-1 rounded-xl border border-white/8 bg-white/3 p-3 flex flex-col items-center justify-center">
             <div className="relative w-12 h-12">
               <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
@@ -169,7 +168,6 @@ function DashboardMockup() {
             </div>
             <p className="text-[9px] text-white/40 mt-1.5">Distribution</p>
           </div>
-
         </div>
 
         {/* AI floating button hint */}
@@ -182,12 +180,11 @@ function DashboardMockup() {
   )
 }
 
-// ── Main Landing Page ─────────────────────────────────────────
 function LandingPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white overflow-x-hidden">
 
-      {/* ── Navbar ─────────────────────────────────────────────── */}
+      {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -214,9 +211,8 @@ function LandingPage() {
         </div>
       </nav>
 
-      {/* ── Hero ───────────────────────────────────────────────── */}
+      {/* Hero */}
       <section className="relative pt-32 pb-20 px-6 overflow-hidden">
-        {/* Background blobs */}
         <div className="absolute top-20 left-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute top-40 right-1/4 w-80 h-80 bg-purple-600/15 rounded-full blur-3xl pointer-events-none" />
 
@@ -262,8 +258,6 @@ function LandingPage() {
                 </Button>
               </Link>
             </div>
-
-            {/* Trust badges */}
             <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-white/40">
               {['No code required', 'AI-powered chart generation', 'Export complete React app', 'Enterprise-ready UI'].map(t => (
                 <div key={t} className="flex items-center gap-1.5">
@@ -273,20 +267,21 @@ function LandingPage() {
               ))}
             </div>
           </motion.div>
-
-          {/* Dashboard mockup */}
           <DashboardMockup />
         </div>
       </section>
 
-      {/* ── Stats ──────────────────────────────────────────────── */}
+      {/* Stats */}
       <section className="py-12 border-y border-white/5 bg-white/2">
         <div className="max-w-4xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+          {/* ── Fix #7 — staggered delays per item ──────────── */}
           {STATS.map((s, i) => (
             <motion.div
               key={s.label}
               initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1, duration: 0.4 }}
             >
               <p className="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                 {s.value}
@@ -297,7 +292,7 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* ── Features ───────────────────────────────────────────── */}
+      {/* Features */}
       <section className="py-24 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
@@ -311,10 +306,13 @@ function LandingPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {FEATURES.map((f, i) => (
+              // ── Fix #6 — whileInView so cards animate on scroll ──
               <motion.div
                 key={f.title}
                 initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08, duration: 0.4 }}
                 className="group relative rounded-2xl border border-white/8 bg-white/3 p-6 hover:border-white/15 hover:bg-white/5 transition-all duration-300"
               >
                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${f.color} flex items-center justify-center mb-4 shadow-lg`}>
@@ -328,7 +326,7 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* ── How It Works ───────────────────────────────────────── */}
+      {/* How It Works */}
       <section className="py-24 px-6 border-t border-white/5 bg-white/2">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-14">
@@ -336,9 +334,7 @@ function LandingPage() {
             <p className="text-white/50">No data pipelines. No BI tools. Just your API and AI.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-            {/* Connecting line */}
             <div className="hidden md:block absolute top-8 left-1/3 right-1/3 h-px bg-gradient-to-r from-blue-600/50 to-purple-600/50" />
-
             {STEPS.map((s, i) => (
               <motion.div
                 key={s.n}
@@ -359,7 +355,7 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* ── CTA Banner ─────────────────────────────────────────── */}
+      {/* CTA Banner */}
       <section className="py-24 px-6">
         <div className="max-w-4xl mx-auto">
           <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-pink-600/20 border border-white/10 p-12 text-center">
@@ -388,7 +384,7 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* ── Footer ─────────────────────────────────────────────── */}
+      {/* Footer */}
       <footer className="border-t border-white/5 py-8 px-6 text-center">
         <div className="flex items-center justify-center gap-2 mb-2">
           <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
@@ -404,9 +400,8 @@ function LandingPage() {
   )
 }
 
-// ── Page Entry Point ──────────────────────────────────────────
 export default function HomePage() {
-  const router = useRouter()
+  const router          = useRouter()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const isLoading       = useAuthStore(s => s.isLoading)
 
@@ -416,7 +411,6 @@ export default function HomePage() {
     }
   }, [isAuthenticated, isLoading, router])
 
-  if (isLoading)       return null
-  if (isAuthenticated) return null
+  if (isLoading || isAuthenticated) return null
   return <LandingPage />
 }

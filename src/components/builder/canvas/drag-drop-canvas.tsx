@@ -1,9 +1,10 @@
 "use client"
 
-// Module: Drag Drop Canvas — widget selection for AI style scoping
+// Module: Drag Drop Canvas
 // src/components/builder/canvas/drag-drop-canvas.tsx
 
-import { useState, useCallback } from "react"
+// ── Fix #4 — import MouseEvent type ──────────────────────────
+import { useState, useCallback, type MouseEvent } from "react"
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
@@ -12,7 +13,7 @@ import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable"
 import { useDashboardStore } from "@/store/builder-store"
 import { WidgetCard } from "./widget-card"
 import { WidgetConfigDialog } from "@/components/builder/widget-config-dialog"
-import { Widget } from "@/types/widget"
+import type { Widget } from "@/types/widget"
 import {
   LayoutDashboard, Plus, Wand2,
   BarChart3, TrendingUp, PieChart,
@@ -32,12 +33,11 @@ const COL_CLASSES: Record<ColCount, string> = {
 const COL_ICONS = { 1: Square, 2: Columns2, 3: LayoutGrid }
 
 interface DragDropCanvasProps {
-  viewMode?:        boolean
-  selectedWidgetId?: string | null       // Phase 2 — AI style scoping
-  onSelectWidget?:  (id: string | null) => void
+  viewMode?:         boolean
+  selectedWidgetId?: string | null
+  onSelectWidget?:   (id: string | null) => void
 }
 
-// ── Empty State ───────────────────────────────────────────────
 function EmptyCanvas({
   onAddWidget, onMagicBuild, hasEndpoints,
 }: {
@@ -89,7 +89,6 @@ function EmptyCanvas({
   )
 }
 
-// ── Add Widget Tile ───────────────────────────────────────────
 function AddWidgetTile({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -104,7 +103,6 @@ function AddWidgetTile({ onClick }: { onClick: () => void }) {
   )
 }
 
-// ── Layout Selector ───────────────────────────────────────────
 function LayoutSelector({ cols, onChange }: { cols: ColCount; onChange: (c: ColCount) => void }) {
   return (
     <div className="flex items-center gap-1 mb-4">
@@ -130,7 +128,6 @@ function LayoutSelector({ cols, onChange }: { cols: ColCount; onChange: (c: ColC
   )
 }
 
-// ── Main Canvas ───────────────────────────────────────────────
 export function DragDropCanvas({
   viewMode = false,
   selectedWidgetId = null,
@@ -163,10 +160,10 @@ export function DragDropCanvas({
     reorderWidgets(currentDashboardId, String(active.id), String(over.id))
   }, [currentDashboardId, reorderWidgets])
 
-  // Click on widget — select it for AI styling
-  const handleWidgetClick = useCallback((e: React.MouseEvent, widgetId: string) => {
-    e.stopPropagation() // prevent canvas deselect
-    onSelectWidget?.(selectedWidgetId === widgetId ? null : widgetId) // toggle
+  // ── Fix #4 — MouseEvent from react, not React.MouseEvent ─────
+  const handleWidgetClick = useCallback((e: MouseEvent, widgetId: string) => {
+    e.stopPropagation()
+    onSelectWidget?.(selectedWidgetId === widgetId ? null : widgetId)
   }, [onSelectWidget, selectedWidgetId])
 
   if (dashboardWidgets.length === 0 && !viewMode) {

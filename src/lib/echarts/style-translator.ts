@@ -1,9 +1,20 @@
+// src/lib/echarts/style-translator.ts
+
 import type { WidgetStyle } from '@/types/widget'
 
 export function isDarkMode(): boolean {
   if (typeof window === 'undefined') return false
   return document.documentElement.classList.contains('dark')
 }
+
+// ── Fix #7 — document reactivity limitation ───────────────────
+// getAxisColors() and getTooltipStyle() read the DOM at call time.
+// They are called inside useMemo() in chart components, so they
+// reflect the theme correctly on initial render and whenever
+// the chart re-renders (e.g. data change, style update).
+// They do NOT auto-update on theme toggle without a re-render.
+// If live theme switching is needed, use useIsDarkMode() hook
+// from modern-gauge-chart.tsx and pass dark as a prop instead.
 
 export function getAxisColors() {
   const dark = isDarkMode()

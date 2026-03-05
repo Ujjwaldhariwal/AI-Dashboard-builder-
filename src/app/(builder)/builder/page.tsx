@@ -1,7 +1,8 @@
-//src/app/%28builder%29/builder/page.tsx
 'use client'
 
-import { useEffect, useState } from 'react'
+// src/app/(builder)/builder/page.tsx
+
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,6 +27,9 @@ import { buildDashboardConfig, slugifyDashboardName } from '@/lib/code-generator
 import { generateProjectFromConfig } from '@/lib/code-generator/template-generator'
 import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
 import { motion, AnimatePresence } from 'framer-motion'
+import type { Widget } from '@/types/widget'
+import type { ApiEndpoint } from '@/types'
+
 
 // ── Page ──────────────────────────────────────────────────────
 export default function BuilderPage() {
@@ -44,9 +48,13 @@ export default function BuilderPage() {
   const [exporting, setExporting]               = useState(false)
   const [aiOpen, setAiOpen]                     = useState(false)
   const [aiMinimized, setAiMinimized]           = useState(false)
-  const [lastSavedCount, setLastSavedCount]     = useState(0)
   const [unsaved, setUnsaved]                   = useState(false)
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null)
+
+  // ── Fix #1 — track "last exported count" without triggering
+  //    false unsaved on mount. Use a ref to skip the first render.
+  const hasMounted        = useRef(false)
+  const lastSavedCountRef = useRef(0)
 
   useEffect(() => {
     if (!currentDashboardId && dashboards.length > 0) {
@@ -57,17 +65,28 @@ export default function BuilderPage() {
   const currentDash = dashboards.find(d => d.id === currentDashboardId)
   const widgets     = currentDashboardId ? getWidgetsByDashboard(currentDashboardId) : []
 
+  // ── Fix #1 & #4 — skip first render, only mark unsaved on real changes
   useEffect(() => {
-    if (widgets.length !== lastSavedCount) setUnsaved(true)
-  }, [widgets.length, lastSavedCount])
+    if (!hasMounted.current) {
+      // Seed the baseline on first render so current widget count = "saved" state
+      lastSavedCountRef.current = widgets.length
+      hasMounted.current = true
+      return
+    }
+    if (widgets.length !== lastSavedCountRef.current) {
+      setUnsaved(true)
+    }
+  }, [widgets.length]) // ← no lastSavedCount in deps, uses ref instead
 
   const handleCanvasClick = () => setSelectedWidgetId(null)
 
   const handleExport = async () => {
     if (!currentDash)    { toast.error('No active dashboard'); return }
     if (!widgets.length) { toast.error('Add at least one widget first'); return }
+
     setExporting(true)
     toast.loading('Generating project…', { id: 'export' })
+
     try {
       const projectConfig = useDashboardStore.getState().getProjectConfig(currentDash.id)
       const chartGroups   = useDashboardStore.getState().getGroupsByDashboard(currentDash.id)
@@ -82,11 +101,17 @@ export default function BuilderPage() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
+
       toast.success('Export ready!', { id: 'export' })
-      setLastSavedCount(widgets.length)
+
+      // ── Fix #1 — update baseline ref, clear unsaved flag
+      lastSavedCountRef.current = widgets.length
       setUnsaved(false)
-    } catch (err: any) {
-      toast.error('Export failed: ' + err.message, { id: 'export' })
+
+    } catch (err) {
+      // ── Fix #2 — safe error handling, no `any`
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error(`Export failed: ${message}`, { id: 'export' })
     } finally {
       setExporting(false)
     }
@@ -185,7 +210,7 @@ export default function BuilderPage() {
         />
       </div>
 
-      {/* ── Floating AI Overlay ────────────────────────────────── */}
+      {/* ── Floating AI Overlay ─────────────────────────────────── */}
       <AnimatePresence>
         {aiOpen && (
           <motion.div
@@ -211,7 +236,6 @@ export default function BuilderPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  {/* ── 4 Tabs ── */}
                   <TabsList className="h-6">
                     <TabsTrigger value="chat" className="text-[10px] h-5 px-2 gap-1">
                       <Bot className="w-2.5 h-2.5" />Chat
@@ -226,14 +250,18 @@ export default function BuilderPage() {
                       <SlidersHorizontal className="w-2.5 h-2.5" />Config
                     </TabsTrigger>
                   </TabsList>
-                  <Button variant="ghost" size="icon" className="h-6 w-6"
-                    onClick={() => setAiMinimized(v => !v)}>
+                  <Button
+                    variant="ghost" size="icon" className="h-6 w-6"
+                    onClick={() => setAiMinimized(v => !v)}
+                  >
                     {aiMinimized
                       ? <Maximize2 className="w-3 h-3" />
                       : <Minimize2 className="w-3 h-3" />}
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6"
-                    onClick={() => { setAiOpen(false); setAiMinimized(false) }}>
+                  <Button
+                    variant="ghost" size="icon" className="h-6 w-6"
+                    onClick={() => { setAiOpen(false); setAiMinimized(false) }}
+                  >
                     <X className="w-3 h-3" />
                   </Button>
                 </div>
@@ -243,7 +271,6 @@ export default function BuilderPage() {
               {!aiMinimized && (
                 <div className="flex-1 overflow-hidden min-h-0">
 
-                  {/* Chat */}
                   <TabsContent value="chat"
                     className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
                     <ConfigChatbot
@@ -252,19 +279,16 @@ export default function BuilderPage() {
                     />
                   </TabsContent>
 
-                  {/* Suggest */}
                   <TabsContent value="suggest"
                     className="mt-0 h-full overflow-y-auto p-4">
                     <ChartSuggester />
                   </TabsContent>
 
-                  {/* Style */}
                   <TabsContent value="style"
                     className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
                     <WidgetStylePanel selectedWidgetId={selectedWidgetId} />
                   </TabsContent>
 
-                  {/* Config — Project Config + Chart Groups */}
                   <TabsContent value="config"
                     className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
                     {currentDashboardId ? (
@@ -288,7 +312,7 @@ export default function BuilderPage() {
         )}
       </AnimatePresence>
 
-      {/* Floating trigger */}
+      {/* Floating trigger — only button for AI, no duplicate in header */}
       {!aiOpen && (
         <motion.button
           initial={{ opacity: 0, scale: 0.8 }}
@@ -307,11 +331,12 @@ export default function BuilderPage() {
   )
 }
 
-// ── Builder Header ────────────────────────────────────────────
+// ── Builder Header ─────────────────────────────────────────────
+// ── Fix #3 — proper types instead of any ──────────────────────
 interface BuilderHeaderProps {
-  currentDash: any
-  widgets:     any[]
-  endpoints:   any[]
+  currentDash: { id: string; name: string; description?: string } | undefined
+  widgets:     Widget[]
+  endpoints:   ApiEndpoint[]
   exporting:   boolean
   unsaved:     boolean
   onAddWidget: () => void

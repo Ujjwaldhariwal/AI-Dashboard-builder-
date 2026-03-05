@@ -1,24 +1,40 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { graphic } from 'echarts'
 import { getChartHeight } from './chart-registry'
-import { WidgetStyle, DEFAULT_STYLE } from '@/types/widget'
+import type { WidgetStyle } from '@/types/widget'
+import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { withAlpha } from '@/lib/echarts/utils' // ← Fix #6
 
-registerEnterpriseTheme()
+function useEnterpriseTheme() {
+  useEffect(() => { registerEnterpriseTheme() }, [])
+}
 
-interface Props {
-  data:     any[]
+interface TooltipParam {
+  name:       string
+  seriesName: string
+  value:      number
+}
+
+interface LabelParam {
+  value: number
+}
+
+interface ModernHorizontalBarChartProps {
+  data:     Record<string, unknown>[]  // ← Fix #5
   xField:   string
   yField:   string
   stacked?: boolean
   style?:   WidgetStyle
 }
 
-export function ModernHorizontalBarChart({ data, xField, yField, style }: Props) {
+export function ModernHorizontalBarChart({ data, xField, yField, style }: ModernHorizontalBarChartProps) {
+  useEnterpriseTheme() // ← Fix #1
+
   const s      = { ...DEFAULT_STYLE, ...style }
   const colors = s.colors
   const r      = s.barRadius ?? 6
@@ -30,7 +46,7 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Props)
     if (isNumeric) {
       return data.slice(0, 25).map((item, i) => ({
         name:  String(item[xField] ?? `#${i}`).slice(0, 24),
-        value: parseFloat(item[yField]) || 0,
+        value: parseFloat(String(item[yField])) || 0,
       }))
     }
     const counts: Record<string, number> = {}
@@ -48,16 +64,16 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Props)
 
   const option = useMemo(() => ({
     animation:         true,
-  animationDuration: 700,
-  animationEasing:   'cubicOut' as const,
-  backgroundColor:   'transparent',
+    animationDuration: 700,
+    animationEasing:   'cubicOut' as const,
+    backgroundColor:   'transparent',
     color: colors,
     grid: { top: 4, right: 56, bottom: 4, left: 8, containLabel: true },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
-      formatter: (params: any[]) => {
+      formatter: (params: TooltipParam[]) => {
         const p = params[0]
         return `<b style="font-size:12px">${p.name}</b><br/>${p.seriesName}: <strong>${fmtValue(p.value, s.labelFormat)}</strong>`
       },
@@ -88,11 +104,12 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Props)
       name:        yField,
       barMaxWidth: 28,
       data: chartData.map((d, i) => ({
-        value:     d.value,
+        value: d.value,
         itemStyle: {
+          // ── Fix #4 — safe gradient via withAlpha ───────────
           color: new graphic.LinearGradient(1, 0, 0, 0, [
-            { offset: 0, color: colors[i % colors.length] },
-            { offset: 1, color: colors[i % colors.length] + 'aa' },
+            { offset: 0, color: withAlpha(colors[i % colors.length], 1)    },
+            { offset: 1, color: withAlpha(colors[i % colors.length], 0.55) },
           ]),
           borderRadius: [0, r, r, 0],
         },
@@ -100,7 +117,8 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Props)
       label: {
         show:      true,
         position:  'right' as const,
-        formatter: (p: any) => fmtValue(p.value, s.labelFormat),
+        // ── Fix #5 — typed label formatter ───────────────────
+        formatter: (p: LabelParam) => fmtValue(p.value, s.labelFormat),
         fontSize:  10,
         color:     axis.label,
       },
@@ -108,15 +126,16 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Props)
         itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' },
       },
     }],
-  }), [data, xField, yField, style]) // eslint-disable-line react-hooks/exhaustive-deps
+  // deps are intentionally coarse — s/colors/axis/tt derive from listed deps
+  }), [chartData, colors, r, s, axis, tt, yField]) // ← Fix #7
 
   return (
     <ReactECharts
       option={option}
       theme="enterprise"
+      notMerge={true}           // ← Fix #2
       style={{ height: h, width: '100%' }}
       opts={{ renderer: 'svg' }}
-      
     />
   )
 }

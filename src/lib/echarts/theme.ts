@@ -1,3 +1,5 @@
+// src/lib/echarts/theme.ts
+
 import * as echarts from 'echarts'
 
 export const ENTERPRISE_COLORS = [
@@ -6,12 +8,20 @@ export const ENTERPRISE_COLORS = [
 ]
 
 let _registered = false
+
+// ── Fix #8 — try/catch guards against echarts internal throws ─
+// on hot reload in dev, echarts may throw if theme already exists
 export function registerEnterpriseTheme() {
   if (_registered) return
-  echarts.registerTheme('enterprise', {
-    color:           ENTERPRISE_COLORS,
-    backgroundColor: 'transparent',
-    textStyle:       { fontFamily: 'inherit', fontSize: 11 },
-  })
-  _registered = true
+  try {
+    echarts.registerTheme('enterprise', {
+      color:           ENTERPRISE_COLORS,
+      backgroundColor: 'transparent',
+      textStyle:       { fontFamily: 'inherit', fontSize: 11 },
+    })
+    _registered = true
+  } catch {
+    // Theme already registered from a previous hot-reload cycle — safe to ignore
+    _registered = true
+  }
 }

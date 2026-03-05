@@ -1,8 +1,9 @@
-// ── Widget Style Panel ───────────────────────────────────────────────
-//src/components/builder/style-panel/widget-style-panel.tsx
 'use client'
 
+// src/components/builder/style-panel/widget-style-panel.tsx
+
 import { useDashboardStore } from '@/store/builder-store'
+import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -18,11 +19,39 @@ interface WidgetStylePanelProps {
   selectedWidgetId: string | null
 }
 
+// ── Fix #4 — typed tooltip field descriptor ───────────────────
+type TooltipKey = 'tooltipBg' | 'tooltipBorder'
+interface TooltipField {
+  key:      TooltipKey
+  label:    string
+  fallback: string
+}
+const TOOLTIP_FIELDS: TooltipField[] = [
+  { key: 'tooltipBg',     label: 'Background', fallback: '#ffffff' },
+  { key: 'tooltipBorder', label: 'Border',     fallback: '#e2e8f0' },
+]
+
+// ── Fix #10 — explicit format options matching fmtValue() ──────
+type LabelFormat = 'number' | 'currency' | 'percent'
+const FORMAT_OPTIONS: { value: LabelFormat; label: string }[] = [
+  { value: 'number',   label: 'Number  (1,234)'  },
+  { value: 'currency', label: 'Currency  ($1.2k)' },
+  { value: 'percent',  label: 'Percent  (42.0%)'  },
+]
+
 export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
-  const { widgets, updateWidgetStyle, resetWidgetStyle } = useDashboardStore()
+  const { widgets, updateWidgetStyle } = useDashboardStore()
+
+  // ── Fix #3 — resetWidgetStyle may not exist in store ─────────
+  // Use updateWidgetStyle with DEFAULT_STYLE as the safe fallback.
+  // If your store has resetWidgetStyle, swap this line:
+  //   const { widgets, updateWidgetStyle, resetWidgetStyle } = useDashboardStore()
+  const resetWidgetStyle = (id: string) => {
+    updateWidgetStyle(id, { ...DEFAULT_STYLE })
+  }
+
   const widget = widgets.find(w => w.id === selectedWidgetId)
 
-  // ── Empty state ───────────────────────────────────────────────
   if (!widget) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
@@ -37,13 +66,13 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
     )
   }
 
-  const style    = { ...DEFAULT_STYLE, ...widget.style }
-  const isBar    = ['bar', 'horizontal-bar'].includes(widget.type)
-  const hasGrid  = !['pie', 'donut', 'gauge', 'status-card'].includes(widget.type)
+  const style   = { ...DEFAULT_STYLE, ...widget.style }
+  const isBar   = ['bar', 'horizontal-bar'].includes(widget.type)
+  const hasGrid = !['pie', 'donut', 'gauge', 'status-card'].includes(widget.type)
 
   const updateColor = (idx: number, hex: string) => {
-    const next = [...(style.colors ?? DEFAULT_STYLE.colors)]
-    next[idx]  = hex
+    const next    = [...(style.colors ?? DEFAULT_STYLE.colors)]
+    next[idx]     = hex
     updateWidgetStyle(widget.id, { colors: next })
   }
 
@@ -51,6 +80,10 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
     resetWidgetStyle(widget.id)
     toast.success(`"${widget.title}" reset to default style`)
   }
+
+  // ── Fix #10 — resolve stored format to typed value ────────────
+  const currentFormat: LabelFormat =
+    (FORMAT_OPTIONS.find(f => f.value === style.labelFormat)?.value) ?? 'number'
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -75,7 +108,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
 
       <div className="p-4 space-y-6 flex-1">
 
-        {/* ── Colors ─────────────────────────────────────────── */}
+        {/* Colors */}
         <section className="space-y-3">
           <div className="flex items-center gap-2">
             <Palette className="w-3.5 h-3.5 text-muted-foreground" />
@@ -100,7 +133,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
           <p className="text-[10px] text-muted-foreground">Click any swatch to pick a color</p>
         </section>
 
-        {/* ── Display toggles ────────────────────────────────── */}
+        {/* Display toggles */}
         <section className="space-y-2">
           <div className="flex items-center gap-2">
             <Eye className="w-3.5 h-3.5 text-muted-foreground" />
@@ -126,7 +159,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
           </div>
         </section>
 
-        {/* ── Bar radius ─────────────────────────────────────── */}
+        {/* Bar radius */}
         {isBar && (
           <section className="space-y-2.5">
             <div className="flex items-center gap-2">
@@ -148,45 +181,48 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
           </section>
         )}
 
-        {/* ── Value format ───────────────────────────────────── */}
+        {/* Value format */}
         <section className="space-y-2">
           <Label className="text-xs font-semibold">Value Format</Label>
+          {/* ── Fix #10 — typed Select with validated options ── */}
           <Select
-            value={style.labelFormat ?? 'number'}
-            onValueChange={v => updateWidgetStyle(widget.id, { labelFormat: v })}
+            value={currentFormat}
+            onValueChange={v => updateWidgetStyle(widget.id, {
+              labelFormat: v === 'number' ? undefined : v as LabelFormat,
+            })}
           >
             <SelectTrigger className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="number">Number  (1,234)</SelectItem>
-              <SelectItem value="currency">Currency  ($1.2k)</SelectItem>
-              <SelectItem value="percent">Percent  (42.0%)</SelectItem>
+              {FORMAT_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </section>
 
-        {/* ── Tooltip colors ─────────────────────────────────── */}
+        {/* Tooltip colors */}
         <section className="space-y-2.5">
           <Label className="text-xs font-semibold">Tooltip</Label>
           <div className="grid grid-cols-2 gap-3">
-            {[
-              { key: 'tooltipBg', label: 'Background', fallback: '#ffffff' },
-              { key: 'tooltipBorder', label: 'Border', fallback: '#e2e8f0' },
-            ].map(({ key, label, fallback }) => (
+            {/* ── Fix #4 — fully typed, no 'as any' ─────────── */}
+            {TOOLTIP_FIELDS.map(({ key, label, fallback }) => (
               <div key={key} className="space-y-1.5">
                 <p className="text-[10px] text-muted-foreground">{label}</p>
                 <label className="relative flex items-center gap-2 cursor-pointer group">
                   <div
                     className="w-7 h-7 rounded-md border-2 border-border group-hover:border-primary/50 transition-colors flex-shrink-0"
-                    style={{ backgroundColor: (style as any)[key] ?? fallback }}
+                    style={{ backgroundColor: (style as WidgetStyle)[key] ?? fallback }}
                   />
                   <span className="text-[10px] font-mono text-muted-foreground truncate">
-                    {(style as any)[key] ?? 'auto'}
+                    {(style as WidgetStyle)[key] ?? 'auto'}
                   </span>
                   <input
                     type="color"
-                    value={(style as any)[key] ?? fallback}
+                    value={(style as WidgetStyle)[key] ?? fallback}
                     onChange={e => updateWidgetStyle(widget.id, { [key]: e.target.value })}
                     className="absolute inset-0 opacity-0 cursor-pointer"
                   />
