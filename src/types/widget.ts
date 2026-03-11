@@ -2,8 +2,9 @@
 
 export type ChartType =
   | 'bar' | 'line' | 'area' | 'pie'
-  | 'donut' | 'horizontal-bar'
-  | 'gauge' | 'status-card' | 'table'
+  | 'donut' | 'horizontal-bar' | 'horizontal-stacked-bar'
+  | 'grouped-bar' | 'drilldown-bar'
+  | 'gauge' | 'ring-gauge' | 'status-card' | 'table'
 
 export type ChartDeps = 'echarts'
 
@@ -39,6 +40,7 @@ export interface DataMapping {
   xAxis:      string
   yAxis?:     string
   yAxes?:     YAxisConfig[]
+  aliases?:   Record<string, string>
   sortBy?:    string
   sortOrder?: 'asc' | 'desc'
   limit?:     number

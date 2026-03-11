@@ -1,10 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
+
+async function hasValidSession() {
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll().map((c: { name: string; value: string }) => ({
+            name: c.name,
+            value: c.value,
+          }))
+        },
+        setAll() {
+          // Read-only auth check in route handler; no cookie writes needed.
+        },
+      },
+    },
+  )
+
+  const { data: { session } } = await supabase.auth.getSession()
+  return Boolean(session)
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) // ✅ inside handler
+    const authenticated = await hasValidSession()
+    if (!authenticated) {
+      return NextResponse.json(
+        { suggestions: [], error: 'Unauthorized' },
+        { status: 401 },
+      )
+    }
 
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     const { fields, sampleData, endpointName } = await req.json()
 
     const prompt = `You are a data visualization expert. Given this API data schema, suggest the best charts.
@@ -18,7 +51,7 @@ Respond with ONLY a valid JSON object in this exact shape, no prose:
   "suggestions": [
     {
       "title": "Human readable chart title",
-      "type": "bar|line|area|pie|donut|horizontal-bar|gauge|status-card|table",
+      "type": "bar|line|area|pie|donut|horizontal-bar|horizontal-stacked-bar|grouped-bar|drilldown-bar|gauge|ring-gauge|status-card|table",
       "xAxis": "field_name",
       "yAxis": "field_name",
       "reason": "One sentence why this chart fits this data"
@@ -40,8 +73,8 @@ Rules:
       response_format: { type: 'json_object' },
     })
 
-    const raw         = completion.choices[0]?.message?.content ?? '{}'
-    const parsed      = JSON.parse(raw)
+    const raw = completion.choices[0]?.message?.content ?? '{}'
+    const parsed = JSON.parse(raw)
     const suggestions = Array.isArray(parsed)
       ? parsed
       : parsed.suggestions ?? parsed.charts ?? []
@@ -49,6 +82,9 @@ Rules:
     return NextResponse.json({ suggestions })
   } catch (err: any) {
     console.error('[AI Suggest]', err)
-    return NextResponse.json({ suggestions: [], error: err.message }, { status: 500 })
+    return NextResponse.json(
+      { suggestions: [], error: err.message ?? 'AI suggestion failed' },
+      { status: 500 },
+    )
   }
 }

@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem,
   SelectTrigger, SelectValue,
@@ -24,6 +25,7 @@ import {
   AlignLeft, Circle,
 } from 'lucide-react'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
+import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 
 interface WidgetEditDialogProps {
   widget: Widget
@@ -39,7 +41,11 @@ const chartIcons: Record<ChartType, any> = {
   pie:             PieChart,
   donut:           Circle,
   'horizontal-bar': AlignLeft,
+  'horizontal-stacked-bar': AlignLeft,
+  'grouped-bar': BarChart3,
+  'drilldown-bar': BarChart3,
   gauge:           Gauge,
+  'ring-gauge':    Gauge,
   'status-card':   TrendingUp,
   table:           Table2,
 }
@@ -51,15 +57,20 @@ const chartTypeLabel: Record<ChartType, string> = {
   pie:             'Pie',
   donut:           'Donut',
   'horizontal-bar': 'H-Bar',
+  'horizontal-stacked-bar': 'Stacked H-Bar',
+  'grouped-bar':   'Grouped',
+  'drilldown-bar': 'Drilldown',
   gauge:           'Gauge',
+  'ring-gauge':    'Ring',
   'status-card':   'KPI',
   table:           'Table',
 }
 
 // 2-row layout matching widget-config-dialog
 const CHART_TYPE_ROWS: ChartType[][] = [
-  ['bar', 'line', 'area', 'pie', 'donut'],
-  ['horizontal-bar', 'gauge', 'status-card', 'table'],
+  ['bar', 'line', 'area', 'pie', 'donut', 'grouped-bar'],
+  ['horizontal-bar', 'horizontal-stacked-bar', 'drilldown-bar'],
+  ['gauge', 'ring-gauge', 'status-card', 'table'],
 ]
 
 export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialogProps) {
@@ -69,6 +80,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
   const [type, setType]                 = useState<ChartType>(widget.type)
   const [xAxis, setXAxis]               = useState(widget.dataMapping.xAxis)
   const [yAxis, setYAxis]               = useState(widget.dataMapping.yAxis ?? '')
+  const [aliases, setAliases]           = useState<Record<string, string>>(widget.dataMapping.aliases ?? {})
   const [fields, setFields]             = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
 
@@ -81,6 +93,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     setType(widget.type)
     setXAxis(widget.dataMapping.xAxis)
     setYAxis(widget.dataMapping.yAxis ?? '')
+    setAliases(widget.dataMapping.aliases ?? {})
     fetchFields()
   }, [open])
 
@@ -89,10 +102,13 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     if (!endpoint) return
     setLoadingFields(true)
     try {
-      const res = await fetch(endpoint.url, {
-        method: endpoint.method,
-        headers: endpoint.headers ?? {},
-      })
+      const res = await fetch(
+        endpoint.url,
+        buildEndpointRequestInit({
+          method: endpoint.method,
+          headers: endpoint.headers,
+        }),
+      )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const result = await res.json()
 
@@ -129,6 +145,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
         ...widget.dataMapping, // ✅ preserve yAxes multi-metric config
         xAxis,
         yAxis: yAxis || undefined,
+        aliases: Object.keys(aliases).length > 0 ? aliases : undefined,
       },
     })
 
@@ -137,7 +154,21 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
   }
 
   // Gauge + status-card only need Y field
-  const needsXAxis = !['gauge', 'status-card'].includes(type)
+  const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(type)
+
+  const setAliasForField = (field: string, value: string) => {
+    if (!field) return
+    setAliases(prev => {
+      const next = { ...prev }
+      const trimmed = value.trim()
+      if (!trimmed) {
+        delete next[field]
+      } else {
+        next[field] = trimmed
+      }
+      return next
+    })
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -243,6 +274,17 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
                     disabled={loadingFields}
                   />
                 )}
+                {xAxis && (
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Field alias for X-axis</Label>
+                    <Input
+                      className="h-8 text-xs"
+                      placeholder={`Rename "${xAxis}" (optional)`}
+                      value={aliases[xAxis] ?? ''}
+                      onChange={e => setAliasForField(xAxis, e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -279,7 +321,45 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
                   disabled={loadingFields}
                 />
               )}
+              {yAxis && (
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Field alias for Y-axis</Label>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder={`Rename "${yAxis}" (optional)`}
+                    value={aliases[yAxis] ?? ''}
+                    onChange={e => setAliasForField(yAxis, e.target.value)}
+                  />
+                </div>
+              )}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Advanced aliases (optional)</Label>
+            <Textarea
+              className="min-h-[70px] text-xs font-mono"
+              placeholder={'count(9): Meter Count\nconn_comm: Connected'}
+              value={Object.entries(aliases).map(([k, v]) => `${k}: ${v}`).join('\n')}
+              onChange={e => {
+                const parsed: Record<string, string> = {}
+                e.target.value
+                  .split('\n')
+                  .map(line => line.trim())
+                  .filter(Boolean)
+                  .forEach(line => {
+                    const idx = line.indexOf(':')
+                    if (idx <= 0) return
+                    const key = line.slice(0, idx).trim()
+                    const val = line.slice(idx + 1).trim()
+                    if (key && val) parsed[key] = val
+                  })
+                setAliases(parsed)
+              }}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Format: <span className="font-mono">field_name: Display Label</span>
+            </p>
           </div>
 
           {/* Endpoint info */}

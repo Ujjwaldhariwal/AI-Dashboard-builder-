@@ -5,6 +5,7 @@ import type { Widget, WidgetConfigInput, WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import type { ProjectConfig, ChartGroup } from '@/types/project-config'
 import { DEFAULT_PROJECT_CONFIG } from '@/types/project-config'
+import type { DashboardFilter, FilterOperator } from '@/types/filter'
 
 interface Dashboard {
   id:          string
@@ -20,14 +21,14 @@ interface APIEndpoint {
   name:            string
   url:             string
   method:          'GET' | 'POST'
-  authType:        'none' | 'api-key' | 'bearer' | 'basic'
+  authType:        'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
   headers?:        Record<string, string>
   refreshInterval: number
   status:          'active' | 'inactive'
 }
 
 // ── Fix #8 — version field for future migrations ──────────────
-const STORE_VERSION = 2
+const STORE_VERSION = 3
 
 interface DashboardStore {
   dashboards:            Dashboard[]
@@ -66,6 +67,16 @@ interface DashboardStore {
   assignWidgetToGroup:   (widgetId: string, groupId: string | null) => void
   getGroupsByDashboard:  (dashboardId: string) => ChartGroup[]
   reorderGroups:         (dashboardId: string, groupId: string, direction: 'up' | 'down') => void
+
+  dashboardFilters:      DashboardFilter[]
+  addDashboardFilter:    (dashboardId: string) => string
+  updateDashboardFilter: (
+    filterId: string,
+    patch: Partial<Pick<DashboardFilter, 'field' | 'operator' | 'value' | 'active'>>,
+  ) => void
+  removeDashboardFilter: (filterId: string) => void
+  clearDashboardFilters: (dashboardId: string) => void
+  getFiltersByDashboard: (dashboardId: string) => DashboardFilter[]
 }
 
 // ── Shared ID generators ──────────────────────────────────────
@@ -97,6 +108,7 @@ export const useDashboardStore = create<DashboardStore>()(
         currentDashboardId: s.currentDashboardId === id ? null : s.currentDashboardId,
         widgets:            s.widgets.filter(w => w.dashboardId !== id),
         chartGroups:        s.chartGroups.filter(g => g.dashboardId !== id),
+        dashboardFilters:   s.dashboardFilters.filter(f => f.dashboardId !== id),
         projectConfigs:     Object.fromEntries(
                               Object.entries(s.projectConfigs).filter(([k]) => k !== id)
                             ),
@@ -141,6 +153,9 @@ export const useDashboardStore = create<DashboardStore>()(
         const clonedConfig = sourceConfig
           ? { ...sourceConfig, dashboardId: newId, projectTitle: `${sourceConfig.projectTitle} (copy)` }
           : undefined
+        const clonedFilters = get().dashboardFilters
+          .filter(f => f.dashboardId === id)
+          .map(f => ({ ...f, id: uid('filter'), dashboardId: newId }))
 
         set(s => ({
           dashboards: [
@@ -150,6 +165,7 @@ export const useDashboardStore = create<DashboardStore>()(
           ],
           widgets:        [...s.widgets, ...clonedWidgets],
           chartGroups:    [...s.chartGroups, ...clonedGroups],
+          dashboardFilters: [...s.dashboardFilters, ...clonedFilters],
           projectConfigs: clonedConfig
             ? { ...s.projectConfigs, [newId]: clonedConfig }
             : s.projectConfigs,
@@ -188,7 +204,7 @@ addWidget: (config) => {
   }
 
   // ✅ Fix: gauge and status-card don't need xAxis
-  const needsXAxis = !['gauge', 'status-card'].includes(config.type)
+  const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(config.type)
   if (needsXAxis && !resolvedMapping.xAxis) return
 
   const id  = uid('widget')
@@ -372,22 +388,81 @@ addWidget: (config) => {
           }
         })
       },
+
+      dashboardFilters: [],
+
+      addDashboardFilter: (dashboardId) => {
+        const id = uid('filter')
+        const next: DashboardFilter = {
+          id,
+          dashboardId,
+          field: '',
+          operator: 'contains',
+          value: '',
+          active: true,
+        }
+        set(s => ({ dashboardFilters: [...s.dashboardFilters, next] }))
+        return id
+      },
+
+      updateDashboardFilter: (filterId, patch) => {
+        const safePatch = patch.operator
+          ? { ...patch, operator: patch.operator as FilterOperator }
+          : patch
+        set(s => ({
+          dashboardFilters: s.dashboardFilters.map(f =>
+            f.id === filterId ? { ...f, ...safePatch } : f,
+          ),
+        }))
+      },
+
+      removeDashboardFilter: (filterId) => {
+        set(s => ({
+          dashboardFilters: s.dashboardFilters.filter(f => f.id !== filterId),
+        }))
+      },
+
+      clearDashboardFilters: (dashboardId) => {
+        set(s => ({
+          dashboardFilters: s.dashboardFilters.filter(f => f.dashboardId !== dashboardId),
+        }))
+      },
+
+      getFiltersByDashboard: (dashboardId) =>
+        get().dashboardFilters.filter(f => f.dashboardId === dashboardId),
     }),
     {
       name: 'dashboard-storage',
       version: STORE_VERSION,
       migrate: (persistedState: any, fromVersion: number) => {
-        if (fromVersion < STORE_VERSION) {
+        if (!persistedState) {
           return {
             dashboards:         [],
             widgets:            [],
             endpoints:          [],
             projectConfigs:     {},
             chartGroups:        [],
+            dashboardFilters:   [],
             currentDashboardId: null,
           }
         }
-        return persistedState
+        // Keep existing data while introducing new fields in v3.
+        if (fromVersion < STORE_VERSION) {
+          return {
+            ...persistedState,
+            dashboards: persistedState.dashboards ?? [],
+            widgets: persistedState.widgets ?? [],
+            endpoints: persistedState.endpoints ?? [],
+            projectConfigs: persistedState.projectConfigs ?? {},
+            chartGroups: persistedState.chartGroups ?? [],
+            dashboardFilters: persistedState.dashboardFilters ?? [],
+            currentDashboardId: persistedState.currentDashboardId ?? null,
+          }
+        }
+        return {
+          ...persistedState,
+          dashboardFilters: persistedState.dashboardFilters ?? [],
+        }
       },
     }
 

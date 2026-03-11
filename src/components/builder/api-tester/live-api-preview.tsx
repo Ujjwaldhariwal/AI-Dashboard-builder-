@@ -9,6 +9,7 @@ import {
   Loader2, Play, CheckCircle2, AlertCircle, Sparkles, ChevronRight,
 } from 'lucide-react'
 import { DataAnalyzer, DataAnalysis } from '@/lib/ai/data-analyzer'
+import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { WidgetConfigDialog } from '@/components/builder/widget-config-dialog'
 import { ChartType } from '@/types/widget'
 import { toast } from 'sonner'
@@ -28,6 +29,12 @@ const CHART_TYPE_LABELS: Record<string, string> = {
   bar: 'BAR',
   area: 'AREA',
   pie: 'PIE',
+  'grouped-bar': 'GROUPED',
+  'horizontal-bar': 'H-BAR',
+  'horizontal-stacked-bar': 'STACKED',
+  'drilldown-bar': 'DRILLDOWN',
+  gauge: 'GAUGE',
+  'ring-gauge': 'RING',
   table: 'TABLE',
 }
 
@@ -63,16 +70,19 @@ export function LiveAPIPreview({
     setAnalysis(null)
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json', ...(headers ?? {}) },
-      })
+      const res = await fetch(
+        url,
+        buildEndpointRequestInit({
+          method,
+          headers,
+        }),
+      )
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
 
       const json = await res.json()
-      const dataArray = Array.isArray(json)
-        ? json
-        : json.data || json.results || json.items || [json]
+      const dataArray =
+        DataAnalyzer.extractDataArray(json) ??
+        (Array.isArray(json) ? json : [json])
 
       setRawData(dataArray.slice(0, 5))
 

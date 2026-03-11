@@ -186,14 +186,14 @@ When a user asks to CREATE a chart/widget, respond with a JSON block:
 {
   "action": "create_widget",
   "title": "Widget title",
-  "type": "bar|line|area|pie|donut|horizontal-bar|gauge|status-card|table",
+  "type": "bar|line|area|pie|donut|horizontal-bar|horizontal-stacked-bar|grouped-bar|drilldown-bar|gauge|ring-gauge|status-card|table",
   "xAxis": "field_name",
   "yAxis": "field_name",
   "description": "Why this chart was chosen"
 }
 \`\`\`
 
-Available chart types: bar, line, area, pie, donut, horizontal-bar, gauge, status-card, table
+Available chart types: bar, line, area, pie, donut, horizontal-bar, horizontal-stacked-bar, grouped-bar, drilldown-bar, gauge, ring-gauge, status-card, table
 
 Dashboard context:
 ${safeContext ? JSON.stringify(safeContext, null, 2) : 'No data context provided yet.'}

@@ -1,8 +1,6 @@
-'use client'
+﻿'use client'
 
-// src/components/viewer/shared-dashboard-viewer.tsx
-
-import { useState, useEffect, useCallback, useMemo } from 'react'  // ✅ added useMemo
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { SharePayload } from '@/lib/share-utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,28 +8,33 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { motion } from 'framer-motion'
 import {
   LayoutGrid, RefreshCw, Clock,
-  ExternalLink, Shield, Loader2, AlertCircle,  // ✅ added AlertCircle
+  ExternalLink, Shield, Loader2, AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { ModernBarChart }           from '@/components/charts/modern-bar-chart'
-import { ModernLineChart }          from '@/components/charts/modern-line-chart'
-import { ModernAreaChart }          from '@/components/charts/modern-area-chart'
-import { ModernPieChart }           from '@/components/charts/modern-pie-chart'
+import { ModernBarChart } from '@/components/charts/modern-bar-chart'
+import { ModernLineChart } from '@/components/charts/modern-line-chart'
+import { ModernAreaChart } from '@/components/charts/modern-area-chart'
+import { ModernPieChart } from '@/components/charts/modern-pie-chart'
 import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
-import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'   // ✅ S4-1
-import { ModernStatusCard }         from '@/components/charts/modern-status-card'   // ✅ S4-1
-import { DEFAULT_STYLE }            from '@/types/widget'
+import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-horizontal-stacked-bar-chart'
+import { ModernGroupedBarChart } from '@/components/charts/modern-grouped-bar-chart'
+import { ModernDrilldownBarChart } from '@/components/charts/modern-drilldown-bar-chart'
+import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'
+import { ModernRingGaugeChartFromData } from '@/components/charts/modern-ring-gauge-chart'
+import { ModernStatusCard } from '@/components/charts/modern-status-card'
+import { DEFAULT_STYLE } from '@/types/widget'
+import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 
 interface SharedWidgetData {
-  id:      string
-  title:   string
-  type:    string
-  data:    Record<string, unknown>[]
-  xAxis:   string
-  yAxis:   string
+  id: string
+  title: string
+  type: string
+  data: Record<string, unknown>[]
+  xAxis: string
+  yAxis: string
   loading: boolean
-  error:   string | null
+  error: string | null
 }
 
 interface Props {
@@ -39,27 +42,24 @@ interface Props {
 }
 
 export function SharedDashboardViewer({ payload }: Props) {
-  // ✅ Fix #5 — stable widget list reference so useCallback dep doesn't change
   const widgets = useMemo(() => payload.widgets, [payload.widgets])
 
   const [widgetData, setWidgetData] = useState<SharedWidgetData[]>(
     widgets.map(w => ({
-      id:      w.id,
-      title:   w.title,
-      type:    w.type,
-      data:    [],
-      xAxis:   w.xAxis,
-      yAxis:   w.yAxis,
+      id: w.id,
+      title: w.title,
+      type: w.type,
+      data: [],
+      xAxis: w.xAxis,
+      yAxis: w.yAxis,
       loading: true,
-      error:   null,
+      error: null,
     })),
   )
   const [lastRefreshed, setLastRefreshed] = useState(new Date())
-  const [refreshKey, setRefreshKey]       = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  // ✅ Fix #4 — fetchAll itself resets loading state, handleRefresh doesn't need to
   const fetchAll = useCallback(async () => {
-    // Reset all to loading at fetch start
     setWidgetData(prev => prev.map(w => ({ ...w, loading: true, error: null })))
 
     const results = await Promise.allSettled(
@@ -68,10 +68,8 @@ export function SharedDashboardViewer({ payload }: Props) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
         const arr: Record<string, unknown>[] =
-          Array.isArray(json)          ? json
-          : Array.isArray(json?.data)    ? json.data
-          : Array.isArray(json?.results) ? json.results
-          : [json]
+          DataAnalyzer.extractDataArray(json) ??
+          (Array.isArray(json) ? json : [json])
         return { id: w.id, data: arr }
       }),
     )
@@ -95,7 +93,6 @@ export function SharedDashboardViewer({ payload }: Props) {
     fetchAll()
   }, [fetchAll, refreshKey])
 
-  // ✅ Fix #4 — no duplicate state reset here, fetchAll handles it
   const handleRefresh = () => {
     setRefreshKey(k => k + 1)
     toast.success('Refreshing all widgets...')
@@ -113,7 +110,7 @@ export function SharedDashboardViewer({ payload }: Props) {
     if (wd.error) {
       return (
         <div className="flex flex-col items-center justify-center h-48 gap-2">
-          <AlertCircle className="w-5 h-5 text-red-500" />  {/* ✅ icon not just text */}
+          <AlertCircle className="w-5 h-5 text-red-500" />
           <p className="text-sm text-red-500">Failed to load</p>
           <p className="text-xs text-muted-foreground">{wd.error}</p>
         </div>
@@ -143,9 +140,16 @@ export function SharedDashboardViewer({ payload }: Props) {
         return <ModernPieChart data={wd.data} nameField={wd.xAxis} valueField={wd.yAxis} donut style={s} />
       case 'horizontal-bar':
         return <ModernHorizontalBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
-      // ✅ S4-1 — gauge and status-card now render correctly
+      case 'horizontal-stacked-bar':
+        return <ModernHorizontalStackedBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+      case 'grouped-bar':
+        return <ModernGroupedBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+      case 'drilldown-bar':
+        return <ModernDrilldownBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
       case 'gauge':
         return <ModernGaugeChartFromData data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
+      case 'ring-gauge':
+        return <ModernRingGaugeChartFromData data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
       case 'status-card':
         return <ModernStatusCard data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
       case 'table': {
@@ -167,7 +171,7 @@ export function SharedDashboardViewer({ payload }: Props) {
                   <tr key={i} className="border-b hover:bg-muted/30">
                     {cols.map(c => (
                       <td key={c} className="p-2 max-w-[120px] truncate">
-                        {String(row[c] ?? '—')}
+                        {String(row[c] ?? '-')}
                       </td>
                     ))}
                   </tr>
@@ -188,8 +192,6 @@ export function SharedDashboardViewer({ payload }: Props) {
 
   return (
     <div className="min-h-screen bg-background">
-
-      {/* Header */}
       <header className="border-b bg-card/95 backdrop-blur sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
@@ -224,7 +226,6 @@ export function SharedDashboardViewer({ payload }: Props) {
         </div>
       </header>
 
-      {/* Read-only banner */}
       <div className="bg-blue-50 dark:bg-blue-950/30 border-b border-blue-100 dark:border-blue-900/40">
         <div className="max-w-7xl mx-auto px-6 py-2 flex items-center gap-2">
           <Shield className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
@@ -234,7 +235,6 @@ export function SharedDashboardViewer({ payload }: Props) {
         </div>
       </div>
 
-      {/* Widget grid */}
       <main className="max-w-7xl mx-auto px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {widgetData.map((wd, i) => (
@@ -252,12 +252,8 @@ export function SharedDashboardViewer({ payload }: Props) {
                       {wd.type.toUpperCase()}
                     </Badge>
                   </div>
-                  {/* ✅ Fix #3 — hide arrow when xAxis empty (gauge/status-card) */}
                   <p className="text-[10px] text-muted-foreground">
-                    {wd.xAxis
-                      ? `${wd.xAxis} → ${wd.yAxis}`
-                      : wd.yAxis
-                    }
+                    {wd.xAxis ? `${wd.xAxis} -> ${wd.yAxis}` : wd.yAxis}
                   </p>
                 </CardHeader>
                 <CardContent className="px-4 pb-4">
@@ -270,11 +266,11 @@ export function SharedDashboardViewer({ payload }: Props) {
 
         <div className="mt-8 text-center">
           <p className="text-xs text-muted-foreground">
-            Shared from Analytics AI Dashboard Builder ·{' '}
-            {new Date(payload.exportedAt).toLocaleDateString()}
+            Shared from Analytics AI Dashboard Builder - {new Date(payload.exportedAt).toLocaleDateString()}
           </p>
         </div>
       </main>
     </div>
   )
 }
+

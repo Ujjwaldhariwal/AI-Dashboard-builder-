@@ -23,7 +23,7 @@ import {
 import { useDashboardStore } from '@/store/builder-store'
 import { toast } from 'sonner'
 
-type AuthType     = 'none' | 'api-key' | 'bearer' | 'basic'
+type AuthType     = 'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
 type EndpointStatus = 'active' | 'inactive'   // ✅ no 'error' — store doesn't accept it
 
 const EMPTY_FORM = {

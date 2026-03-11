@@ -15,6 +15,7 @@ import { ConfigChatbot } from '@/components/builder/ai-assistant/config-chatbot'
 import { ChartSuggester } from '@/components/builder/ai-assistant/chart-suggester'
 import { WidgetStylePanel } from '@/components/builder/style-panel/widget-style-panel'
 import { ProjectConfigPanel } from '@/components/builder/project-config/project-config-panel'
+import { GlobalFiltersPanel } from '@/components/builder/filters/global-filters-panel'
 import { toast } from 'sonner'
 import {
   Plus, Settings2, Eye, Database, FolderKanban,
@@ -43,6 +44,7 @@ export default function BuilderPage() {
     setCurrentDashboard,
     endpoints,
     widgets: allWidgets,
+    getFiltersByDashboard,
   } = useDashboardStore()
 
   const [addWidgetOpen, setAddWidgetOpen]       = useState(false)
@@ -66,6 +68,12 @@ export default function BuilderPage() {
 
   // ── Fix #5 — derive widgets directly from store slice ────────
   const widgets = allWidgets.filter(w => w.dashboardId === currentDashboardId)
+  const dashboardFilters = currentDashboardId
+    ? getFiltersByDashboard(currentDashboardId)
+    : []
+  const activeFilterCount = dashboardFilters.filter(
+    f => f.active && f.field.trim() && f.value.trim(),
+  ).length
 
   useEffect(() => {
     if (!hasMounted.current) {
@@ -135,6 +143,7 @@ export default function BuilderPage() {
           currentDash={currentDash}
           widgets={widgets}
           endpoints={endpoints}
+          activeFilterCount={activeFilterCount}
           exporting={exporting}
           unsaved={false}
           onAddWidget={() => setAddWidgetOpen(true)}
@@ -179,6 +188,7 @@ export default function BuilderPage() {
           currentDash={currentDash}
           widgets={widgets}
           endpoints={endpoints}
+          activeFilterCount={activeFilterCount}
           exporting={exporting}
           unsaved={unsaved}
           onAddWidget={() => setAddWidgetOpen(true)}
@@ -188,6 +198,11 @@ export default function BuilderPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6" onClick={handleCanvasClick}>
+        {currentDashboardId && (
+          <div className="mb-4">
+            <GlobalFiltersPanel dashboardId={currentDashboardId} />
+          </div>
+        )}
         <DragDropCanvas
           selectedWidgetId={selectedWidgetId}
           onSelectWidget={setSelectedWidgetId}
@@ -285,6 +300,7 @@ interface BuilderHeaderProps {
   currentDash: { id: string; name: string; description?: string } | undefined
   widgets:     Widget[]
   endpoints:   EndpointSummary[]
+  activeFilterCount: number
   exporting:   boolean
   unsaved:     boolean
   onAddWidget: () => void
@@ -294,6 +310,7 @@ interface BuilderHeaderProps {
 
 function BuilderHeader({
   currentDash, widgets, endpoints,
+  activeFilterCount,
   exporting, unsaved,
   onAddWidget, onMagicOpen, onExport,
 }: BuilderHeaderProps) {
@@ -307,6 +324,9 @@ function BuilderHeader({
           </Badge>
           <Badge variant="outline" className="text-[10px]">
             {endpoints.length} API{endpoints.length !== 1 ? 's' : ''}
+          </Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
           </Badge>
           {unsaved && (
             <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">

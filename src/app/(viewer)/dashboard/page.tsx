@@ -25,7 +25,7 @@ export default function ViewerPage() {
   const {
     dashboards, currentDashboardId,
     endpoints, widgets: allWidgets,
-    getProjectConfig, getGroupsByDashboard,
+    getProjectConfig, getGroupsByDashboard, getFiltersByDashboard,
   } = useDashboardStore()
 
   const [refreshKey, setRefreshKey]   = useState(0)
@@ -35,7 +35,12 @@ export default function ViewerPage() {
   const [shareCopied, setShareCopied] = useState(false)
 
   const currentDash   = dashboards.find(d => d.id === currentDashboardId)
-const widgets = allWidgets.filter(w => w.dashboardId === currentDashboardId)
+  const widgets = allWidgets.filter(w => w.dashboardId === currentDashboardId)
+  const activeFilterCount = currentDashboardId
+    ? getFiltersByDashboard(currentDashboardId).filter(
+        f => f.active && f.field.trim() && f.value.trim(),
+      ).length
+    : 0
   const usedEndpoints = endpoints.filter(e => widgets.some(w => w.endpointId === e.id))
 
   // ── Auto-refresh countdown ──────────────────────────────────────────────
@@ -263,6 +268,7 @@ const widgets = allWidgets.filter(w => w.dashboardId === currentDashboardId)
             {[
               { label: 'Widgets',      value: widgets.length },
               { label: 'Data sources', value: usedEndpoints.length },
+              { label: 'Filters',      value: activeFilterCount },
               { label: 'Dashboard',    value: currentDash.name },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-1.5">

@@ -1,9 +1,8 @@
 'use client'
 
-// Module: Widget Card — renders 3-layer chart with style injection
 // src/components/builder/canvas/widget-card.tsx
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,7 +16,7 @@ import {
   Trash2, RefreshCw, Loader2, AlertCircle,
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
-  AlignLeft, Clock, Wifi, WifiOff, Circle,        // ✅ Circle added
+  AlignLeft, Clock, Wifi, WifiOff, Circle,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
@@ -28,6 +27,8 @@ import { toast } from 'sonner'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
+import { applyDashboardFilters } from '@/lib/data/filter-utils'
+import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 
 import { ModernBarChart }           from '@/components/charts/modern-bar-chart'
 import { ModernLineChart }          from '@/components/charts/modern-line-chart'
@@ -35,6 +36,10 @@ import { ModernAreaChart }          from '@/components/charts/modern-area-chart'
 import { ModernPieChart }           from '@/components/charts/modern-pie-chart'
 import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'
 import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
+import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-horizontal-stacked-bar-chart'
+import { ModernGroupedBarChart } from '@/components/charts/modern-grouped-bar-chart'
+import { ModernDrilldownBarChart } from '@/components/charts/modern-drilldown-bar-chart'
+import { ModernRingGaugeChartFromData } from '@/components/charts/modern-ring-gauge-chart'
 import { ModernStatusCard }         from '@/components/charts/modern-status-card'
 
 interface WidgetCardProps {
@@ -47,11 +52,28 @@ const chartTypeIcon: Record<string, LucideIcon> = {
   line:             LineChart,
   area:             AreaChart,
   pie:              PieChart,
-  donut:            Circle,           // ✅ was PieChart
+  donut:            Circle,
   'horizontal-bar': AlignLeft,
+  'horizontal-stacked-bar': AlignLeft,
+  'grouped-bar':    BarChart3,
+  'drilldown-bar':  BarChart3,
   gauge:            Gauge,
+  'ring-gauge':     Gauge,
   'status-card':    TrendingUp,
   table:            Table2,
+}
+
+function applyAliasesToRow(
+  row: Record<string, unknown>,
+  aliases: Record<string, string>,
+): Record<string, unknown> {
+  if (!Object.keys(aliases).length) return row
+  const renamed: Record<string, unknown> = {}
+  Object.entries(row).forEach(([key, value]) => {
+    const mapped = aliases[key]
+    renamed[mapped ?? key] = value
+  })
+  return renamed
 }
 
 function WidgetSkeleton() {
@@ -69,11 +91,12 @@ function WidgetSkeleton() {
 }
 
 export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
-  const { endpoints, removeWidget } = useDashboardStore()
+  const { endpoints, removeWidget, dashboardFilters } = useDashboardStore()
   const { addLog, updateEndpointHealth } = useMonitoringStore()
 
+  // ✅ loading starts true — skeleton shows immediately on mount
   const [rawData, setRawData]         = useState<Record<string, unknown>[] | null>(null)
-  const [loading, setLoading]         = useState(false)
+  const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [editOpen, setEditOpen]       = useState(false)
   const [deleteOpen, setDeleteOpen]   = useState(false)
@@ -83,7 +106,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id })
 
-  // ✅ Clean zIndex pattern — no undefined property
   const dragStyle: React.CSSProperties = {
     transform:  CSS.Transform.toString(transform),
     transition,
@@ -92,7 +114,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     ...(isDragging && { zIndex: 50 }),
   }
 
-  // ✅ endpoint resolved INSIDE callback — no stale closure, no refetch loop
   const fetchData = useCallback(async () => {
     const endpoint = endpoints.find(e => e.id === widget.endpointId)
 
@@ -110,7 +131,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       return
     }
 
-    // ✅ S2-1 — inactive guard
     if (endpoint.status !== 'active') {
       setError(`Endpoint "${endpoint.name}" is inactive`)
       setLoading(false)
@@ -122,11 +142,13 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     const t0 = performance.now()
 
     try {
-      // ✅ S2-1 — auth headers passed
-      const res = await fetch(endpoint.url, {
-        method:  endpoint.method,
-        headers: endpoint.headers ?? {},
-      })
+      const res = await fetch(
+        endpoint.url,
+        buildEndpointRequestInit({
+          method: endpoint.method,
+          headers: endpoint.headers,
+        }),
+      )
       const ms = Math.round(performance.now() - t0)
       setLatency(ms)
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
@@ -185,7 +207,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     }
   }, [
     widget.id, widget.title, widget.endpointId,
-    endpoints,                     // ✅ array ref — stable unless store changes
+    endpoints,
     addLog, updateEndpointHealth,
   ])
 
@@ -198,52 +220,100 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     return () => clearInterval(id)
   }, [endpoints, widget.endpointId, fetchData])
 
-  // ── UI-only endpoint resolution (display name, mapping label) ─
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon     = chartTypeIcon[widget.type] ?? BarChart3
   const style    = { ...DEFAULT_STYLE, ...widget.style }
+  const activeFilters = useMemo(
+    () => dashboardFilters.filter(
+      f => f.dashboardId === widget.dashboardId && f.active,
+    ),
+    [dashboardFilters, widget.dashboardId],
+  )
+  const filteredData = useMemo(
+    () => rawData ? applyDashboardFilters(rawData, activeFilters) : null,
+    [rawData, activeFilters],
+  )
+  const aliases = useMemo(() => {
+    const entries = Object.entries(widget.dataMapping.aliases ?? {})
+      .filter(([field, alias]) => field.trim().length > 0 && alias.trim().length > 0)
+      .map(([field, alias]) => [field.trim(), alias.trim()] as const)
+    return Object.fromEntries(entries) as Record<string, string>
+  }, [widget.dataMapping.aliases])
+  const resolveField = useCallback(
+    (field?: string) => (field ? (aliases[field] ?? field) : ''),
+    [aliases],
+  )
+  const aliasedData = useMemo(
+    () => filteredData?.map(row => applyAliasesToRow(row, aliases)) ?? null,
+    [aliases, filteredData],
+  )
+  const xField = resolveField(widget.dataMapping.xAxis)
+  const yField = resolveField(widget.dataMapping.yAxis)
+  const yFields = useMemo(
+    () => (widget.dataMapping.yAxes ?? []).map(axisCfg => resolveField(axisCfg.key)).filter(Boolean),
+    [resolveField, widget.dataMapping.yAxes],
+  )
+
+  // ✅ Validate that xAxis/yAxis fields actually exist in the data
+  const fieldWarning = useMemo(() => {
+    if (!aliasedData?.length) return null
+    const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(widget.type)
+    const keys = Object.keys(aliasedData[0])
+    if (needsXAxis && xField && !keys.includes(xField)) {
+      return `xAxis field "${xField}" not found in data. Available: ${keys.slice(0, 5).join(', ')}`
+    }
+    if (yField && !keys.includes(yField)) {
+      return `yAxis field "${yField}" not found in data. Available: ${keys.slice(0, 5).join(', ')}`
+    }
+    return null
+  }, [aliasedData, widget.type, xField, yField])
 
   const renderChart = () => {
-    if (!rawData?.length) return null
-    const x = widget.dataMapping.xAxis
-    const y = widget.dataMapping.yAxis ?? ''
+    if (!aliasedData?.length) return null
+    const x = xField
+    const y = yField
 
     switch (widget.type) {
       case 'bar':
-        return <ModernBarChart data={rawData} xField={x} yField={y} style={style} />
+        return <ModernBarChart data={aliasedData} xField={x} yField={y} style={style} />
       case 'line':
-        return <ModernLineChart data={rawData} xField={x} yField={y} style={style} />
+        return <ModernLineChart data={aliasedData} xField={x} yField={y} style={style} />
       case 'area':
-        return <ModernAreaChart data={rawData} xField={x} yField={y} style={style} />
+        return <ModernAreaChart data={aliasedData} xField={x} yField={y} style={style} />
       case 'pie':
-        return <ModernPieChart data={rawData} nameField={x} valueField={y} style={style} />
+        return <ModernPieChart data={aliasedData} nameField={x} valueField={y} style={style} />
       case 'donut':
-        return <ModernPieChart data={rawData} nameField={x} valueField={y} donut style={style} />
+        return <ModernPieChart data={aliasedData} nameField={x} valueField={y} donut style={style} />
       case 'horizontal-bar':
-        return <ModernHorizontalBarChart data={rawData} xField={x} yField={y} style={style} />
+        return <ModernHorizontalBarChart data={aliasedData} xField={x} yField={y} style={style} />
+      case 'horizontal-stacked-bar':
+        return <ModernHorizontalStackedBarChart data={aliasedData} xField={x} yField={y} yFields={yFields} style={style} />
+      case 'grouped-bar':
+        return <ModernGroupedBarChart data={aliasedData} xField={x} yField={y} yFields={yFields} style={style} />
+      case 'drilldown-bar':
+        return <ModernDrilldownBarChart data={aliasedData} xField={x} yField={y} style={style} />
       case 'gauge':
-        return <ModernGaugeChartFromData data={rawData} yField={y} label={widget.title} style={style} />
+        return <ModernGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
+      case 'ring-gauge':
+        return <ModernRingGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
       case 'status-card':
-        return <ModernStatusCard data={rawData} yField={y} label={widget.title} style={style} />
+        return <ModernStatusCard data={aliasedData} yField={y} label={widget.title} style={style} />
       case 'table': {
-        const cols = Object.keys(rawData[0]).slice(0, 6)
+        const cols = Object.keys(aliasedData[0]).slice(0, 6)
         return (
           <div className="overflow-auto max-h-[300px] rounded-lg border">
             <table className="w-full text-xs border-collapse">
               <thead className="sticky top-0 bg-muted z-10">
                 <tr>
                   {cols.map(col => (
-                    <th
-                      key={col}
-                      className="text-left p-2 font-medium border-b text-[11px] whitespace-nowrap"
-                    >
+                    <th key={col} className="text-left p-2 font-medium border-b text-[11px] whitespace-nowrap">
                       {col}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rawData.slice(0, 50).map((row, i) => (
+                {aliasedData.slice(0, 50).map((row, i) => (
                   <tr key={i} className="border-b hover:bg-muted/40 transition-colors">
                     {cols.map(col => (
                       <td key={col} className="p-2 text-[11px] max-w-[160px] truncate">
@@ -343,8 +413,9 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-[10px] text-muted-foreground truncate flex-1">
-              {endpoint?.name ?? 'Unknown'} · {widget.dataMapping.xAxis}
-              {widget.dataMapping.yAxis ? ` → ${widget.dataMapping.yAxis}` : ''}
+              {endpoint?.name ?? 'Unknown'}
+              {xField ? ` · ${xField}` : ''}
+              {yField ? ` → ${yField}` : ''}
             </p>
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {latency !== null && (
@@ -367,8 +438,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         </CardHeader>
 
         <CardContent className="px-4 pb-4 flex-1">
+          {/* Skeleton — shows on first load before any data */}
           {loading && !rawData && <WidgetSkeleton />}
 
+          {/* Error state */}
           {error && (
             <div className="flex flex-col items-start gap-2 p-3 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
               <div className="flex items-start gap-2">
@@ -390,11 +463,29 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
             </div>
           )}
 
-          {!loading && !error && rawData && renderChart()}
+          {/* ✅ Field name mismatch warning */}
+          {fieldWarning && !error && (
+            <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20 mb-2">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-[11px] text-amber-700 dark:text-amber-400">{fieldWarning}</p>
+            </div>
+          )}
 
-          {!loading && !error && rawData?.length === 0 && (
+          {/* ✅ Chart container — explicit min-height so ECharts has space to render */}
+          {!loading && !error && rawData && (
+            <div className="w-full min-h-[260px]">
+              {renderChart()}
+            </div>
+          )}
+
+          {/* No data */}
+          {!loading && !error && aliasedData?.length === 0 && (
             <div className="flex items-center justify-center h-[200px]">
-              <p className="text-xs text-muted-foreground">No data returned</p>
+              <p className="text-xs text-muted-foreground">
+                {rawData && rawData.length > 0 && activeFilters.length > 0
+                  ? 'No rows match active filters'
+                  : 'No data returned'}
+              </p>
             </div>
           )}
         </CardContent>

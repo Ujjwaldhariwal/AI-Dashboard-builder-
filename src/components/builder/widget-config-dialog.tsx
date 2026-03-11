@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem,
   SelectTrigger, SelectValue,
@@ -18,6 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/builder-store'
 import type { ChartType } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
+import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { toast } from 'sonner'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -43,14 +45,19 @@ const chartIcons: Record<ChartType, LucideIcon> = {
   area:             AreaChart,
   donut:            Circle,
   'horizontal-bar': AlignLeft,
+  'horizontal-stacked-bar': AlignLeft,
+  'grouped-bar': BarChart3,
+  'drilldown-bar': BarChart3,
   gauge:            Gauge,
+  'ring-gauge':     Gauge,
   'status-card':    TrendingUp,
   table:            Table2,
 }
 
 const CHART_TYPE_ROWS: ChartType[][] = [
-  ['bar', 'line', 'area', 'pie', 'donut'],
-  ['horizontal-bar', 'gauge', 'status-card', 'table'],
+  ['bar', 'line', 'area', 'pie', 'donut', 'grouped-bar'],
+  ['horizontal-bar', 'horizontal-stacked-bar', 'drilldown-bar'],
+  ['gauge', 'ring-gauge', 'status-card', 'table'],
 ]
 
 const chartTypeLabel: Record<ChartType, string> = {
@@ -60,7 +67,11 @@ const chartTypeLabel: Record<ChartType, string> = {
   pie:              'Pie',
   donut:            'Donut',
   'horizontal-bar': 'H-Bar',
+  'horizontal-stacked-bar': 'Stacked H-Bar',
+  'grouped-bar':    'Grouped',
+  'drilldown-bar':  'Drilldown',
   gauge:            'Gauge',
+  'ring-gauge':     'Ring',
   'status-card':    'KPI',
   table:            'Table',
 }
@@ -80,6 +91,7 @@ export function WidgetConfigDialog({
   const [type, setType]                 = useState<ChartType>('bar')
   const [xAxis, setXAxis]               = useState('')
   const [yAxis, setYAxis]               = useState('')
+  const [aliases, setAliases]           = useState<Record<string, string>>({})
   const [fields, setFields]             = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
   const [selectedEndpointId, setSelectedEndpointId] = useState<string>(
@@ -89,11 +101,17 @@ export function WidgetConfigDialog({
   const endpoint = endpoints.find(e => e.id === selectedEndpointId)
 
   // ── Fix #6 — useCallback so it's stable across renders ───────
-  const fetchFields = useCallback(async (ep: { url: string; method: string }) => {
+  const fetchFields = useCallback(async (ep: { url: string; method: 'GET' | 'POST'; headers?: Record<string, string> }) => {
     setLoadingFields(true)
     setFields([])
     try {
-      const res = await fetch(ep.url, { method: ep.method })
+      const res = await fetch(
+        ep.url,
+        buildEndpointRequestInit({
+          method: ep.method,
+          headers: ep.headers,
+        }),
+      )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const result   = await res.json()
       const dataArray =
@@ -128,6 +146,7 @@ export function WidgetConfigDialog({
     setType(suggestedType ?? 'bar')
     setXAxis(suggestedXAxis ?? '')
     setYAxis(suggestedYAxis ?? '')
+    setAliases({})
 
     if (availableFields?.length) {
       setFields(availableFields)
@@ -170,6 +189,7 @@ export function WidgetConfigDialog({
       dataMapping: {
         xAxis: xAxis || fields[0]?.name || '',
         yAxis: yAxis || undefined,
+        aliases: Object.keys(aliases).length > 0 ? aliases : undefined,
       },
     })
 
@@ -177,7 +197,21 @@ export function WidgetConfigDialog({
     onOpenChange(false)
   }
 
-  const needsXAxis = !['gauge', 'status-card'].includes(type)
+  const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(type)
+
+  const setAliasForField = (field: string, value: string) => {
+    if (!field) return
+    setAliases(prev => {
+      const next = { ...prev }
+      const trimmed = value.trim()
+      if (!trimmed) {
+        delete next[field]
+      } else {
+        next[field] = trimmed
+      }
+      return next
+    })
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -288,6 +322,17 @@ export function WidgetConfigDialog({
                   disabled={loadingFields}
                 />
               )}
+              {xAxis && (
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Field alias for X-axis</Label>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder={`Rename "${xAxis}" (optional)`}
+                    value={aliases[xAxis] ?? ''}
+                    onChange={e => setAliasForField(xAxis, e.target.value)}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -320,6 +365,44 @@ export function WidgetConfigDialog({
                 disabled={loadingFields}
               />
             )}
+            {yAxis && (
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Field alias for Y-axis</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder={`Rename "${yAxis}" (optional)`}
+                  value={aliases[yAxis] ?? ''}
+                  onChange={e => setAliasForField(yAxis, e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Advanced aliases (optional)</Label>
+            <Textarea
+              className="min-h-[70px] text-xs font-mono"
+              placeholder={'count(9): Meter Count\nconn_comm: Connected'}
+              value={Object.entries(aliases).map(([k, v]) => `${k}: ${v}`).join('\n')}
+              onChange={e => {
+                const parsed: Record<string, string> = {}
+                e.target.value
+                  .split('\n')
+                  .map(line => line.trim())
+                  .filter(Boolean)
+                  .forEach(line => {
+                    const idx = line.indexOf(':')
+                    if (idx <= 0) return
+                    const key = line.slice(0, idx).trim()
+                    const val = line.slice(idx + 1).trim()
+                    if (key && val) parsed[key] = val
+                  })
+                setAliases(parsed)
+              }}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Format: <span className="font-mono">field_name: Display Label</span>
+            </p>
           </div>
         </div>
 

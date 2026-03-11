@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/builder-store'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { generateAIChartSuggestions, AIChartSuggestion } from '@/lib/ai/chart-generator'
+import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { toast } from 'sonner'
 import { ChartType } from '@/types/widget'
 
@@ -25,7 +26,11 @@ const CHART_ICONS: Record<ChartType, any> = {
   pie:              PieChart,
   donut:            Circle,
   'horizontal-bar': AlignLeft,
+  'horizontal-stacked-bar': AlignLeft,
+  'grouped-bar':    BarChart3,
+  'drilldown-bar':  BarChart3,
   gauge:            Gauge,
+  'ring-gauge':     Gauge,
   'status-card':    TrendingUp,
   table:            Table2,
 }
@@ -54,7 +59,13 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
     setAddedIds(new Set())
 
     try {
-      const res = await fetch(endpoint.url, { method: endpoint.method })
+      const res = await fetch(
+        endpoint.url,
+        buildEndpointRequestInit({
+          method: endpoint.method,
+          headers: endpoint.headers,
+        }),
+      )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const raw = await res.json()
 
