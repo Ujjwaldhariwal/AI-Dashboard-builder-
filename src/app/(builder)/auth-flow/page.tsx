@@ -27,6 +27,87 @@ import { AnimatePresence, motion } from 'framer-motion'
 // ── Fix #6 — type-safe const arrays for Select validation ──────────────────
 const AUTH_STRATEGIES = ['basic', 'bearer', 'api-key', 'none'] as const
 const ENCODING_TYPES = ['plain', 'btoa', 'none'] as const
+type SetupMode = 'simple' | 'advanced'
+type AuthPresetId = 'rest_json' | 'basic_auth' | 'api_key' | 'service_proxy'
+
+type AuthPreset = {
+  id: AuthPresetId
+  label: string
+  description: string
+  values: {
+    authStrategy: AuthStrategy
+    encodingType: EncodingType
+    endpoint: string
+    usernameField: string
+    passwordField: string
+    tokenPath: string
+    logoutOn401: boolean
+    logoutOnMsg: string
+  }
+}
+
+const AUTH_PRESETS: AuthPreset[] = [
+  {
+    id: 'rest_json',
+    label: 'REST JSON Login',
+    description: 'Most common pattern. Username + password in request body.',
+    values: {
+      authStrategy: 'basic',
+      encodingType: 'plain',
+      endpoint: '/userLogin',
+      usernameField: 'username',
+      passwordField: 'password',
+      tokenPath: 'data.token',
+      logoutOn401: true,
+      logoutOnMsg: 'expired',
+    },
+  },
+  {
+    id: 'basic_auth',
+    label: 'Basic Header Auth',
+    description: 'Credentials sent as Basic Authorization header.',
+    values: {
+      authStrategy: 'basic',
+      encodingType: 'none',
+      endpoint: '/userLogin',
+      usernameField: 'username',
+      passwordField: 'password',
+      tokenPath: 'data.token',
+      logoutOn401: true,
+      logoutOnMsg: 'expired',
+    },
+  },
+  {
+    id: 'api_key',
+    label: 'API Key / Bearer',
+    description: 'Token-based APIs where login is optional or external.',
+    values: {
+      authStrategy: 'api-key',
+      encodingType: 'none',
+      endpoint: '/token',
+      usernameField: 'username',
+      passwordField: 'password',
+      tokenPath: 'token',
+      logoutOn401: true,
+      logoutOnMsg: 'expired',
+    },
+  },
+  {
+    id: 'service_proxy',
+    label: 'Service Proxy',
+    description: 'For proxy-based service calls (Bosch-style static headers).',
+    values: {
+      authStrategy: 'none',
+      encodingType: 'none',
+      endpoint: '/api/proxy/data',
+      usernameField: 'username',
+      passwordField: 'password',
+      tokenPath: '',
+      logoutOn401: false,
+      logoutOnMsg: '',
+    },
+  },
+]
 
 function isAuthStrategy(v: string): v is AuthStrategy {
   return AUTH_STRATEGIES.includes(v as AuthStrategy)
@@ -86,6 +167,8 @@ export default function AuthFlowPage() {
   const [encodingType, setEncodingType] = useState<EncodingType>('plain')
   const [logoutOn401, setLogoutOn401] = useState(true)
   const [logoutOnMsg, setLogoutOnMsg] = useState('expired')
+  const [setupMode, setSetupMode] = useState<SetupMode>('simple')
+  const [selectedPreset, setSelectedPreset] = useState<AuthPresetId>('rest_json')
 
   // Test credentials (never persisted)
   const [testUser, setTestUser] = useState('')
@@ -220,6 +303,21 @@ export default function AuthFlowPage() {
     toast.success('Auth config saved. Export ZIP will use this flow.')
   }
 
+  const applyPreset = (id: AuthPresetId) => {
+    const preset = AUTH_PRESETS.find(p => p.id === id)
+    if (!preset) return
+    setSelectedPreset(id)
+    setAuthStrategy(preset.values.authStrategy)
+    setEncodingType(preset.values.encodingType)
+    setEndpoint(preset.values.endpoint)
+    setUsernameField(preset.values.usernameField)
+    setPasswordField(preset.values.passwordField)
+    setTokenPath(preset.values.tokenPath)
+    setLogoutOn401(preset.values.logoutOn401)
+    setLogoutOnMsg(preset.values.logoutOnMsg)
+    toast.success(`Preset applied: ${preset.label}`)
+  }
+
   // ── Fix #5 — disable all inputs when no dashboard is active ──────────────
   const isDisabled = !currentDashboardId
 
@@ -245,6 +343,61 @@ export default function AuthFlowPage() {
           </div>
         )}
       </div>
+
+      <Card className="mb-6 border-blue-500/20 bg-blue-500/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Quick Setup</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Mode:</span>
+            <Button
+              type="button"
+              size="sm"
+              variant={setupMode === 'simple' ? 'default' : 'outline'}
+              className="h-7 text-xs"
+              onClick={() => setSetupMode('simple')}
+            >
+              Simple
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={setupMode === 'advanced' ? 'default' : 'outline'}
+              className="h-7 text-xs"
+              onClick={() => setSetupMode('advanced')}
+            >
+              Advanced
+            </Button>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {AUTH_PRESETS.map(preset => (
+              <button
+                key={preset.id}
+                type="button"
+                disabled={isDisabled}
+                onClick={() => applyPreset(preset.id)}
+                className={`rounded-lg border p-3 text-left transition-colors ${
+                  selectedPreset === preset.id
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:border-primary/50'
+                } ${isDisabled ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                <p className="text-xs font-semibold">{preset.label}</p>
+                <p className="mt-1 text-[10px] text-muted-foreground leading-relaxed">
+                  {preset.description}
+                </p>
+              </button>
+            ))}
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Use <span className="font-medium">Simple</span> for quick onboarding. Switch to
+            <span className="font-medium"> Advanced</span> for full field-level control.
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Left: Config */}
@@ -322,43 +475,47 @@ export default function AuthFlowPage() {
                 </Select>
               </Field>
 
-              <Field label="Credential Encoding">
-                <Select
-                  value={encodingType}
-                  onValueChange={v => { if (isEncodingType(v)) setEncodingType(v) }}
-                  disabled={isDisabled}
-                >
-                  <SelectTrigger className="text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="plain">Plain (send as-is)</SelectItem>
-                    <SelectItem value="btoa">btoa (base64 user:pass)</SelectItem>
-                    <SelectItem value="none">None</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
+              {setupMode === 'advanced' && (
+                <>
+                  <Field label="Credential Encoding">
+                    <Select
+                      value={encodingType}
+                      onValueChange={v => { if (isEncodingType(v)) setEncodingType(v) }}
+                      disabled={isDisabled}
+                    >
+                      <SelectTrigger className="text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="plain">Plain (send as-is)</SelectItem>
+                        <SelectItem value="btoa">btoa (base64 user:pass)</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Username field key">
-                  <Input
-                    value={usernameField}
-                    onChange={e => setUsernameField(e.target.value)}
-                    placeholder="username"
-                    className="font-mono text-xs"
-                    disabled={isDisabled}
-                  />
-                </Field>
-                <Field label="Password field key">
-                  <Input
-                    value={passwordField}
-                    onChange={e => setPasswordField(e.target.value)}
-                    placeholder="password"
-                    className="font-mono text-xs"
-                    disabled={isDisabled}
-                  />
-                </Field>
-              </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Username field key">
+                      <Input
+                        value={usernameField}
+                        onChange={e => setUsernameField(e.target.value)}
+                        placeholder="username"
+                        className="font-mono text-xs"
+                        disabled={isDisabled}
+                      />
+                    </Field>
+                    <Field label="Password field key">
+                      <Input
+                        value={passwordField}
+                        onChange={e => setPasswordField(e.target.value)}
+                        placeholder="password"
+                        className="font-mono text-xs"
+                        disabled={isDisabled}
+                      />
+                    </Field>
+                  </div>
+                </>
+              )}
 
               <Field label="Token path (dot notation)">
                 <Input
@@ -369,7 +526,10 @@ export default function AuthFlowPage() {
                   disabled={isDisabled}
                 />
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Example: <code>data.token</code> or <code>result.access_token</code>
+                  {setupMode === 'simple'
+                    ? 'Tip: if your API does not return a token, leave this blank.'
+                    : <>Example: <code>data.token</code> or <code>result.access_token</code></>
+                  }
                 </p>
               </Field>
             </CardContent>
@@ -391,15 +551,17 @@ export default function AuthFlowPage() {
                   disabled={isDisabled}
                 />
               </div>
-              <Field label="Logout on message containing">
-                <Input
-                  value={logoutOnMsg}
-                  onChange={e => setLogoutOnMsg(e.target.value)}
-                  placeholder="expired"
-                  className="font-mono text-xs"
-                  disabled={isDisabled}
-                />
-              </Field>
+              {setupMode === 'advanced' && (
+                <Field label="Logout on message containing">
+                  <Input
+                    value={logoutOnMsg}
+                    onChange={e => setLogoutOnMsg(e.target.value)}
+                    placeholder="expired"
+                    className="font-mono text-xs"
+                    disabled={isDisabled}
+                  />
+                </Field>
+              )}
             </CardContent>
           </Card>
 
