@@ -42,6 +42,7 @@ type FieldError = {
 
 export default function LoginPage() {
   const router = useRouter()                                          // ✅ added
+  const emailDomain = process.env.NEXT_PUBLIC_EMAIL_DOMAIN ?? 'company.com'
 
   const [empId, setEmpId]         = useState('')
   const [password, setPassword]   = useState('')
@@ -85,7 +86,7 @@ export default function LoginPage() {
     // ✅ redirectTo — honor middleware redirect param
     const params     = new URLSearchParams(window.location.search)
     const redirectTo = params.get('redirectTo') ?? '/workspaces'
-    const email      = `${empId.trim().toLowerCase()}@company.com`
+    const email      = `${empId.trim().toLowerCase()}@${emailDomain}`
 
     // ✅ Fix #2 — local flag tracks field errors set DURING this call
     // avoids stale closure on fieldError state in catch block
@@ -208,15 +209,18 @@ export default function LoginPage() {
   const passShort = password.length > 0 && password.length < 6
 
   return (
-    <Card className="w-full max-w-md mx-4 shadow-2xl border-muted/50 bg-background/60 backdrop-blur-xl">
+    <Card className="w-full border-white/10 bg-slate-900/65 shadow-2xl backdrop-blur-xl">
       <CardHeader className="space-y-3 pb-6 text-center">
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mx-auto mb-2 shadow-lg">
+        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-red-600 to-cyan-500 shadow-lg">
           <BarChart3 className="w-6 h-6 text-white" />
         </div>
-        <CardTitle className="text-2xl font-bold tracking-tight">AI Dashboard Builder</CardTitle>
-        <CardDescription className="text-base">
+        <CardTitle className="text-2xl font-bold tracking-tight text-slate-50">AI Dashboard Builder</CardTitle>
+        <CardDescription className="text-base text-slate-300">
           Sign in with your Employee ID
         </CardDescription>
+        <p className="text-[11px] text-slate-400">
+          Login email format: <span className="font-mono">employee@{emailDomain}</span>
+        </p>
       </CardHeader>
 
       <CardContent>
@@ -238,7 +242,7 @@ export default function LoginPage() {
               placeholder="e.g. EMP001"
               value={empId}
               onChange={e => { setEmpId(e.target.value); clearErrors() }}
-              className={`h-11 bg-background/50 ${
+              className={`h-11 border-white/10 bg-slate-900/40 text-slate-100 placeholder:text-slate-500 ${
                 fieldError.empId ? 'border-red-400 focus-visible:ring-red-400' : ''
               }`}
               autoComplete="username"
@@ -263,10 +267,10 @@ export default function LoginPage() {
                 placeholder="Min 6 characters"
                 value={password}
                 onChange={e => { setPassword(e.target.value); clearErrors() }}
-                className={`h-11 bg-background/50 pr-10 ${
-                  fieldError.password || passShort
-                    ? 'border-red-400 focus-visible:ring-red-400'
-                    : ''
+              className={`h-11 border-white/10 bg-slate-900/40 pr-10 text-slate-100 placeholder:text-slate-500 ${
+                fieldError.password || passShort
+                  ? 'border-red-400 focus-visible:ring-red-400'
+                  : ''
                 }`}
                 autoComplete="current-password"
                 disabled={isLoading}
@@ -298,7 +302,7 @@ export default function LoginPage() {
           {/* ── Submit ───────────────────────────────────────── */}
           <Button
             type="submit"
-            className="w-full h-11 text-base font-medium shadow-md"
+            className="h-11 w-full bg-gradient-to-r from-red-600 to-cyan-600 text-base font-medium shadow-md hover:from-red-700 hover:to-cyan-700"
             disabled={isLoading || passShort}
           >
             {isLoading ? (
@@ -311,7 +315,7 @@ export default function LoginPage() {
             )}
           </Button>
 
-          <p className="text-xs text-center text-muted-foreground pt-2">
+          <p className="pt-2 text-center text-xs text-slate-400">
             New Employee IDs are automatically registered on first login.
           </p>
         </form>

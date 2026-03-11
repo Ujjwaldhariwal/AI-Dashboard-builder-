@@ -3,6 +3,7 @@
 export type AuthStrategy  = 'basic' | 'bearer' | 'api-key' | 'none'
 export type LayoutType    = 'sidebar' | 'topnav'
 export type EncodingType  = 'btoa' | 'plain' | 'none'
+export type NavDensity    = 'compact' | 'comfortable'
 
 export interface LoginConfig {
   endpoint:      string      // e.g. /userLogin
@@ -19,8 +20,10 @@ export interface SessionConfig {
 
 export interface HeaderConfig {
   projectName:  string
+  subtitle?:    string
   primaryColor: string       // sidebar bg hex
   accentColor:  string       // button/highlight hex
+  navDensity?:  NavDensity
 }
 
 export interface ChartGroup {
@@ -51,8 +54,10 @@ export const DEFAULT_PROJECT_CONFIG: Omit<ProjectConfig, 'dashboardId'> = {
   authStrategy: 'basic',
   header: {
     projectName:  'My Dashboard',
+    subtitle:     '',
     primaryColor: '#0f172a',
     accentColor:  '#3b82f6',
+    navDensity:   'comfortable',
   },
   login: {
     endpoint:      '/userLogin',

@@ -24,12 +24,14 @@ import {
   Plus, FolderKanban, Trash2, ExternalLink,
   Database, LayoutGrid, Copy, Search,
   CalendarDays, Eye, Pencil, Check, X,
+  AlertCircle,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
+
 
 const GRADIENTS = [
   'from-blue-600 to-purple-600',
@@ -39,6 +41,7 @@ const GRADIENTS = [
   'from-cyan-500 to-blue-600',
   'from-indigo-600 to-violet-600',
 ]
+
 
 function InlineRename({
   value, onSave, onCancel,
@@ -88,6 +91,7 @@ function InlineRename({
   )
 }
 
+
 export default function WorkspacesPage() {
   const router   = useRouter()
   const { user } = useAuthStore()
@@ -97,6 +101,7 @@ export default function WorkspacesPage() {
     setCurrentDashboard, duplicateDashboard,
   } = useDashboardStore()
 
+  // ── ALL useState hooks first ──────────────────────────────────
   const [mounted, setMounted]          = useState(false)
   const [createOpen, setCreateOpen]    = useState(false)
   const [deleteId, setDeleteId]        = useState<string | null>(null)
@@ -104,9 +109,12 @@ export default function WorkspacesPage() {
   const [name, setName]                = useState('')
   const [description, setDescription] = useState('')
   const [search, setSearch]            = useState('')
+  const [nameError, setNameError]      = useState('')
 
+  // ── ALL useEffect hooks ───────────────────────────────────────
   useEffect(() => { setMounted(true) }, [])
 
+  // ── ALL useMemo hooks — MUST be before any early return ───────
   const filtered = useMemo(() => {
     if (!search.trim()) return dashboards
     const q = search.toLowerCase()
@@ -116,6 +124,22 @@ export default function WorkspacesPage() {
     )
   }, [dashboards, search])
 
+  const endpointCountMap = useMemo(() => {
+    const map = new Map<string, number>()
+    dashboards.forEach(d => {
+      const used = new Set(
+        widgets.filter(w => w.dashboardId === d.id).map(w => w.endpointId)
+      )
+      map.set(d.id, used.size)
+    })
+    return map
+  }, [dashboards, widgets, endpoints])
+
+  // ── Derived helpers ───────────────────────────────────────────
+  const getWidgetCount   = (id: string) => widgets.filter(w => w.dashboardId === id).length
+  const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
+
+  // ✅ Early return AFTER all hooks
   if (!mounted) {
     return (
       <div className="p-8 flex items-center justify-center min-h-[400px]">
@@ -124,36 +148,44 @@ export default function WorkspacesPage() {
     )
   }
 
-  const handleCreate = () => {
-  if (!name.trim()) { toast.error('Dashboard name is required'); return }
-
-  // ✅ S1-4 — duplicate name check
-  const isDuplicate = dashboards.some(
-    d => d.name.toLowerCase() === name.trim().toLowerCase()
-  )
-  if (isDuplicate) {
-    toast.error(`A dashboard named "${name.trim()}" already exists`)
-    return
-  }
-
-  try {
-    const id = addDashboard({
-      name:        name.trim(),
-      description: description.trim(),
-      ownerId:     user?.id ?? 'unknown',
-    })
-    setCreateOpen(false)
+  // ── Helpers ───────────────────────────────────────────────────
+  const resetDialog = () => {
     setName('')
     setDescription('')
-    toast.success('Dashboard created')
-    setCurrentDashboard(id)
-    router.push('/builder')
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    toast.error(`Failed to create dashboard: ${message}`)
+    setNameError('')
   }
-}
 
+  // ── Event handlers ────────────────────────────────────────────
+  const handleCreate = () => {
+    if (!name.trim()) {
+      setNameError('Dashboard name is required')
+      return
+    }
+
+    const isDuplicate = dashboards.some(
+      d => d.name.toLowerCase() === name.trim().toLowerCase()
+    )
+    if (isDuplicate) {
+      setNameError(`A dashboard named "${name.trim()}" already exists`)
+      return
+    }
+
+    try {
+      const id = addDashboard({
+        name:        name.trim(),
+        description: description.trim(),
+        ownerId:     user?.id ?? 'unknown',
+      })
+      setCreateOpen(false)
+      resetDialog()
+      toast.success('Dashboard created')
+      setCurrentDashboard(id)
+      router.push('/builder')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error(`Failed to create dashboard: ${message}`)
+    }
+  }
 
   const handleRename = (id: string, newName: string) => {
     updateDashboard(id, { name: newName })
@@ -161,11 +193,10 @@ export default function WorkspacesPage() {
     toast.success('Dashboard renamed')
   }
 
-  // ── Fix #1 — use Dashboard type, not typeof dashboards[0] ───
-  const handleDuplicate = (id: string, name: string) => {
+  const handleDuplicate = (id: string, dashName: string) => {
     const newId = duplicateDashboard(id)
     if (!newId) { toast.error('Failed to duplicate dashboard'); return }
-    toast.success(`"${name}" duplicated`)
+    toast.success(`"${dashName}" duplicated`)
     setCurrentDashboard(newId)
     router.push('/builder')
   }
@@ -176,23 +207,6 @@ export default function WorkspacesPage() {
     setDeleteId(null)
     toast.success('Dashboard deleted')
   }
-
-  // ── Fix #2 — consistent with builder page: filter directly ───
-  const getWidgetCount   = (id: string) => widgets.filter(w => w.dashboardId === id).length
-  const endpointCountMap = useMemo(() => {
-  const map = new Map<string, number>()
-  dashboards.forEach(d => {
-    const used = new Set(
-      widgets.filter(w => w.dashboardId === d.id).map(w => w.endpointId)
-    )
-    map.set(d.id, used.size)
-  })
-  return map
-}, [dashboards, widgets, endpoints])
-
-// Then use:
-const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
-
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto">
@@ -338,7 +352,6 @@ const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
                           <Eye className="w-3 h-3 mr-1" />View
                         </Button>
                       </Link>
-                      {/* ── Fix #1 — pass id + name, not full object ─── */}
                       <Button
                         size="sm" variant="ghost" className="h-7 w-7 p-0"
                         title="Duplicate"
@@ -349,7 +362,8 @@ const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
                       <Button
                         size="sm" variant="ghost"
                         className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                        title="Delete" onClick={() => setDeleteId(d.id)}
+                        title="Delete"
+                        onClick={() => setDeleteId(d.id)}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
@@ -390,7 +404,13 @@ const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
       </div>
 
       {/* Create dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(v) => {
+          setCreateOpen(v)
+          if (!v) resetDialog()
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create new dashboard</DialogTitle>
@@ -403,11 +423,18 @@ const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
               <Label>Name *</Label>
               <Input
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={e => { setName(e.target.value); setNameError('') }}
                 placeholder="e.g. MDM — City X Analytics"
                 onKeyDown={e => e.key === 'Enter' && handleCreate()}
                 autoFocus
+                className={nameError ? 'border-red-400 focus-visible:ring-red-400' : ''}
               />
+              {nameError && (
+                <p className="text-[11px] text-red-500 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                  {nameError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Description</Label>
@@ -419,8 +446,12 @@ const getEndpointCount = (id: string) => endpointCountMap.get(id) ?? 0
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={!name.trim()}>Create</Button>
+            <Button variant="outline" onClick={() => { setCreateOpen(false); resetDialog() }}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={!name.trim()}>
+              Create
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

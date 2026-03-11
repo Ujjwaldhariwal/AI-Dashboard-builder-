@@ -411,6 +411,8 @@ export default function HomePage() {
     }
   }, [isAuthenticated, isLoading, router])
 
-  if (isLoading || isAuthenticated) return null
+  // Middleware already redirects authenticated users to /workspaces server-side.
+  // Only hide the page after loading confirms an active session (client-side fallback).
+  if (!isLoading && isAuthenticated) return null
   return <LandingPage />
 }

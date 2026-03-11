@@ -352,8 +352,10 @@ export interface ExportProjectConfig {
   baseUrl:       string
   authStrategy:  string
   header: {
+    subtitle?:    string
     primaryColor: string
     accentColor:  string
+    navDensity?:  'compact' | 'comfortable'
   }
   login: {
     endpoint:      string
@@ -459,6 +461,20 @@ export function useChartData(endpoint: ExportEndpoint | undefined) {
 
 function generateSidebar(config: DashboardExportConfig): string {
   const { projectConfig: pc } = config
+  const isCompact = pc.header.navDensity === 'compact'
+  const navPaddingExpr = isCompact
+    ? "collapsed ? '0.45rem' : '0.35rem 0.85rem'"
+    : "collapsed ? '0.6rem' : '0.5rem 1rem'"
+  const navFontSize = isCompact ? '0.75rem' : '0.8rem'
+  const sectionPadding = isCompact ? '0.35rem 1rem' : '0.5rem 1rem'
+  const logoutPaddingExpr = isCompact
+    ? "collapsed ? '0.45rem' : '0.45rem 0.9rem'"
+    : "collapsed ? '0.5rem' : '0.5rem 1rem'"
+  const sidebarSubtitle = pc.header.subtitle ?? ''
+  const safeSidebarSubtitle = sidebarSubtitle
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
+
   return `'use client'
 import { useState }       from 'react'
 import { useRouter }      from 'next/navigation'
@@ -490,9 +506,17 @@ export function Sidebar() {
           <span style={{ color: '#fff', fontWeight: 800, fontSize: 14 }}>{('${pc.projectTitle}').charAt(0)}</span>
         </div>
         {!collapsed && (
-          <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            ${pc.projectTitle}
-          </span>
+          <div style={{ minWidth: 0 }}>
+            <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+              ${pc.projectTitle}
+            </span>
+            ${sidebarSubtitle
+              ? `<span style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.65rem', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              ${safeSidebarSubtitle}
+            </span>`
+              : ''
+            }
+          </div>
         )}
         <button
           onClick={() => setCollapsed(c => !c)}
@@ -507,7 +531,7 @@ export function Sidebar() {
         {groups.length > 0 ? groups.map(group => (
           <div key={group.id}>
             {!collapsed && (
-              <p style={{ padding: '0.5rem 1rem', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+              <p style={{ padding: '${sectionPadding}', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
                 {group.name}
               </p>
             )}
@@ -516,7 +540,7 @@ export function Sidebar() {
               if (!w) return null
               return (
                 <a key={wid} href={\`#widget-\${w.id}\`}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '0.6rem' : '0.5rem 1rem', color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem', textDecoration: 'none', borderRadius: 8, margin: '1px 8px', transition: 'background 0.15s' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: ${navPaddingExpr}, color: 'rgba(255,255,255,0.75)', fontSize: '${navFontSize}', textDecoration: 'none', borderRadius: 8, margin: '1px 8px', transition: 'background 0.15s' }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
@@ -529,7 +553,7 @@ export function Sidebar() {
         )) : (
           dashboardConfig.widgets.map(w => (
             <a key={w.id} href={\`#widget-\${w.id}\`}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: collapsed ? '0.6rem' : '0.5rem 1rem', color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem', textDecoration: 'none', borderRadius: 8, margin: '1px 8px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: ${navPaddingExpr}, color: 'rgba(255,255,255,0.75)', fontSize: '${navFontSize}', textDecoration: 'none', borderRadius: 8, margin: '1px 8px' }}
             >
               <span style={{ fontSize: 12 }}>📊</span>
               {!collapsed && w.title}
@@ -541,7 +565,7 @@ export function Sidebar() {
       {/* Logout */}
       <div style={{ padding: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <button onClick={handleLogout}
-          style={{ width: '100%', padding: collapsed ? '0.5rem' : '0.5rem 1rem', background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 8 }}>
+          style={{ width: '100%', padding: ${logoutPaddingExpr}, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: '${navFontSize}', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 8 }}>
           🚪 {!collapsed && 'Logout'}
         </button>
       </div>
@@ -553,6 +577,11 @@ export function Sidebar() {
 
 function generateHeader(config: DashboardExportConfig): string {
   const { projectConfig: pc } = config
+  const headerSubtitle = pc.header.subtitle ?? ''
+  const safeHeaderSubtitle = headerSubtitle
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
+
   return `'use client'
 import { dashboardConfig } from '@/lib/config'
 
@@ -563,9 +592,17 @@ export function Header() {
 
   return (
     <header style={{ height: 56, background: '#fff', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.5rem', flexShrink: 0 }}>
-      <h1 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-        ${pc.projectTitle}
-      </h1>
+      <div style={{ minWidth: 0 }}>
+        <h1 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          ${pc.projectTitle}
+        </h1>
+        ${headerSubtitle
+          ? `<p style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          ${safeHeaderSubtitle}
+        </p>`
+          : ''
+        }
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {username && (
           <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Welcome, {username}</span>

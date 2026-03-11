@@ -18,7 +18,7 @@ import {
   Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AuthStrategy, LayoutType, EncodingType } from '@/types/project-config'
+import type { AuthStrategy, LayoutType, EncodingType, NavDensity } from '@/types/project-config'
 
 interface Props {
   dashboardId: string
@@ -132,6 +132,15 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
             />
           </Field>
 
+          <Field label="Header Subtitle">
+            <Input
+              value={config.header.subtitle ?? ''}
+              onChange={e => update('header.subtitle', e.target.value)}
+              placeholder="e.g. Smart Meter Monitoring Platform"
+              className="h-8 text-xs"
+            />
+          </Field>
+
           <Field label="API Base URL">
             <Input
               value={config.baseUrl}
@@ -150,6 +159,19 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
               <SelectContent>
                 <SelectItem value="sidebar">Sidebar (recommended)</SelectItem>
                 <SelectItem value="topnav">Top Navbar</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Navigation Density">
+            <Select
+              value={config.header.navDensity ?? 'comfortable'}
+              onValueChange={v => update('header.navDensity', v as NavDensity)}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="comfortable">Comfortable</SelectItem>
+                <SelectItem value="compact">Compact</SelectItem>
               </SelectContent>
             </Select>
           </Field>
