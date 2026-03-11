@@ -65,6 +65,14 @@ export const useNotificationStore = create<NotificationStore>()(
     {
       name: 'notification-storage',
       version: STORE_VERSION,
+      migrate: (persistedState: unknown) => {
+        const state = persistedState as Partial<NotificationStore> | undefined
+        return {
+          notifications: Array.isArray(state?.notifications)
+            ? state.notifications
+            : [],
+        }
+      },
     },
   ),
 )

@@ -56,10 +56,8 @@ export const useMonitoringStore = create<MonitoringStore>()(
   persist(
     (set, get) => ({
       logs: [],
-      
+
       endpointHealth: {},
-      
-      
 
       addLog: (log) => {
         const entry: WidgetLog = {
@@ -119,6 +117,16 @@ export const useMonitoringStore = create<MonitoringStore>()(
     {
       name: 'monitoring-storage',
       version: STORE_VERSION,
-    },
+      migrate: (persistedState: unknown) => {
+        const state = persistedState as Partial<MonitoringStore> | undefined
+        return {
+          logs: Array.isArray(state?.logs) ? state.logs : [],
+          endpointHealth:
+            state?.endpointHealth && typeof state.endpointHealth === 'object'
+              ? state.endpointHealth
+              : {},
+        }
+      },
+    }
   ),
 )
