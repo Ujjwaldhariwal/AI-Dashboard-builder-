@@ -75,6 +75,7 @@ export function LiveAPIPreview({
         buildEndpointRequestInit({
           method,
           headers,
+          body: {},
         }),
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)

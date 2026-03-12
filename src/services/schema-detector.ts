@@ -6,15 +6,30 @@ export class SchemaDetector {
     endpointId: string,
     data: any
   ): Promise<ApiSchema> {
-    const fields = this.detectFields(data)
+    const normalized = this.normalizeResponseShape(data)
+    const fields = this.detectFields(normalized)
     const suggestedCharts = this.suggestChartTypes(fields)
 
     return {
       endpointId,
-      structure: data,
+      structure: normalized,
       detectedFields: fields,
       suggestedCharts,
     }
+  }
+
+  private static normalizeResponseShape(data: any): any {
+    if (!data || typeof data !== 'object') return data
+
+    // Bosch shape: { status, message, data: { data: [...] } }
+    const nested = data?.data?.data
+    if (Array.isArray(nested)) return nested
+
+    if (Array.isArray(data?.data)) return data.data
+    if (Array.isArray(data?.results)) return data.results
+    if (Array.isArray(data?.items)) return data.items
+
+    return data
   }
 
   private static detectFields(data: any, prefix = ''): any[] {
@@ -32,7 +47,7 @@ export class SchemaDetector {
 
         fields.push({
           name: fieldName,
-          type,
+          type: this.isOracleAggregateAlias(key) ? 'unknown_aggregate' : type,
           isTimeSeries: this.isTimeSeriesField(key, value),
           isCategorical: this.isCategoricalField(value),
         })
@@ -77,6 +92,10 @@ export class SchemaDetector {
 
   private static isCategoricalField(value: any): boolean {
     return typeof value === 'string' && value.length < 50
+  }
+
+  private static isOracleAggregateAlias(key: string): boolean {
+    return /^count\(\d+\)$/i.test(key.trim())
   }
 
   private static suggestChartTypes(fields: any[]): string[] {

@@ -107,6 +107,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
         buildEndpointRequestInit({
           method: endpoint.method,
           headers: endpoint.headers,
+          body: endpoint.body,
         }),
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -291,7 +292,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
             {/* Y axis */}
             <div className="space-y-1.5">
               <Label className="text-xs flex items-center gap-1">
-                {['gauge', 'status-card'].includes(type) ? 'Value field' : 'Y-Axis'}
+                {['gauge', 'ring-gauge', 'status-card'].includes(type) ? 'Value field' : 'Y-Axis'}
                 {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
               </Label>
               {fields.length > 0 ? (

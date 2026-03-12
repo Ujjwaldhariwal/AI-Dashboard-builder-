@@ -64,6 +64,7 @@ export function ChartSuggester({ endpointId }: ChartSuggesterProps) {
         buildEndpointRequestInit({
           method: endpoint.method,
           headers: endpoint.headers,
+          body: endpoint.body,
         }),
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)

@@ -101,6 +101,9 @@ export default function APIConfigPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deleteId, setDeleteId]     = useState<string | null>(null)
   const [copiedId, setCopiedId]     = useState<string | null>(null)
+  const dashboardEndpoints = endpoints.filter(
+    endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+  )
 
   const resetForm = () => { setFormData(defaultForm); setIsCreating(false) }
 
@@ -131,7 +134,7 @@ export default function APIConfigPage() {
   }
 
   const loadBoschPreset = () => {
-    const existingUrls = new Set(endpoints.map(e => e.url))
+    const existingUrls = new Set(dashboardEndpoints.map(e => e.url))
     let added = 0
 
     BOSCH_UPPCL_PRESET.forEach(item => {
@@ -446,14 +449,14 @@ export default function APIConfigPage() {
         <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Connected APIs</h2>
-            {endpoints.length > 0 && (
+            {dashboardEndpoints.length > 0 && (
               <span className="text-xs text-muted-foreground">
-                {endpoints.length} source{endpoints.length > 1 ? 's' : ''}
+                {dashboardEndpoints.length} source{dashboardEndpoints.length > 1 ? 's' : ''}
               </span>
             )}
           </div>
 
-          {endpoints.length === 0 && !isCreating && (
+          {dashboardEndpoints.length === 0 && !isCreating && (
             <Card>
               <CardContent className="py-10 text-center">
                 <Database className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
@@ -467,9 +470,9 @@ export default function APIConfigPage() {
             </Card>
           )}
 
-          {endpoints.length > 0 && (
+          {dashboardEndpoints.length > 0 && (
             <div className="space-y-3">
-              {endpoints.map(endpoint => {
+              {dashboardEndpoints.map(endpoint => {
                 const isActive = endpoint.status === 'active'
                 return (
                   <Card key={endpoint.id} className="hover:shadow-sm transition-shadow">

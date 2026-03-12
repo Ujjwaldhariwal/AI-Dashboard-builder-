@@ -147,6 +147,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         buildEndpointRequestInit({
           method: endpoint.method,
           headers: endpoint.headers,
+          body: endpoint.body,
         }),
       )
       const ms = Math.round(performance.now() - t0)

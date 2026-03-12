@@ -133,7 +133,14 @@ export function DragDropCanvas({
   selectedWidgetId = null,
   onSelectWidget,
 }: DragDropCanvasProps) {
-  const { widgets, endpoints, currentDashboardId, reorderWidgets } = useDashboardStore()
+  const {
+    widgets,
+    endpoints,
+    currentDashboardId,
+    reorderWidgets,
+    setActiveWidgetId,
+    setDragState,
+  } = useDashboardStore()
 
   const [activeWidget, setActiveWidget]   = useState<Widget | null>(null)
   const [addWidgetOpen, setAddWidgetOpen] = useState(false)
@@ -151,14 +158,26 @@ export function DragDropCanvas({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const found = dashboardWidgets.find(w => w.id === event.active.id)
     setActiveWidget(found ?? null)
-  }, [dashboardWidgets])
+    setActiveWidgetId(found?.id ?? null)
+    setDragState({
+      isDragging: true,
+      activeWidgetId: String(event.active.id),
+      overWidgetId: null,
+    })
+  }, [dashboardWidgets, setActiveWidgetId, setDragState])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     setActiveWidget(null)
+    setActiveWidgetId(null)
+    setDragState({
+      isDragging: false,
+      activeWidgetId: null,
+      overWidgetId: over ? String(over.id) : null,
+    })
     if (!over || active.id === over.id || !currentDashboardId) return
     reorderWidgets(currentDashboardId, String(active.id), String(over.id))
-  }, [currentDashboardId, reorderWidgets])
+  }, [currentDashboardId, reorderWidgets, setActiveWidgetId, setDragState])
 
   // ── Fix #4 — MouseEvent from react, not React.MouseEvent ─────
   const handleWidgetClick = useCallback((e: MouseEvent, widgetId: string) => {

@@ -101,7 +101,12 @@ export function WidgetConfigDialog({
   const endpoint = endpoints.find(e => e.id === selectedEndpointId)
 
   // ── Fix #6 — useCallback so it's stable across renders ───────
-  const fetchFields = useCallback(async (ep: { url: string; method: 'GET' | 'POST'; headers?: Record<string, string> }) => {
+  const fetchFields = useCallback(async (ep: {
+    url: string
+    method: 'GET' | 'POST'
+    headers?: Record<string, string>
+    body?: unknown
+  }) => {
     setLoadingFields(true)
     setFields([])
     try {
@@ -110,6 +115,7 @@ export function WidgetConfigDialog({
         buildEndpointRequestInit({
           method: ep.method,
           headers: ep.headers,
+          body: ep.body,
         }),
       )
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -177,7 +183,7 @@ export function WidgetConfigDialog({
       toast.error('Please enter a widget title')
       return
     }
-    if (!xAxis && !['gauge', 'status-card'].includes(type)) {
+    if (!xAxis && !['gauge', 'ring-gauge', 'status-card'].includes(type)) {
       toast.error('Please select or enter an X-axis field')
       return
     }
@@ -339,7 +345,7 @@ export function WidgetConfigDialog({
           {/* Y axis */}
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1.5">
-              {['gauge', 'status-card'].includes(type) ? 'Value field' : 'Y-axis (vertical)'}
+              {['gauge', 'ring-gauge', 'status-card'].includes(type) ? 'Value field' : 'Y-axis (vertical)'}
               {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
             </Label>
             {fields.length > 0 ? (
