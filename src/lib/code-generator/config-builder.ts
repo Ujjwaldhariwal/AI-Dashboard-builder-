@@ -1,6 +1,7 @@
 // src/lib/code-generator/config-builder.ts
 import type { Widget, ChartType } from '@/types/widget'
 import type { ProjectConfig, ChartGroup } from '@/types/project-config'
+import { BOSCH_COLORS } from '@/lib/echarts/theme'
 
 interface DashboardShape {
   id:           string
@@ -71,6 +72,9 @@ export function buildDashboardConfig(
   const dashboardGroups  = chartGroups.filter(g => g.dashboardId === dashboard.id)
   const endpointMap      = new Map(endpoints.map(e => [e.id, e]))
   const usedEndpointIds  = new Set(dashboardWidgets.map(w => w.endpointId))
+  const exportPalette = projectConfig.chartTheme === 'bosch-uppcl'
+    ? BOSCH_COLORS
+    : null
 
   return {
     meta: {
@@ -103,7 +107,7 @@ export function buildDashboardConfig(
       yAxis:       w.dataMapping.yAxis ?? '',
       groupId:     w.groupId,
       sectionName: w.sectionName,
-      colors:      w.style.colors,
+      colors:      exportPalette ? [...exportPalette] : w.style.colors,
       barRadius:   w.style.barRadius  ?? 5,
       showLegend:  w.style.showLegend ?? true,
       showGrid:    w.style.showGrid   ?? true,

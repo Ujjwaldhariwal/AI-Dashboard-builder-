@@ -5,6 +5,7 @@
 import { useDashboardStore } from '@/store/builder-store'
 import type { WidgetStyle, LabelFormat } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
+import { BOSCH_COLORS, ENTERPRISE_COLORS } from '@/lib/echarts/theme'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -38,6 +39,15 @@ const FORMAT_OPTIONS: { value: LabelFormatOption; label: string }[] = [
   { value: 'percent',  label: 'Percent  (42.0%)'  },
 ]
 
+type PaletteOption = 'enterprise' | 'bosch-uppcl' | 'custom'
+const PALETTE_OPTIONS: { value: Exclude<PaletteOption, 'custom'>; label: string }[] = [
+  { value: 'enterprise', label: 'Enterprise' },
+  { value: 'bosch-uppcl', label: 'Bosch UPPCL' },
+]
+
+const colorsMatch = (left: string[], right: string[]) =>
+  left.length === right.length && left.every((value, idx) => value.toLowerCase() === right[idx].toLowerCase())
+
 export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
   const { widgets, updateWidgetStyle,resetWidgetStyle  } = useDashboardStore()
 
@@ -66,11 +76,21 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
   const style   = { ...DEFAULT_STYLE, ...widget.style }
   const isBar   = ['bar', 'horizontal-bar'].includes(widget.type)
   const hasGrid = !['pie', 'donut', 'gauge', 'status-card'].includes(widget.type)
+  const resolvedColors = style.colors ?? DEFAULT_STYLE.colors
+  const paletteValue: PaletteOption = colorsMatch(resolvedColors, BOSCH_COLORS)
+    ? 'bosch-uppcl'
+    : (colorsMatch(resolvedColors, ENTERPRISE_COLORS) ? 'enterprise' : 'custom')
 
   const updateColor = (idx: number, hex: string) => {
-    const next    = [...(style.colors ?? DEFAULT_STYLE.colors)]
+    const next    = [...resolvedColors]
     next[idx]     = hex
     updateWidgetStyle(widget.id, { colors: next })
+  }
+
+  const applyPalette = (palette: Exclude<PaletteOption, 'custom'>) => {
+    const nextColors = palette === 'bosch-uppcl' ? BOSCH_COLORS : ENTERPRISE_COLORS
+    updateWidgetStyle(widget.id, { colors: [...nextColors] })
+    toast.success(`Applied ${palette === 'bosch-uppcl' ? 'Bosch UPPCL' : 'Enterprise'} palette`)
   }
 
   const handleReset = () => {
@@ -111,8 +131,29 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
             <Palette className="w-3.5 h-3.5 text-muted-foreground" />
             <Label className="text-xs font-semibold">Chart Colors</Label>
           </div>
+          <Select
+            value={paletteValue}
+            onValueChange={(value) => {
+              if (value === 'custom') return
+              applyPalette(value as Exclude<PaletteOption, 'custom'>)
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PALETTE_OPTIONS.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+              {paletteValue === 'custom' && (
+                <SelectItem value="custom">Custom</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
           <div className="grid grid-cols-6 gap-2">
-            {(style.colors ?? DEFAULT_STYLE.colors).slice(0, 6).map((color, i) => (
+            {resolvedColors.slice(0, 6).map((color, i) => (
               <label key={i} className="relative cursor-pointer group" title={color}>
                 <div
                   className="w-9 h-9 rounded-lg shadow-sm ring-2 ring-transparent group-hover:ring-white/30 transition-all"

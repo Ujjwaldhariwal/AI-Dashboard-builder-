@@ -31,6 +31,8 @@ import { useRouter } from 'next/navigation'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
+import type { ChartType } from '@/types/widget'
+import { BOSCH_COLORS } from '@/lib/echarts/theme'
 
 
 const GRADIENTS = [
@@ -40,6 +42,90 @@ const GRADIENTS = [
   'from-orange-500 to-red-600',
   'from-cyan-500 to-blue-600',
   'from-indigo-600 to-violet-600',
+]
+
+interface DemoEndpointPreset {
+  key: string
+  name: string
+  path: string
+}
+
+interface DemoWidgetPreset {
+  title: string
+  endpointKey: string
+  type: ChartType
+  xAxis: string
+  yAxis: string
+}
+
+const UPPCL_DEMO_ENDPOINTS: DemoEndpointPreset[] = [
+  { key: 'connectionStatus', name: 'Connection Status', path: 'GetConnectionStatus' },
+  { key: 'communicationStatus', name: 'Communication Status Meter', path: 'GetCommunicationStatusMeter' },
+  { key: 'disconnectionAging', name: 'Disconnection Aging', path: 'GetDisconnectionAging' },
+  { key: 'dailyRecharge', name: 'Date Wise Recharge Count and Value', path: 'getDateWiseRechargeCountAndValue' },
+  { key: 'negativeBalanceDist', name: 'Negative Balance Wise Consumer Count', path: 'getNegativeBalanceWiseConsumerCount' },
+  { key: 'feederTop10Billing', name: 'Feeder Monthly Billing Top 10', path: 'getFeederWiseMonthlyBillingDataTop10' },
+  { key: 'prepaidVsPostpaid', name: 'Prepaid vs Postpaid Consumer', path: 'getPrepaidVsPostpaidConsumer' },
+  { key: 'outageCountFdr', name: 'Outage Count FDR', path: 'outageCountFDR' },
+]
+
+const UPPCL_DEMO_WIDGETS: DemoWidgetPreset[] = [
+  {
+    title: 'Connection Status Gauge',
+    endpointKey: 'connectionStatus',
+    type: 'gauge',
+    xAxis: 'status',
+    yAxis: 'count',
+  },
+  {
+    title: 'Communication Status Gauge',
+    endpointKey: 'communicationStatus',
+    type: 'gauge',
+    xAxis: 'status',
+    yAxis: 'count',
+  },
+  {
+    title: 'Disconnection Aging Pie',
+    endpointKey: 'disconnectionAging',
+    type: 'pie',
+    xAxis: 'aging_bucket',
+    yAxis: 'count',
+  },
+  {
+    title: 'Daily Recharge Bar',
+    endpointKey: 'dailyRecharge',
+    type: 'bar',
+    xAxis: 'date',
+    yAxis: 'recharge_value',
+  },
+  {
+    title: 'Negative Balance Distribution',
+    endpointKey: 'negativeBalanceDist',
+    type: 'horizontal-stacked-bar',
+    xAxis: 'balance_range',
+    yAxis: 'consumer_count',
+  },
+  {
+    title: 'Feeder Top 10 Billing',
+    endpointKey: 'feederTop10Billing',
+    type: 'horizontal-bar',
+    xAxis: 'feeder_name',
+    yAxis: 'billing_amount',
+  },
+  {
+    title: 'Prepaid vs Postpaid',
+    endpointKey: 'prepaidVsPostpaid',
+    type: 'grouped-bar',
+    xAxis: 'category',
+    yAxis: 'consumer_count',
+  },
+  {
+    title: 'Outage Count FDR',
+    endpointKey: 'outageCountFdr',
+    type: 'bar',
+    xAxis: 'fdr_name',
+    yAxis: 'outage_count',
+  },
 ]
 
 
@@ -99,6 +185,7 @@ export default function WorkspacesPage() {
     dashboards, endpoints, widgets,
     addDashboard, removeDashboard, updateDashboard,
     setCurrentDashboard, duplicateDashboard,
+    addEndpoint, addWidget, setProjectConfig,
   } = useDashboardStore()
 
   // ── ALL useState hooks first ──────────────────────────────────
@@ -110,6 +197,7 @@ export default function WorkspacesPage() {
   const [description, setDescription] = useState('')
   const [search, setSearch]            = useState('')
   const [nameError, setNameError]      = useState('')
+  const [isLoadingDemo, setIsLoadingDemo] = useState(false)
 
   // ── ALL useEffect hooks ───────────────────────────────────────
   useEffect(() => { setMounted(true) }, [])
@@ -208,6 +296,73 @@ export default function WorkspacesPage() {
     toast.success('Dashboard deleted')
   }
 
+  const loadUppclDemoDashboard = () => {
+    if (!user?.id) {
+      toast.error('Sign in is required before loading the UPPCL demo dashboard.')
+      return
+    }
+    if (isLoadingDemo) return
+
+    setIsLoadingDemo(true)
+    try {
+      const dashboardId = addDashboard({
+        name: 'UPPCL MDM Overview',
+        description: 'Bosch-ready demo with eight preconfigured MDM widgets',
+        ownerId: user.id,
+      })
+
+      setCurrentDashboard(dashboardId)
+      setProjectConfig(dashboardId, {
+        baseUrl: '/api/bosch',
+        authStrategy: 'none',
+        chartTheme: 'bosch-uppcl',
+        defaultHeaders: {
+          userid: '{{BOSCH_USERID}}',
+          password: '{{BOSCH_PASSWORD}}',
+        },
+      })
+
+      const endpointIds = new Map<string, string>()
+      UPPCL_DEMO_ENDPOINTS.forEach((endpoint) => {
+        const endpointId = addEndpoint({
+          dashboardId,
+          name: endpoint.name,
+          url: `/api/bosch/${endpoint.path}`,
+          method: 'POST',
+          authType: 'custom-headers',
+          headers: {},
+          body: {},
+          refreshInterval: 30,
+          status: 'active',
+        })
+        if (endpointId) endpointIds.set(endpoint.key, endpointId)
+      })
+
+      UPPCL_DEMO_WIDGETS.forEach((widget) => {
+        const endpointId = endpointIds.get(widget.endpointKey)
+        if (!endpointId) return
+        addWidget({
+          title: widget.title,
+          type: widget.type,
+          endpointId,
+          xAxis: widget.xAxis,
+          yAxis: widget.yAxis,
+          style: {
+            colors: [...BOSCH_COLORS],
+          },
+        })
+      })
+
+      toast.success('Loaded Demo: UPPCL MDM Overview')
+      router.push('/builder')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(`Failed to load UPPCL demo dashboard: ${message}`)
+    } finally {
+      setIsLoadingDemo(false)
+    }
+  }
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto">
 
@@ -219,9 +374,18 @@ export default function WorkspacesPage() {
             Welcome{user ? `, ${user.name}` : ''}. Manage your AI-powered dashboards.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />New Dashboard
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={loadUppclDemoDashboard}
+            disabled={isLoadingDemo}
+          >
+            {isLoadingDemo ? 'Loading Demo...' : 'Load Demo: UPPCL MDM Overview'}
+          </Button>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />New Dashboard
+          </Button>
+        </div>
       </div>
 
       {/* Stats bar */}

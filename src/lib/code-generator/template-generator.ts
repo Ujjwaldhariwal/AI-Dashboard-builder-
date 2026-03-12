@@ -2,6 +2,21 @@
 import type { DashboardExportConfig } from './config-builder'
 
 export type GeneratedFileMap = Record<string, string>
+export const EXPORTED_CHART_TYPES = [
+  'bar',
+  'line',
+  'area',
+  'pie',
+  'donut',
+  'horizontal-bar',
+  'horizontal-stacked-bar',
+  'grouped-bar',
+  'drilldown-bar',
+  'gauge',
+  'ring-gauge',
+  'status-card',
+  'table',
+] as const
 
 export function generateProjectFromConfig(
   config: DashboardExportConfig,
@@ -161,7 +176,11 @@ export default function LoginPage() {
       }
       const res   = await apiClient.post('${pc.login.endpoint}', body)
       const data  = res.data
-      const token = '${pc.login.tokenPath}'.split('.').reduce((o: Record<string, unknown>, k) => o?.[k] as Record<string, unknown>, data as Record<string, unknown>) as string
+      const tokenValue = '${pc.login.tokenPath}'.split('.').reduce<unknown>((acc, key) => {
+        if (!acc || typeof acc !== 'object') return undefined
+        return (acc as Record<string, unknown>)[key]
+      }, data as Record<string, unknown>)
+      const token = typeof tokenValue === 'string' ? tokenValue : ''
       localStorage.setItem('authUser', JSON.stringify({ ...data?.data, token, username }))
       router.push('/dashboard')
     } catch (err: unknown) {
@@ -350,7 +369,9 @@ export interface ExportProjectConfig {
   projectTitle:  string
   clientName:    string
   baseUrl:       string
+  chartTheme:    'enterprise' | 'bosch-uppcl'
   authStrategy:  string
+  defaultHeaders: Record<string, string>
   header: {
     subtitle?:    string
     primaryColor: string
@@ -383,12 +404,16 @@ export interface DashboardConfig {
 
 function generateApiClient(config: DashboardExportConfig): string {
   const { projectConfig: pc } = config
+  const encodedDefaultHeaders = JSON.stringify(pc.defaultHeaders ?? {}, null, 2)
   return `import axios from 'axios'
 
 export const apiClient = axios.create({
   baseURL:         '${pc.baseUrl}',
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    ...${encodedDefaultHeaders},
+  },
 })
 
 apiClient.interceptors.request.use(config => {
@@ -710,18 +735,26 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
 
   switch (widget.type) {
     case 'bar':
-    case 'horizontal-bar': return {
+    case 'grouped-bar':
+    case 'drilldown-bar':
+    case 'horizontal-bar':
+    case 'horizontal-stacked-bar': return {
       color: colors, tooltip, grid,
       legend: widget.showLegend ? {} : { show: false },
-      xAxis: widget.type === 'horizontal-bar'
+      xAxis: ['horizontal-bar', 'horizontal-stacked-bar'].includes(widget.type)
         ? { type: 'value', splitLine: { show: widget.showGrid } }
         : { type: 'category', data: xData, axisLabel: { fontSize: 11, rotate: xData.length > 8 ? 30 : 0 } },
-      yAxis: widget.type === 'horizontal-bar'
+      yAxis: ['horizontal-bar', 'horizontal-stacked-bar'].includes(widget.type)
         ? { type: 'category', data: xData }
         : { type: 'value', splitLine: { show: widget.showGrid } },
       series: [{
         type: 'bar', data: yData, barMaxWidth: 48, name: widget.yAxis,
-        itemStyle: { borderRadius: [widget.barRadius, widget.barRadius, 0, 0] },
+        stack: widget.type === 'horizontal-stacked-bar' ? 'total' : undefined,
+        itemStyle: {
+          borderRadius: ['horizontal-bar', 'horizontal-stacked-bar'].includes(widget.type)
+            ? [0, widget.barRadius, widget.barRadius, 0]
+            : [widget.barRadius, widget.barRadius, 0, 0],
+        },
       }],
     }
 
@@ -760,6 +793,41 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
         data:   [{ value: yData[0] ?? 0, name: widget.yAxis }],
         detail: { fontSize: 18, color: colors[0] },
         axisLine: { lineStyle: { color: [[1, colors[0]]] } },
+      }],
+    }
+
+    case 'ring-gauge': return {
+      color: colors,
+      series: [{
+        type: 'gauge',
+        startAngle: 90,
+        endAngle: -270,
+        min: 0,
+        max: Math.max(...yData, 100),
+        pointer: { show: false },
+        progress: {
+          show: true,
+          roundCap: true,
+          width: 16,
+        },
+        axisLine: {
+          roundCap: true,
+          lineStyle: {
+            width: 16,
+            color: [[1, '#e2e8f0']],
+          },
+        },
+        axisTick: { show: false },
+        splitLine: { show: false },
+        axisLabel: { show: false },
+        data: [{ value: yData[0] ?? 0, name: widget.yAxis }],
+        detail: {
+          valueAnimation: true,
+          formatter: '{value}',
+          color: colors[0],
+          fontSize: 28,
+          fontWeight: 'bold',
+        },
       }],
     }
 

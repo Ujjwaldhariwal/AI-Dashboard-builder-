@@ -4,6 +4,7 @@ export type AuthStrategy  = 'basic' | 'bearer' | 'api-key' | 'none'
 export type LayoutType    = 'sidebar' | 'topnav'
 export type EncodingType  = 'btoa' | 'plain' | 'none'
 export type NavDensity    = 'compact' | 'comfortable'
+export type ChartTheme    = 'enterprise' | 'bosch-uppcl'
 
 export interface LoginConfig {
   endpoint:      string      // e.g. /userLogin
@@ -39,8 +40,10 @@ export interface ProjectConfig {
   clientName:   string
   projectTitle: string
   baseUrl:      string       // API base URL
+  chartTheme:   ChartTheme
   layout:       LayoutType
   authStrategy: AuthStrategy
+  defaultHeaders: Record<string, string>
   header:       HeaderConfig
   login:        LoginConfig
   session:      SessionConfig
@@ -50,8 +53,10 @@ export const DEFAULT_PROJECT_CONFIG: Omit<ProjectConfig, 'dashboardId'> = {
   clientName:   '',
   projectTitle: 'My Dashboard',
   baseUrl:      '',
+  chartTheme:   'enterprise',
   layout:       'sidebar',
   authStrategy: 'basic',
+  defaultHeaders: {},
   header: {
     projectName:  'My Dashboard',
     subtitle:     '',

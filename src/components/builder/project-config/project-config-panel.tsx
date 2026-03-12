@@ -18,7 +18,9 @@ import {
   Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { AuthStrategy, LayoutType, EncodingType, NavDensity } from '@/types/project-config'
+import type {
+  AuthStrategy, LayoutType, EncodingType, NavDensity, ChartTheme,
+} from '@/types/project-config'
 
 interface Props {
   dashboardId: string
@@ -56,6 +58,28 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
     toast.success('Project config reset to defaults')
   }
 
+  const applyBoschUppclPreset = () => {
+    setProjectConfig(dashboardId, {
+      clientName: 'Bosch / UPPCL',
+      projectTitle: 'UPPCL MDM Overview',
+      baseUrl: '/api/bosch',
+      chartTheme: 'bosch-uppcl',
+      authStrategy: 'none',
+      defaultHeaders: {
+        userid: '{{BOSCH_USERID}}',
+        password: '{{BOSCH_PASSWORD}}',
+      },
+      header: {
+        ...config.header,
+        projectName: 'UPPCL MDM Overview',
+        subtitle: 'Bosch UPPCL smart meter monitoring',
+        primaryColor: '#2C3E50',
+        accentColor: '#E20015',
+      },
+    })
+    toast.success('Applied Bosch UPPCL export preset')
+  }
+
   const handleAddGroup = () => {
     if (!newGroupName.trim()) return
     addChartGroup(dashboardId, newGroupName.trim())
@@ -72,6 +96,15 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
 
   const handleUnassign = (widgetId: string) => {
     assignWidgetToGroup(widgetId, null)
+  }
+
+  const updateDefaultHeader = (key: string, value: string) => {
+    setProjectConfig(dashboardId, {
+      defaultHeaders: {
+        ...config.defaultHeaders,
+        [key]: value,
+      },
+    })
   }
 
   // Safe nested value reader for dot-path
@@ -148,6 +181,27 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
               placeholder="https://api.yourproject.com"
               className="h-8 text-xs font-mono"
             />
+          </Field>
+
+          <Button
+            variant="outline"
+            className="w-full h-8 text-xs"
+            onClick={applyBoschUppclPreset}
+          >
+            Bosch UPPCL Export Preset
+          </Button>
+
+          <Field label="Chart Theme">
+            <Select
+              value={config.chartTheme}
+              onValueChange={v => update('chartTheme', v as ChartTheme)}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="enterprise">Enterprise</SelectItem>
+                <SelectItem value="bosch-uppcl">Bosch UPPCL</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
 
           <Field label="Layout Type">
@@ -283,6 +337,29 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
                 className="h-8 text-xs font-mono"
               />
             </Field>
+          </div>
+
+          <div className="space-y-2 pt-1">
+            <Label className="text-xs font-semibold">Default Request Headers</Label>
+            <Field label="userid">
+              <Input
+                value={config.defaultHeaders.userid ?? ''}
+                onChange={e => updateDefaultHeader('userid', e.target.value)}
+                placeholder="{{BOSCH_USERID}}"
+                className="h-8 text-xs font-mono"
+              />
+            </Field>
+            <Field label="password">
+              <Input
+                value={config.defaultHeaders.password ?? ''}
+                onChange={e => updateDefaultHeader('password', e.target.value)}
+                placeholder="{{BOSCH_PASSWORD}}"
+                className="h-8 text-xs font-mono"
+              />
+            </Field>
+            <p className="text-[10px] text-muted-foreground">
+              Use placeholders for exported builds and keep real credentials server-side.
+            </p>
           </div>
         </TabsContent>
 
