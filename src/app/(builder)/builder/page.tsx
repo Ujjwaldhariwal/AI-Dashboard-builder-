@@ -31,14 +31,30 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { Widget } from '@/types/widget'
 import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
 import {
+  getEndpointSessionScope,
   probeDashboardEndpoints,
   type DashboardEndpointProbeSummary,
 } from '@/lib/api/endpoint-runtime-cache'
+import { buildAutoWidgetsFromEndpoints } from '@/lib/builder/auto-widget-generator'
 
 // ── Fix #1 — inline the shape we need, no cross-file type dep ─
 interface EndpointSummary {
   id:   string
   name: string
+}
+
+type ProbeFilterState = {
+  healthy: boolean
+  unauthorized: boolean
+  failed: boolean
+  empty: boolean
+}
+
+function getProbeBucket(status: DashboardEndpointProbeSummary['results'][number]['status']): keyof ProbeFilterState {
+  if (status === 'healthy') return 'healthy'
+  if (status === 'unauthorized') return 'unauthorized'
+  if (status === 'empty') return 'empty'
+  return 'failed'
 }
 
 export default function BuilderPage() {
@@ -47,9 +63,10 @@ export default function BuilderPage() {
     dashboards,
     currentDashboardId,
     setCurrentDashboard,
-    endpoints,
+    endpoints: allEndpoints,
     widgets: allWidgets,
-    getFiltersByDashboard,
+    addWidget,
+    getGroupsByDashboard,
   } = useDashboardStore()
 
   const [addWidgetOpen, setAddWidgetOpen]       = useState(false)
@@ -59,8 +76,16 @@ export default function BuilderPage() {
   const [aiMinimized, setAiMinimized]           = useState(false)
   const [unsaved, setUnsaved]                   = useState(false)
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null)
+  const [sessionScope, setSessionScope]         = useState(() => getEndpointSessionScope())
   const [scanSummary, setScanSummary]           = useState<DashboardEndpointProbeSummary | null>(null)
   const [isScanningApis, setIsScanningApis]     = useState(false)
+  const [isAutoAdding, setIsAutoAdding]         = useState(false)
+  const [probeFilters, setProbeFilters]         = useState<ProbeFilterState>({
+    healthy: true,
+    unauthorized: true,
+    failed: true,
+    empty: true,
+  })
 
   const hasMounted        = useRef(false)
   const lastSavedCountRef = useRef(0)
@@ -74,31 +99,39 @@ export default function BuilderPage() {
   const currentDash = dashboards.find(d => d.id === currentDashboardId)
 
   // ── Fix #5 — derive widgets directly from store slice ────────
+  const dashboardEndpoints = useMemo(
+    () => allEndpoints.filter(
+      endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+    ),
+    [allEndpoints, currentDashboardId],
+  )
   const widgets = useMemo(
     () => allWidgets.filter(w => w.dashboardId === currentDashboardId),
     [allWidgets, currentDashboardId],
   )
-  const dashboardEndpoints = useMemo(
-    () => endpoints.filter(
-      endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
-    ),
-    [endpoints, currentDashboardId],
-  )
   const activeDashboardEndpoints = useMemo(
-    () => dashboardEndpoints.filter(endpoint => (
-      endpoint.status !== 'inactive' &&
-      typeof endpoint.url === 'string' &&
-      endpoint.url.trim().length > 0
-    )),
+    () =>
+      dashboardEndpoints.filter(endpoint =>
+        endpoint.status !== 'inactive' &&
+        typeof endpoint.url === 'string' &&
+        endpoint.url.trim().length > 0,
+      ),
     [dashboardEndpoints],
   )
+  const collections = currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []
+  const sectionCount = new Set(
+    widgets
+      .map(widget => widget.sectionName?.trim())
+      .filter((value): value is string => Boolean(value)),
+  ).size
+
   useDashboardEndpointPrefetch(activeDashboardEndpoints)
-  const dashboardFilters = currentDashboardId
-    ? getFiltersByDashboard(currentDashboardId)
-    : []
-  const activeFilterCount = dashboardFilters.filter(
-    f => f.active && f.field.trim() && f.value.trim(),
-  ).length
+
+  useEffect(() => {
+    const listener = () => setSessionScope(getEndpointSessionScope())
+    window.addEventListener('builderDemoAuthSessionChanged', listener)
+    return () => window.removeEventListener('builderDemoAuthSessionChanged', listener)
+  }, [])
 
   useEffect(() => {
     if (!hasMounted.current) {
@@ -130,11 +163,13 @@ export default function BuilderPage() {
     try {
       const summary = await probeDashboardEndpoints(activeDashboardEndpoints, {
         force: options.force,
+        sessionScope,
       })
       setScanSummary(summary)
+
       if (!options.silent) {
         toast.success(
-          `Scan done: ${summary.healthy} healthy, ${summary.unauthorized + summary.empty} attention, ${summary.failed} failed.`,
+          `Scan done: ${summary.healthy} healthy, ${summary.unauthorized} unauthorized, ${summary.failed} failed.`,
           { id: 'builder-api-scan' },
         )
       }
@@ -148,15 +183,103 @@ export default function BuilderPage() {
     } finally {
       setIsScanningApis(false)
     }
-  }, [activeDashboardEndpoints])
+  }, [activeDashboardEndpoints, sessionScope])
 
   useEffect(() => {
     void runApiScan({ silent: true })
   }, [runApiScan])
 
+  const visibleProbeResults = useMemo(
+    () => (scanSummary?.results ?? [])
+      .filter(result => {
+        const bucket = getProbeBucket(result.status)
+        return probeFilters[bucket]
+      }),
+    [scanSummary, probeFilters],
+  )
+
   const handleScanApis = useCallback(() => {
     void runApiScan({ force: true })
   }, [runApiScan])
+
+  const handleAutoAddWorkingApis = useCallback(async () => {
+    if (!currentDashboardId) return
+    if (activeDashboardEndpoints.length === 0) {
+      toast.info('No active APIs to auto-add.')
+      return
+    }
+
+    setIsAutoAdding(true)
+    toast.loading('Building widgets from working APIs...', { id: 'builder-auto-add' })
+
+    try {
+      const latestSummary = scanSummary ?? await runApiScan({ silent: true })
+      if (!latestSummary) {
+        toast.error('Unable to scan APIs before auto-add.', { id: 'builder-auto-add' })
+        return
+      }
+
+      const healthyEndpointIds = new Set(
+        latestSummary.results
+          .filter(result => result.status === 'healthy' && typeof result.endpointId === 'string')
+          .map(result => result.endpointId as string),
+      )
+
+      if (healthyEndpointIds.size === 0) {
+        toast.info('No healthy APIs found in the latest scan.', { id: 'builder-auto-add' })
+        return
+      }
+
+      const {
+        drafts,
+        skippedExisting,
+        skippedFetch,
+        skippedNoData,
+      } = await buildAutoWidgetsFromEndpoints({
+        endpoints: activeDashboardEndpoints,
+        widgets,
+        sessionScope,
+        healthyEndpointIds,
+      })
+
+      if (drafts.length === 0) {
+        toast.info(
+          `No widgets added. Existing: ${skippedExisting}, no-data: ${skippedNoData}, fetch-failed: ${skippedFetch}.`,
+          { id: 'builder-auto-add' },
+        )
+        return
+      }
+
+      drafts.forEach(draft => {
+        addWidget({
+          title: draft.title,
+          type: draft.type,
+          endpointId: draft.endpointId,
+          dataMapping: {
+            xAxis: draft.xAxis,
+            yAxis: draft.yAxis,
+            yAxes: draft.yAxes,
+          },
+          position: draft.position,
+        })
+      })
+
+      toast.success(
+        `Added ${drafts.length} widgets. Skipped ${skippedExisting + skippedNoData + skippedFetch}.`,
+        { id: 'builder-auto-add' },
+      )
+    } finally {
+      setIsAutoAdding(false)
+    }
+  }, [
+    currentDashboardId,
+    activeDashboardEndpoints,
+    scanSummary,
+    runApiScan,
+    widgets,
+    sessionScope,
+    addWidget,
+  ])
 
   const handleCanvasClick = () => setSelectedWidgetId(null)
 
@@ -170,7 +293,7 @@ export default function BuilderPage() {
     try {
       const projectConfig = useDashboardStore.getState().getProjectConfig(currentDash.id)
       const chartGroups   = useDashboardStore.getState().getGroupsByDashboard(currentDash.id)
-      const config        = buildDashboardConfig(currentDash, endpoints, allWidgets, projectConfig, chartGroups)
+      const config        = buildDashboardConfig(currentDash, allEndpoints, allWidgets, projectConfig, chartGroups)
       const files         = generateProjectFromConfig(config)
       const blob          = await packageProjectAsZip(files)
       const url           = URL.createObjectURL(blob)
@@ -215,15 +338,18 @@ export default function BuilderPage() {
           currentDash={currentDash}
           widgets={widgets}
           endpoints={dashboardEndpoints}
-          activeFilterCount={activeFilterCount}
+          collectionCount={collections.length}
+          sectionCount={sectionCount}
           exporting={exporting}
           unsaved={false}
-          scanSummary={scanSummary}
-          isScanningApis={isScanningApis}
           onAddWidget={() => setAddWidgetOpen(true)}
           onMagicOpen={() => setMagicOpen(true)}
           onExport={handleExport}
+          scanSummary={scanSummary}
+          isScanningApis={isScanningApis}
+          isAutoAdding={isAutoAdding}
           onScanApis={handleScanApis}
+          onAutoAddWorkingApis={handleAutoAddWorkingApis}
         />
         <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
           <div className="text-center max-w-sm px-6">
@@ -263,15 +389,18 @@ export default function BuilderPage() {
           currentDash={currentDash}
           widgets={widgets}
           endpoints={dashboardEndpoints}
-          activeFilterCount={activeFilterCount}
+          collectionCount={collections.length}
+          sectionCount={sectionCount}
           exporting={exporting}
           unsaved={unsaved}
-          scanSummary={scanSummary}
-          isScanningApis={isScanningApis}
           onAddWidget={() => setAddWidgetOpen(true)}
           onMagicOpen={() => setMagicOpen(true)}
           onExport={handleExport}
+          scanSummary={scanSummary}
+          isScanningApis={isScanningApis}
+          isAutoAdding={isAutoAdding}
           onScanApis={handleScanApis}
+          onAutoAddWorkingApis={handleAutoAddWorkingApis}
         />
       </div>
 
@@ -281,6 +410,111 @@ export default function BuilderPage() {
             <GlobalFiltersPanel dashboardId={currentDashboardId} />
           </div>
         )}
+        {scanSummary && (
+          <details className="mb-4 rounded-xl border bg-card/70 group">
+            <summary className="list-none px-4 py-3 cursor-pointer flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">API Health Snapshot</p>
+                <p className="text-xs text-muted-foreground">
+                  Smart scan from prefetched cache. Detects payload-level unauthorized responses too.
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
+                  {scanSummary.healthy} healthy
+                </Badge>
+                <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
+                  {scanSummary.unauthorized} unauthorized
+                </Badge>
+                <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
+                  {scanSummary.failed} failed
+                </Badge>
+              </div>
+            </summary>
+            <div className="px-4 pb-3 border-t pt-3 space-y-3">
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={`h-7 text-[11px] ${
+                    probeFilters.healthy
+                      ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:text-white'
+                      : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
+                  }`}
+                  onClick={() => setProbeFilters(current => ({ ...current, healthy: !current.healthy }))}
+                >
+                  Healthy ({scanSummary.healthy})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={`h-7 text-[11px] ${
+                    probeFilters.unauthorized
+                      ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600 hover:text-white'
+                      : 'border-amber-300 text-amber-700 hover:bg-amber-50'
+                  }`}
+                  onClick={() => setProbeFilters(current => ({ ...current, unauthorized: !current.unauthorized }))}
+                >
+                  Auth Required ({scanSummary.unauthorized})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={`h-7 text-[11px] ${
+                    probeFilters.empty
+                      ? 'bg-slate-600 text-white border-slate-600 hover:bg-slate-700 hover:text-white'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                  onClick={() => setProbeFilters(current => ({ ...current, empty: !current.empty }))}
+                >
+                  Empty Data ({scanSummary.empty})
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={`h-7 text-[11px] ${
+                    probeFilters.failed
+                      ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700 hover:text-white'
+                      : 'border-rose-300 text-rose-700 hover:bg-rose-50'
+                  }`}
+                  onClick={() => setProbeFilters(current => ({ ...current, failed: !current.failed }))}
+                >
+                  Needs Attention ({scanSummary.failed})
+                </Button>
+              </div>
+              {visibleProbeResults.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  No APIs match current status filters.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {visibleProbeResults.map(result => {
+                    const bucket = getProbeBucket(result.status)
+                    const statusClass = bucket === 'healthy'
+                      ? 'border-emerald-300 text-emerald-700'
+                      : bucket === 'unauthorized' || bucket === 'empty'
+                        ? 'border-amber-300 text-amber-700'
+                        : 'border-red-300 text-red-700'
+                    return (
+                      <div key={`${result.endpointId ?? result.url}-${result.status}`} className="rounded-lg border px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-medium truncate">
+                            {result.endpointName || result.url}
+                          </p>
+                          <Badge variant="outline" className={`text-[10px] ${statusClass}`}>
+                            {result.status}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">{result.likelyReason}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
+
         <DragDropCanvas
           selectedWidgetId={selectedWidgetId}
           onSelectWidget={setSelectedWidgetId}
@@ -378,23 +612,33 @@ interface BuilderHeaderProps {
   currentDash: { id: string; name: string; description?: string } | undefined
   widgets:     Widget[]
   endpoints:   EndpointSummary[]
-  activeFilterCount: number
+  collectionCount: number
+  sectionCount: number
   exporting:   boolean
   unsaved:     boolean
   scanSummary: DashboardEndpointProbeSummary | null
   isScanningApis: boolean
+  isAutoAdding: boolean
   onAddWidget: () => void
   onMagicOpen: () => void
   onExport:    () => void
-  onScanApis:  () => void
+  onScanApis: () => void
+  onAutoAddWorkingApis: () => void
 }
 
 function BuilderHeader({
   currentDash, widgets, endpoints,
-  activeFilterCount,
+  collectionCount,
+  sectionCount,
   exporting, unsaved,
-  scanSummary, isScanningApis,
-  onAddWidget, onMagicOpen, onExport, onScanApis,
+  scanSummary,
+  isScanningApis,
+  isAutoAdding,
+  onAddWidget,
+  onMagicOpen,
+  onExport,
+  onScanApis,
+  onAutoAddWorkingApis,
 }: BuilderHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -408,18 +652,18 @@ function BuilderHeader({
             {endpoints.length} API{endpoints.length !== 1 ? 's' : ''}
           </Badge>
           <Badge variant="outline" className="text-[10px]">
-            {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
+            {collectionCount} collection{collectionCount !== 1 ? 's' : ''}
+          </Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {sectionCount} section{sectionCount !== 1 ? 's' : ''}
           </Badge>
           {scanSummary && (
             <>
               <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
-                {scanSummary.healthy} healthy
+                {scanSummary.healthy} ready
               </Badge>
               <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
-                {scanSummary.unauthorized + scanSummary.empty} attention
-              </Badge>
-              <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
-                {scanSummary.failed} failed
+                {scanSummary.unauthorized} auth issues
               </Badge>
             </>
           )}
@@ -441,17 +685,26 @@ function BuilderHeader({
         <Link href="/dashboard">
           <Button variant="outline" size="sm"><Eye className="w-3.5 h-3.5 mr-1.5" />Preview</Button>
         </Link>
+        <Button variant="outline" size="sm" onClick={onScanApis} disabled={isScanningApis || endpoints.length === 0}>
+          {isScanningApis ? (
+            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <Radar className="w-3.5 h-3.5 mr-1.5" />
+          )}
+          {isScanningApis ? 'Scanning...' : 'Scan APIs'}
+        </Button>
         <Button
           variant="outline"
           size="sm"
-          onClick={onScanApis}
-          disabled={isScanningApis || endpoints.length === 0}
+          onClick={onAutoAddWorkingApis}
+          disabled={isAutoAdding || !scanSummary || scanSummary.healthy === 0}
         >
-          {isScanningApis
-            ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-            : <Radar className="w-3.5 h-3.5 mr-1.5" />
-          }
-          {isScanningApis ? 'Scanning...' : 'Scan APIs'}
+          {isAutoAdding ? (
+            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+          )}
+          {isAutoAdding ? 'Adding...' : 'Auto Add Working'}
         </Button>
         <Button variant="outline" size="sm" onClick={onExport} disabled={exporting || widgets.length === 0}>
           <Download className="w-3.5 h-3.5 mr-1.5" />

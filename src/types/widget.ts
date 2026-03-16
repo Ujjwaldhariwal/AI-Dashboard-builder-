@@ -81,4 +81,5 @@ export interface WidgetConfigInput {
   style?:       Partial<WidgetStyle>
   groupId?:     string
   sectionName?: string           // ← Fix #5
+  position?:    WidgetPosition
 }

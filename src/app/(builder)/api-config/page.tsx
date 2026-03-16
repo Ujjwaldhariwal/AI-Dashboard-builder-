@@ -1,217 +1,182 @@
 'use client'
 
-// src/app/(builder)/api-config/page.tsx
-
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
-} from '@/components/ui/card'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import {
-  Plus, Database, Trash2, CheckCircle2,
-  Shield, ChevronDown, ChevronUp, Zap,
-  Copy, Check, RefreshCw, KeyRound,
-  ToggleLeft, ToggleRight, Loader2, Radar,
-} from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { useDashboardStore } from '@/store/builder-store'
 import { LiveAPIPreview } from '@/components/builder/api-tester/live-api-preview'
 import { toast } from 'sonner'
-import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
 import {
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Database,
+  KeyRound,
+  Loader2,
+  Plus,
+  Sparkles,
+  Search,
+  Shield,
+  Trash2,
+  Wifi,
+  WifiOff,
+  Radar,
+} from 'lucide-react'
+import { BOSCH_UPPCL_ENDPOINTS } from '@/lib/blueprints/bosch-uppcl'
+import {
+  clearBuilderDemoAuthSession,
+  getBuilderDemoAuthSession,
+} from '@/lib/auth/demo-auth-session'
+import Link from 'next/link'
+import {
+  getEndpointSessionScope,
   probeDashboardEndpoints,
   type DashboardEndpointProbeSummary,
 } from '@/lib/api/endpoint-runtime-cache'
+import { buildAutoWidgetsFromEndpoints } from '@/lib/builder/auto-widget-generator'
+import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
 
-type AuthType   = 'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
+type AuthType = 'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
 type StatusType = 'active' | 'inactive'
 
-const defaultForm = {
-  name:            '',
-  url:             '',
-  method:          'GET' as 'GET' | 'POST',
-  authType:        'none' as AuthType,
-  authKey:         '',
-  authValue:       '',
-  customHeaders:   '',
-  refreshInterval: 0,
-  status:          'active' as StatusType,   // ✅ now actually used
-}
-
-const AUTH_HINTS: Record<AuthType, { keyLabel: string; valLabel: string; placeholder: string } | null> = {
-  'none':    null,
-  'api-key': { keyLabel: 'Header name', valLabel: 'API Key value', placeholder: 'X-API-Key' },
-  'bearer':  { keyLabel: '', valLabel: 'Bearer token', placeholder: '' },
-  'basic':   { keyLabel: 'Username', valLabel: 'Password', placeholder: '' },
+const AUTH_HINTS: Record<AuthType, { keyLabel: string; valueLabel: string; keyPlaceholder: string } | null> = {
+  none: null,
+  'api-key': { keyLabel: 'Header name', valueLabel: 'API key value', keyPlaceholder: 'X-API-Key' },
+  bearer: { keyLabel: '', valueLabel: 'Bearer token', keyPlaceholder: '' },
+  basic: { keyLabel: 'Username', valueLabel: 'Password', keyPlaceholder: '' },
   'custom-headers': null,
 }
 
-const BOSCH_UPPCL_PRESET: Array<{ name: string; path: string }> = [
-  { name: 'Meter Installed', path: 'GetMeterInstalled' },
-  { name: 'Communication Status Meter', path: 'GetCommunicationStatusMeter' },
-  { name: 'Connection Status', path: 'GetConnectionStatus' },
-  { name: 'Disconnection Aging', path: 'GetDisconnectionAging' },
-  { name: 'Disconnection vs Reconnection', path: 'GetDisconnectionVsReconnection' },
-  { name: 'Aging Wise Disconnected Consumer', path: 'getAgingWiseDisconnectedConsumer' },
-  { name: 'Prepaid vs Postpaid Consumer', path: 'getPrepaidVsPostpaidConsumer' },
-  { name: 'Date Wise Recharge Count and Value', path: 'getDateWiseRechargeCountAndValue' },
-  { name: 'Monthly Recharge Received', path: 'getMonthlyRechargeRecieved' },
-  { name: 'Circle Wise Consumer Negative Balance', path: 'getCircleWiseConsumerWithNegativeBalance' },
-  { name: 'Negative Balance Wise Consumer Count', path: 'getNegativeBalanceWiseConsumerCount' },
-  { name: 'Aging Wise Negative Balance', path: 'getAgingWiseNegativeBalanceConsumerCount' },
-  { name: 'Net Metering Con', path: 'netMeteringCon' },
-  { name: 'Power Factor', path: 'GetPF' },
-  { name: 'Feeder Wise Consumer Count', path: 'getFeederWiseConsumerCount' },
-  { name: 'Feeder Monthly Billing Top 10', path: 'getFeederWiseMonthlyBillingDataTop10' },
-  { name: 'Feeder Monthly Billing Bottom 10', path: 'getFeederWiseMonthlyBillingDataBottom10' },
-  { name: 'Feeder Monthly Billing', path: 'getFeederWiseMonthlyBillingData' },
-  { name: 'Feeder Disconnected Top 10', path: 'getFeederWiseDisconnectedConsumerTop10' },
-  { name: 'Feeder Disconnected Bottom 10', path: 'getFeederWiseDisconnectedConsumerBottom10' },
-  { name: 'Feeder Disconnected Consumer', path: 'getFeederWiseDisconnectedConsumer' },
-  { name: 'Feeder Non Communication Meter', path: 'getFeederWiseNonCommMeter' },
-  { name: 'DTR Wise Consumer Count', path: 'getDTRWiseConsumerCount' },
-  { name: 'Outage Count FDR', path: 'outageCountFDR' },
-  { name: 'Outage Count DTR', path: 'outageCountDTR' },
-  { name: 'Con Meter Current Month Count', path: 'ConMeter_CurrentMonthCount' },
-  { name: 'Con Meter Daily Count', path: 'ConMeter_DailyCount' },
-  { name: 'Con Meter Block Count Current', path: 'ConMeter_BlockCount_Current' },
-  { name: 'Con Meter Count Trend', path: 'ConMeter_MeterCount' },
-  { name: 'Con Meter Previous Daily Count', path: 'ConMeter_PrevousDailyCount' },
-  { name: 'Con Meter Block Previous', path: 'ConMeter_BlockCount_Previous' },
-  { name: 'Con Meter Total Count', path: 'ConMeter_TotalCount' },
-  { name: 'Con Meter HHU Count', path: 'ConMeter_HHUCount' },
-  { name: 'Con Meter Month Count', path: 'ConMeter_MonthCount' },
-  { name: 'Con Meter Block Load Availability', path: 'ConMeter_BlockLoad_Availity' },
-]
+const DEFAULT_FORM = {
+  name: '',
+  url: '',
+  method: 'GET' as 'GET' | 'POST',
+  authType: 'none' as AuthType,
+  authKey: '',
+  authValue: '',
+  customHeaders: '',
+  refreshInterval: 0,
+  status: 'active' as StatusType,
+}
+
+const BOSCH_UPPCL_PRESET: Array<{ name: string; path: string }> = BOSCH_UPPCL_ENDPOINTS.map(
+  endpoint => ({ name: endpoint.name, path: endpoint.path }),
+)
+
+function parseCustomHeaders(value: string): Record<string, string> {
+  return value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .reduce((acc, line) => {
+      const index = line.indexOf(':')
+      if (index <= 0) return acc
+      const key = line.slice(0, index).trim()
+      const headerValue = line.slice(index + 1).trim()
+      if (!key) return acc
+      acc[key] = headerValue
+      return acc
+    }, {} as Record<string, string>)
+}
 
 export default function APIConfigPage() {
   const {
-    currentDashboardId, endpoints,
-    addEndpoint, removeEndpoint, updateEndpoint,
+    currentDashboardId,
+    endpoints,
+    widgets,
+    addEndpoint,
+    addWidget,
+    removeEndpoint,
+    updateEndpoint,
   } = useDashboardStore()
 
   const [isCreating, setIsCreating] = useState(false)
-  const [formData, setFormData]     = useState(defaultForm)
+  const [formData, setFormData] = useState(DEFAULT_FORM)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [deleteId, setDeleteId]     = useState<string | null>(null)
-  const [copiedId, setCopiedId]     = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | StatusType>('all')
+  const [previewRunToken, setPreviewRunToken] = useState(0)
+  const [sessionToken, setSessionToken] = useState(getBuilderDemoAuthSession()?.token ?? '')
+  const [sessionScope, setSessionScope] = useState(() => getEndpointSessionScope())
   const [scanSummary, setScanSummary] = useState<DashboardEndpointProbeSummary | null>(null)
   const [isScanningApis, setIsScanningApis] = useState(false)
+  const [isAutoAddingWidgets, setIsAutoAddingWidgets] = useState(false)
+
+  useEffect(() => {
+    const listener = () => {
+      setSessionToken(getBuilderDemoAuthSession()?.token ?? '')
+      setSessionScope(getEndpointSessionScope())
+    }
+    window.addEventListener('builderDemoAuthSessionChanged', listener)
+    return () => window.removeEventListener('builderDemoAuthSessionChanged', listener)
+  }, [])
 
   const dashboardEndpoints = useMemo(
-    () => endpoints.filter(
-      endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
-    ),
-    [endpoints, currentDashboardId],
+    () =>
+      endpoints.filter(endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId),
+    [currentDashboardId, endpoints],
   )
+
+  const dashboardWidgets = useMemo(
+    () => widgets.filter(widget => widget.dashboardId === currentDashboardId),
+    [widgets, currentDashboardId],
+  )
+
   const activeDashboardEndpoints = useMemo(
-    () => dashboardEndpoints.filter(endpoint => (
-      endpoint.status !== 'inactive' &&
-      typeof endpoint.url === 'string' &&
-      endpoint.url.trim().length > 0
-    )),
+    () =>
+      dashboardEndpoints.filter(endpoint =>
+        endpoint.status === 'active' &&
+        typeof endpoint.url === 'string' &&
+        endpoint.url.trim().length > 0,
+      ),
     [dashboardEndpoints],
   )
+
   useDashboardEndpointPrefetch(activeDashboardEndpoints)
 
-  const resetForm = () => { setFormData(defaultForm); setIsCreating(false) }
+  const statusCounts = useMemo(() => {
+    const active = dashboardEndpoints.filter(endpoint => endpoint.status === 'active').length
+    const inactive = dashboardEndpoints.length - active
+    return { active, inactive }
+  }, [dashboardEndpoints])
 
-  const buildHeaders = (form: typeof defaultForm): Record<string, string> => {
-    if (form.authType === 'none') return {}
-    if (form.authType === 'custom-headers') {
-      return form.customHeaders
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)
-        .reduce((acc, line) => {
-          const idx = line.indexOf(':')
-          if (idx <= 0) return acc
-          const key = line.slice(0, idx).trim()
-          const value = line.slice(idx + 1).trim()
-          if (key) acc[key] = value
-          return acc
-        }, {} as Record<string, string>)
-    }
-    if (!form.authValue) return {}
-    if (form.authType === 'bearer')
-      return { Authorization: `Bearer ${form.authValue}` }
-    if (form.authType === 'api-key' && form.authKey)
-      return { [form.authKey]: form.authValue }
-    if (form.authType === 'basic')
-      return { Authorization: `Basic ${btoa(`${form.authKey}:${form.authValue}`)}` }
-    return {}
-  }
-
-  const loadBoschPreset = () => {
-    const existingUrls = new Set(dashboardEndpoints.map(e => e.url))
-    let added = 0
-
-    BOSCH_UPPCL_PRESET.forEach(item => {
-      const url = `/api/bosch/${item.path}`
-      if (existingUrls.has(url)) return
-
-      addEndpoint({
-        name: item.name,
-        url,
-        method: 'POST',
-        authType: 'none',
-        refreshInterval: 30,
-        status: 'active',
-        headers: {},
-      })
-      added += 1
+  const filteredEndpoints = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    return dashboardEndpoints.filter(endpoint => {
+      if (statusFilter !== 'all' && endpoint.status !== statusFilter) return false
+      if (!query) return true
+      return (
+        endpoint.name.toLowerCase().includes(query) ||
+        endpoint.url.toLowerCase().includes(query)
+      )
     })
+  }, [dashboardEndpoints, searchQuery, statusFilter])
 
-    if (added === 0) {
-      toast.info('Bosch preset already loaded')
-      return
-    }
-    toast.success(`Loaded Bosch UPPCL preset (${added} new endpoints)`)
-  }
-
-  const handleSubmit = () => {
-    if (!formData.name.trim() || !formData.url.trim()) {
-      toast.error('Name and URL are required'); return
-    }
-    addEndpoint({
-      name:            formData.name.trim(),
-      url:             formData.url.trim(),
-      method:          formData.method,
-      authType:        formData.authType,
-      refreshInterval: formData.refreshInterval,
-      status:          formData.status,        // ✅ was hardcoded 'active'
-      headers:         buildHeaders(formData),
-    })
-    toast.success('API endpoint saved')
-    resetForm()
-  }
-
-  // ✅ Toggle active/inactive on existing endpoint
-  const toggleStatus = (id: string, current: StatusType) => {
-    const next = current === 'active' ? 'inactive' : 'active'
-    updateEndpoint(id, { status: next })
-    toast.success(`Endpoint set to ${next}`)
-  }
-
-  const copyUrl = (url: string, id: string) => {
-    navigator.clipboard.writeText(url).catch(() => {
-      toast.error('Failed to copy URL')
-    })
-    setCopiedId(id)
-    toast.success('URL copied')
-    setTimeout(() => setCopiedId(null), 2000)
-  }
+  const authHint = AUTH_HINTS[formData.authType]
 
   const runHealthScan = useCallback(async (
     options: { force?: boolean; silent?: boolean } = {},
@@ -232,11 +197,13 @@ export default function APIConfigPage() {
     try {
       const summary = await probeDashboardEndpoints(activeDashboardEndpoints, {
         force: options.force,
+        sessionScope,
       })
       setScanSummary(summary)
+
       if (!options.silent) {
         toast.success(
-          `Scan done: ${summary.healthy} healthy, ${summary.unauthorized + summary.empty} attention, ${summary.failed} failed.`,
+          `Scan done: ${summary.healthy} healthy, ${summary.unauthorized} unauthorized, ${summary.failed} failed.`,
           { id: 'api-config-scan' },
         )
       }
@@ -250,13 +217,181 @@ export default function APIConfigPage() {
     } finally {
       setIsScanningApis(false)
     }
-  }, [activeDashboardEndpoints])
+  }, [activeDashboardEndpoints, sessionScope])
 
   useEffect(() => {
     void runHealthScan({ silent: true })
   }, [runHealthScan])
 
-  const authHint = AUTH_HINTS[formData.authType]
+  const handleAutoAddHealthyWidgets = useCallback(async () => {
+    if (!currentDashboardId) return
+    if (activeDashboardEndpoints.length === 0) {
+      toast.info('No active APIs to auto-add.')
+      return
+    }
+
+    setIsAutoAddingWidgets(true)
+    toast.loading('Auto-adding healthy APIs to Builder...', { id: 'api-config-auto-add' })
+
+    try {
+      const latestSummary = scanSummary ?? await runHealthScan({ silent: true })
+      if (!latestSummary) {
+        toast.error('Unable to scan APIs before auto-add.', { id: 'api-config-auto-add' })
+        return
+      }
+
+      const healthyEndpointIds = new Set(
+        latestSummary.results
+          .filter(result => result.status === 'healthy' && typeof result.endpointId === 'string')
+          .map(result => result.endpointId as string),
+      )
+
+      if (healthyEndpointIds.size === 0) {
+        toast.info('No healthy APIs found in latest scan.', { id: 'api-config-auto-add' })
+        return
+      }
+
+      const {
+        drafts,
+        skippedExisting,
+        skippedNoData,
+        skippedFetch,
+      } = await buildAutoWidgetsFromEndpoints({
+        endpoints: activeDashboardEndpoints,
+        widgets: dashboardWidgets,
+        sessionScope,
+        healthyEndpointIds,
+      })
+
+      if (drafts.length === 0) {
+        toast.info(
+          `No widgets added. Existing: ${skippedExisting}, no-data: ${skippedNoData}, fetch-failed: ${skippedFetch}.`,
+          { id: 'api-config-auto-add' },
+        )
+        return
+      }
+
+      drafts.forEach(draft => {
+        addWidget({
+          title: draft.title,
+          type: draft.type,
+          endpointId: draft.endpointId,
+          dataMapping: {
+            xAxis: draft.xAxis,
+            yAxis: draft.yAxis,
+            yAxes: draft.yAxes,
+          },
+          position: draft.position,
+        })
+      })
+
+      toast.success(
+        `Added ${drafts.length} widget(s) from healthy APIs. Skipped ${skippedExisting + skippedNoData + skippedFetch}.`,
+        { id: 'api-config-auto-add' },
+      )
+    } finally {
+      setIsAutoAddingWidgets(false)
+    }
+  }, [
+    currentDashboardId,
+    activeDashboardEndpoints,
+    dashboardWidgets,
+    scanSummary,
+    runHealthScan,
+    sessionScope,
+    addWidget,
+  ])
+
+  const resetForm = () => {
+    setFormData(DEFAULT_FORM)
+    setIsCreating(false)
+  }
+
+  const buildHeaders = () => {
+    if (formData.authType === 'none') return {}
+    if (formData.authType === 'custom-headers') {
+      return parseCustomHeaders(formData.customHeaders)
+    }
+    if (!formData.authValue) return {}
+    if (formData.authType === 'bearer') {
+      return { Authorization: `Bearer ${formData.authValue}` }
+    }
+    if (formData.authType === 'api-key' && formData.authKey) {
+      return { [formData.authKey]: formData.authValue }
+    }
+    if (formData.authType === 'basic') {
+      return { Authorization: `Basic ${btoa(`${formData.authKey}:${formData.authValue}`)}` }
+    }
+    return {}
+  }
+
+  const handleSubmit = () => {
+    if (!formData.name.trim() || !formData.url.trim()) {
+      toast.error('Name and URL are required')
+      return
+    }
+
+    addEndpoint({
+      name: formData.name.trim(),
+      url: formData.url.trim(),
+      method: formData.method,
+      authType: formData.authType,
+      refreshInterval: formData.refreshInterval,
+      status: formData.status,
+      headers: buildHeaders(),
+    })
+    toast.success('API endpoint saved')
+    resetForm()
+  }
+
+  const toggleStatus = (id: string, current: StatusType) => {
+    const next = current === 'active' ? 'inactive' : 'active'
+    updateEndpoint(id, { status: next })
+    toast.success(`Endpoint set to ${next}`)
+  }
+
+  const copyUrl = (url: string, id: string) => {
+    navigator.clipboard.writeText(url).catch(() => {
+      toast.error('Failed to copy URL')
+    })
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const loadBoschPreset = () => {
+    const existingUrls = new Set(dashboardEndpoints.map(endpoint => endpoint.url))
+    let added = 0
+
+    BOSCH_UPPCL_PRESET.forEach(item => {
+      const url = `/api/bosch/${item.path}`
+      if (existingUrls.has(url)) return
+
+      addEndpoint({
+        name: item.name,
+        url,
+        method: 'POST',
+        authType: 'none',
+        refreshInterval: 30,
+        status: 'active',
+        headers: {},
+      })
+      added += 1
+    })
+
+    if (!added) {
+      toast.info('Bosch preset already loaded')
+      return
+    }
+    toast.success(`Loaded Bosch UPPCL preset (${added} new endpoints)`)
+  }
+
+  const toggleAnalysisPanel = (endpointId: string) => {
+    setExpandedId((current) => {
+      if (current === endpointId) return null
+      return endpointId
+    })
+    setPreviewRunToken(prev => prev + 1)
+  }
 
   if (!currentDashboardId) {
     return (
@@ -264,8 +399,8 @@ export default function APIConfigPage() {
         <Card className="max-w-lg mx-auto">
           <CardContent className="py-10 text-center">
             <Database className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-            <h3 className="text-lg font-semibold mb-1">No Dashboard Selected</h3>
-            <p className="text-sm text-muted-foreground">Select a dashboard first</p>
+            <h3 className="text-lg font-semibold mb-1">No dashboard selected</h3>
+            <p className="text-sm text-muted-foreground">Select a dashboard in Workspaces first.</p>
           </CardContent>
         </Card>
       </div>
@@ -274,14 +409,12 @@ export default function APIConfigPage() {
 
   return (
     <div className="p-6">
-      <div className="w-full max-w-5xl mx-auto space-y-4">
-
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      <div className="w-full max-w-6xl mx-auto space-y-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-xl font-bold mb-0.5">API Configuration</h1>
+            <h1 className="text-xl font-bold">API Configuration</h1>
             <p className="text-sm text-muted-foreground">
-              Connect data sources, test them live, and add widgets
+              Configure endpoints, run scoped diagnostics, and add widgets from validated APIs.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -291,15 +424,29 @@ export default function APIConfigPage() {
               onClick={() => void runHealthScan({ force: true })}
               disabled={isScanningApis || activeDashboardEndpoints.length === 0}
             >
-              {isScanningApis
-                ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                : <Radar className="w-3.5 h-3.5 mr-1.5" />
-              }
+              {isScanningApis ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Radar className="w-3.5 h-3.5 mr-1.5" />
+              )}
               {isScanningApis ? 'Scanning...' : 'Scan APIs'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleAutoAddHealthyWidgets()}
+              disabled={isAutoAddingWidgets || !scanSummary || scanSummary.healthy === 0}
+            >
+              {isAutoAddingWidgets ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              {isAutoAddingWidgets ? 'Adding...' : 'Add Healthy To Builder'}
             </Button>
             <Button size="sm" variant="outline" onClick={loadBoschPreset}>
               <Database className="w-3.5 h-3.5 mr-1.5" />
-              Load UPPCL MDM Preset
+              Load UPPCL Preset
             </Button>
             {!isCreating && (
               <Button size="sm" onClick={() => setIsCreating(true)}>
@@ -316,43 +463,80 @@ export default function APIConfigPage() {
               {scanSummary.healthy} Healthy
             </Badge>
             <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
-              {scanSummary.unauthorized + scanSummary.empty} Attention
+              {scanSummary.unauthorized} Auth Required
+            </Badge>
+            <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
+              {scanSummary.empty} Empty Data
             </Badge>
             <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
-              {scanSummary.failed} Failed
+              {scanSummary.failed} Needs Attention
             </Badge>
           </div>
         )}
 
-        {/* Security banner */}
-        <Card className="border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-950/25">
-          <CardContent className="py-2.5 px-4">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
-                <Shield className="w-3.5 h-3.5 text-green-700 dark:text-green-300" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <Card className="border-blue-200 bg-blue-50/40 dark:border-blue-900 dark:bg-blue-950/20">
+            <CardContent className="pt-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                    Runtime session
+                  </p>
+                  <p className="text-sm mt-1">
+                    {sessionToken ? 'Demo token session is active' : 'No demo token session found'}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Manage token capture in{' '}
+                    <Link href="/auth-flow" className="underline">
+                      Auth Setup
+                    </Link>
+                    .
+                  </p>
+                </div>
+                <Badge variant={sessionToken ? 'default' : 'outline'} className="text-[10px]">
+                  {sessionToken ? 'Active' : 'Inactive'}
+                </Badge>
               </div>
-              <div>
-                <h3 className="text-xs font-semibold text-green-900 dark:text-green-100">
-                  Enterprise-grade security
-                </h3>
-                <p className="text-[11px] text-green-700 dark:text-green-300">
-                  All credentials encrypted with AES-256 · Headers never sent to our servers
+              {sessionToken && (
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      clearBuilderDemoAuthSession()
+                      toast.success('Demo token session cleared')
+                    }}
+                  >
+                    Clear Session
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-emerald-200 bg-emerald-50/40 dark:border-emerald-900 dark:bg-emerald-950/20">
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="w-4 h-4 text-emerald-600" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                  Workflow notes
                 </p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+              <ul className="space-y-1 text-[11px] text-emerald-800 dark:text-emerald-200">
+                <li>• Some enterprise APIs require VPN and valid session token.</li>
+                <li>• Run diagnostics per API card to isolate header/auth issues.</li>
+                <li>• Keep endpoints inactive if environment is currently unavailable.</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* ── ADD FORM ─────────────────────────────────────────── */}
         {isCreating && (
           <Card>
-            <CardHeader className="pb-3 px-4 pt-4">
-              <CardTitle className="text-sm">New API Endpoint</CardTitle>
-              <CardDescription className="text-xs">
-                Fill details and save — then test live and add widgets
-              </CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">New API endpoint</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 px-4 pb-4">
+            <CardContent className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Name *</Label>
@@ -360,7 +544,7 @@ export default function APIConfigPage() {
                     className="h-8 text-sm"
                     placeholder="e.g., Users Service"
                     value={formData.name}
-                    onChange={e => setFormData({ ...formData, name: e.target.value })}
+                    onChange={event => setFormData({ ...formData, name: event.target.value })}
                     autoFocus
                   />
                 </div>
@@ -368,7 +552,7 @@ export default function APIConfigPage() {
                   <Label className="text-xs">Method</Label>
                   <Select
                     value={formData.method}
-                    onValueChange={(v: 'GET' | 'POST') => setFormData({ ...formData, method: v })}
+                    onValueChange={(value: 'GET' | 'POST') => setFormData({ ...formData, method: value })}
                   >
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue />
@@ -387,48 +571,33 @@ export default function APIConfigPage() {
                   className="h-8 text-sm font-mono"
                   placeholder="https://api.example.com/data"
                   value={formData.url}
-                  onChange={e => setFormData({ ...formData, url: e.target.value })}
+                  onChange={event => setFormData({ ...formData, url: event.target.value })}
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  Try:{' '}
-                  <span
-                    className="font-mono cursor-pointer text-blue-600 hover:underline"
-                    onClick={() => setFormData({
-                      ...formData,
-                      url:  'https://jsonplaceholder.typicode.com/users',
-                      name: formData.name || 'JSONPlaceholder Users',
-                    })}
-                  >
-                    jsonplaceholder.typicode.com/users
-                  </span>
-                </p>
               </div>
 
-              {/* Auth + Status row */}
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Authentication</Label>
                   <Select
                     value={formData.authType}
-                    onValueChange={(v: AuthType) =>
+                    onValueChange={(value: AuthType) =>
                       setFormData({
                         ...formData,
-                        authType: v,
+                        authType: value,
                         authKey: '',
                         authValue: '',
                         customHeaders: '',
-                      })
-                    }
+                      })}
                   >
                     <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="None" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="api-key">API Key (header)</SelectItem>
-                      <SelectItem value="bearer">Bearer Token</SelectItem>
-                      <SelectItem value="basic">Basic Auth</SelectItem>
-                      <SelectItem value="custom-headers">Custom Headers</SelectItem>
+                      <SelectItem value="api-key">API Key</SelectItem>
+                      <SelectItem value="bearer">Bearer</SelectItem>
+                      <SelectItem value="basic">Basic</SelectItem>
+                      <SelectItem value="custom-headers">Custom headers</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -440,17 +609,17 @@ export default function APIConfigPage() {
                     min={0}
                     placeholder="0 = manual"
                     value={formData.refreshInterval || ''}
-                    onChange={e =>
-                      setFormData({ ...formData, refreshInterval: Number(e.target.value) || 0 })
-                    }
+                    onChange={event => setFormData({
+                      ...formData,
+                      refreshInterval: Number(event.target.value) || 0,
+                    })}
                   />
                 </div>
-                {/* ✅ Status field — was missing entirely */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Status</Label>
                   <Select
                     value={formData.status}
-                    onValueChange={(v: StatusType) => setFormData({ ...formData, status: v })}
+                    onValueChange={(value: StatusType) => setFormData({ ...formData, status: value })}
                   >
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue />
@@ -463,10 +632,9 @@ export default function APIConfigPage() {
                 </div>
               </div>
 
-              {/* Auth credential inputs */}
               {authHint && (
                 <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
+                  <div className="flex items-center gap-1.5">
                     <KeyRound className="w-3 h-3 text-muted-foreground" />
                     <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
                       Credentials
@@ -477,39 +645,32 @@ export default function APIConfigPage() {
                       <Label className="text-xs">{authHint.keyLabel}</Label>
                       <Input
                         className="h-8 text-sm"
-                        placeholder={authHint.placeholder || authHint.keyLabel}
+                        placeholder={authHint.keyPlaceholder || authHint.keyLabel}
                         value={formData.authKey}
-                        onChange={e => setFormData({ ...formData, authKey: e.target.value })}
+                        onChange={event => setFormData({ ...formData, authKey: event.target.value })}
                       />
                     </div>
                   )}
                   <div className="space-y-1.5">
-                    <Label className="text-xs">{authHint.valLabel}</Label>
+                    <Label className="text-xs">{authHint.valueLabel}</Label>
                     <Input
                       className="h-8 text-sm font-mono"
                       type="password"
-                      placeholder={`Enter ${authHint.valLabel.toLowerCase()}`}
                       value={formData.authValue}
-                      onChange={e => setFormData({ ...formData, authValue: e.target.value })}
+                      onChange={event => setFormData({ ...formData, authValue: event.target.value })}
                     />
                   </div>
                 </div>
               )}
 
               {formData.authType === 'custom-headers' && (
-                <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <KeyRound className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                      Custom Header Map
-                    </span>
-                  </div>
-                  <Label className="text-xs">One header per line</Label>
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5">
+                  <Label className="text-xs">Custom headers</Label>
                   <Textarea
                     className="text-xs font-mono min-h-[92px]"
                     placeholder={'userid: asxxp12\npassword: 212@121'}
                     value={formData.customHeaders}
-                    onChange={e => setFormData({ ...formData, customHeaders: e.target.value })}
+                    onChange={event => setFormData({ ...formData, customHeaders: event.target.value })}
                   />
                   <p className="text-[10px] text-muted-foreground">
                     Format: <span className="font-mono">Header-Name: value</span>
@@ -518,12 +679,7 @@ export default function APIConfigPage() {
               )}
 
               <div className="flex gap-2 pt-1">
-                <Button
-                  size="sm"
-                  onClick={handleSubmit}
-                  disabled={!formData.name.trim() || !formData.url.trim()}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                <Button size="sm" onClick={handleSubmit} disabled={!formData.name.trim() || !formData.url.trim()}>
                   Save Endpoint
                 </Button>
                 <Button size="sm" variant="outline" onClick={resetForm}>
@@ -534,23 +690,55 @@ export default function APIConfigPage() {
           </Card>
         )}
 
-        {/* ── CONNECTED APIs ────────────────────────────────────── */}
         <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold">Connected APIs</h2>
-            {dashboardEndpoints.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {dashboardEndpoints.length} source{dashboardEndpoints.length > 1 ? 's' : ''}
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-700">
+                {statusCounts.active} active
+              </Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                {statusCounts.inactive} inactive
+              </Badge>
+              <span className="text-xs text-muted-foreground ml-1">
+                {dashboardEndpoints.length} source{dashboardEndpoints.length !== 1 ? 's' : ''}
               </span>
-            )}
+            </div>
           </div>
+
+          {dashboardEndpoints.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-[1fr_180px]">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <Input
+                  className="h-8 pl-8 text-sm"
+                  placeholder="Search APIs by name or URL..."
+                  value={searchQuery}
+                  onChange={event => setSearchQuery(event.target.value)}
+                />
+              </div>
+              <Select
+                value={statusFilter}
+                onValueChange={(value: 'all' | StatusType) => setStatusFilter(value)}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="active">Active only</SelectItem>
+                  <SelectItem value="inactive">Inactive only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {dashboardEndpoints.length === 0 && !isCreating && (
             <Card>
               <CardContent className="py-10 text-center">
                 <Database className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                 <h3 className="text-base font-semibold mb-1">No APIs yet</h3>
-                <p className="text-sm text-muted-foreground mb-4">Add your first data source</p>
+                <p className="text-sm text-muted-foreground mb-4">Add your first data source.</p>
                 <Button size="sm" onClick={() => setIsCreating(true)}>
                   <Plus className="w-3.5 h-3.5 mr-1.5" />
                   Add first API
@@ -559,142 +747,105 @@ export default function APIConfigPage() {
             </Card>
           )}
 
-          {dashboardEndpoints.length > 0 && (
-            <div className="space-y-3">
-              {dashboardEndpoints.map(endpoint => {
-                const isActive = endpoint.status === 'active'
-                return (
-                  <Card key={endpoint.id} className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 space-y-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 bg-gradient-to-br ${
-                              isActive ? 'from-blue-600 to-purple-600' : 'from-slate-400 to-slate-500'
-                            }`}>
-                              <Database className="w-3.5 h-3.5 text-white" />
-                            </div>
-                            <h3 className="font-semibold text-xs truncate">{endpoint.name}</h3>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-[11px] text-muted-foreground font-mono truncate flex-1">
-                              {endpoint.url}
-                            </p>
-                            <button
-                              className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                              onClick={() => copyUrl(endpoint.url, endpoint.id)}
-                              title="Copy URL"
-                            >
-                              {copiedId === endpoint.id
-                                ? <Check className="w-3 h-3 text-green-500" />
-                                : <Copy className="w-3 h-3" />
-                              }
-                            </button>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                              {endpoint.method}
-                            </Badge>
-                            {/* ✅ Dynamic status badge — was hardcoded "Active" */}
-                            <Badge
-                              variant={isActive ? 'default' : 'secondary'}
-                              className={`text-[10px] px-1.5 py-0 ${
-                                isActive
-                                  ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/40 dark:text-green-400'
-                                  : 'bg-slate-100 text-slate-500 border-slate-200'
-                              }`}
-                            >
-                              {isActive ? 'Active' : 'Inactive'}
-                            </Badge>
-                            {endpoint.authType && endpoint.authType !== 'none' && (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-yellow-300 text-yellow-700 dark:border-yellow-700 dark:text-yellow-400">
-                                <KeyRound className="w-2.5 h-2.5 mr-1" />
-                                {endpoint.authType}
-                              </Badge>
-                            )}
-                            {endpoint.refreshInterval > 0 && (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                <RefreshCw className="w-2.5 h-2.5 mr-1" />
-                                {endpoint.refreshInterval}s
-                              </Badge>
-                            )}
-                          </div>
+          {filteredEndpoints.map(endpoint => {
+            const isActive = endpoint.status === 'active'
+            const isExpanded = expandedId === endpoint.id
+            return (
+              <Card key={endpoint.id} className="hover:shadow-sm transition-shadow">
+                <CardContent className="p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                          isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {isActive ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
                         </div>
-
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          {/* ✅ Status toggle button */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={`h-7 text-xs px-2 ${
-                              isActive
-                                ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                            }`}
-                            onClick={() => toggleStatus(endpoint.id, endpoint.status as StatusType)}
-                            title={isActive ? 'Deactivate' : 'Activate'}
-                          >
-                            {isActive
-                              ? <ToggleRight className="w-4 h-4 mr-1" />
-                              : <ToggleLeft  className="w-4 h-4 mr-1" />
-                            }
-                            {isActive ? 'On' : 'Off'}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs px-2"
-                            onClick={() =>
-                              setExpandedId(expandedId === endpoint.id ? null : endpoint.id)
-                            }
-                          >
-                            <Zap className="w-3 h-3 mr-1" />
-                            Test & Add
-                            {expandedId === endpoint.id
-                              ? <ChevronUp className="w-3 h-3 ml-1" />
-                              : <ChevronDown className="w-3 h-3 ml-1" />
-                            }
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                            onClick={() => setDeleteId(endpoint.id)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
+                        <h3 className="font-semibold text-xs truncate">{endpoint.name}</h3>
+                        <Badge variant="outline" className="text-[10px]">{endpoint.method}</Badge>
+                        <Badge
+                          variant={isActive ? 'default' : 'secondary'}
+                          className="text-[10px]"
+                        >
+                          {isActive ? 'Active' : 'Inactive'}
+                        </Badge>
                       </div>
 
-                      {expandedId === endpoint.id && (
-                        <div className="mt-3 pt-3 border-t">
-                          <LiveAPIPreview
-                            url={endpoint.url}
-                            method={endpoint.method}
-                            headers={endpoint.headers}
-                            endpointId={endpoint.id}
-                            onAnalysisComplete={() => {}}
-                          />
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[11px] text-muted-foreground font-mono truncate flex-1">
+                          {endpoint.url}
+                        </p>
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => copyUrl(endpoint.url, endpoint.id)}
+                          title="Copy URL"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        {copiedId === endpoint.id && (
+                          <span className="text-[10px] text-emerald-600">Copied</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <Switch checked={isActive} onCheckedChange={() => toggleStatus(endpoint.id, endpoint.status as StatusType)} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        onClick={() => toggleAnalysisPanel(endpoint.id)}
+                      >
+                        Diagnostics
+                        {isExpanded ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-500 hover:text-red-700"
+                        onClick={() => setDeleteId(endpoint.id)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="pt-3 border-t">
+                      <LiveAPIPreview
+                        url={endpoint.url}
+                        method={endpoint.method}
+                        headers={endpoint.headers}
+                        endpointId={endpoint.id}
+                        hideActionButton
+                        runToken={previewRunToken}
+                        onAnalysisComplete={() => {}}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
+
+          {dashboardEndpoints.length > 0 && filteredEndpoints.length === 0 && (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No API endpoint matches the current filter.
+                </p>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>
 
-      {/* Delete confirm */}
-      <AlertDialog open={!!deleteId} onOpenChange={(v: boolean) => !v && setDeleteId(null)}>
+      <AlertDialog open={!!deleteId} onOpenChange={(open: boolean) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete endpoint?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove the API endpoint. Widgets using it will stop fetching data.
+              This removes the endpoint from this dashboard. Widgets linked to it will stop fetching data.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -702,7 +853,10 @@ export default function APIConfigPage() {
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700 text-white"
               onClick={() => {
-                if (deleteId) { removeEndpoint(deleteId); toast.success('Endpoint removed') }
+                if (deleteId) {
+                  removeEndpoint(deleteId)
+                  toast.success('Endpoint removed')
+                }
                 setDeleteId(null)
               }}
             >

@@ -731,7 +731,7 @@ addWidget: (config) => {
     dataMapping: resolvedMapping,
     style:       { ...DEFAULT_STYLE, ...config.style },
     groupId:     config.groupId,
-    position:    { x: 0, y: 0, w: 6, h: 4 },
+    position:    config.position ?? { x: 0, y: 0, w: 6, h: 4 },
     createdAt:   now,
     updatedAt:   now,
   }
