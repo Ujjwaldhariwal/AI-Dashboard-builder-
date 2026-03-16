@@ -2,7 +2,7 @@
 
 // src/app/(viewer)/dashboard/page.tsx
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useDashboardStore } from '@/store/builder-store'
 import { WidgetCard } from '@/components/builder/canvas/widget-card'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +20,8 @@ import { generateProjectFromConfig } from '@/lib/code-generator/template-generat
 import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
 import { encodeShareToken, buildShareUrl } from '@/lib/share-utils'
 import { motion, AnimatePresence } from 'framer-motion'
+import { clearEndpointResponseCache } from '@/lib/api/endpoint-response-cache'
+import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
 
 export default function ViewerPage() {
   const {
@@ -35,13 +37,26 @@ export default function ViewerPage() {
   const [shareCopied, setShareCopied] = useState(false)
 
   const currentDash   = dashboards.find(d => d.id === currentDashboardId)
-  const widgets = allWidgets.filter(w => w.dashboardId === currentDashboardId)
+  const widgets = useMemo(
+    () => allWidgets.filter(w => w.dashboardId === currentDashboardId),
+    [allWidgets, currentDashboardId],
+  )
+  const dashboardEndpoints = useMemo(
+    () => endpoints.filter(
+      endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+    ),
+    [endpoints, currentDashboardId],
+  )
   const activeFilterCount = currentDashboardId
     ? getFiltersByDashboard(currentDashboardId).filter(
         f => f.active && f.field.trim() && f.value.trim(),
       ).length
     : 0
-  const usedEndpoints = endpoints.filter(e => widgets.some(w => w.endpointId === e.id))
+  const usedEndpoints = useMemo(
+    () => endpoints.filter(e => widgets.some(w => w.endpointId === e.id)),
+    [endpoints, widgets],
+  )
+  useDashboardEndpointPrefetch(dashboardEndpoints)
 
   // ── Auto-refresh countdown ──────────────────────────────────────────────
   const minInterval = usedEndpoints.reduce((min, e) => {
@@ -67,6 +82,7 @@ export default function ViewerPage() {
 
   // ── Handlers ────────────────────────────────────────────────────────────
   const handleRefreshAll = () => {
+    clearEndpointResponseCache()
     setRefreshKey(k => k + 1)
     setLastRefreshed(new Date())
     setCountdown(isFinite(minInterval) ? minInterval : null)

@@ -2,7 +2,7 @@
 
 // src/app/(builder)/builder/page.tsx
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +21,7 @@ import {
   Plus, Settings2, Eye, Database, FolderKanban,
   Download, Wand2, Sparkles, X, Bot,
   LayoutGrid, Circle, Minimize2, Maximize2,
-  Palette, SlidersHorizontal,
+  Palette, SlidersHorizontal, Loader2, Radar,
 } from 'lucide-react'
 import Link from 'next/link'
 import { buildDashboardConfig, slugifyDashboardName } from '@/lib/code-generator/config-builder'
@@ -29,6 +29,11 @@ import { generateProjectFromConfig } from '@/lib/code-generator/template-generat
 import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { Widget } from '@/types/widget'
+import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
+import {
+  probeDashboardEndpoints,
+  type DashboardEndpointProbeSummary,
+} from '@/lib/api/endpoint-runtime-cache'
 
 // ── Fix #1 — inline the shape we need, no cross-file type dep ─
 interface EndpointSummary {
@@ -54,6 +59,8 @@ export default function BuilderPage() {
   const [aiMinimized, setAiMinimized]           = useState(false)
   const [unsaved, setUnsaved]                   = useState(false)
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null)
+  const [scanSummary, setScanSummary]           = useState<DashboardEndpointProbeSummary | null>(null)
+  const [isScanningApis, setIsScanningApis]     = useState(false)
 
   const hasMounted        = useRef(false)
   const lastSavedCountRef = useRef(0)
@@ -67,7 +74,25 @@ export default function BuilderPage() {
   const currentDash = dashboards.find(d => d.id === currentDashboardId)
 
   // ── Fix #5 — derive widgets directly from store slice ────────
-  const widgets = allWidgets.filter(w => w.dashboardId === currentDashboardId)
+  const widgets = useMemo(
+    () => allWidgets.filter(w => w.dashboardId === currentDashboardId),
+    [allWidgets, currentDashboardId],
+  )
+  const dashboardEndpoints = useMemo(
+    () => endpoints.filter(
+      endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+    ),
+    [endpoints, currentDashboardId],
+  )
+  const activeDashboardEndpoints = useMemo(
+    () => dashboardEndpoints.filter(endpoint => (
+      endpoint.status !== 'inactive' &&
+      typeof endpoint.url === 'string' &&
+      endpoint.url.trim().length > 0
+    )),
+    [dashboardEndpoints],
+  )
+  useDashboardEndpointPrefetch(activeDashboardEndpoints)
   const dashboardFilters = currentDashboardId
     ? getFiltersByDashboard(currentDashboardId)
     : []
@@ -85,6 +110,53 @@ export default function BuilderPage() {
       setUnsaved(true)
     }
   }, [widgets.length])
+
+  const runApiScan = useCallback(async (
+    options: { force?: boolean; silent?: boolean } = {},
+  ) => {
+    if (activeDashboardEndpoints.length === 0) {
+      setScanSummary(null)
+      if (!options.silent) {
+        toast.info('No active APIs available for scan.')
+      }
+      return null
+    }
+
+    setIsScanningApis(true)
+    if (!options.silent) {
+      toast.loading('Scanning API health...', { id: 'builder-api-scan' })
+    }
+
+    try {
+      const summary = await probeDashboardEndpoints(activeDashboardEndpoints, {
+        force: options.force,
+      })
+      setScanSummary(summary)
+      if (!options.silent) {
+        toast.success(
+          `Scan done: ${summary.healthy} healthy, ${summary.unauthorized + summary.empty} attention, ${summary.failed} failed.`,
+          { id: 'builder-api-scan' },
+        )
+      }
+      return summary
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!options.silent) {
+        toast.error(`API scan failed: ${message}`, { id: 'builder-api-scan' })
+      }
+      return null
+    } finally {
+      setIsScanningApis(false)
+    }
+  }, [activeDashboardEndpoints])
+
+  useEffect(() => {
+    void runApiScan({ silent: true })
+  }, [runApiScan])
+
+  const handleScanApis = useCallback(() => {
+    void runApiScan({ force: true })
+  }, [runApiScan])
 
   const handleCanvasClick = () => setSelectedWidgetId(null)
 
@@ -136,19 +208,22 @@ export default function BuilderPage() {
     )
   }
 
-  if (endpoints.length === 0 && widgets.length === 0) {
+  if (dashboardEndpoints.length === 0 && widgets.length === 0) {
     return (
       <div className="p-6">
         <BuilderHeader
           currentDash={currentDash}
           widgets={widgets}
-          endpoints={endpoints}
+          endpoints={dashboardEndpoints}
           activeFilterCount={activeFilterCount}
           exporting={exporting}
           unsaved={false}
+          scanSummary={scanSummary}
+          isScanningApis={isScanningApis}
           onAddWidget={() => setAddWidgetOpen(true)}
           onMagicOpen={() => setMagicOpen(true)}
           onExport={handleExport}
+          onScanApis={handleScanApis}
         />
         <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
           <div className="text-center max-w-sm px-6">
@@ -187,13 +262,16 @@ export default function BuilderPage() {
         <BuilderHeader
           currentDash={currentDash}
           widgets={widgets}
-          endpoints={endpoints}
+          endpoints={dashboardEndpoints}
           activeFilterCount={activeFilterCount}
           exporting={exporting}
           unsaved={unsaved}
+          scanSummary={scanSummary}
+          isScanningApis={isScanningApis}
           onAddWidget={() => setAddWidgetOpen(true)}
           onMagicOpen={() => setMagicOpen(true)}
           onExport={handleExport}
+          onScanApis={handleScanApis}
         />
       </div>
 
@@ -303,16 +381,20 @@ interface BuilderHeaderProps {
   activeFilterCount: number
   exporting:   boolean
   unsaved:     boolean
+  scanSummary: DashboardEndpointProbeSummary | null
+  isScanningApis: boolean
   onAddWidget: () => void
   onMagicOpen: () => void
   onExport:    () => void
+  onScanApis:  () => void
 }
 
 function BuilderHeader({
   currentDash, widgets, endpoints,
   activeFilterCount,
   exporting, unsaved,
-  onAddWidget, onMagicOpen, onExport,
+  scanSummary, isScanningApis,
+  onAddWidget, onMagicOpen, onExport, onScanApis,
 }: BuilderHeaderProps) {
   return (
     <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -328,6 +410,19 @@ function BuilderHeader({
           <Badge variant="outline" className="text-[10px]">
             {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
           </Badge>
+          {scanSummary && (
+            <>
+              <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
+                {scanSummary.healthy} healthy
+              </Badge>
+              <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
+                {scanSummary.unauthorized + scanSummary.empty} attention
+              </Badge>
+              <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
+                {scanSummary.failed} failed
+              </Badge>
+            </>
+          )}
           {unsaved && (
             <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
               <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
@@ -346,6 +441,18 @@ function BuilderHeader({
         <Link href="/dashboard">
           <Button variant="outline" size="sm"><Eye className="w-3.5 h-3.5 mr-1.5" />Preview</Button>
         </Link>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onScanApis}
+          disabled={isScanningApis || endpoints.length === 0}
+        >
+          {isScanningApis
+            ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+            : <Radar className="w-3.5 h-3.5 mr-1.5" />
+          }
+          {isScanningApis ? 'Scanning...' : 'Scan APIs'}
+        </Button>
         <Button variant="outline" size="sm" onClick={onExport} disabled={exporting || widgets.length === 0}>
           <Download className="w-3.5 h-3.5 mr-1.5" />
           {exporting ? 'Exporting…' : 'Export ZIP'}

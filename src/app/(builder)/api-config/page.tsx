@@ -2,7 +2,7 @@
 
 // src/app/(builder)/api-config/page.tsx
 
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
 } from '@/components/ui/card'
@@ -23,11 +23,16 @@ import {
   Plus, Database, Trash2, CheckCircle2,
   Shield, ChevronDown, ChevronUp, Zap,
   Copy, Check, RefreshCw, KeyRound,
-  ToggleLeft, ToggleRight,
+  ToggleLeft, ToggleRight, Loader2, Radar,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { LiveAPIPreview } from '@/components/builder/api-tester/live-api-preview'
 import { toast } from 'sonner'
+import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
+import {
+  probeDashboardEndpoints,
+  type DashboardEndpointProbeSummary,
+} from '@/lib/api/endpoint-runtime-cache'
 
 type AuthType   = 'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
 type StatusType = 'active' | 'inactive'
@@ -101,9 +106,24 @@ export default function APIConfigPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deleteId, setDeleteId]     = useState<string | null>(null)
   const [copiedId, setCopiedId]     = useState<string | null>(null)
-  const dashboardEndpoints = endpoints.filter(
-    endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+  const [scanSummary, setScanSummary] = useState<DashboardEndpointProbeSummary | null>(null)
+  const [isScanningApis, setIsScanningApis] = useState(false)
+
+  const dashboardEndpoints = useMemo(
+    () => endpoints.filter(
+      endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+    ),
+    [endpoints, currentDashboardId],
   )
+  const activeDashboardEndpoints = useMemo(
+    () => dashboardEndpoints.filter(endpoint => (
+      endpoint.status !== 'inactive' &&
+      typeof endpoint.url === 'string' &&
+      endpoint.url.trim().length > 0
+    )),
+    [dashboardEndpoints],
+  )
+  useDashboardEndpointPrefetch(activeDashboardEndpoints)
 
   const resetForm = () => { setFormData(defaultForm); setIsCreating(false) }
 
@@ -193,6 +213,49 @@ export default function APIConfigPage() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
+  const runHealthScan = useCallback(async (
+    options: { force?: boolean; silent?: boolean } = {},
+  ) => {
+    if (activeDashboardEndpoints.length === 0) {
+      setScanSummary(null)
+      if (!options.silent) {
+        toast.info('No active APIs available for scan.')
+      }
+      return null
+    }
+
+    setIsScanningApis(true)
+    if (!options.silent) {
+      toast.loading('Scanning APIs...', { id: 'api-config-scan' })
+    }
+
+    try {
+      const summary = await probeDashboardEndpoints(activeDashboardEndpoints, {
+        force: options.force,
+      })
+      setScanSummary(summary)
+      if (!options.silent) {
+        toast.success(
+          `Scan done: ${summary.healthy} healthy, ${summary.unauthorized + summary.empty} attention, ${summary.failed} failed.`,
+          { id: 'api-config-scan' },
+        )
+      }
+      return summary
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!options.silent) {
+        toast.error(`Scan failed: ${message}`, { id: 'api-config-scan' })
+      }
+      return null
+    } finally {
+      setIsScanningApis(false)
+    }
+  }, [activeDashboardEndpoints])
+
+  useEffect(() => {
+    void runHealthScan({ silent: true })
+  }, [runHealthScan])
+
   const authHint = AUTH_HINTS[formData.authType]
 
   if (!currentDashboardId) {
@@ -222,6 +285,18 @@ export default function APIConfigPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void runHealthScan({ force: true })}
+              disabled={isScanningApis || activeDashboardEndpoints.length === 0}
+            >
+              {isScanningApis
+                ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                : <Radar className="w-3.5 h-3.5 mr-1.5" />
+              }
+              {isScanningApis ? 'Scanning...' : 'Scan APIs'}
+            </Button>
             <Button size="sm" variant="outline" onClick={loadBoschPreset}>
               <Database className="w-3.5 h-3.5 mr-1.5" />
               Load UPPCL MDM Preset
@@ -234,6 +309,20 @@ export default function APIConfigPage() {
             )}
           </div>
         </div>
+
+        {scanSummary && (
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
+              {scanSummary.healthy} Healthy
+            </Badge>
+            <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
+              {scanSummary.unauthorized + scanSummary.empty} Attention
+            </Badge>
+            <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
+              {scanSummary.failed} Failed
+            </Badge>
+          </div>
+        )}
 
         {/* Security banner */}
         <Card className="border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-950/25">
