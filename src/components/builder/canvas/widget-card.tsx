@@ -29,6 +29,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { applyDashboardFilters } from '@/lib/data/filter-utils'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
+import { WidgetInsights } from '@/components/builder/widget-insights'
+import { TrendAnalyzer } from '@/lib/ai/trend-analyzer'
 
 import { ModernBarChart }           from '@/components/charts/modern-bar-chart'
 import { ModernLineChart }          from '@/components/charts/modern-line-chart'
@@ -254,6 +256,25 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     () => (widget.dataMapping.yAxes ?? []).map(axisCfg => resolveField(axisCfg.key)).filter(Boolean),
     [resolveField, widget.dataMapping.yAxes],
   )
+  const insightData = useMemo(() => {
+    if (!aliasedData?.length || !xField || !yField) return null
+    const points = aliasedData
+      .map(row => {
+        const rawY = row[yField]
+        const yNum = typeof rawY === 'number' ? rawY : Number(rawY)
+        return {
+          x: String(row[xField] ?? ''),
+          y: yNum,
+        }
+      })
+      .filter(point => Number.isFinite(point.y))
+    return points.length >= 2 ? points : null
+  }, [aliasedData, xField, yField])
+  const insightSummary = useMemo(
+    () => (insightData ? TrendAnalyzer.analyze(insightData) : null),
+    [insightData],
+  )
+  const shouldShowInsights = !['table', 'gauge', 'ring-gauge', 'status-card'].includes(widget.type)
 
   // ✅ Validate that xAxis/yAxis fields actually exist in the data
   const fieldWarning = useMemo(() => {
@@ -477,6 +498,14 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
             <div className="w-full min-h-[260px]">
               {renderChart()}
             </div>
+          )}
+          {!loading && !error && insightSummary && insightData && shouldShowInsights && (
+            <WidgetInsights
+              insights={insightSummary}
+              xLabel={xField}
+              yLabel={yField}
+              data={insightData}
+            />
           )}
 
           {/* No data */}
