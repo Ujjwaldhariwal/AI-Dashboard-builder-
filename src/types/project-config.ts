@@ -12,6 +12,9 @@ export interface LoginConfig {
   passwordField: string      // body key for password
   tokenPath:     string      // dot-path in response e.g. "data.token"
   encodingType:  EncodingType
+  tokenHeaderName?: string   // header name used when applying captured token
+  tokenPrefix?:     string   // e.g. "Bearer"
+  passTokenToApis?: boolean  // auto-attach captured token to endpoint requests
 }
 
 export interface SessionConfig {
@@ -70,6 +73,9 @@ export const DEFAULT_PROJECT_CONFIG: Omit<ProjectConfig, 'dashboardId'> = {
     passwordField: 'password',
     tokenPath:     'data.token',
     encodingType:  'plain',
+    tokenHeaderName: 'Authorization',
+    tokenPrefix:     'Bearer',
+    passTokenToApis: true,
   },
   session: {
     logoutOn401:     true,
