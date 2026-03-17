@@ -29,7 +29,7 @@ import {
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
   AlignLeft, Clock, Wifi, WifiOff, Circle,
-  Maximize2, Shrink,
+  Maximize2, Shrink, Sparkles,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
@@ -177,6 +177,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const [lastFetched, setLastFetched] = useState<Date | null>(null)
   const [latency, setLatency]         = useState<number | null>(null)
   const [expandedOpen, setExpandedOpen] = useState(false)
+  const [insightsOpen, setInsightsOpen] = useState(false)
   const [activeView, setActiveView] = useState<'chart' | 'table'>(
     widget.type === 'table' ? 'table' : 'chart',
   )
@@ -190,6 +191,10 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       setActiveView('table')
     }
   }, [widget.type])
+
+  useEffect(() => {
+    setInsightsOpen(false)
+  }, [widget.id, widget.type])
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: widget.id })
@@ -541,6 +546,20 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                 : <Wifi className={`w-3 h-3 ${healthColor} mr-1`} />
               }
 
+              {shouldShowInsights && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-[10px] gap-1"
+                  onClick={() => setInsightsOpen(true)}
+                  disabled={!insightSummary || loading || !!error}
+                  title={insightSummary ? 'Open AI insights' : 'AI insights unavailable for this chart'}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span className="hidden sm:inline">AI</span>
+                </Button>
+              )}
+
               <Button
                 variant="ghost"
                 size="icon"
@@ -672,15 +691,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
             </div>
           )}
 
-          {!loading && !error && insightSummary && insightData && shouldShowInsights && activeView === 'chart' && (
-            <WidgetInsights
-              insights={insightSummary}
-              xLabel={xField}
-              yLabel={yField}
-              data={insightData}
-            />
-          )}
-
           {!loading && !error && aliasedData?.length === 0 && (
             <div className="flex items-center justify-center h-[200px]">
               <p className="text-xs text-muted-foreground">No data returned</p>
@@ -731,6 +741,42 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
               activeView === 'table'
                 ? <DataTableView rows={aliasedData} limit={100} maxHeight="max-h-[520px]" />
                 : renderChart()
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={insightsOpen} onOpenChange={setInsightsOpen}>
+        <DialogContent className="sm:max-w-2xl p-0 overflow-hidden">
+          <DialogHeader className="px-5 pt-5 pb-3 border-b bg-gradient-to-r from-blue-50/80 via-cyan-50/60 to-emerald-50/40 dark:from-blue-950/30 dark:via-cyan-950/20 dark:to-emerald-950/20">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="w-4 h-4 text-cyan-600" />
+              AI Insights
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              {widget.title}
+            </p>
+          </DialogHeader>
+          <div className="p-4 md:p-5 max-h-[72vh] overflow-auto">
+            {loading && !rawData && <WidgetSkeleton />}
+            {!loading && error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm">
+                <AlertCircle className="w-4 h-4" />
+                {error}
+              </div>
+            )}
+            {!loading && !error && insightSummary && insightData && (
+              <WidgetInsights
+                insights={insightSummary}
+                xLabel={xField}
+                yLabel={yField}
+                data={insightData}
+              />
+            )}
+            {!loading && !error && (!insightSummary || !insightData) && (
+              <div className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+                Insights are unavailable for this chart. Ensure x/y mappings are valid and at least two numeric points are returned.
+              </div>
             )}
           </div>
         </DialogContent>
