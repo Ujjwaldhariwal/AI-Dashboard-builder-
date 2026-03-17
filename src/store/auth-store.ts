@@ -22,6 +22,11 @@ interface AuthState {
 
 const supabase = createClient()
 
+function isNetworkFetchError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /failed to fetch|networkerror|network request failed|load failed|fetch failed/i.test(message)
+}
+
 // ── Initial state extracted — used in logout reset ────────────
 const INITIAL_STATE = {
   user:            null,
@@ -62,7 +67,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ ...INITIAL_STATE })
       }
     } catch (error) {
-      console.error('Session check failed:', error)
+      if (!isNetworkFetchError(error)) {
+        console.error('Session check failed:', error)
+      }
       set({ ...INITIAL_STATE })
     }
   },
@@ -73,7 +80,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       await supabase.auth.signOut()
     } catch (error) {
       // signOut failed server-side — still clear everything locally
-      console.error('Supabase signOut error:', error)
+      if (!isNetworkFetchError(error)) {
+        console.error('Supabase signOut error:', error)
+      }
     } finally {
       // ✅ Lazy imports inside finally — avoids circular dep at module level
       const { useDashboardStore }    = await import('@/store/builder-store')

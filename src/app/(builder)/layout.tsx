@@ -16,21 +16,13 @@ export default function BuilderGroupLayout({
   const router = useRouter()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const isLoading = useAuthStore(s => s.isLoading)
-  const checkSession = useAuthStore(s => s.checkSession)
 
-  // ✅ On every fresh page load, re-hydrate auth from Supabase cookie
-  useEffect(() => {
-    checkSession()
-  }, [checkSession])
-
-  // ✅ Only redirect AFTER session check is complete
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.replace('/login')
     }
   }, [isAuthenticated, isLoading, router])
 
-  // ✅ Show spinner while session is being verified — never redirect prematurely
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">

@@ -204,7 +204,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
         lastError:    message,
         errorCount:   (useMonitoringStore.getState().endpointHealth[endpoint.id]?.errorCount ?? 0) + 1,
       })
-      toast.error(`"${widget.title}": ${message}`)
     } finally {
       setLoading(false)
     }
