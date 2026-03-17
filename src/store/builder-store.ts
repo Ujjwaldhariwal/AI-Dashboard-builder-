@@ -59,6 +59,7 @@ const DEFAULT_DRAG_STATE: DragState = {
   activeWidgetId: null,
   overWidgetId: null,
 }
+const DEFAULT_WIDGET_POSITION = { x: 0, y: 0, w: 6, h: 4 } as const
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
@@ -76,6 +77,59 @@ const normalizeHeaders = (value: unknown): Record<string, string> => {
   return Object.fromEntries(
     Object.entries(record).map(([key, val]) => [key, String(val)]),
   )
+}
+
+const normalizeWidgetPosition = (row: Record<string, unknown>) => {
+  const positionRecord = asRecord(row.position)
+  const sizeRecord = asRecord(row.size)
+  const numericY =
+    typeof row.position === 'number'
+      ? row.position
+      : typeof row.position === 'string'
+        ? Number(row.position)
+        : null
+
+  const source = positionRecord ?? sizeRecord ?? {}
+  const x = Number(source.x ?? 0)
+  const fallbackY = numericY !== null && Number.isFinite(numericY) ? numericY : 0
+  const yFromObject = Number(source.y ?? fallbackY)
+  const w = Number(source.w ?? 6)
+  const h = Number(source.h ?? 4)
+
+  return {
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(yFromObject) ? yFromObject : 0,
+    w: Number.isFinite(w) && w > 0 ? w : 6,
+    h: Number.isFinite(h) && h > 0 ? h : 4,
+  }
+}
+
+const updateWidgetRecordWithLayoutFallback = async (
+  id: string,
+  userId: string,
+  payload: Record<string, unknown>,
+  position: { x: number; y: number; w: number; h: number },
+) => {
+  const attempts: Array<Record<string, unknown>> = [
+    { ...payload, position, size: position },
+    { ...payload, position },
+    { ...payload, position: position.y, size: position },
+    { ...payload, position: position.y },
+  ]
+
+  let latestError: { message: string } | null = null
+  for (const attempt of attempts) {
+    const { error } = await supabase
+      .from('widgets')
+      .update(attempt)
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (!error) return null
+    latestError = error
+  }
+
+  return latestError
 }
 
 interface DashboardStore {
@@ -236,24 +290,22 @@ export const useDashboardStore = create<DashboardStore>()(
             } as APIEndpoint
           })
 
-          const widgets = (widgetRes.data ?? []).map((row: any) => ({
-            id: row.id,
-            dashboardId: row.dashboard_id ?? '',
-            title: row.title ?? 'Untitled Widget',
-            type: isChartType(row.type) ? row.type : 'bar',
-            deps: 'echarts' as const,
-            endpointId: row.endpoint_id ?? '',
-            dataMapping: (asRecord(row.data_mapping) ?? { xAxis: '' }) as any,
-            style: { ...DEFAULT_STYLE, ...(asRecord(row.style) ?? {}) },
-            position: {
-              x: Number(asRecord(row.position)?.x ?? 0),
-              y: Number(asRecord(row.position)?.y ?? 0),
-              w: Number(asRecord(row.position)?.w ?? 6),
-              h: Number(asRecord(row.position)?.h ?? 4),
-            },
-            createdAt: row.created_at ?? new Date().toISOString(),
-            updatedAt: row.created_at ?? new Date().toISOString(),
-          } as Widget))
+          const widgets = (widgetRes.data ?? []).map((row: any) => {
+            const normalizedPosition = normalizeWidgetPosition(row as Record<string, unknown>)
+            return {
+              id: row.id,
+              dashboardId: row.dashboard_id ?? '',
+              title: row.title ?? 'Untitled Widget',
+              type: isChartType(row.type) ? row.type : 'bar',
+              deps: 'echarts' as const,
+              endpointId: row.endpoint_id ?? '',
+              dataMapping: (asRecord(row.data_mapping) ?? { xAxis: '' }) as any,
+              style: { ...DEFAULT_STYLE, ...(asRecord(row.style) ?? {}) },
+              position: normalizedPosition,
+              createdAt: row.created_at ?? new Date().toISOString(),
+              updatedAt: row.created_at ?? new Date().toISOString(),
+            } as Widget
+          })
 
           const preferred = get().selectedDashboardId ?? get().currentDashboardId
           const resolvedDashboardId = preferred && dashboards.some(d => d.id === preferred)
@@ -734,24 +786,40 @@ addWidget: (config) => {
   set({ isSyncing: true })
   void (async () => {
     try {
-      const { error } = await supabase
-        .from('widgets')
-        .insert({
-          id,
-          dashboard_id: currentDashboardId,
-          endpoint_id: newWidget.endpointId,
-          user_id: userId,
-          title: newWidget.title,
-          type: newWidget.type,
-          data_mapping: newWidget.dataMapping,
-          style: newWidget.style,
-          position: newWidget.position,
-          size: newWidget.position,
-          created_at: now,
-        })
-      if (error) {
-        set({ lastSyncError: error.message })
+      const baseInsert = {
+        id,
+        dashboard_id: currentDashboardId,
+        endpoint_id: newWidget.endpointId,
+        user_id: userId,
+        title: newWidget.title,
+        type: newWidget.type,
+        data_mapping: newWidget.dataMapping,
+        style: newWidget.style,
+        created_at: now,
+      }
+      const layout = newWidget.position ?? { ...DEFAULT_WIDGET_POSITION }
+      const attempts: Array<Record<string, unknown>> = [
+        { ...baseInsert, position: layout, size: layout },
+        { ...baseInsert, position: layout },
+        { ...baseInsert, position: layout.y, size: layout },
+        { ...baseInsert, position: layout.y },
+      ]
+
+      let insertError: { message: string } | null = null
+      for (const attempt of attempts) {
+        const { error } = await supabase.from('widgets').insert(attempt)
+        if (!error) {
+          insertError = null
+          break
+        }
+        insertError = error
+      }
+
+      if (insertError) {
+        set({ lastSyncError: insertError.message })
         void get().syncFromSupabase()
+      } else {
+        set({ lastSyncError: null })
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
@@ -815,22 +883,25 @@ addWidget: (config) => {
         set({ isSyncing: true })
         void (async () => {
           try {
-            const { error } = await supabase
-              .from('widgets')
-              .update({
+            const layout = widget.position ?? { ...DEFAULT_WIDGET_POSITION }
+            const error = await updateWidgetRecordWithLayoutFallback(
+              id,
+              userId,
+              {
                 title: widget.title,
                 type: widget.type,
                 endpoint_id: widget.endpointId,
                 data_mapping: widget.dataMapping,
                 style: widget.style,
-                position: widget.position ?? { x: 0, y: 0, w: 6, h: 4 },
-                size: widget.position ?? { x: 0, y: 0, w: 6, h: 4 },
-              })
-              .eq('id', id)
-              .eq('user_id', userId)
+              },
+              layout,
+            )
+
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
+            } else {
+              set({ lastSyncError: null })
             }
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error)
@@ -876,18 +947,19 @@ addWidget: (config) => {
               .sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0))
 
             const updates = await Promise.all(
-              ordered.map((w, index) =>
-                supabase
-                  .from('widgets')
-                  .update({
-                    position: {
-                      ...(w.position ?? { x: 0, y: 0, w: 6, h: 4 }),
-                      y: index,
-                    },
-                  })
-                  .eq('id', w.id)
-                  .eq('user_id', userId),
-              ),
+              ordered.map(async (w, index) => {
+                const layout = {
+                  ...(w.position ?? { ...DEFAULT_WIDGET_POSITION }),
+                  y: index,
+                }
+                const error = await updateWidgetRecordWithLayoutFallback(
+                  w.id,
+                  userId,
+                  {},
+                  layout,
+                )
+                return { error }
+              }),
             )
 
             const failed = updates.find(res => res.error)
@@ -927,19 +999,22 @@ addWidget: (config) => {
         set({ isSyncing: true })
         void (async () => {
           try {
-            const { error } = await supabase
-              .from('widgets')
-              .update({
+            const layout = widget.position ?? { ...DEFAULT_WIDGET_POSITION }
+            const error = await updateWidgetRecordWithLayoutFallback(
+              id,
+              userId,
+              {
                 style: widget.style,
                 data_mapping: widget.dataMapping,
-                position: widget.position ?? { x: 0, y: 0, w: 6, h: 4 },
-                size: widget.position ?? { x: 0, y: 0, w: 6, h: 4 },
-              })
-              .eq('id', id)
-              .eq('user_id', userId)
+              },
+              layout,
+            )
+
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
+            } else {
+              set({ lastSyncError: null })
             }
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error)

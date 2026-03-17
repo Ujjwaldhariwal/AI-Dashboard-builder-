@@ -40,25 +40,15 @@ import {
 } from '@/lib/api/endpoint-runtime-cache'
 import { buildAutoWidgetsFromEndpoints } from '@/lib/builder/auto-widget-generator'
 import { dispatchDashboardWidgetRefresh } from '@/lib/builder/widget-refresh-events'
+import {
+  BUILDER_API_HEALTH_RESCAN_EVENT,
+  dispatchBuilderApiHealthSummary,
+} from '@/lib/builder/api-health-events'
 
 // ── Fix #1 — inline the shape we need, no cross-file type dep ─
 interface EndpointSummary {
   id:   string
   name: string
-}
-
-type ProbeFilterState = {
-  healthy: boolean
-  unauthorized: boolean
-  failed: boolean
-  empty: boolean
-}
-
-function getProbeBucket(status: DashboardEndpointProbeSummary['results'][number]['status']): keyof ProbeFilterState {
-  if (status === 'healthy') return 'healthy'
-  if (status === 'unauthorized') return 'unauthorized'
-  if (status === 'empty') return 'empty'
-  return 'failed'
 }
 
 export default function BuilderPage() {
@@ -85,12 +75,6 @@ export default function BuilderPage() {
   const [isScanningApis, setIsScanningApis]     = useState(false)
   const [isAutoAdding, setIsAutoAdding]         = useState(false)
   const [isRefreshingAll, setIsRefreshingAll]   = useState(false)
-  const [probeFilters, setProbeFilters]         = useState<ProbeFilterState>({
-    healthy: true,
-    unauthorized: true,
-    failed: true,
-    empty: true,
-  })
 
   const hasMounted        = useRef(false)
   const lastSavedCountRef = useRef(0)
@@ -194,14 +178,20 @@ export default function BuilderPage() {
     void runApiScan({ silent: true })
   }, [runApiScan])
 
-  const visibleProbeResults = useMemo(
-    () => (scanSummary?.results ?? [])
-      .filter(result => {
-        const bucket = getProbeBucket(result.status)
-        return probeFilters[bucket]
-      }),
-    [scanSummary, probeFilters],
-  )
+  useEffect(() => {
+    dispatchBuilderApiHealthSummary(scanSummary)
+  }, [scanSummary])
+
+  useEffect(() => {
+    const handleSidebarRescan = () => {
+      void runApiScan({ force: true })
+    }
+    window.addEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handleSidebarRescan)
+    return () => {
+      window.removeEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handleSidebarRescan)
+      dispatchBuilderApiHealthSummary(null)
+    }
+  }, [runApiScan])
 
   const handleScanApis = useCallback(() => {
     void runApiScan({ force: true })
@@ -438,117 +428,6 @@ export default function BuilderPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6" onClick={handleCanvasClick}>
-        {scanSummary && (
-          <div className="mb-4 rounded-2xl border bg-gradient-to-br from-white to-slate-50 dark:from-slate-950 dark:to-slate-900 shadow-sm">
-            <div className="px-5 py-4 border-b bg-gradient-to-r from-cyan-50 to-emerald-50/60 dark:from-cyan-950/30 dark:to-emerald-950/20 rounded-t-2xl">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold tracking-tight">API Health Snapshot</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Premium status scan from prefetched cache with payload-level authorization checks.
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
-                    {scanSummary.healthy} healthy
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
-                    {scanSummary.unauthorized} unauthorized
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-700">
-                    {scanSummary.empty} empty
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
-                    {scanSummary.failed} failed
-                  </Badge>
-                </div>
-              </div>
-            </div>
-
-            <div className="px-5 py-4 space-y-3">
-              <div className="flex flex-wrap gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className={`h-7 text-[11px] rounded-full ${
-                    probeFilters.healthy
-                      ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:text-white'
-                      : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
-                  }`}
-                  onClick={() => setProbeFilters(current => ({ ...current, healthy: !current.healthy }))}
-                >
-                  Healthy ({scanSummary.healthy})
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className={`h-7 text-[11px] rounded-full ${
-                    probeFilters.unauthorized
-                      ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600 hover:text-white'
-                      : 'border-amber-300 text-amber-700 hover:bg-amber-50'
-                  }`}
-                  onClick={() => setProbeFilters(current => ({ ...current, unauthorized: !current.unauthorized }))}
-                >
-                  Auth Required ({scanSummary.unauthorized})
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className={`h-7 text-[11px] rounded-full ${
-                    probeFilters.empty
-                      ? 'bg-slate-600 text-white border-slate-600 hover:bg-slate-700 hover:text-white'
-                      : 'border-slate-300 text-slate-700 hover:bg-slate-50'
-                  }`}
-                  onClick={() => setProbeFilters(current => ({ ...current, empty: !current.empty }))}
-                >
-                  Empty Data ({scanSummary.empty})
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className={`h-7 text-[11px] rounded-full ${
-                    probeFilters.failed
-                      ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700 hover:text-white'
-                      : 'border-rose-300 text-rose-700 hover:bg-rose-50'
-                  }`}
-                  onClick={() => setProbeFilters(current => ({ ...current, failed: !current.failed }))}
-                >
-                  Needs Attention ({scanSummary.failed})
-                </Button>
-              </div>
-
-              {visibleProbeResults.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">No APIs match current status filters.</p>
-              ) : (
-                <div className="grid gap-2 md:grid-cols-2">
-                  {visibleProbeResults.map(result => {
-                    const bucket = getProbeBucket(result.status)
-                    const statusClass = bucket === 'healthy'
-                      ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
-                      : bucket === 'unauthorized' || bucket === 'empty'
-                        ? 'border-amber-300 text-amber-700 bg-amber-50'
-                        : 'border-red-300 text-red-700 bg-red-50'
-                    return (
-                      <div
-                        key={`${result.endpointId ?? result.url}-${result.status}`}
-                        className="rounded-xl border px-3 py-2.5 bg-background/80"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-medium truncate">{result.endpointName || result.url}</p>
-                          <Badge variant="outline" className={`text-[10px] ${statusClass}`}>
-                            {result.status}
-                          </Badge>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-1">{result.likelyReason}</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         <DragDropCanvas
           selectedWidgetId={selectedWidgetId}
           onSelectWidget={setSelectedWidgetId}
