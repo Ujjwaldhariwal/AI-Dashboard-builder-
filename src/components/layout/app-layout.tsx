@@ -26,6 +26,11 @@ import { MonitoringPanel } from '@/components/layout/monitoring-panel'
 import { OnboardingWizard } from '@/components/layout/onboarding-wizard'
 import { KeyboardShortcuts } from '@/components/layout/keyboard-shortcuts'
 import { TokenSessionTimer } from '@/components/layout/token-session-timer'
+import type { DashboardEndpointProbeSummary } from '@/lib/api/endpoint-runtime-cache'
+import {
+  BUILDER_API_HEALTH_EVENT,
+  dispatchBuilderApiHealthRescan,
+} from '@/lib/builder/api-health-events'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 interface AppLayoutProps {
@@ -42,6 +47,22 @@ interface SearchResult {
   action?: () => void
 }
 
+type SidebarHealthFilters = {
+  healthy: boolean
+  unauthorized: boolean
+  failed: boolean
+  empty: boolean
+}
+
+function getSidebarHealthBucket(
+  status: DashboardEndpointProbeSummary['results'][number]['status'],
+): keyof SidebarHealthFilters {
+  if (status === 'healthy') return 'healthy'
+  if (status === 'unauthorized') return 'unauthorized'
+  if (status === 'empty') return 'empty'
+  return 'failed'
+}
+
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname()
   const router   = useRouter()
@@ -54,6 +75,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [monitoringOpen, setMonitoringOpen] = useState(false)
   const [searchQuery, setSearchQuery]       = useState('')
   const [searchFocused, setSearchFocused]   = useState(false)
+  const [builderHealthSummary, setBuilderHealthSummary] =
+    useState<DashboardEndpointProbeSummary | null>(null)
+  const [builderHealthFilters, setBuilderHealthFilters] = useState<SidebarHealthFilters>({
+    healthy: true,
+    unauthorized: true,
+    failed: true,
+    empty: true,
+  })
   const searchRef = useRef<HTMLInputElement>(null)
 
   // ✅ Fix 1: useMemo — only recomputes when currentDashboardId changes
@@ -78,6 +107,14 @@ export function AppLayout({ children }: AppLayoutProps) {
     : widgets.length
   const errorCount     = getErrorCount()
   const recentLogCount = logs.length
+  const isBuilderRoute = pathname?.startsWith('/builder') ?? false
+  const visibleSidebarHealthResults = useMemo(
+    () => (builderHealthSummary?.results ?? []).filter(result => {
+      const bucket = getSidebarHealthBucket(result.status)
+      return builderHealthFilters[bucket]
+    }),
+    [builderHealthSummary, builderHealthFilters],
+  )
 
   // ✅ Fix 3: useMemo — only recomputes when query or data changes
   const searchResults = useMemo<SearchResult[]>(() => {
@@ -146,6 +183,23 @@ export function AppLayout({ children }: AppLayoutProps) {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
+
+  useEffect(() => {
+    const handleBuilderHealth = (event: Event) => {
+      const detail = (event as CustomEvent<DashboardEndpointProbeSummary | null>).detail
+      setBuilderHealthSummary(detail ?? null)
+    }
+    window.addEventListener(BUILDER_API_HEALTH_EVENT, handleBuilderHealth as EventListener)
+    return () => {
+      window.removeEventListener(BUILDER_API_HEALTH_EVENT, handleBuilderHealth as EventListener)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!pathname?.startsWith('/builder')) {
+      setBuilderHealthSummary(null)
+    }
+  }, [pathname])
 
   const typeIcon = (type: SearchResult['type']) => {
     if (type === 'dashboard') return <FolderKanban className="w-3.5 h-3.5 text-blue-500" />
@@ -473,6 +527,108 @@ export function AppLayout({ children }: AppLayoutProps) {
               </Link>
             )}
           </div>
+
+          {isBuilderRoute && builderHealthSummary && (
+            <div className="p-3 border-t">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    API Health Snapshot
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Builder scan summary
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={dispatchBuilderApiHealthRescan}
+                  title="Run API health scan"
+                >
+                  Rescan
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1 mb-2">
+                <button
+                  className={`rounded-md border px-2 py-1 text-left ${
+                    builderHealthFilters.healthy
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                  }`}
+                  onClick={() => setBuilderHealthFilters(current => ({ ...current, healthy: !current.healthy }))}
+                >
+                  <p className="text-[10px] font-semibold">{builderHealthSummary.healthy}</p>
+                  <p className="text-[9px] leading-none">Healthy</p>
+                </button>
+                <button
+                  className={`rounded-md border px-2 py-1 text-left ${
+                    builderHealthFilters.unauthorized
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'border-amber-300 text-amber-700 bg-amber-50'
+                  }`}
+                  onClick={() => setBuilderHealthFilters(current => ({ ...current, unauthorized: !current.unauthorized }))}
+                >
+                  <p className="text-[10px] font-semibold">{builderHealthSummary.unauthorized}</p>
+                  <p className="text-[9px] leading-none">Auth</p>
+                </button>
+                <button
+                  className={`rounded-md border px-2 py-1 text-left ${
+                    builderHealthFilters.empty
+                      ? 'bg-slate-600 text-white border-slate-600'
+                      : 'border-slate-300 text-slate-700 bg-slate-50'
+                  }`}
+                  onClick={() => setBuilderHealthFilters(current => ({ ...current, empty: !current.empty }))}
+                >
+                  <p className="text-[10px] font-semibold">{builderHealthSummary.empty}</p>
+                  <p className="text-[9px] leading-none">Empty</p>
+                </button>
+                <button
+                  className={`rounded-md border px-2 py-1 text-left ${
+                    builderHealthFilters.failed
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'border-rose-300 text-rose-700 bg-rose-50'
+                  }`}
+                  onClick={() => setBuilderHealthFilters(current => ({ ...current, failed: !current.failed }))}
+                >
+                  <p className="text-[10px] font-semibold">{builderHealthSummary.failed}</p>
+                  <p className="text-[9px] leading-none">Failed</p>
+                </button>
+              </div>
+
+              {visibleSidebarHealthResults.length === 0 ? (
+                <p className="text-[10px] text-muted-foreground">
+                  No APIs match active filters.
+                </p>
+              ) : (
+                <div className="space-y-1.5 max-h-52 overflow-auto pr-0.5">
+                  {visibleSidebarHealthResults.slice(0, 6).map(result => {
+                    const bucket = getSidebarHealthBucket(result.status)
+                    const statusClass = bucket === 'healthy'
+                      ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                      : bucket === 'unauthorized' || bucket === 'empty'
+                        ? 'border-amber-300 text-amber-700 bg-amber-50'
+                        : 'border-rose-300 text-rose-700 bg-rose-50'
+
+                    return (
+                      <div key={`${result.endpointId ?? result.url}-${result.status}`} className="rounded-md border p-2 bg-background">
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="text-[10px] font-medium truncate">{result.endpointName || result.url}</p>
+                          <Badge variant="outline" className={`text-[9px] px-1.5 h-4 ${statusClass}`}>
+                            {result.status}
+                          </Badge>
+                        </div>
+                        <p className="text-[9px] text-muted-foreground mt-0.5">
+                          {result.likelyReason}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </aside>
 
         {/* Main content */}
