@@ -160,7 +160,6 @@ export function APIManagementContent() {
               <TabsList>
                 <TabsTrigger value="basic">Basic Info</TabsTrigger>
                 <TabsTrigger value="auth">Authentication</TabsTrigger>
-                <TabsTrigger value="advanced">Advanced</TabsTrigger>
               </TabsList>
 
               <TabsContent value="basic" className="space-y-4">
@@ -233,17 +232,6 @@ export function APIManagementContent() {
                 )}
               </TabsContent>
 
-              <TabsContent value="advanced" className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Auto-Refresh (seconds)</Label>
-                  <Input
-                    type="number"
-                    placeholder="0 (disabled)"
-                    value={formData.refreshInterval || 0}
-                    onChange={e => setFormData({ ...formData, refreshInterval: parseInt(e.target.value) || 0 })}
-                  />
-                </div>
-              </TabsContent>
             </Tabs>
 
             <div className="flex gap-2 mt-6">

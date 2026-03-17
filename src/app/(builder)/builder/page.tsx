@@ -15,13 +15,12 @@ import { ConfigChatbot } from '@/components/builder/ai-assistant/config-chatbot'
 import { ChartSuggester } from '@/components/builder/ai-assistant/chart-suggester'
 import { WidgetStylePanel } from '@/components/builder/style-panel/widget-style-panel'
 import { ProjectConfigPanel } from '@/components/builder/project-config/project-config-panel'
-import { GlobalFiltersPanel } from '@/components/builder/filters/global-filters-panel'
 import { toast } from 'sonner'
 import {
   Plus, Settings2, Eye, Database, FolderKanban,
   Download, Wand2, Sparkles, X, Bot,
   LayoutGrid, Circle, Minimize2, Maximize2,
-  Palette, SlidersHorizontal, Loader2, Radar,
+  Palette, SlidersHorizontal, Loader2, Radar, RefreshCw,
 } from 'lucide-react'
 import Link from 'next/link'
 import { buildDashboardConfig, slugifyDashboardName } from '@/lib/code-generator/config-builder'
@@ -30,12 +29,17 @@ import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { Widget } from '@/types/widget'
 import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
+import { clearEndpointResponseCache } from '@/lib/api/endpoint-response-cache'
 import {
+  clearEndpointFailureCache,
+  clearEndpointProbeCache,
   getEndpointSessionScope,
+  prefetchDashboardEndpoints,
   probeDashboardEndpoints,
   type DashboardEndpointProbeSummary,
 } from '@/lib/api/endpoint-runtime-cache'
 import { buildAutoWidgetsFromEndpoints } from '@/lib/builder/auto-widget-generator'
+import { dispatchDashboardWidgetRefresh } from '@/lib/builder/widget-refresh-events'
 
 // ── Fix #1 — inline the shape we need, no cross-file type dep ─
 interface EndpointSummary {
@@ -80,6 +84,7 @@ export default function BuilderPage() {
   const [scanSummary, setScanSummary]           = useState<DashboardEndpointProbeSummary | null>(null)
   const [isScanningApis, setIsScanningApis]     = useState(false)
   const [isAutoAdding, setIsAutoAdding]         = useState(false)
+  const [isRefreshingAll, setIsRefreshingAll]   = useState(false)
   const [probeFilters, setProbeFilters]         = useState<ProbeFilterState>({
     healthy: true,
     unauthorized: true,
@@ -201,6 +206,30 @@ export default function BuilderPage() {
   const handleScanApis = useCallback(() => {
     void runApiScan({ force: true })
   }, [runApiScan])
+
+  const handleRefreshAll = useCallback(async () => {
+    setIsRefreshingAll(true)
+    toast.loading('Refreshing dashboard data...', { id: 'builder-refresh-all' })
+
+    try {
+      clearEndpointResponseCache()
+      clearEndpointFailureCache()
+      clearEndpointProbeCache()
+
+      if (activeDashboardEndpoints.length > 0) {
+        await prefetchDashboardEndpoints(activeDashboardEndpoints, { sessionScope })
+        await runApiScan({ silent: true })
+      }
+
+      dispatchDashboardWidgetRefresh({ scope: 'all', force: false })
+      toast.success('All widgets refreshed from latest API data', { id: 'builder-refresh-all' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(`Refresh failed: ${message}`, { id: 'builder-refresh-all' })
+    } finally {
+      setIsRefreshingAll(false)
+    }
+  }, [activeDashboardEndpoints, runApiScan, sessionScope])
 
   const handleAutoAddWorkingApis = useCallback(async () => {
     if (!currentDashboardId) return
@@ -348,7 +377,9 @@ export default function BuilderPage() {
           scanSummary={scanSummary}
           isScanningApis={isScanningApis}
           isAutoAdding={isAutoAdding}
+          isRefreshingAll={isRefreshingAll}
           onScanApis={handleScanApis}
+          onRefreshAll={handleRefreshAll}
           onAutoAddWorkingApis={handleAutoAddWorkingApis}
         />
         <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
@@ -399,44 +430,47 @@ export default function BuilderPage() {
           scanSummary={scanSummary}
           isScanningApis={isScanningApis}
           isAutoAdding={isAutoAdding}
+          isRefreshingAll={isRefreshingAll}
           onScanApis={handleScanApis}
+          onRefreshAll={handleRefreshAll}
           onAutoAddWorkingApis={handleAutoAddWorkingApis}
         />
       </div>
 
       <div className="flex-1 overflow-y-auto p-6" onClick={handleCanvasClick}>
-        {currentDashboardId && (
-          <div className="mb-4">
-            <GlobalFiltersPanel dashboardId={currentDashboardId} />
-          </div>
-        )}
         {scanSummary && (
-          <details className="mb-4 rounded-xl border bg-card/70 group">
-            <summary className="list-none px-4 py-3 cursor-pointer flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium">API Health Snapshot</p>
-                <p className="text-xs text-muted-foreground">
-                  Smart scan from prefetched cache. Detects payload-level unauthorized responses too.
-                </p>
+          <div className="mb-4 rounded-2xl border bg-gradient-to-br from-white to-slate-50 dark:from-slate-950 dark:to-slate-900 shadow-sm">
+            <div className="px-5 py-4 border-b bg-gradient-to-r from-cyan-50 to-emerald-50/60 dark:from-cyan-950/30 dark:to-emerald-950/20 rounded-t-2xl">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold tracking-tight">API Health Snapshot</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Premium status scan from prefetched cache with payload-level authorization checks.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
+                    {scanSummary.healthy} healthy
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
+                    {scanSummary.unauthorized} unauthorized
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-700">
+                    {scanSummary.empty} empty
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
+                    {scanSummary.failed} failed
+                  </Badge>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
-                  {scanSummary.healthy} healthy
-                </Badge>
-                <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
-                  {scanSummary.unauthorized} unauthorized
-                </Badge>
-                <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
-                  {scanSummary.failed} failed
-                </Badge>
-              </div>
-            </summary>
-            <div className="px-4 pb-3 border-t pt-3 space-y-3">
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
               <div className="flex flex-wrap gap-1.5">
                 <Button
                   size="sm"
                   variant="outline"
-                  className={`h-7 text-[11px] ${
+                  className={`h-7 text-[11px] rounded-full ${
                     probeFilters.healthy
                       ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:text-white'
                       : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'
@@ -448,7 +482,7 @@ export default function BuilderPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className={`h-7 text-[11px] ${
+                  className={`h-7 text-[11px] rounded-full ${
                     probeFilters.unauthorized
                       ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600 hover:text-white'
                       : 'border-amber-300 text-amber-700 hover:bg-amber-50'
@@ -460,7 +494,7 @@ export default function BuilderPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className={`h-7 text-[11px] ${
+                  className={`h-7 text-[11px] rounded-full ${
                     probeFilters.empty
                       ? 'bg-slate-600 text-white border-slate-600 hover:bg-slate-700 hover:text-white'
                       : 'border-slate-300 text-slate-700 hover:bg-slate-50'
@@ -472,7 +506,7 @@ export default function BuilderPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className={`h-7 text-[11px] ${
+                  className={`h-7 text-[11px] rounded-full ${
                     probeFilters.failed
                       ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700 hover:text-white'
                       : 'border-rose-300 text-rose-700 hover:bg-rose-50'
@@ -482,25 +516,25 @@ export default function BuilderPage() {
                   Needs Attention ({scanSummary.failed})
                 </Button>
               </div>
+
               {visibleProbeResults.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">
-                  No APIs match current status filters.
-                </p>
+                <p className="text-[11px] text-muted-foreground">No APIs match current status filters.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="grid gap-2 md:grid-cols-2">
                   {visibleProbeResults.map(result => {
                     const bucket = getProbeBucket(result.status)
                     const statusClass = bucket === 'healthy'
-                      ? 'border-emerald-300 text-emerald-700'
+                      ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
                       : bucket === 'unauthorized' || bucket === 'empty'
-                        ? 'border-amber-300 text-amber-700'
-                        : 'border-red-300 text-red-700'
+                        ? 'border-amber-300 text-amber-700 bg-amber-50'
+                        : 'border-red-300 text-red-700 bg-red-50'
                     return (
-                      <div key={`${result.endpointId ?? result.url}-${result.status}`} className="rounded-lg border px-3 py-2">
+                      <div
+                        key={`${result.endpointId ?? result.url}-${result.status}`}
+                        className="rounded-xl border px-3 py-2.5 bg-background/80"
+                      >
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-medium truncate">
-                            {result.endpointName || result.url}
-                          </p>
+                          <p className="text-xs font-medium truncate">{result.endpointName || result.url}</p>
                           <Badge variant="outline" className={`text-[10px] ${statusClass}`}>
                             {result.status}
                           </Badge>
@@ -512,7 +546,7 @@ export default function BuilderPage() {
                 </div>
               )}
             </div>
-          </details>
+          </div>
         )}
 
         <DragDropCanvas
@@ -619,10 +653,12 @@ interface BuilderHeaderProps {
   scanSummary: DashboardEndpointProbeSummary | null
   isScanningApis: boolean
   isAutoAdding: boolean
+  isRefreshingAll: boolean
   onAddWidget: () => void
   onMagicOpen: () => void
   onExport:    () => void
   onScanApis: () => void
+  onRefreshAll: () => void
   onAutoAddWorkingApis: () => void
 }
 
@@ -634,10 +670,12 @@ function BuilderHeader({
   scanSummary,
   isScanningApis,
   isAutoAdding,
+  isRefreshingAll,
   onAddWidget,
   onMagicOpen,
   onExport,
   onScanApis,
+  onRefreshAll,
   onAutoAddWorkingApis,
 }: BuilderHeaderProps) {
   return (
@@ -692,6 +730,19 @@ function BuilderHeader({
             <Radar className="w-3.5 h-3.5 mr-1.5" />
           )}
           {isScanningApis ? 'Scanning...' : 'Scan APIs'}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRefreshAll}
+          disabled={isRefreshingAll || endpoints.length === 0}
+        >
+          {isRefreshingAll ? (
+            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+          )}
+          {isRefreshingAll ? 'Refreshing...' : 'Refresh All'}
         </Button>
         <Button
           variant="outline"
