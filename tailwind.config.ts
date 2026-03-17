@@ -6,6 +6,18 @@ const config: Config = {
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/lib/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  safelist: [
+    'lg:col-span-4',
+    'lg:col-span-6',
+    'lg:col-span-8',
+    'lg:col-span-12',
+    'min-h-[340px]',
+    'min-h-[380px]',
+    'min-h-[440px]',
+    'min-h-[500px]',
+    'min-h-[560px]',
   ],
   theme: {
     extend: {
