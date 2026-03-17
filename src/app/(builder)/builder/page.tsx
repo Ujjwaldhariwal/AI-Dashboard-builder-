@@ -121,17 +121,32 @@ export default function BuilderPage() {
       ),
     [dashboardEndpoints],
   )
+  const navEndpointLookup = useMemo(
+    () => Object.fromEntries(
+      dashboardEndpoints.map(endpoint => [
+        endpoint.id,
+        { name: endpoint.name, url: endpoint.url },
+      ]),
+    ),
+    [dashboardEndpoints],
+  )
   const collections = useMemo(
     () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
     [currentDashboardId, getGroupsByDashboard],
   )
   const navTree = useMemo(
-    () => buildChartNavTree(widgets, collections),
-    [widgets, collections],
+    () => buildChartNavTree(widgets, collections, { endpointLookup: navEndpointLookup }),
+    [widgets, collections, navEndpointLookup],
   )
   const visibleWidgets = useMemo(
-    () => filterWidgetsByNavSelection(widgets, activeGroupId, activeSubgroupId),
-    [widgets, activeGroupId, activeSubgroupId],
+    () => filterWidgetsByNavSelection(
+      widgets,
+      activeGroupId,
+      activeSubgroupId,
+      collections,
+      { endpointLookup: navEndpointLookup },
+    ),
+    [widgets, activeGroupId, activeSubgroupId, collections, navEndpointLookup],
   )
   const isNavFiltered = activeGroupId !== CHART_NAV_ALL || activeSubgroupId !== CHART_NAV_ALL
   const sectionCount = new Set(

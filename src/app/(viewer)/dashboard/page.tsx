@@ -60,17 +60,32 @@ export default function ViewerPage() {
     ),
     [endpoints, currentDashboardId],
   )
+  const navEndpointLookup = useMemo(
+    () => Object.fromEntries(
+      dashboardEndpoints.map(endpoint => [
+        endpoint.id,
+        { name: endpoint.name, url: endpoint.url },
+      ]),
+    ),
+    [dashboardEndpoints],
+  )
   const chartGroups = useMemo(
     () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
     [currentDashboardId, getGroupsByDashboard],
   )
   const navTree = useMemo(
-    () => buildChartNavTree(widgets, chartGroups),
-    [widgets, chartGroups],
+    () => buildChartNavTree(widgets, chartGroups, { endpointLookup: navEndpointLookup }),
+    [widgets, chartGroups, navEndpointLookup],
   )
   const visibleWidgets = useMemo(
-    () => filterWidgetsByNavSelection(widgets, activeGroupId, activeSubgroupId),
-    [widgets, activeGroupId, activeSubgroupId],
+    () => filterWidgetsByNavSelection(
+      widgets,
+      activeGroupId,
+      activeSubgroupId,
+      chartGroups,
+      { endpointLookup: navEndpointLookup },
+    ),
+    [widgets, activeGroupId, activeSubgroupId, chartGroups, navEndpointLookup],
   )
   const isNavFiltered = activeGroupId !== CHART_NAV_ALL || activeSubgroupId !== CHART_NAV_ALL
   const usedEndpoints = useMemo(

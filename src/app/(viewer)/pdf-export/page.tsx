@@ -38,8 +38,15 @@ function PdfExportContent() {
     [dashboardId, getGroupsByDashboard],
   )
   const navTree = useMemo(
-    () => buildChartNavTree(widgets, chartGroups),
-    [widgets, chartGroups],
+    () => buildChartNavTree(widgets, chartGroups, {
+      endpointLookup: Object.fromEntries(
+        endpoints.map(endpoint => [
+          endpoint.id,
+          { name: endpoint.name, url: endpoint.url },
+        ]),
+      ),
+    }),
+    [widgets, chartGroups, endpoints],
   )
   const allWidgetIds = useMemo(() => {
     const fromTree = listChartIds(navTree)
