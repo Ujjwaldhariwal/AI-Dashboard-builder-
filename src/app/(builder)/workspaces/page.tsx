@@ -33,6 +33,7 @@ import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { ChartType } from '@/types/widget'
 import { BOSCH_COLORS } from '@/lib/echarts/theme'
+import { BOSCH_LOGIN_PAYLOAD_KEY } from '@/lib/blueprints/bosch-uppcl'
 
 
 const GRADIENTS = [
@@ -316,6 +317,16 @@ export default function WorkspacesPage() {
         baseUrl: '/api/bosch',
         authStrategy: 'none',
         chartTheme: 'bosch-uppcl',
+        login: {
+          endpoint: '/userLogin',
+          usernameField: BOSCH_LOGIN_PAYLOAD_KEY,
+          passwordField: 'password',
+          tokenPath: 'token',
+          encodingType: 'btoa',
+          tokenHeaderName: 'Authorization',
+          tokenPrefix: 'Bearer',
+          passTokenToApis: true,
+        },
         defaultHeaders: {
           userid: '{{BOSCH_USERID}}',
           password: '{{BOSCH_PASSWORD}}',

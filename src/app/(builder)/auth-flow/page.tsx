@@ -98,6 +98,24 @@ function isLogicalFailure(payload: unknown): boolean {
   return false
 }
 
+function asToken(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
+function resolveLoginToken(payload: unknown, preferredPath: string): string | undefined {
+  const preferred = preferredPath ? asToken(extractByPath(payload, preferredPath)) : undefined
+  if (preferred) return preferred
+
+  const fallbackPaths = ['token', 'data.token', 'data.data.token']
+  for (const path of fallbackPaths) {
+    const candidate = asToken(extractByPath(payload, path))
+    if (candidate) return candidate
+  }
+  return undefined
+}
+
 function maskToken(token: string): string {
   if (!token) return ''
   if (token.length <= 12) return token
@@ -284,8 +302,7 @@ export default function AuthFlowPage() {
       const failedByBody = isLogicalFailure(payload)
       const success = response.ok && !failedByBody
 
-      const tokenRaw = tokenPath ? extractByPath(payload, tokenPath) : undefined
-      const token = tokenRaw !== undefined && tokenRaw !== null ? String(tokenRaw) : undefined
+      const token = resolveLoginToken(payload, tokenPath)
 
       const nextResult: DemoLoginResult = {
         success,

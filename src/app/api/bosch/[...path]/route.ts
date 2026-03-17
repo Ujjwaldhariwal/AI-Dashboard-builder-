@@ -13,6 +13,8 @@ interface CredentialResolution {
   checkedEnvVars: string[]
 }
 
+type JsonRecord = Record<string, unknown>
+
 type RouteContext = {
   params: Promise<{
     path: string[]
@@ -99,18 +101,150 @@ function resolveTargetFromRequest(req: NextRequest): string | null {
   return normalizeEnvTarget(headerTarget ?? queryTarget ?? defaultTarget)
 }
 
-function buildUpstreamHeaders(credentials: BoschCredentials) {
+function asRecord(value: unknown): JsonRecord | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as JsonRecord
+}
+
+function isLoginEndpoint(endpoint: string) {
+  return endpoint.toLowerCase().endsWith('/userlogin')
+}
+
+function getBasicAuthorization(credentials: BoschCredentials) {
   const basicAuthToken = Buffer
     .from(`${credentials.userid}:${credentials.password}`, 'utf8')
     .toString('base64')
+  return `Basic ${basicAuthToken}`
+}
 
-  return {
+function extractTokenFromCookieHeader(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null
+  const tokenPair = cookieHeader
+    .split(';')
+    .map(cookie => cookie.trim())
+    .find(cookie => cookie.toLowerCase().startsWith('token='))
+
+  if (!tokenPair) return null
+  const rawValue = tokenPair.slice('token='.length)
+  if (!rawValue) return null
+
+  try {
+    return decodeURIComponent(rawValue)
+  } catch {
+    return rawValue
+  }
+}
+
+function resolveUpstreamAuthorization(
+  req: NextRequest,
+  endpoint: string,
+  credentials: BoschCredentials,
+): string {
+  const basicAuthorization = getBasicAuthorization(credentials)
+  if (isLoginEndpoint(endpoint)) return basicAuthorization
+
+  const forwardedAuthorization = req.headers.get('authorization')?.trim()
+  if (!forwardedAuthorization) return basicAuthorization
+
+  const demoTokenHeader = req.headers.get('x-builder-demo-token')?.trim()
+  if (!demoTokenHeader) return forwardedAuthorization
+
+  const normalizedDemoBearer = `Bearer ${demoTokenHeader}`
+  if (forwardedAuthorization === normalizedDemoBearer) {
+    // For Bosch upstream, session cookie token is the primary auth channel.
+    return basicAuthorization
+  }
+
+  return forwardedAuthorization
+}
+
+function buildForwardedCookie(req: NextRequest): string | null {
+  const incomingCookie = req.headers.get('cookie')?.trim() ?? ''
+  const tokenInCookie = extractTokenFromCookieHeader(incomingCookie || null)
+  if (tokenInCookie) return incomingCookie || null
+
+  const demoTokenHeader = req.headers.get('x-builder-demo-token')?.trim()
+  if (!demoTokenHeader) return incomingCookie || null
+
+  const tokenCookie = `token=${encodeURIComponent(demoTokenHeader)}`
+  if (!incomingCookie) return tokenCookie
+  return `${incomingCookie}; ${tokenCookie}`
+}
+
+function buildUpstreamHeaders(
+  req: NextRequest,
+  endpoint: string,
+  credentials: BoschCredentials,
+) {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Basic ${basicAuthToken}`,
+    Authorization: resolveUpstreamAuthorization(req, endpoint, credentials),
     // Backward compatibility for older Bosch gateways still reading legacy headers.
     userid: credentials.userid,
     password: credentials.password,
   }
+
+  const cookieHeader = buildForwardedCookie(req)
+  if (cookieHeader) {
+    headers.Cookie = cookieHeader
+  }
+
+  return headers
+}
+
+function getSetCookieHeaders(headers: Headers): string[] {
+  const maybeHeaders = headers as Headers & { getSetCookie?: () => string[] }
+  if (typeof maybeHeaders.getSetCookie === 'function') {
+    return maybeHeaders.getSetCookie().filter(Boolean)
+  }
+
+  const fallback = headers.get('set-cookie')
+  return fallback ? [fallback] : []
+}
+
+function extractTokenFromSetCookie(setCookies: string[]): string | null {
+  for (const setCookie of setCookies) {
+    const pair = setCookie.split(';')[0]?.trim() ?? ''
+    if (!pair.toLowerCase().startsWith('token=')) continue
+
+    const rawToken = pair.slice('token='.length)
+    if (!rawToken) continue
+    try {
+      return decodeURIComponent(rawToken)
+    } catch {
+      return rawToken
+    }
+  }
+  return null
+}
+
+function mergeTokenIntoPayload(payload: unknown, token: string | null): unknown {
+  if (!token) return payload
+  const record = asRecord(payload)
+  if (!record) return payload
+
+  const existingToken = typeof record.token === 'string' && record.token.trim()
+    ? record.token.trim()
+    : null
+  const resolvedToken = existingToken ?? token
+
+  const enriched: JsonRecord = {
+    ...record,
+    token: resolvedToken,
+  }
+
+  const dataRecord = asRecord(record.data)
+  if (dataRecord) {
+    const dataToken = typeof dataRecord.token === 'string' && dataRecord.token.trim()
+      ? dataRecord.token.trim()
+      : null
+    enriched.data = {
+      ...dataRecord,
+      token: dataToken ?? resolvedToken,
+    }
+  }
+
+  return enriched
 }
 
 async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
@@ -139,7 +273,7 @@ async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
     const rawBody = await req.text()
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: 'POST',
-      headers: buildUpstreamHeaders(credentials),
+      headers: buildUpstreamHeaders(req, endpoint, credentials),
       body: rawBody?.trim() ? rawBody : '{}',
       cache: 'no-store',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -147,10 +281,18 @@ async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
 
     const text = await response.text()
     const parsed = text ? safeJsonParse(text) : null
+    const setCookies = getSetCookieHeaders(response.headers)
+    const tokenFromCookie = extractTokenFromSetCookie(setCookies)
+    const payload = mergeTokenIntoPayload(parsed, tokenFromCookie)
 
-    return NextResponse.json(parsed, {
+    const proxiedResponse = NextResponse.json(payload, {
       status: response.status,
     })
+    setCookies.forEach((cookie) => {
+      proxiedResponse.headers.append('set-cookie', cookie)
+    })
+
+    return proxiedResponse
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Bosch proxy error'
     return NextResponse.json(

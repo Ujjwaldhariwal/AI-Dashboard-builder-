@@ -17,6 +17,7 @@ export function buildEndpointRequestInit({
   const demoAuthHeaders = applyDemoAuth ? getBuilderDemoAuthHeaders() : {}
   const init: RequestInit = {
     method: normalizedMethod,
+    credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
       ...(headers ?? {}),

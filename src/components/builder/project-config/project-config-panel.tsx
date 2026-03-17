@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import type {
   AuthStrategy, LayoutType, EncodingType, NavDensity, ChartTheme,
 } from '@/types/project-config'
+import { BOSCH_LOGIN_PAYLOAD_KEY } from '@/lib/blueprints/bosch-uppcl'
 
 interface Props {
   dashboardId: string
@@ -65,6 +66,17 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
       baseUrl: '/api/bosch',
       chartTheme: 'bosch-uppcl',
       authStrategy: 'none',
+      login: {
+        ...config.login,
+        endpoint: '/userLogin',
+        usernameField: BOSCH_LOGIN_PAYLOAD_KEY,
+        passwordField: 'password',
+        tokenPath: 'token',
+        encodingType: 'btoa',
+        tokenHeaderName: 'Authorization',
+        tokenPrefix: 'Bearer',
+        passTokenToApis: true,
+      },
       defaultHeaders: {
         userid: '{{BOSCH_USERID}}',
         password: '{{BOSCH_PASSWORD}}',
