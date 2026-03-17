@@ -2,7 +2,7 @@
 
 // src/app/(viewer)/dashboard/page.tsx
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useDashboardStore } from '@/store/builder-store'
 import { WidgetCard } from '@/components/builder/canvas/widget-card'
 import { Badge } from '@/components/ui/badge'
@@ -19,24 +19,28 @@ import { buildDashboardConfig, slugifyDashboardName } from '@/lib/code-generator
 import { generateProjectFromConfig } from '@/lib/code-generator/template-generator'
 import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
 import { encodeShareToken, buildShareUrl } from '@/lib/share-utils'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { clearEndpointResponseCache } from '@/lib/api/endpoint-response-cache'
+import {
+  clearEndpointFailureCache,
+  clearEndpointProbeCache,
+} from '@/lib/api/endpoint-runtime-cache'
 import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
+import { dispatchDashboardWidgetRefresh } from '@/lib/builder/widget-refresh-events'
 
 export default function ViewerPage() {
   const {
     dashboards, currentDashboardId,
     endpoints, widgets: allWidgets,
-    getProjectConfig, getGroupsByDashboard, getFiltersByDashboard,
+    getProjectConfig, getGroupsByDashboard,
   } = useDashboardStore()
 
-  const [refreshKey, setRefreshKey]   = useState(0)
   const [exporting, setExporting]     = useState(false)
+  const [refreshingAll, setRefreshingAll] = useState(false)
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
-  const [countdown, setCountdown]     = useState<number | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
 
-  const currentDash   = dashboards.find(d => d.id === currentDashboardId)
+  const currentDash = dashboards.find(d => d.id === currentDashboardId)
   const widgets = useMemo(
     () => allWidgets.filter(w => w.dashboardId === currentDashboardId),
     [allWidgets, currentDashboardId],
@@ -47,46 +51,22 @@ export default function ViewerPage() {
     ),
     [endpoints, currentDashboardId],
   )
-  const activeFilterCount = currentDashboardId
-    ? getFiltersByDashboard(currentDashboardId).filter(
-        f => f.active && f.field.trim() && f.value.trim(),
-      ).length
-    : 0
   const usedEndpoints = useMemo(
     () => endpoints.filter(e => widgets.some(w => w.endpointId === e.id)),
     [endpoints, widgets],
   )
+
   useDashboardEndpointPrefetch(dashboardEndpoints)
 
-  // ── Auto-refresh countdown ──────────────────────────────────────────────
-  const minInterval = usedEndpoints.reduce((min, e) => {
-    const iv = e.refreshInterval
-    return iv && iv > 0 ? Math.min(min, iv) : min
-  }, Infinity)
-
-  useEffect(() => {
-    if (!isFinite(minInterval) || minInterval <= 0) return
-    setCountdown(minInterval)
-    const tick = setInterval(() => {
-      setCountdown(c => {
-        if (c === null || c <= 1) {
-          setRefreshKey(k => k + 1)
-          setLastRefreshed(new Date())
-          return minInterval
-        }
-        return c - 1
-      })
-    }, 1000)
-    return () => clearInterval(tick)
-  }, [minInterval])
-
-  // ── Handlers ────────────────────────────────────────────────────────────
   const handleRefreshAll = () => {
+    setRefreshingAll(true)
     clearEndpointResponseCache()
-    setRefreshKey(k => k + 1)
+    clearEndpointFailureCache()
+    clearEndpointProbeCache()
+    dispatchDashboardWidgetRefresh({ scope: 'all', force: false })
     setLastRefreshed(new Date())
-    setCountdown(isFinite(minInterval) ? minInterval : null)
     toast.success('All widgets refreshed')
+    window.setTimeout(() => setRefreshingAll(false), 400)
   }
 
   const handleShare = useCallback(() => {
@@ -109,7 +89,7 @@ export default function ViewerPage() {
       }),
     }
     const token = encodeShareToken(payload)
-    const url   = buildShareUrl(token)
+    const url = buildShareUrl(token)
     navigator.clipboard.writeText(url)
     setShareCopied(true)
     toast.success('Share link copied!', {
@@ -135,20 +115,20 @@ export default function ViewerPage() {
         projectConfig,
         chartGroups,
       )
-      const files  = generateProjectFromConfig(config)
-      const blob   = await packageProjectAsZip(files)
-      const url    = URL.createObjectURL(blob)
-      const a      = document.createElement('a')
-      a.href       = url
-      a.download   = `${slugifyDashboardName(currentDash.name)}-dashboard.zip`
+      const files = generateProjectFromConfig(config)
+      const blob = await packageProjectAsZip(files)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${slugifyDashboardName(currentDash.name)}-dashboard.zip`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
       toast.success('Export ready!', { id: 'export' })
     } catch (err) {
-  const message = err instanceof Error ? err.message : String(err)
-  toast.error(`Export failed: ${message}`, { id: 'export' })
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error(`Export failed: ${message}`, { id: 'export' })
     } finally {
       setExporting(false)
     }
@@ -161,7 +141,6 @@ export default function ViewerPage() {
     )
   }
 
-  // ── No dashboard ─────────────────────────────────────────────────────────
   if (!currentDash) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-8">
@@ -181,22 +160,17 @@ export default function ViewerPage() {
     )
   }
 
-  // ── Main viewer ──────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background print:bg-white">
-
-      {/* Sticky header */}
       <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur print:hidden">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-
-          {/* Left */}
           <div className="flex items-center gap-3 min-w-0">
             <Link href="/builder">
               <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </Link>
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center flex-shrink-0">
               <LayoutGrid className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
@@ -210,29 +184,18 @@ export default function ViewerPage() {
             </Badge>
           </div>
 
-          {/* Right */}
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-            {/* Last refreshed + countdown */}
             <div className="hidden md:flex items-center gap-2 text-[11px] text-muted-foreground">
               <Clock className="w-3 h-3" />
               <span>{lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              <AnimatePresence>
-                {countdown !== null && (
-                  <motion.span
-                    key={countdown}
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="px-1.5 py-0.5 rounded bg-muted font-mono text-[10px]"
-                  >
-                    auto {countdown}s
-                  </motion.span>
-                )}
-              </AnimatePresence>
             </div>
 
-            <Button variant="outline" size="sm" onClick={handleRefreshAll}>
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-              Refresh All
+            <Button variant="outline" size="sm" onClick={handleRefreshAll} disabled={refreshingAll}>
+              {refreshingAll
+                ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              }
+              {refreshingAll ? 'Refreshing...' : 'Refresh All'}
             </Button>
 
             <Button variant="outline" size="sm" onClick={() => window.print()}>
@@ -277,14 +240,12 @@ export default function ViewerPage() {
         </div>
       </header>
 
-      {/* Stats bar */}
       {widgets.length > 0 && (
         <div className="border-b bg-muted/30 print:hidden">
           <div className="max-w-7xl mx-auto px-6 py-2 flex items-center gap-6 flex-wrap">
             {[
               { label: 'Widgets',      value: widgets.length },
               { label: 'Data sources', value: usedEndpoints.length },
-              { label: 'Filters',      value: activeFilterCount },
               { label: 'Dashboard',    value: currentDash.name },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-1.5">
@@ -292,7 +253,6 @@ export default function ViewerPage() {
                 <Badge variant="outline" className="text-[10px] px-1.5">{s.value}</Badge>
               </div>
             ))}
-            {/* Share link preview */}
             <button
               onClick={handleShare}
               className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-700 transition-colors ml-auto"
@@ -304,7 +264,6 @@ export default function ViewerPage() {
         </div>
       )}
 
-      {/* Print-only header */}
       <div className="hidden print:block px-8 py-6 border-b">
         <h1 className="text-2xl font-bold">{currentDash.name}</h1>
         {currentDash.description && (
@@ -315,27 +274,23 @@ export default function ViewerPage() {
         </p>
       </div>
 
-      {/* Widget grid */}
       <main className="max-w-7xl mx-auto px-6 py-6">
         {widgets.length > 0 ? (
           <div className="grid gap-5 grid-cols-1 lg:grid-cols-2 print:grid-cols-2">
             {widgets.map(widget => (
               <motion.div
-                key={`${widget.id}-${refreshKey}`}
+                key={widget.id}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <WidgetCard
-                  widget={widget}
-                  viewMode
-                />
+                <WidgetCard widget={widget} viewMode />
               </motion.div>
             ))}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center mx-auto mb-4">
               <LayoutGrid className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-xl font-semibold mb-2">No widgets yet</h2>

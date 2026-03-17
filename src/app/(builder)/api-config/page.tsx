@@ -350,7 +350,7 @@ export default function APIConfigPage() {
       url: formData.url.trim(),
       method: formData.method,
       authType: formData.authType,
-      refreshInterval: formData.refreshInterval,
+      refreshInterval: 0,
       status: formData.status,
       headers: buildHeaders(),
     })
@@ -385,7 +385,7 @@ export default function APIConfigPage() {
         url,
         method: 'POST',
         authType: 'none',
-        refreshInterval: 30,
+        refreshInterval: 0,
         status: 'active',
         headers: {},
       })
@@ -598,7 +598,7 @@ export default function APIConfigPage() {
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Authentication</Label>
                   <Select
@@ -623,20 +623,6 @@ export default function APIConfigPage() {
                       <SelectItem value="custom-headers">Custom headers</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Refresh interval (sec)</Label>
-                  <Input
-                    className="h-8 text-sm"
-                    type="number"
-                    min={0}
-                    placeholder="0 = manual"
-                    value={formData.refreshInterval || ''}
-                    onChange={event => setFormData({
-                      ...formData,
-                      refreshInterval: Number(event.target.value) || 0,
-                    })}
-                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Status</Label>

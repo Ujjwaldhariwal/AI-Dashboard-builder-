@@ -5,7 +5,6 @@ import type { Widget, WidgetConfigInput, WidgetStyle, ChartType } from '@/types/
 import { DEFAULT_STYLE } from '@/types/widget'
 import type { ProjectConfig, ChartGroup } from '@/types/project-config'
 import { DEFAULT_PROJECT_CONFIG } from '@/types/project-config'
-import type { DashboardFilter, FilterOperator } from '@/types/filter'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/auth-store'
 
@@ -127,16 +126,6 @@ interface DashboardStore {
   assignWidgetToGroup:   (widgetId: string, groupId: string | null) => void
   getGroupsByDashboard:  (dashboardId: string) => ChartGroup[]
   reorderGroups:         (dashboardId: string, groupId: string, direction: 'up' | 'down') => void
-
-  dashboardFilters:      DashboardFilter[]
-  addDashboardFilter:    (dashboardId: string) => string
-  updateDashboardFilter: (
-    filterId: string,
-    patch: Partial<Pick<DashboardFilter, 'field' | 'operator' | 'value' | 'active'>>,
-  ) => void
-  removeDashboardFilter: (filterId: string) => void
-  clearDashboardFilters: (dashboardId: string) => void
-  getFiltersByDashboard: (dashboardId: string) => DashboardFilter[]
 }
 
 // ── Shared ID generators ──────────────────────────────────────
@@ -354,7 +343,6 @@ export const useDashboardStore = create<DashboardStore>()(
             widgets:            s.widgets.filter(w => w.dashboardId !== id),
             endpoints:          s.endpoints.filter(e => e.dashboardId !== id),
             chartGroups:        s.chartGroups.filter(g => g.dashboardId !== id),
-            dashboardFilters:   s.dashboardFilters.filter(f => f.dashboardId !== id),
             projectConfigs:     Object.fromEntries(
                                   Object.entries(s.projectConfigs).filter(([k]) => k !== id)
                                 ),
@@ -477,9 +465,6 @@ export const useDashboardStore = create<DashboardStore>()(
         const clonedConfig = sourceConfig
           ? { ...sourceConfig, dashboardId: newId, projectTitle: `${sourceConfig.projectTitle} (copy)` }
           : undefined
-        const clonedFilters = get().dashboardFilters
-          .filter(f => f.dashboardId === id)
-          .map(f => ({ ...f, id: localId('filter'), dashboardId: newId }))
 
         set(s => ({
           dashboards: [
@@ -489,7 +474,6 @@ export const useDashboardStore = create<DashboardStore>()(
           endpoints:      [...s.endpoints, ...clonedEndpoints],
           widgets:        [...s.widgets, ...clonedWidgets],
           chartGroups:    [...s.chartGroups, ...clonedGroups],
-          dashboardFilters: [...s.dashboardFilters, ...clonedFilters],
           projectConfigs: clonedConfig
             ? { ...s.projectConfigs, [newId]: clonedConfig }
             : s.projectConfigs,
@@ -1107,48 +1091,6 @@ addWidget: (config) => {
           }
         })
       },
-
-      dashboardFilters: [],
-
-      addDashboardFilter: (dashboardId) => {
-        const id = localId('filter')
-        const next: DashboardFilter = {
-          id,
-          dashboardId,
-          field: '',
-          operator: 'contains',
-          value: '',
-          active: true,
-        }
-        set(s => ({ dashboardFilters: [...s.dashboardFilters, next] }))
-        return id
-      },
-
-      updateDashboardFilter: (filterId, patch) => {
-        const safePatch = patch.operator
-          ? { ...patch, operator: patch.operator as FilterOperator }
-          : patch
-        set(s => ({
-          dashboardFilters: s.dashboardFilters.map(f =>
-            f.id === filterId ? { ...f, ...safePatch } : f,
-          ),
-        }))
-      },
-
-      removeDashboardFilter: (filterId) => {
-        set(s => ({
-          dashboardFilters: s.dashboardFilters.filter(f => f.id !== filterId),
-        }))
-      },
-
-      clearDashboardFilters: (dashboardId) => {
-        set(s => ({
-          dashboardFilters: s.dashboardFilters.filter(f => f.dashboardId !== dashboardId),
-        }))
-      },
-
-      getFiltersByDashboard: (dashboardId) =>
-        get().dashboardFilters.filter(f => f.dashboardId === dashboardId),
     }),
     {
       name: 'dashboard-storage',
