@@ -99,6 +99,20 @@ function resolveTargetFromRequest(req: NextRequest): string | null {
   return normalizeEnvTarget(headerTarget ?? queryTarget ?? defaultTarget)
 }
 
+function buildUpstreamHeaders(credentials: BoschCredentials) {
+  const basicAuthToken = Buffer
+    .from(`${credentials.userid}:${credentials.password}`, 'utf8')
+    .toString('base64')
+
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Basic ${basicAuthToken}`,
+    // Backward compatibility for older Bosch gateways still reading legacy headers.
+    userid: credentials.userid,
+    password: credentials.password,
+  }
+}
+
 async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
   const params = await ctx.params
   const endpoint = buildEndpoint(params.path)
@@ -125,11 +139,7 @@ async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
     const rawBody = await req.text()
     const response = await fetch(`${baseUrl}${endpoint}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        userid: credentials.userid,
-        password: credentials.password,
-      },
+      headers: buildUpstreamHeaders(credentials),
       body: rawBody?.trim() ? rawBody : '{}',
       cache: 'no-store',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
