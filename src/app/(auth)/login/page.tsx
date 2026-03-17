@@ -11,6 +11,8 @@ import { toast }   from 'sonner'
 import { createClient }  from '@/lib/supabase/client'
 import { useAuthStore }  from '@/store/auth-store'
 
+const supabase = createClient()
+
 // ── All known Supabase auth error messages ────────────────────
 const isInvalidCredentials = (msg: string) =>
   msg.includes('Invalid login credentials') ||
@@ -51,7 +53,6 @@ export default function LoginPage() {
   const [fieldError, setFieldError] = useState<FieldError>({})
 
   const { checkSession } = useAuthStore()
-  const supabase = createClient()
 
   const clearErrors = () => setFieldError({})
 
