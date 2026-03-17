@@ -44,6 +44,13 @@ import {
   BUILDER_API_HEALTH_RESCAN_EVENT,
   dispatchBuilderApiHealthSummary,
 } from '@/lib/builder/api-health-events'
+import { FrozenChartNav } from '@/components/builder/nav/linear-bar'
+import {
+  CHART_NAV_ALL,
+  buildChartNavTree,
+  filterWidgetsByNavSelection,
+  normalizeChartNavSelection,
+} from '@/lib/builder/chart-nav-model'
 
 // ── Fix #1 — inline the shape we need, no cross-file type dep ─
 interface EndpointSummary {
@@ -75,6 +82,8 @@ export default function BuilderPage() {
   const [isScanningApis, setIsScanningApis]     = useState(false)
   const [isAutoAdding, setIsAutoAdding]         = useState(false)
   const [isRefreshingAll, setIsRefreshingAll]   = useState(false)
+  const [activeGroupId, setActiveGroupId]       = useState(CHART_NAV_ALL)
+  const [activeSubgroupId, setActiveSubgroupId] = useState(CHART_NAV_ALL)
 
   const hasMounted        = useRef(false)
   const lastSavedCountRef = useRef(0)
@@ -84,6 +93,11 @@ export default function BuilderPage() {
       setCurrentDashboard(dashboards[0].id)
     }
   }, [currentDashboardId, dashboards, setCurrentDashboard])
+
+  useEffect(() => {
+    setActiveGroupId(CHART_NAV_ALL)
+    setActiveSubgroupId(CHART_NAV_ALL)
+  }, [currentDashboardId])
 
   const currentDash = dashboards.find(d => d.id === currentDashboardId)
 
@@ -107,7 +121,19 @@ export default function BuilderPage() {
       ),
     [dashboardEndpoints],
   )
-  const collections = currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []
+  const collections = useMemo(
+    () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
+    [currentDashboardId, getGroupsByDashboard],
+  )
+  const navTree = useMemo(
+    () => buildChartNavTree(widgets, collections),
+    [widgets, collections],
+  )
+  const visibleWidgets = useMemo(
+    () => filterWidgetsByNavSelection(widgets, activeGroupId, activeSubgroupId),
+    [widgets, activeGroupId, activeSubgroupId],
+  )
+  const isNavFiltered = activeGroupId !== CHART_NAV_ALL || activeSubgroupId !== CHART_NAV_ALL
   const sectionCount = new Set(
     widgets
       .map(widget => widget.sectionName?.trim())
@@ -121,6 +147,26 @@ export default function BuilderPage() {
     window.addEventListener('builderDemoAuthSessionChanged', listener)
     return () => window.removeEventListener('builderDemoAuthSessionChanged', listener)
   }, [])
+
+  useEffect(() => {
+    const normalized = normalizeChartNavSelection(navTree, {
+      groupId: activeGroupId,
+      subgroupId: activeSubgroupId,
+    })
+    if (normalized.groupId !== activeGroupId) {
+      setActiveGroupId(normalized.groupId)
+    }
+    if (normalized.subgroupId !== activeSubgroupId) {
+      setActiveSubgroupId(normalized.subgroupId)
+    }
+  }, [activeGroupId, activeSubgroupId, navTree])
+
+  useEffect(() => {
+    if (!selectedWidgetId) return
+    if (!visibleWidgets.some(widget => widget.id === selectedWidgetId)) {
+      setSelectedWidgetId(null)
+    }
+  }, [selectedWidgetId, visibleWidgets])
 
   useEffect(() => {
     if (!hasMounted.current) {
@@ -428,10 +474,51 @@ export default function BuilderPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6" onClick={handleCanvasClick}>
-        <DragDropCanvas
-          selectedWidgetId={selectedWidgetId}
-          onSelectWidget={setSelectedWidgetId}
-        />
+        {widgets.length > 0 && (
+          <div className="mb-4">
+            <FrozenChartNav
+              tree={navTree}
+              activeGroupId={activeGroupId}
+              activeSubgroupId={activeSubgroupId}
+              onSelectionChange={({ groupId, subgroupId }) => {
+                setActiveGroupId(groupId)
+                setActiveSubgroupId(subgroupId)
+              }}
+            />
+            {isNavFiltered && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Showing {visibleWidgets.length} of {widgets.length} charts
+              </p>
+            )}
+          </div>
+        )}
+
+        {visibleWidgets.length > 0 ? (
+          <DragDropCanvas
+            selectedWidgetId={selectedWidgetId}
+            onSelectWidget={setSelectedWidgetId}
+            widgetsOverride={visibleWidgets}
+          />
+        ) : (
+          <div className="flex min-h-[42vh] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center">
+            <p className="text-sm font-semibold">No charts in this selection</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Switch category/subgroup to view available charts.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => {
+                setActiveGroupId(CHART_NAV_ALL)
+                setActiveSubgroupId(CHART_NAV_ALL)
+              }}
+            >
+              Reset Filters
+            </Button>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>

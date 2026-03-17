@@ -2,9 +2,10 @@
 
 // src/app/(viewer)/dashboard/page.tsx
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useDashboardStore } from '@/store/builder-store'
 import { WidgetCard } from '@/components/builder/canvas/widget-card'
+import { FrozenChartNav } from '@/components/builder/nav/linear-bar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -27,6 +28,12 @@ import {
 } from '@/lib/api/endpoint-runtime-cache'
 import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
 import { dispatchDashboardWidgetRefresh } from '@/lib/builder/widget-refresh-events'
+import {
+  CHART_NAV_ALL,
+  buildChartNavTree,
+  filterWidgetsByNavSelection,
+  normalizeChartNavSelection,
+} from '@/lib/builder/chart-nav-model'
 
 export default function ViewerPage() {
   const {
@@ -39,6 +46,8 @@ export default function ViewerPage() {
   const [refreshingAll, setRefreshingAll] = useState(false)
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
   const [shareCopied, setShareCopied] = useState(false)
+  const [activeGroupId, setActiveGroupId] = useState(CHART_NAV_ALL)
+  const [activeSubgroupId, setActiveSubgroupId] = useState(CHART_NAV_ALL)
 
   const currentDash = dashboards.find(d => d.id === currentDashboardId)
   const widgets = useMemo(
@@ -51,12 +60,43 @@ export default function ViewerPage() {
     ),
     [endpoints, currentDashboardId],
   )
+  const chartGroups = useMemo(
+    () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
+    [currentDashboardId, getGroupsByDashboard],
+  )
+  const navTree = useMemo(
+    () => buildChartNavTree(widgets, chartGroups),
+    [widgets, chartGroups],
+  )
+  const visibleWidgets = useMemo(
+    () => filterWidgetsByNavSelection(widgets, activeGroupId, activeSubgroupId),
+    [widgets, activeGroupId, activeSubgroupId],
+  )
+  const isNavFiltered = activeGroupId !== CHART_NAV_ALL || activeSubgroupId !== CHART_NAV_ALL
   const usedEndpoints = useMemo(
-    () => endpoints.filter(e => widgets.some(w => w.endpointId === e.id)),
-    [endpoints, widgets],
+    () => endpoints.filter(e => visibleWidgets.some(w => w.endpointId === e.id)),
+    [endpoints, visibleWidgets],
   )
 
   useDashboardEndpointPrefetch(dashboardEndpoints)
+
+  useEffect(() => {
+    setActiveGroupId(CHART_NAV_ALL)
+    setActiveSubgroupId(CHART_NAV_ALL)
+  }, [currentDashboardId])
+
+  useEffect(() => {
+    const normalized = normalizeChartNavSelection(navTree, {
+      groupId: activeGroupId,
+      subgroupId: activeSubgroupId,
+    })
+    if (normalized.groupId !== activeGroupId) {
+      setActiveGroupId(normalized.groupId)
+    }
+    if (normalized.subgroupId !== activeSubgroupId) {
+      setActiveSubgroupId(normalized.subgroupId)
+    }
+  }, [activeGroupId, activeSubgroupId, navTree])
 
   const handleRefreshAll = () => {
     setRefreshingAll(true)
@@ -180,7 +220,7 @@ export default function ViewerPage() {
               </p>
             </div>
             <Badge variant="secondary" className="text-[10px] flex-shrink-0">
-              {widgets.length} widget{widgets.length !== 1 ? 's' : ''}
+              {visibleWidgets.length}/{widgets.length} widgets
             </Badge>
           </div>
 
@@ -241,10 +281,31 @@ export default function ViewerPage() {
       </header>
 
       {widgets.length > 0 && (
+        <div className="border-b bg-card/80 print:hidden">
+          <div className="max-w-7xl mx-auto px-6 py-3">
+            <FrozenChartNav
+              tree={navTree}
+              activeGroupId={activeGroupId}
+              activeSubgroupId={activeSubgroupId}
+              onSelectionChange={({ groupId, subgroupId }) => {
+                setActiveGroupId(groupId)
+                setActiveSubgroupId(subgroupId)
+              }}
+            />
+            {isNavFiltered && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Showing {visibleWidgets.length} of {widgets.length} charts
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {widgets.length > 0 && (
         <div className="border-b bg-muted/30 print:hidden">
           <div className="max-w-7xl mx-auto px-6 py-2 flex items-center gap-6 flex-wrap">
             {[
-              { label: 'Widgets',      value: widgets.length },
+              { label: 'Widgets',      value: `${visibleWidgets.length}/${widgets.length}` },
               { label: 'Data sources', value: usedEndpoints.length },
               { label: 'Dashboard',    value: currentDash.name },
             ].map(s => (
@@ -275,9 +336,9 @@ export default function ViewerPage() {
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-6">
-        {widgets.length > 0 ? (
+        {visibleWidgets.length > 0 ? (
           <div className="grid gap-5 grid-cols-1 lg:grid-cols-2 print:grid-cols-2">
-            {widgets.map(widget => (
+            {visibleWidgets.map(widget => (
               <motion.div
                 key={widget.id}
                 initial={{ opacity: 0, y: 12 }}
@@ -289,18 +350,39 @@ export default function ViewerPage() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center mx-auto mb-4">
-              <LayoutGrid className="w-8 h-8 text-white" />
+          isNavFiltered ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center mx-auto mb-4">
+                <LayoutGrid className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-xl font-semibold mb-2">No charts in this selection</h2>
+              <p className="text-muted-foreground mb-4 text-sm">
+                Pick another category/subgroup to view charts.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setActiveGroupId(CHART_NAV_ALL)
+                  setActiveSubgroupId(CHART_NAV_ALL)
+                }}
+              >
+                Reset Filters
+              </Button>
             </div>
-            <h2 className="text-xl font-semibold mb-2">No widgets yet</h2>
-            <p className="text-muted-foreground mb-4 text-sm">
-              Add widgets in the builder to see them here
-            </p>
-            <Link href="/builder">
-              <Button>Open Builder</Button>
-            </Link>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center mx-auto mb-4">
+                <LayoutGrid className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-xl font-semibold mb-2">No widgets yet</h2>
+              <p className="text-muted-foreground mb-4 text-sm">
+                Add widgets in the builder to see them here
+              </p>
+              <Link href="/builder">
+                <Button>Open Builder</Button>
+              </Link>
+            </div>
+          )
         )}
       </main>
     </div>

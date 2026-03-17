@@ -25,6 +25,7 @@ interface DragDropCanvasProps {
   viewMode?:         boolean
   selectedWidgetId?: string | null
   onSelectWidget?:   (id: string | null) => void
+  widgetsOverride?:  Widget[]
 }
 
 function EmptyCanvas({
@@ -96,6 +97,7 @@ export function DragDropCanvas({
   viewMode = false,
   selectedWidgetId = null,
   onSelectWidget,
+  widgetsOverride,
 }: DragDropCanvasProps) {
   const {
     widgets,
@@ -110,7 +112,7 @@ export function DragDropCanvas({
   const [addWidgetOpen, setAddWidgetOpen] = useState(false)
   const [magicOpen, setMagicOpen]         = useState(false)
 
-  const dashboardWidgets = widgets.filter(w => w.dashboardId === currentDashboardId)
+  const dashboardWidgets = widgetsOverride ?? widgets.filter(w => w.dashboardId === currentDashboardId)
   const hasEndpoints     = endpoints.length > 0
 
   const sensors = useSensors(
