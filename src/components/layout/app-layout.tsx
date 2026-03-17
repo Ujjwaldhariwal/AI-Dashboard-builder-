@@ -25,6 +25,7 @@ import { NotificationBell } from '@/components/layout/notification-bell'
 import { MonitoringPanel } from '@/components/layout/monitoring-panel'
 import { OnboardingWizard } from '@/components/layout/onboarding-wizard'
 import { KeyboardShortcuts } from '@/components/layout/keyboard-shortcuts'
+import { TokenSessionTimer } from '@/components/layout/token-session-timer'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 interface AppLayoutProps {
@@ -293,6 +294,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </Button>
 
             <NotificationBell />
+            <TokenSessionTimer />
 
             {/* ── User profile dropdown ──────────────────────────────── */}
             <DropdownMenu>

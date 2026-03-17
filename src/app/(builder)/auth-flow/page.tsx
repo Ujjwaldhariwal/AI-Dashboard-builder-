@@ -33,6 +33,7 @@ import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import {
   clearBuilderDemoAuthSession,
   getBuilderDemoAuthSession,
+  getBuilderDemoAuthTokenMeta,
   setBuilderDemoAuthSession,
 } from '@/lib/auth/demo-auth-session'
 
@@ -122,6 +123,17 @@ function maskToken(token: string): string {
   return `${token.slice(0, 6)}...${token.slice(-6)}`
 }
 
+function formatRemainingTime(remainingMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`
+  return `${seconds}s`
+}
+
 function StepCard({
   step,
   title,
@@ -177,6 +189,7 @@ export default function AuthFlowPage() {
   const [result, setResult] = useState<DemoLoginResult | null>(null)
   const [saving, setSaving] = useState(false)
   const [sessionToken, setSessionToken] = useState('')
+  const [sessionClockMs, setSessionClockMs] = useState(() => Date.now())
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -190,6 +203,7 @@ export default function AuthFlowPage() {
   const syncSessionState = useCallback(() => {
     const session = getBuilderDemoAuthSession()
     setSessionToken(session?.token ?? '')
+    setSessionClockMs(Date.now())
   }, [])
 
   useEffect(() => {
@@ -219,8 +233,18 @@ export default function AuthFlowPage() {
     setShowAdvanced(false)
   }, [currentDashboardId, getProjectConfig])
 
+  useEffect(() => {
+    if (!sessionToken) return
+    const timer = window.setInterval(() => setSessionClockMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [sessionToken])
+
   const isDisabled = !currentDashboardId
   const fullUrl = useMemo(() => joinUrl(baseUrl, endpoint), [baseUrl, endpoint])
+  const tokenMeta = useMemo(
+    () => (sessionToken ? getBuilderDemoAuthTokenMeta(sessionToken, sessionClockMs) : null),
+    [sessionClockMs, sessionToken],
+  )
 
   const applyBoschPreset = () => {
     setBaseUrl('/api/bosch')
@@ -591,6 +615,19 @@ export default function AuthFlowPage() {
                 <CheckCircle2 className="w-4 h-4" />
                 <span className="text-xs font-semibold">Active token session</span>
               </div>
+              {tokenMeta?.isExpired ? (
+                <p className="text-[11px] text-red-600 font-medium">
+                  Token expired. Re-run login test and activate the latest token.
+                </p>
+              ) : tokenMeta?.remainingMs !== null && tokenMeta?.remainingMs !== undefined ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Expires in {formatRemainingTime(tokenMeta.remainingMs)}
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Expiry unavailable (token has no `exp` claim).
+                </p>
+              )}
               <p className="text-[11px] text-muted-foreground font-mono break-all">
                 {(tokenHeaderName || 'Authorization')}: {tokenPrefix ? `${tokenPrefix} ` : ''}
                 {maskToken(sessionToken)}

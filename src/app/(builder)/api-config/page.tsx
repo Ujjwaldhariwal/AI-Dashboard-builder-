@@ -48,6 +48,7 @@ import { BOSCH_UPPCL_ENDPOINTS } from '@/lib/blueprints/bosch-uppcl'
 import {
   clearBuilderDemoAuthSession,
   getBuilderDemoAuthSession,
+  getBuilderDemoAuthTokenMeta,
 } from '@/lib/auth/demo-auth-session'
 import Link from 'next/link'
 import {
@@ -121,6 +122,7 @@ export default function APIConfigPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | StatusType>('all')
   const [previewRunToken, setPreviewRunToken] = useState(0)
   const [sessionToken, setSessionToken] = useState(getBuilderDemoAuthSession()?.token ?? '')
+  const [sessionClockMs, setSessionClockMs] = useState(() => Date.now())
   const [sessionScope, setSessionScope] = useState(() => getEndpointSessionScope())
   const [scanSummary, setScanSummary] = useState<DashboardEndpointProbeSummary | null>(null)
   const [isScanningApis, setIsScanningApis] = useState(false)
@@ -129,11 +131,23 @@ export default function APIConfigPage() {
   useEffect(() => {
     const listener = () => {
       setSessionToken(getBuilderDemoAuthSession()?.token ?? '')
+      setSessionClockMs(Date.now())
       setSessionScope(getEndpointSessionScope())
     }
     window.addEventListener('builderDemoAuthSessionChanged', listener)
     return () => window.removeEventListener('builderDemoAuthSessionChanged', listener)
   }, [])
+
+  useEffect(() => {
+    if (!sessionToken) return
+    const timer = window.setInterval(() => setSessionClockMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [sessionToken])
+
+  const sessionTokenMeta = useMemo(
+    () => (sessionToken ? getBuilderDemoAuthTokenMeta(sessionToken, sessionClockMs) : null),
+    [sessionClockMs, sessionToken],
+  )
 
   const dashboardEndpoints = useMemo(
     () =>
@@ -485,6 +499,15 @@ export default function APIConfigPage() {
                   <p className="text-sm mt-1">
                     {sessionToken ? 'Demo token session is active' : 'No demo token session found'}
                   </p>
+                  {sessionTokenMeta?.isExpired ? (
+                    <p className="text-[11px] text-red-600 mt-1">
+                      Token expired. Re-run login in Auth Setup to continue API calls.
+                    </p>
+                  ) : sessionTokenMeta?.remainingMs !== null && sessionTokenMeta?.remainingMs !== undefined ? (
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Expires in {Math.max(0, Math.floor(sessionTokenMeta.remainingMs / 1000))}s
+                    </p>
+                  ) : null}
                   <p className="text-[11px] text-muted-foreground mt-1">
                     Manage token capture in{' '}
                     <Link href="/auth-flow" className="underline">

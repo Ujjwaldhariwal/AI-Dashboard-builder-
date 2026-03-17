@@ -15,6 +15,61 @@ function isBrowser() {
   return typeof window !== 'undefined'
 }
 
+function decodeBase64Url(input: string): string | null {
+  try {
+    const normalized = input.replace(/-/g, '+').replace(/_/g, '/')
+    const padding = normalized.length % 4
+    const padded = padding ? normalized + '='.repeat(4 - padding) : normalized
+    return atob(padded)
+  } catch {
+    return null
+  }
+}
+
+export function getBuilderDemoAuthTokenExpiryMs(token: string): number | null {
+  const parts = token.split('.')
+  if (parts.length < 2) return null
+
+  const payloadJson = decodeBase64Url(parts[1])
+  if (!payloadJson) return null
+
+  try {
+    const payload = JSON.parse(payloadJson) as Record<string, unknown>
+    const exp = payload.exp
+    if (typeof exp !== 'number' || !Number.isFinite(exp)) return null
+    return Math.round(exp * 1000)
+  } catch {
+    return null
+  }
+}
+
+export interface BuilderDemoAuthTokenMeta {
+  expiresAtMs: number | null
+  remainingMs: number | null
+  isExpired: boolean
+}
+
+export function getBuilderDemoAuthTokenMeta(
+  token: string,
+  nowMs = Date.now(),
+): BuilderDemoAuthTokenMeta {
+  const expiresAtMs = getBuilderDemoAuthTokenExpiryMs(token)
+  if (!expiresAtMs) {
+    return {
+      expiresAtMs: null,
+      remainingMs: null,
+      isExpired: false,
+    }
+  }
+
+  const remainingMs = expiresAtMs - nowMs
+  return {
+    expiresAtMs,
+    remainingMs,
+    isExpired: remainingMs <= 0,
+  }
+}
+
 export function getBuilderDemoAuthSession(): BuilderDemoAuthSession | null {
   if (!isBrowser()) return null
   const raw = window.localStorage.getItem(STORAGE_KEY)
@@ -57,6 +112,8 @@ export function clearBuilderDemoAuthSession() {
 export function getBuilderDemoAuthHeaders(): Record<string, string> {
   const session = getBuilderDemoAuthSession()
   if (!session || !session.enabled || !session.token) return {}
+  const tokenMeta = getBuilderDemoAuthTokenMeta(session.token)
+  if (tokenMeta.isExpired) return {}
 
   const headerName = session.headerName || 'Authorization'
   const prefix = session.prefix?.trim() ?? ''
