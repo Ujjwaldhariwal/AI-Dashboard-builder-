@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import AILoader from '@/components/loaders/ai-loader'
 import { useDashboardStore } from '@/store/builder-store'
 import { LiveAPIPreview } from '@/components/builder/api-tester/live-api-preview'
 import { toast } from 'sonner'
@@ -58,6 +59,14 @@ import {
 } from '@/lib/api/endpoint-runtime-cache'
 import { buildAutoWidgetsFromEndpoints } from '@/lib/builder/auto-widget-generator'
 import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
+import {
+  fetchTrainingProfiles,
+  profileDashboardEndpoints,
+  profileMapFromList,
+  saveEndpointMappingFeedback,
+} from '@/lib/training/profile-client'
+import type { ChartType } from '@/types/widget'
+import type { TrainingProfileSummary, MappingCandidate, EndpointProfile } from '@/types/training'
 
 type AuthType = 'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
 type StatusType = 'active' | 'inactive'
@@ -85,6 +94,22 @@ const DEFAULT_FORM = {
 const BOSCH_UPPCL_PRESET: Array<{ name: string; path: string }> = BOSCH_UPPCL_ENDPOINTS.map(
   endpoint => ({ name: endpoint.name, path: endpoint.path }),
 )
+
+const CHART_TYPE_OPTIONS: ChartType[] = [
+  'bar',
+  'line',
+  'area',
+  'pie',
+  'donut',
+  'horizontal-bar',
+  'horizontal-stacked-bar',
+  'grouped-bar',
+  'drilldown-bar',
+  'gauge',
+  'ring-gauge',
+  'status-card',
+  'table',
+]
 
 function parseCustomHeaders(value: string): Record<string, string> {
   return value
@@ -127,6 +152,10 @@ export default function APIConfigPage() {
   const [scanSummary, setScanSummary] = useState<DashboardEndpointProbeSummary | null>(null)
   const [isScanningApis, setIsScanningApis] = useState(false)
   const [isAutoAddingWidgets, setIsAutoAddingWidgets] = useState(false)
+  const [trainingSummary, setTrainingSummary] = useState<TrainingProfileSummary | null>(null)
+  const [isTrainingApis, setIsTrainingApis] = useState(false)
+  const [reviewMappings, setReviewMappings] = useState<Record<string, MappingCandidate>>({})
+  const [savingReviewEndpointId, setSavingReviewEndpointId] = useState<string | null>(null)
 
   useEffect(() => {
     const listener = () => {
@@ -237,6 +266,110 @@ export default function APIConfigPage() {
     void runHealthScan({ silent: true })
   }, [runHealthScan])
 
+  const runTrainingScan = useCallback(async () => {
+    if (!currentDashboardId) return
+    if (activeDashboardEndpoints.length === 0) {
+      toast.info('No active APIs available for training.')
+      return
+    }
+
+    setIsTrainingApis(true)
+    toast.loading('Profiling and training active APIs...', { id: 'api-training' })
+    try {
+      const session = getBuilderDemoAuthSession()
+      const summary = await profileDashboardEndpoints({
+        dashboardId: currentDashboardId,
+        endpointIds: activeDashboardEndpoints
+          .map(endpoint => endpoint.id)
+          .filter((value): value is string => Boolean(value)),
+        force: true,
+        demoSession: session?.token
+          ? {
+              token: session.token,
+              headerName: session.headerName,
+              prefix: session.prefix,
+            }
+          : undefined,
+      })
+      setTrainingSummary(summary)
+
+      const nextReviewMappings: Record<string, MappingCandidate> = {}
+      summary.results.forEach(result => {
+        if (result.status !== 'healthy') return
+        if (result.confidenceBand === 'high') return
+        if (!result.candidateMapping) return
+        nextReviewMappings[result.endpointId] = result.candidateMapping
+      })
+      setReviewMappings(nextReviewMappings)
+
+      toast.success(
+        `Training done: ${summary.mappedHighConfidence} high-confidence, ${summary.reviewRequired} review.`,
+        { id: 'api-training' },
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(`Training failed: ${message}`, { id: 'api-training' })
+    } finally {
+      setIsTrainingApis(false)
+    }
+  }, [activeDashboardEndpoints, currentDashboardId])
+
+  const handleSaveReviewMapping = useCallback(async (endpointId: string) => {
+    if (!currentDashboardId) return
+    const draft = reviewMappings[endpointId]
+    if (!draft) return
+
+    const original = trainingSummary?.results.find(result => result.endpointId === endpointId)?.candidateMapping
+    if (!original) return
+
+    setSavingReviewEndpointId(endpointId)
+    try {
+      const hasOverride = (
+        draft.type !== original.type ||
+        draft.xAxis !== original.xAxis ||
+        draft.yAxis !== original.yAxis
+      )
+
+      await saveEndpointMappingFeedback({
+        dashboardId: currentDashboardId,
+        endpointId,
+        sourceAction: hasOverride ? 'review_override' : 'review_accept',
+        acceptedMapping: {
+          ...draft,
+          confidence: Math.max(draft.confidence ?? 88, 88),
+          source: 'manual',
+          reason: hasOverride ? 'Manual review override' : 'Review accepted suggested mapping',
+        },
+        previousMapping: original,
+        notes: hasOverride ? 'Adjusted during API Config review queue.' : 'Accepted from training queue.',
+      })
+
+      setTrainingSummary(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          mappedHighConfidence: prev.mappedHighConfidence + 1,
+          reviewRequired: Math.max(0, prev.reviewRequired - 1),
+          results: prev.results.map(result => {
+            if (result.endpointId !== endpointId) return result
+            return {
+              ...result,
+              confidenceBand: 'high',
+              confidence: Math.max(result.confidence, 88),
+              candidateMapping: draft,
+            }
+          }),
+        }
+      })
+      toast.success('Review mapping saved and promoted to high-confidence profile.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(`Failed to save review mapping: ${message}`)
+    } finally {
+      setSavingReviewEndpointId(null)
+    }
+  }, [currentDashboardId, reviewMappings, trainingSummary])
+
   const handleAutoAddHealthyWidgets = useCallback(async () => {
     if (!currentDashboardId) return
     if (activeDashboardEndpoints.length === 0) {
@@ -265,21 +398,31 @@ export default function APIConfigPage() {
         return
       }
 
+      let trainedProfilesByEndpointId: Record<string, EndpointProfile> | undefined
+      try {
+        const profiles = await fetchTrainingProfiles(currentDashboardId)
+        trainedProfilesByEndpointId = profileMapFromList(profiles)
+      } catch {
+        trainedProfilesByEndpointId = undefined
+      }
+
       const {
         drafts,
         skippedExisting,
         skippedNoData,
         skippedFetch,
+        skippedReview,
       } = await buildAutoWidgetsFromEndpoints({
         endpoints: activeDashboardEndpoints,
         widgets: dashboardWidgets,
         sessionScope,
         healthyEndpointIds,
+        trainedProfilesByEndpointId,
       })
 
       if (drafts.length === 0) {
         toast.info(
-          `No widgets added. Existing: ${skippedExisting}, no-data: ${skippedNoData}, fetch-failed: ${skippedFetch}.`,
+          `No widgets added. Existing: ${skippedExisting}, review: ${skippedReview}, no-data: ${skippedNoData}, fetch-failed: ${skippedFetch}.`,
           { id: 'api-config-auto-add' },
         )
         return
@@ -300,7 +443,7 @@ export default function APIConfigPage() {
       })
 
       toast.success(
-        `Added ${drafts.length} widget(s) from healthy APIs. Skipped ${skippedExisting + skippedNoData + skippedFetch}.`,
+        `Added ${drafts.length} widget(s). Skipped ${skippedExisting + skippedNoData + skippedFetch + skippedReview}.`,
         { id: 'api-config-auto-add' },
       )
     } finally {
@@ -458,6 +601,19 @@ export default function APIConfigPage() {
               )}
               {isAutoAddingWidgets ? 'Adding...' : 'Add Healthy To Builder'}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void runTrainingScan()}
+              disabled={isTrainingApis || activeDashboardEndpoints.length === 0}
+            >
+              {isTrainingApis ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              {isTrainingApis ? 'Training...' : 'Train / Analyze APIs'}
+            </Button>
             <Button size="sm" variant="outline" onClick={loadBoschPreset}>
               <Database className="w-3.5 h-3.5 mr-1.5" />
               Load UPPCL Preset
@@ -486,6 +642,131 @@ export default function APIConfigPage() {
               {scanSummary.failed} Needs Attention
             </Badge>
           </div>
+        )}
+
+        {(isTrainingApis || trainingSummary) && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Bosch Training Pipeline</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isTrainingApis && (
+                <div className="flex justify-center py-2">
+                  <AILoader />
+                </div>
+              )}
+
+              {trainingSummary && (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
+                      {trainingSummary.mappedHighConfidence} High Confidence
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
+                      {trainingSummary.reviewRequired} Review Required
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
+                      {trainingSummary.failed} Failed
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      {trainingSummary.empty} Empty
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
+                      {trainingSummary.unauthorized} Unauthorized
+                    </Badge>
+                  </div>
+
+                  {trainingSummary.reviewRequired > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Review Queue
+                      </p>
+
+                      {trainingSummary.results
+                        .filter(result => result.status === 'healthy' && result.confidenceBand !== 'high')
+                        .map(result => {
+                          const draft = reviewMappings[result.endpointId] ?? result.candidateMapping
+                          if (!draft) return null
+
+                          return (
+                            <div key={result.endpointId} className="rounded-lg border p-3 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium truncate">{result.endpointName}</p>
+                                  <p className="text-[11px] text-muted-foreground truncate">{result.endpointUrl}</p>
+                                </div>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {result.confidence}% {result.confidenceBand}
+                                </Badge>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <Select
+                                  value={draft.type}
+                                  onValueChange={(value: ChartType) => {
+                                    setReviewMappings(prev => ({
+                                      ...prev,
+                                      [result.endpointId]: { ...draft, type: value },
+                                    }))
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {CHART_TYPE_OPTIONS.map(type => (
+                                      <SelectItem key={type} value={type}>
+                                        {type}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+
+                                <Input
+                                  className="h-8 text-xs"
+                                  value={draft.xAxis}
+                                  onChange={(event) => {
+                                    setReviewMappings(prev => ({
+                                      ...prev,
+                                      [result.endpointId]: { ...draft, xAxis: event.target.value },
+                                    }))
+                                  }}
+                                  placeholder="xAxis"
+                                />
+
+                                <Input
+                                  className="h-8 text-xs"
+                                  value={draft.yAxis ?? ''}
+                                  onChange={(event) => {
+                                    setReviewMappings(prev => ({
+                                      ...prev,
+                                      [result.endpointId]: { ...draft, yAxis: event.target.value },
+                                    }))
+                                  }}
+                                  placeholder="yAxis"
+                                />
+                              </div>
+
+                              <div className="flex justify-end">
+                                <Button
+                                  size="sm"
+                                  onClick={() => void handleSaveReviewMapping(result.endpointId)}
+                                  disabled={savingReviewEndpointId === result.endpointId}
+                                >
+                                  {savingReviewEndpointId === result.endpointId
+                                    ? 'Saving...'
+                                    : 'Save Mapping'}
+                                </Button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

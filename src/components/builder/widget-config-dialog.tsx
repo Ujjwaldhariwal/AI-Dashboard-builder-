@@ -20,6 +20,7 @@ import { useDashboardStore } from '@/store/builder-store'
 import type { ChartType } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
+import { saveEndpointMappingFeedback } from '@/lib/training/profile-client'
 import { toast } from 'sonner'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -85,7 +86,7 @@ export function WidgetConfigDialog({
   suggestedYAxis,
   availableFields,
 }: WidgetConfigDialogProps) {
-  const { addWidget, endpoints } = useDashboardStore()
+  const { addWidget, endpoints, currentDashboardId } = useDashboardStore()
 
   const [title, setTitle]               = useState('')
   const [type, setType]                 = useState<ChartType>('bar')
@@ -198,6 +199,24 @@ export function WidgetConfigDialog({
         aliases: Object.keys(aliases).length > 0 ? aliases : undefined,
       },
     })
+
+    if (currentDashboardId) {
+      void saveEndpointMappingFeedback({
+        dashboardId: currentDashboardId,
+        endpointId: endpoint.id,
+        sourceAction: 'create_widget',
+        acceptedMapping: {
+          type,
+          xAxis: xAxis || fields[0]?.name || '',
+          yAxis: yAxis || undefined,
+          reason: 'Manual widget create action',
+          confidence: 90,
+          source: 'manual',
+        },
+      }).catch(() => {
+        // non-blocking feedback write
+      })
+    }
 
     toast.success('Widget added to dashboard')
     onOpenChange(false)

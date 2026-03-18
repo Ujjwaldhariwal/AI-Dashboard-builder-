@@ -17,6 +17,9 @@ import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { WidgetConfigDialog } from '@/components/builder/widget-config-dialog'
 import type { ChartType } from '@/types/widget'
 import { toast } from 'sonner'
+import { getBoschSeedMapping } from '@/lib/training/bosch-seed-mappings'
+import { resolveMappingWithFallback } from '@/lib/training/mapping-engine'
+import { fetchAIFallbackMapping } from '@/lib/training/ai-fallback'
 import { getBuilderDemoAuthSession } from '@/lib/auth/demo-auth-session'
 import { useDashboardStore } from '@/store/builder-store'
 
@@ -197,8 +200,43 @@ export function LiveAPIPreview({
       setRawData(normalizedData.slice(0, 8))
 
       const result = DataAnalyzer.analyzeArray(normalizedData)
-      setAnalysis(result)
-      onAnalysisComplete?.(result)
+
+      const mapping = await resolveMappingWithFallback({
+        rows: normalizedData,
+        endpointName: endpoint?.name ?? 'Endpoint',
+        endpointUrl: endpoint?.url,
+        seedMapping: getBoschSeedMapping({
+          endpointUrl: endpoint?.url,
+          endpointName: endpoint?.name,
+        }),
+      }, {
+        aiFallback: ({ fields, sampleRows }) => fetchAIFallbackMapping({
+          fields,
+          sampleRows,
+          endpointName: endpoint?.name ?? 'Endpoint',
+        }),
+      })
+
+      const mergedAnalysis: DataAnalysis = {
+        ...result,
+        suggestedCharts: mapping.candidate
+          ? [
+              {
+                type: mapping.candidate.type,
+                xAxis: mapping.candidate.xAxis,
+                yAxis: mapping.candidate.yAxis,
+                groupBy: mapping.candidate.xAxis,
+                confidence: mapping.candidate.confidence,
+              },
+              ...result.suggestedCharts
+                .filter(suggestion => suggestion.type !== mapping.candidate?.type)
+                .slice(0, 3),
+            ]
+          : result.suggestedCharts,
+      }
+
+      setAnalysis(mergedAnalysis)
+      onAnalysisComplete?.(mergedAnalysis)
 
       const latencyMs = Math.round(performance.now() - startedAt)
       setMeta({
@@ -218,7 +256,7 @@ export function LiveAPIPreview({
     } finally {
       setLoading(false)
     }
-  }, [headers, method, onAnalysisComplete, url])
+  }, [endpoint?.name, endpoint?.url, headers, method, onAnalysisComplete, url])
 
   useEffect(() => {
     if (!autoRun) return
