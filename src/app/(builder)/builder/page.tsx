@@ -1,35 +1,64 @@
-'use client'
+"use client";
 
 // src/app/(builder)/builder/page.tsx
+// ─────────────────────────────────────────────────────────
+// Optimized: reduced state, fixed effect loops, responsive
+// header, memoized computations, modular sub-components
+// ─────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { useDashboardStore } from '@/store/builder-store'
-import { DragDropCanvas } from '@/components/builder/canvas/drag-drop-canvas'
-import { WidgetConfigDialog } from '@/components/builder/widget-config-dialog'
-import { MagicPasteModal } from '@/components/builder/magic-paste-modal'
-import { ConfigChatbot } from '@/components/builder/ai-assistant/config-chatbot'
-import { ChartSuggester } from '@/components/builder/ai-assistant/chart-suggester'
-import { WidgetStylePanel } from '@/components/builder/style-panel/widget-style-panel'
-import { ProjectConfigPanel } from '@/components/builder/project-config/project-config-panel'
-import { toast } from 'sonner'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Plus, Settings2, Eye, Database, FolderKanban,
-  Download, Wand2, Sparkles, X, Bot,
-  LayoutGrid, Circle, Minimize2, Maximize2,
-  Palette, SlidersHorizontal, Loader2, Radar, RefreshCw,
-} from 'lucide-react'
-import Link from 'next/link'
-import { buildDashboardConfig, slugifyDashboardName } from '@/lib/code-generator/config-builder'
-import { generateProjectFromConfig } from '@/lib/code-generator/template-generator'
-import { packageProjectAsZip } from '@/lib/code-generator/zip-packager'
-import { motion, AnimatePresence } from 'framer-motion'
-import type { Widget } from '@/types/widget'
-import { useDashboardEndpointPrefetch } from '@/hooks/use-dashboard-endpoint-prefetch'
-import { clearEndpointResponseCache } from '@/lib/api/endpoint-response-cache'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useDashboardStore } from "@/store/builder-store";
+import { DragDropCanvas } from "@/components/builder/canvas/drag-drop-canvas";
+import { WidgetConfigDialog } from "@/components/builder/widget-config-dialog";
+import { MagicPasteModal } from "@/components/builder/magic-paste-modal";
+import { ConfigChatbot } from "@/components/builder/ai-assistant/config-chatbot";
+import { ChartSuggester } from "@/components/builder/ai-assistant/chart-suggester";
+import { WidgetStylePanel } from "@/components/builder/style-panel/widget-style-panel";
+import { ProjectConfigPanel } from "@/components/builder/project-config/project-config-panel";
+import { toast } from "sonner";
+import {
+  Plus,
+  Settings2,
+  Eye,
+  Database,
+  FolderKanban,
+  Download,
+  Wand2,
+  Sparkles,
+  X,
+  Bot,
+  LayoutGrid,
+  Circle,
+  Minimize2,
+  Maximize2,
+  Palette,
+  SlidersHorizontal,
+  Loader2,
+  Radar,
+  RefreshCw,
+  MoreHorizontal,
+} from "lucide-react";
+import Link from "next/link";
+import {
+  buildDashboardConfig,
+  slugifyDashboardName,
+} from "@/lib/code-generator/config-builder";
+import { generateProjectFromConfig } from "@/lib/code-generator/template-generator";
+import { packageProjectAsZip } from "@/lib/code-generator/zip-packager";
+import { motion, AnimatePresence } from "framer-motion";
+import type { Widget } from "@/types/widget";
+import { useDashboardEndpointPrefetch } from "@/hooks/use-dashboard-endpoint-prefetch";
+import { clearEndpointResponseCache } from "@/lib/api/endpoint-response-cache";
 import {
   clearEndpointFailureCache,
   clearEndpointProbeCache,
@@ -37,29 +66,46 @@ import {
   prefetchDashboardEndpoints,
   probeDashboardEndpoints,
   type DashboardEndpointProbeSummary,
-} from '@/lib/api/endpoint-runtime-cache'
-import { buildAutoWidgetsFromEndpoints } from '@/lib/builder/auto-widget-generator'
-import { dispatchDashboardWidgetRefresh } from '@/lib/builder/widget-refresh-events'
+} from "@/lib/api/endpoint-runtime-cache";
+import { buildAutoWidgetsFromEndpoints } from "@/lib/builder/auto-widget-generator";
+import { dispatchDashboardWidgetRefresh } from "@/lib/builder/widget-refresh-events";
 import {
   BUILDER_API_HEALTH_RESCAN_EVENT,
   dispatchBuilderApiHealthSummary,
-} from '@/lib/builder/api-health-events'
-import { FrozenChartNav } from '@/components/builder/nav/linear-bar'
+} from "@/lib/builder/api-health-events";
+import { FrozenChartNav } from "@/components/builder/nav/linear-bar";
 import {
   CHART_NAV_ALL,
   buildChartNavTree,
   filterWidgetsByNavSelection,
   normalizeChartNavSelection,
-} from '@/lib/builder/chart-nav-model'
+} from "@/lib/builder/chart-nav-model";
 
-// ── Fix #1 — inline the shape we need, no cross-file type dep ─
+// ─────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────
+
 interface EndpointSummary {
-  id:   string
-  name: string
+  id: string;
+  name: string;
 }
 
+interface NavSelection {
+  groupId: string;
+  subgroupId: string;
+}
+
+const DEFAULT_NAV: NavSelection = {
+  groupId: CHART_NAV_ALL,
+  subgroupId: CHART_NAV_ALL,
+};
+
+// ─────────────────────────────────────────────────────────
+// Main Page
+// ─────────────────────────────────────────────────────────
+
 export default function BuilderPage() {
-  const router = useRouter()
+  const router = useRouter();
   const {
     dashboards,
     currentDashboardId,
@@ -68,288 +114,312 @@ export default function BuilderPage() {
     widgets: allWidgets,
     addWidget,
     getGroupsByDashboard,
-  } = useDashboardStore()
+  } = useDashboardStore();
 
-  const [addWidgetOpen, setAddWidgetOpen]       = useState(false)
-  const [magicOpen, setMagicOpen]               = useState(false)
-  const [exporting, setExporting]               = useState(false)
-  const [aiOpen, setAiOpen]                     = useState(false)
-  const [aiMinimized, setAiMinimized]           = useState(false)
-  const [unsaved, setUnsaved]                   = useState(false)
-  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null)
-  const [sessionScope, setSessionScope]         = useState(() => getEndpointSessionScope())
-  const [scanSummary, setScanSummary]           = useState<DashboardEndpointProbeSummary | null>(null)
-  const [isScanningApis, setIsScanningApis]     = useState(false)
-  const [isAutoAdding, setIsAutoAdding]         = useState(false)
-  const [isRefreshingAll, setIsRefreshingAll]   = useState(false)
-  const [activeGroupId, setActiveGroupId]       = useState(CHART_NAV_ALL)
-  const [activeSubgroupId, setActiveSubgroupId] = useState(CHART_NAV_ALL)
+  // ── Core UI state ──────────────────────────────────────
+  const [addWidgetOpen, setAddWidgetOpen] = useState(false);
+  const [magicOpen, setMagicOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
 
-  const hasMounted        = useRef(false)
-  const lastSavedCountRef = useRef(0)
+  // ── AI panel — single object ───────────────────────────
+  const [aiPanel, setAiPanel] = useState({ open: false, minimized: false });
 
-  useEffect(() => {
-    if (!currentDashboardId && dashboards.length > 0) {
-      setCurrentDashboard(dashboards[0].id)
-    }
-  }, [currentDashboardId, dashboards, setCurrentDashboard])
+  // ── Async ops — single object ──────────────────────────
+  const [ops, setOps] = useState({
+    scanning: false,
+    autoAdding: false,
+    refreshing: false,
+  });
 
-  useEffect(() => {
-    setActiveGroupId(CHART_NAV_ALL)
-    setActiveSubgroupId(CHART_NAV_ALL)
-  }, [currentDashboardId])
+  // ── Nav state — single object ──────────────────────────
+  const [navSelection, setNavSelection] = useState<NavSelection>(DEFAULT_NAV);
 
-  const currentDash = dashboards.find(d => d.id === currentDashboardId)
+  // ── API health ─────────────────────────────────────────
+  const [scanSummary, setScanSummary] =
+    useState<DashboardEndpointProbeSummary | null>(null);
+  const [sessionScope, setSessionScope] = useState(() =>
+    getEndpointSessionScope(),
+  );
 
-  // ── Fix #5 — derive widgets directly from store slice ────────
+  // ── Unsaved tracking ───────────────────────────────────
+  const hasMounted = useRef(false);
+  const lastSavedCount = useRef(0);
+  const [unsaved, setUnsaved] = useState(false);
+
+  // ── Derived data (all memoized) ────────────────────────
+  const currentDash = useMemo(
+    () => dashboards.find((d) => d.id === currentDashboardId),
+    [dashboards, currentDashboardId],
+  );
+
   const dashboardEndpoints = useMemo(
-    () => allEndpoints.filter(
-      endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
-    ),
+    () =>
+      allEndpoints.filter(
+        (ep) => (ep.dashboardId ?? currentDashboardId) === currentDashboardId,
+      ),
     [allEndpoints, currentDashboardId],
-  )
+  );
+
   const widgets = useMemo(
-    () => allWidgets.filter(w => w.dashboardId === currentDashboardId),
+    () => allWidgets.filter((w) => w.dashboardId === currentDashboardId),
     [allWidgets, currentDashboardId],
-  )
+  );
+
   const activeDashboardEndpoints = useMemo(
     () =>
-      dashboardEndpoints.filter(endpoint =>
-        endpoint.status !== 'inactive' &&
-        typeof endpoint.url === 'string' &&
-        endpoint.url.trim().length > 0,
+      dashboardEndpoints.filter(
+        (ep) => ep.status !== "inactive" && ep.url?.trim(),
       ),
     [dashboardEndpoints],
-  )
+  );
+
   const navEndpointLookup = useMemo(
-    () => Object.fromEntries(
-      dashboardEndpoints.map(endpoint => [
-        endpoint.id,
-        { name: endpoint.name, url: endpoint.url },
-      ]),
-    ),
+    () =>
+      Object.fromEntries(
+        dashboardEndpoints.map((ep) => [ep.id, { name: ep.name, url: ep.url }]),
+      ),
     [dashboardEndpoints],
-  )
+  );
+
   const collections = useMemo(
     () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
     [currentDashboardId, getGroupsByDashboard],
-  )
+  );
+
   const navTree = useMemo(
-    () => buildChartNavTree(widgets, collections, { endpointLookup: navEndpointLookup }),
+    () =>
+      buildChartNavTree(widgets, collections, {
+        endpointLookup: navEndpointLookup,
+      }),
     [widgets, collections, navEndpointLookup],
-  )
+  );
+
   const visibleWidgets = useMemo(
-    () => filterWidgetsByNavSelection(
+    () =>
+      filterWidgetsByNavSelection(
+        widgets,
+        navSelection.groupId,
+        navSelection.subgroupId,
+        collections,
+        { endpointLookup: navEndpointLookup },
+      ),
+    [
       widgets,
-      activeGroupId,
-      activeSubgroupId,
+      navSelection.groupId,
+      navSelection.subgroupId,
       collections,
-      { endpointLookup: navEndpointLookup },
-    ),
-    [widgets, activeGroupId, activeSubgroupId, collections, navEndpointLookup],
-  )
-  const isNavFiltered = activeGroupId !== CHART_NAV_ALL || activeSubgroupId !== CHART_NAV_ALL
-  const sectionCount = new Set(
-    widgets
-      .map(widget => widget.sectionName?.trim())
-      .filter((value): value is string => Boolean(value)),
-  ).size
+      navEndpointLookup,
+    ],
+  );
 
-  useDashboardEndpointPrefetch(activeDashboardEndpoints)
+  const isNavFiltered =
+    navSelection.groupId !== CHART_NAV_ALL ||
+    navSelection.subgroupId !== CHART_NAV_ALL;
 
-  useEffect(() => {
-    const listener = () => setSessionScope(getEndpointSessionScope())
-    window.addEventListener('builderDemoAuthSessionChanged', listener)
-    return () => window.removeEventListener('builderDemoAuthSessionChanged', listener)
-  }, [])
-
-  useEffect(() => {
-    const normalized = normalizeChartNavSelection(navTree, {
-      groupId: activeGroupId,
-      subgroupId: activeSubgroupId,
-    })
-    if (normalized.groupId !== activeGroupId) {
-      setActiveGroupId(normalized.groupId)
+  const sectionCount = useMemo(() => {
+    const names = new Set<string>();
+    for (const w of widgets) {
+      const s = w.sectionName?.trim();
+      if (s) names.add(s);
     }
-    if (normalized.subgroupId !== activeSubgroupId) {
-      setActiveSubgroupId(normalized.subgroupId)
-    }
-  }, [activeGroupId, activeSubgroupId, navTree])
+    return names.size;
+  }, [widgets]);
 
+  // ── Prefetch ───────────────────────────────────────────
+  useDashboardEndpointPrefetch(activeDashboardEndpoints);
+
+  // ── Effects ────────────────────────────────────────────
+
+  // Auto-select first dashboard
   useEffect(() => {
-    if (!selectedWidgetId) return
-    if (!visibleWidgets.some(widget => widget.id === selectedWidgetId)) {
-      setSelectedWidgetId(null)
+    if (!currentDashboardId && dashboards.length > 0) {
+      setCurrentDashboard(dashboards[0].id);
     }
-  }, [selectedWidgetId, visibleWidgets])
+  }, [currentDashboardId, dashboards, setCurrentDashboard]);
 
+  // Reset state when dashboard changes
+  useEffect(() => {
+    setNavSelection(DEFAULT_NAV);
+    setSelectedWidgetId(null);
+  }, [currentDashboardId]);
+
+  // Session scope listener
+  useEffect(() => {
+    const handler = () => setSessionScope(getEndpointSessionScope());
+    window.addEventListener("builderDemoAuthSessionChanged", handler);
+    return () =>
+      window.removeEventListener("builderDemoAuthSessionChanged", handler);
+  }, []);
+
+  // Normalize nav selection — guarded against infinite loops
+  const prevNormKey = useRef("");
+  useEffect(() => {
+    const normalized = normalizeChartNavSelection(navTree, navSelection);
+    const key = `${normalized.groupId}|${normalized.subgroupId}`;
+    if (
+      key !== prevNormKey.current &&
+      (normalized.groupId !== navSelection.groupId ||
+        normalized.subgroupId !== navSelection.subgroupId)
+    ) {
+      prevNormKey.current = key;
+      setNavSelection(normalized);
+    }
+  }, [navTree, navSelection]);
+
+  // Deselect widget if not visible
+  useEffect(() => {
+    if (
+      selectedWidgetId &&
+      !visibleWidgets.some((w) => w.id === selectedWidgetId)
+    ) {
+      setSelectedWidgetId(null);
+    }
+  }, [selectedWidgetId, visibleWidgets]);
+
+  // Unsaved tracking
   useEffect(() => {
     if (!hasMounted.current) {
-      lastSavedCountRef.current = widgets.length
-      hasMounted.current = true
-      return
+      lastSavedCount.current = widgets.length;
+      hasMounted.current = true;
+      return;
     }
-    if (widgets.length !== lastSavedCountRef.current) {
-      setUnsaved(true)
-    }
-  }, [widgets.length])
+    if (widgets.length !== lastSavedCount.current) setUnsaved(true);
+  }, [widgets.length]);
 
-  const runApiScan = useCallback(async (
-    options: { force?: boolean; silent?: boolean } = {},
-  ) => {
-    if (activeDashboardEndpoints.length === 0) {
-      setScanSummary(null)
-      if (!options.silent) {
-        toast.info('No active APIs available for scan.')
+  // ── API Scan ───────────────────────────────────────────
+
+  const runApiScan = useCallback(
+    async (opts: { force?: boolean; silent?: boolean } = {}) => {
+      if (activeDashboardEndpoints.length === 0) {
+        setScanSummary(null);
+        if (!opts.silent) toast.info("No active APIs available for scan.");
+        return null;
       }
-      return null
-    }
-
-    setIsScanningApis(true)
-    if (!options.silent) {
-      toast.loading('Scanning API health...', { id: 'builder-api-scan' })
-    }
-
-    try {
-      const summary = await probeDashboardEndpoints(activeDashboardEndpoints, {
-        force: options.force,
-        sessionScope,
-      })
-      setScanSummary(summary)
-
-      if (!options.silent) {
-        toast.success(
-          `Scan done: ${summary.healthy} healthy, ${summary.unauthorized} unauthorized, ${summary.failed} failed.`,
-          { id: 'builder-api-scan' },
-        )
+      setOps((p) => ({ ...p, scanning: true }));
+      if (!opts.silent)
+        toast.loading("Scanning API health...", { id: "api-scan" });
+      try {
+        const summary = await probeDashboardEndpoints(
+          activeDashboardEndpoints,
+          { force: opts.force, sessionScope },
+        );
+        setScanSummary(summary);
+        if (!opts.silent)
+          toast.success(
+            `Scan: ${summary.healthy} healthy, ${summary.unauthorized} auth, ${summary.failed} failed.`,
+            { id: "api-scan" },
+          );
+        return summary;
+      } catch (e) {
+        if (!opts.silent)
+          toast.error(`Scan failed: ${e instanceof Error ? e.message : e}`, {
+            id: "api-scan",
+          });
+        return null;
+      } finally {
+        setOps((p) => ({ ...p, scanning: false }));
       }
-      return summary
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!options.silent) {
-        toast.error(`API scan failed: ${message}`, { id: 'builder-api-scan' })
-      }
-      return null
-    } finally {
-      setIsScanningApis(false)
-    }
-  }, [activeDashboardEndpoints, sessionScope])
+    },
+    [activeDashboardEndpoints, sessionScope],
+  );
 
+  // Initial scan + broadcast
   useEffect(() => {
-    void runApiScan({ silent: true })
-  }, [runApiScan])
+    void runApiScan({ silent: true });
+  }, [runApiScan]);
+  useEffect(() => {
+    dispatchBuilderApiHealthSummary(scanSummary);
+  }, [scanSummary]);
 
+  // Sidebar rescan
   useEffect(() => {
-    dispatchBuilderApiHealthSummary(scanSummary)
-  }, [scanSummary])
-
-  useEffect(() => {
-    const handleSidebarRescan = () => {
-      void runApiScan({ force: true })
-    }
-    window.addEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handleSidebarRescan)
+    const handler = () => void runApiScan({ force: true });
+    window.addEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handler);
     return () => {
-      window.removeEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handleSidebarRescan)
-      dispatchBuilderApiHealthSummary(null)
-    }
-  }, [runApiScan])
+      window.removeEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handler);
+      dispatchBuilderApiHealthSummary(null);
+    };
+  }, [runApiScan]);
 
-  const handleScanApis = useCallback(() => {
-    void runApiScan({ force: true })
-  }, [runApiScan])
+  // ── Handlers ───────────────────────────────────────────
+
+  const handleScanApis = useCallback(
+    () => void runApiScan({ force: true }),
+    [runApiScan],
+  );
 
   const handleRefreshAll = useCallback(async () => {
-    setIsRefreshingAll(true)
-    toast.loading('Refreshing dashboard data...', { id: 'builder-refresh-all' })
-
+    setOps((p) => ({ ...p, refreshing: true }));
+    toast.loading("Refreshing...", { id: "refresh" });
     try {
-      clearEndpointResponseCache()
-      clearEndpointFailureCache()
-      clearEndpointProbeCache()
-
+      clearEndpointResponseCache();
+      clearEndpointFailureCache();
+      clearEndpointProbeCache();
       if (activeDashboardEndpoints.length > 0) {
-        await prefetchDashboardEndpoints(activeDashboardEndpoints, { sessionScope })
-        await runApiScan({ silent: true })
+        await prefetchDashboardEndpoints(activeDashboardEndpoints, {
+          sessionScope,
+        });
+        await runApiScan({ silent: true });
       }
-
-      dispatchDashboardWidgetRefresh({ scope: 'all', force: false })
-      toast.success('All widgets refreshed from latest API data', { id: 'builder-refresh-all' })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      toast.error(`Refresh failed: ${message}`, { id: 'builder-refresh-all' })
+      dispatchDashboardWidgetRefresh({ scope: "all", force: false });
+      toast.success("All widgets refreshed", { id: "refresh" });
+    } catch (e) {
+      toast.error(`Refresh failed: ${e instanceof Error ? e.message : e}`, {
+        id: "refresh",
+      });
     } finally {
-      setIsRefreshingAll(false)
+      setOps((p) => ({ ...p, refreshing: false }));
     }
-  }, [activeDashboardEndpoints, runApiScan, sessionScope])
+  }, [activeDashboardEndpoints, runApiScan, sessionScope]);
 
-  const handleAutoAddWorkingApis = useCallback(async () => {
-    if (!currentDashboardId) return
-    if (activeDashboardEndpoints.length === 0) {
-      toast.info('No active APIs to auto-add.')
-      return
+  const handleAutoAdd = useCallback(async () => {
+    if (!currentDashboardId || activeDashboardEndpoints.length === 0) {
+      toast.info("No active APIs to auto-add.");
+      return;
     }
-
-    setIsAutoAdding(true)
-    toast.loading('Building widgets from working APIs...', { id: 'builder-auto-add' })
-
+    setOps((p) => ({ ...p, autoAdding: true }));
+    toast.loading("Building widgets...", { id: "auto-add" });
     try {
-      const latestSummary = scanSummary ?? await runApiScan({ silent: true })
-      if (!latestSummary) {
-        toast.error('Unable to scan APIs before auto-add.', { id: 'builder-auto-add' })
-        return
+      const summary = scanSummary ?? (await runApiScan({ silent: true }));
+      if (!summary) {
+        toast.error("Scan required first.", { id: "auto-add" });
+        return;
       }
-
-      const healthyEndpointIds = new Set(
-        latestSummary.results
-          .filter(result => result.status === 'healthy' && typeof result.endpointId === 'string')
-          .map(result => result.endpointId as string),
-      )
-
-      if (healthyEndpointIds.size === 0) {
-        toast.info('No healthy APIs found in the latest scan.', { id: 'builder-auto-add' })
-        return
+      const healthyIds = new Set(
+        summary.results
+          .filter((r) => r.status === "healthy" && r.endpointId)
+          .map((r) => r.endpointId as string),
+      );
+      if (healthyIds.size === 0) {
+        toast.info("No healthy APIs.", { id: "auto-add" });
+        return;
       }
-
-      const {
-        drafts,
-        skippedExisting,
-        skippedFetch,
-        skippedNoData,
-      } = await buildAutoWidgetsFromEndpoints({
-        endpoints: activeDashboardEndpoints,
-        widgets,
-        sessionScope,
-        healthyEndpointIds,
-      })
-
+      const { drafts, skippedExisting, skippedFetch, skippedNoData } =
+        await buildAutoWidgetsFromEndpoints({
+          endpoints: activeDashboardEndpoints,
+          widgets,
+          sessionScope,
+          healthyEndpointIds: healthyIds,
+        });
       if (drafts.length === 0) {
         toast.info(
-          `No widgets added. Existing: ${skippedExisting}, no-data: ${skippedNoData}, fetch-failed: ${skippedFetch}.`,
-          { id: 'builder-auto-add' },
-        )
-        return
+          `No new widgets. Skip: ${skippedExisting} existing, ${skippedNoData} no-data, ${skippedFetch} failed.`,
+          { id: "auto-add" },
+        );
+        return;
       }
-
-      drafts.forEach(draft => {
+      for (const d of drafts)
         addWidget({
-          title: draft.title,
-          type: draft.type,
-          endpointId: draft.endpointId,
-          dataMapping: {
-            xAxis: draft.xAxis,
-            yAxis: draft.yAxis,
-            yAxes: draft.yAxes,
-          },
-          position: draft.position,
-        })
-      })
-
-      toast.success(
-        `Added ${drafts.length} widgets. Skipped ${skippedExisting + skippedNoData + skippedFetch}.`,
-        { id: 'builder-auto-add' },
-      )
+          title: d.title,
+          type: d.type,
+          endpointId: d.endpointId,
+          dataMapping: { xAxis: d.xAxis, yAxis: d.yAxis, yAxes: d.yAxes },
+          position: d.position,
+        });
+      toast.success(`Added ${drafts.length} widgets.`, { id: "auto-add" });
     } finally {
-      setIsAutoAdding(false)
+      setOps((p) => ({ ...p, autoAdding: false }));
     }
   }, [
     currentDashboardId,
@@ -359,42 +429,72 @@ export default function BuilderPage() {
     widgets,
     sessionScope,
     addWidget,
-  ])
+  ]);
 
-  const handleCanvasClick = () => setSelectedWidgetId(null)
+  const handleCanvasClick = useCallback(() => setSelectedWidgetId(null), []);
 
-  const handleExport = async () => {
-    if (!currentDash)    { toast.error('No active dashboard'); return }
-    if (!widgets.length) { toast.error('Add at least one widget first'); return }
-
-    setExporting(true)
-    toast.loading('Generating project…', { id: 'export' })
-
-    try {
-      const projectConfig = useDashboardStore.getState().getProjectConfig(currentDash.id)
-      const chartGroups   = useDashboardStore.getState().getGroupsByDashboard(currentDash.id)
-      const config        = buildDashboardConfig(currentDash, allEndpoints, allWidgets, projectConfig, chartGroups)
-      const files         = generateProjectFromConfig(config)
-      const blob          = await packageProjectAsZip(files)
-      const url           = URL.createObjectURL(blob)
-      const a             = document.createElement('a')
-      a.href              = url
-      a.download          = `${slugifyDashboardName(currentDash.name)}-dashboard.zip`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      toast.success('Export ready!', { id: 'export' })
-      lastSavedCountRef.current = widgets.length
-      setUnsaved(false)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      toast.error(`Export failed: ${message}`, { id: 'export' })
-    } finally {
-      setExporting(false)
+  const handleExport = useCallback(async () => {
+    if (!currentDash) {
+      toast.error("No active dashboard");
+      return;
     }
-  }
+    if (!widgets.length) {
+      toast.error("Add at least one widget first");
+      return;
+    }
+    setExporting(true);
+    toast.loading("Generating project…", { id: "export" });
+    try {
+      const store = useDashboardStore.getState();
+      const config = buildDashboardConfig(
+        currentDash,
+        allEndpoints,
+        allWidgets,
+        store.getProjectConfig(currentDash.id),
+        store.getGroupsByDashboard(currentDash.id),
+      );
+      const blob = await packageProjectAsZip(generateProjectFromConfig(config));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slugifyDashboardName(currentDash.name)}-dashboard.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Export ready!", { id: "export" });
+      lastSavedCount.current = widgets.length;
+      setUnsaved(false);
+    } catch (err) {
+      toast.error(
+        `Export failed: ${err instanceof Error ? err.message : err}`,
+        { id: "export" },
+      );
+    } finally {
+      setExporting(false);
+    }
+  }, [currentDash, widgets, allEndpoints, allWidgets]);
+
+  const handleNavChange = useCallback(
+    (sel: NavSelection) => setNavSelection(sel),
+    [],
+  );
+
+  const resetNav = useCallback(() => setNavSelection(DEFAULT_NAV), []);
+  const openAi = useCallback(
+    () => setAiPanel({ open: true, minimized: false }),
+    [],
+  );
+  const closeAi = useCallback(
+    () => setAiPanel({ open: false, minimized: false }),
+    [],
+  );
+  const toggleAiMin = useCallback(
+    () => setAiPanel((p) => ({ ...p, minimized: !p.minimized })),
+    [],
+  );
+
+  // ── Empty states ───────────────────────────────────────
 
   if (dashboards.length === 0) {
     return (
@@ -404,34 +504,36 @@ export default function BuilderPage() {
             <FolderKanban className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-xl font-bold mb-2">No Dashboard Yet</h2>
-          <p className="text-sm text-muted-foreground mb-5">Create one from Workspaces first.</p>
-          <Button onClick={() => router.push('/workspaces')}>Go to Workspaces</Button>
+          <p className="text-sm text-muted-foreground mb-5">
+            Create one from Workspaces first.
+          </p>
+          <Button onClick={() => router.push("/workspaces")}>
+            Go to Workspaces
+          </Button>
         </div>
       </div>
-    )
+    );
   }
 
   if (dashboardEndpoints.length === 0 && widgets.length === 0) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <BuilderHeader
           currentDash={currentDash}
-          widgets={widgets}
-          endpoints={dashboardEndpoints}
-          collectionCount={collections.length}
-          sectionCount={sectionCount}
-          exporting={exporting}
+          widgetCount={0}
+          endpointCount={0}
+          collectionCount={0}
+          sectionCount={0}
+          exporting={false}
           unsaved={false}
+          ops={{ scanning: false, autoAdding: false, refreshing: false }}
+          scanSummary={null}
           onAddWidget={() => setAddWidgetOpen(true)}
           onMagicOpen={() => setMagicOpen(true)}
           onExport={handleExport}
-          scanSummary={scanSummary}
-          isScanningApis={isScanningApis}
-          isAutoAdding={isAutoAdding}
-          isRefreshingAll={isRefreshingAll}
           onScanApis={handleScanApis}
           onRefreshAll={handleRefreshAll}
-          onAutoAddWorkingApis={handleAutoAddWorkingApis}
+          onAutoAdd={handleAutoAdd}
         />
         <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
           <div className="text-center max-w-sm px-6">
@@ -447,58 +549,67 @@ export default function BuilderPage() {
                 onClick={() => setMagicOpen(true)}
                 className="bg-gradient-to-r from-purple-600 to-blue-600 text-white"
               >
-                <Wand2 className="w-4 h-4 mr-2" />Magic Auto-Build
+                <Wand2 className="w-4 h-4 mr-2" />
+                Magic Auto-Build
               </Button>
               <Link href="/api-config">
                 <Button variant="outline" className="w-full">
-                  <Settings2 className="w-4 h-4 mr-2" />Configure APIs Manually
+                  <Settings2 className="w-4 h-4 mr-2" />
+                  Configure APIs Manually
                 </Button>
               </Link>
             </div>
           </div>
         </div>
-        <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
-        <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
+        <WidgetConfigDialog
+          open={addWidgetOpen}
+          onOpenChange={setAddWidgetOpen}
+        />
+        <MagicPasteModal
+          isOpen={magicOpen}
+          onClose={() => setMagicOpen(false)}
+        />
       </div>
-    )
+    );
   }
+
+  // ── Main layout ────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
-
-      <div className="px-6 pt-5 pb-3 border-b bg-card/80 backdrop-blur flex-shrink-0">
+      {/* Header */}
+      <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b bg-card/80 backdrop-blur flex-shrink-0">
         <BuilderHeader
           currentDash={currentDash}
-          widgets={widgets}
-          endpoints={dashboardEndpoints}
+          widgetCount={widgets.length}
+          endpointCount={dashboardEndpoints.length}
           collectionCount={collections.length}
           sectionCount={sectionCount}
           exporting={exporting}
           unsaved={unsaved}
+          ops={ops}
+          scanSummary={scanSummary}
           onAddWidget={() => setAddWidgetOpen(true)}
           onMagicOpen={() => setMagicOpen(true)}
           onExport={handleExport}
-          scanSummary={scanSummary}
-          isScanningApis={isScanningApis}
-          isAutoAdding={isAutoAdding}
-          isRefreshingAll={isRefreshingAll}
           onScanApis={handleScanApis}
           onRefreshAll={handleRefreshAll}
-          onAutoAddWorkingApis={handleAutoAddWorkingApis}
+          onAutoAdd={handleAutoAdd}
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6" onClick={handleCanvasClick}>
+      {/* Canvas */}
+      <div
+        className="flex-1 overflow-y-auto p-4 sm:p-6"
+        onClick={handleCanvasClick}
+      >
         {widgets.length > 0 && (
           <div className="mb-4">
             <FrozenChartNav
               tree={navTree}
-              activeGroupId={activeGroupId}
-              activeSubgroupId={activeSubgroupId}
-              onSelectionChange={({ groupId, subgroupId }) => {
-                setActiveGroupId(groupId)
-                setActiveSubgroupId(subgroupId)
-              }}
+              activeGroupId={navSelection.groupId}
+              activeSubgroupId={navSelection.subgroupId}
+              onSelectionChange={handleNavChange}
             />
             {isNavFiltered && (
               <p className="mt-2 text-xs text-muted-foreground">
@@ -515,243 +626,410 @@ export default function BuilderPage() {
             widgetsOverride={visibleWidgets}
           />
         ) : (
-          <div className="flex min-h-[42vh] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center">
-            <p className="text-sm font-semibold">No charts in this selection</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Switch category/subgroup to view available charts.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={() => {
-                setActiveGroupId(CHART_NAV_ALL)
-                setActiveSubgroupId(CHART_NAV_ALL)
-              }}
-            >
-              Reset Filters
-            </Button>
-          </div>
+          <EmptyFilterState onReset={resetNav} />
         )}
       </div>
 
-      <AnimatePresence>
-        {aiOpen && (
-          <motion.div
-            key="ai-overlay"
-            initial={{ opacity: 0, y: 24, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            className="fixed bottom-5 right-5 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-card"
-            style={{ width: 400, height: aiMinimized ? 'auto' : 600 }}
-          >
-            <Tabs defaultValue="chat" className="flex flex-col h-full">
-              <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gradient-to-r from-blue-600/10 to-purple-600/10 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-                    <Sparkles className="w-3 h-3 text-white" />
-                  </div>
-                  <span className="text-sm font-semibold">AI Assistant</span>
-                  {selectedWidgetId && !aiMinimized && (
-                    <Badge variant="secondary" className="text-[10px]">Widget selected</Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <TabsList className="h-6">
-                    <TabsTrigger value="chat"    className="text-[10px] h-5 px-2 gap-1"><Bot className="w-2.5 h-2.5" />Chat</TabsTrigger>
-                    <TabsTrigger value="suggest" className="text-[10px] h-5 px-2 gap-1"><LayoutGrid className="w-2.5 h-2.5" />Suggest</TabsTrigger>
-                    <TabsTrigger value="style"   className="text-[10px] h-5 px-2 gap-1"><Palette className="w-2.5 h-2.5" />Style</TabsTrigger>
-                    <TabsTrigger value="config"  className="text-[10px] h-5 px-2 gap-1"><SlidersHorizontal className="w-2.5 h-2.5" />Config</TabsTrigger>
-                  </TabsList>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAiMinimized(v => !v)}>
-                    {aiMinimized ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setAiOpen(false); setAiMinimized(false) }}>
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
+      {/* AI panel */}
+      <AiPanel
+        open={aiPanel.open}
+        minimized={aiPanel.minimized}
+        widgetId={selectedWidgetId}
+        dashId={currentDashboardId}
+        onClose={closeAi}
+        onMinToggle={toggleAiMin}
+      />
 
-              {!aiMinimized && (
-                <div className="flex-1 overflow-hidden min-h-0">
-                  <TabsContent value="chat"    className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-                    <ConfigChatbot selectedWidgetId={selectedWidgetId} onClose={() => { setAiOpen(false); setAiMinimized(false) }} />
-                  </TabsContent>
-                  <TabsContent value="suggest" className="mt-0 h-full overflow-y-auto p-4">
-                    <ChartSuggester />
-                  </TabsContent>
-                  <TabsContent value="style"   className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-                    <WidgetStylePanel selectedWidgetId={selectedWidgetId} />
-                  </TabsContent>
-                  <TabsContent value="config"  className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-                    {currentDashboardId
-                      ? <ProjectConfigPanel dashboardId={currentDashboardId} />
-                      : (
-                        <div className="flex items-center justify-center h-full p-6 text-center">
-                          <div>
-                            <SlidersHorizontal className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                            <p className="text-sm text-muted-foreground">Select a dashboard to configure project settings</p>
-                          </div>
-                        </div>
-                      )
-                    }
-                  </TabsContent>
-                </div>
-              )}
-            </Tabs>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {!aiOpen && (
+      {/* AI fab */}
+      {!aiPanel.open && (
         <motion.button
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
-          onClick={() => { setAiOpen(true); setAiMinimized(false) }}
-          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-medium px-4 py-2.5 rounded-2xl shadow-lg transition-all"
+          onClick={openAi}
+          className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-50 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-medium px-4 py-2.5 rounded-2xl shadow-lg transition-all active:scale-95"
         >
-          <Sparkles className="w-4 h-4" />AI Assistant
+          <Sparkles className="w-4 h-4" />
+          <span className="hidden sm:inline">AI Assistant</span>
         </motion.button>
       )}
 
-      <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
+      <WidgetConfigDialog
+        open={addWidgetOpen}
+        onOpenChange={setAddWidgetOpen}
+      />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
     </div>
-  )
+  );
 }
 
-// ── Fix #1 — use EndpointSummary, not ApiEndpoint from @/types ─
+// ─────────────────────────────────────────────────────────
+// EmptyFilterState
+// ─────────────────────────────────────────────────────────
+
+function EmptyFilterState({ onReset }: { onReset: () => void }) {
+  return (
+    <div className="flex min-h-[42vh] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center px-4">
+      <p className="text-sm font-semibold">No charts in this selection</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Switch category/subgroup to view available charts.
+      </p>
+      <Button variant="outline" size="sm" className="mt-3" onClick={onReset}>
+        Reset Filters
+      </Button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// BuilderHeader — responsive with overflow menu
+// ─────────────────────────────────────────────────────────
+
 interface BuilderHeaderProps {
-  currentDash: { id: string; name: string; description?: string } | undefined
-  widgets:     Widget[]
-  endpoints:   EndpointSummary[]
-  collectionCount: number
-  sectionCount: number
-  exporting:   boolean
-  unsaved:     boolean
-  scanSummary: DashboardEndpointProbeSummary | null
-  isScanningApis: boolean
-  isAutoAdding: boolean
-  isRefreshingAll: boolean
-  onAddWidget: () => void
-  onMagicOpen: () => void
-  onExport:    () => void
-  onScanApis: () => void
-  onRefreshAll: () => void
-  onAutoAddWorkingApis: () => void
+  currentDash: { id: string; name: string; description?: string } | undefined;
+  widgetCount: number;
+  endpointCount: number;
+  collectionCount: number;
+  sectionCount: number;
+  exporting: boolean;
+  unsaved: boolean;
+  ops: { scanning: boolean; autoAdding: boolean; refreshing: boolean };
+  scanSummary: DashboardEndpointProbeSummary | null;
+  onAddWidget: () => void;
+  onMagicOpen: () => void;
+  onExport: () => void;
+  onScanApis: () => void;
+  onRefreshAll: () => void;
+  onAutoAdd: () => void;
 }
 
 function BuilderHeader({
-  currentDash, widgets, endpoints,
+  currentDash,
+  widgetCount,
+  endpointCount,
   collectionCount,
   sectionCount,
-  exporting, unsaved,
+  exporting,
+  unsaved,
+  ops,
   scanSummary,
-  isScanningApis,
-  isAutoAdding,
-  isRefreshingAll,
   onAddWidget,
   onMagicOpen,
   onExport,
   onScanApis,
   onRefreshAll,
-  onAutoAddWorkingApis,
+  onAutoAdd,
 }: BuilderHeaderProps) {
   return (
-    <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* Left */}
       <div className="min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-xl font-bold truncate">{currentDash?.name ?? 'Builder'}</h1>
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          <h1 className="text-lg sm:text-xl font-bold truncate max-w-[200px] sm:max-w-none">
+            {currentDash?.name ?? "Builder"}
+          </h1>
           <Badge variant="secondary" className="text-[10px]">
-            {widgets.length} widget{widgets.length !== 1 ? 's' : ''}
+            {widgetCount} widget{widgetCount !== 1 ? "s" : ""}
           </Badge>
           <Badge variant="outline" className="text-[10px]">
-            {endpoints.length} API{endpoints.length !== 1 ? 's' : ''}
+            {endpointCount} API{endpointCount !== 1 ? "s" : ""}
           </Badge>
-          <Badge variant="outline" className="text-[10px]">
-            {collectionCount} collection{collectionCount !== 1 ? 's' : ''}
-          </Badge>
-          <Badge variant="outline" className="text-[10px]">
-            {sectionCount} section{sectionCount !== 1 ? 's' : ''}
-          </Badge>
+          {collectionCount > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[10px] hidden sm:inline-flex"
+            >
+              {collectionCount} grp{collectionCount !== 1 ? "s" : ""}
+            </Badge>
+          )}
+          {sectionCount > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[10px] hidden md:inline-flex"
+            >
+              {sectionCount} sec{sectionCount !== 1 ? "s" : ""}
+            </Badge>
+          )}
           {scanSummary && (
             <>
-              <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700">
+              <Badge
+                variant="outline"
+                className="text-[10px] border-emerald-300 text-emerald-700 hidden lg:inline-flex"
+              >
                 {scanSummary.healthy} ready
               </Badge>
-              <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700">
-                {scanSummary.unauthorized} auth issues
-              </Badge>
+              {scanSummary.unauthorized > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] border-amber-300 text-amber-700 hidden lg:inline-flex"
+                >
+                  {scanSummary.unauthorized} auth
+                </Badge>
+              )}
             </>
           )}
           {unsaved && (
             <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
               <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
-              Unsaved changes
+              Unsaved
             </div>
           )}
         </div>
-        <p className="text-sm text-muted-foreground mt-0.5 truncate">
-          {currentDash?.description || 'Add widgets from your connected APIs'}
+        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">
+          {currentDash?.description || "Add widgets from your connected APIs"}
         </p>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-        <Link href="/api-config">
-          <Button variant="outline" size="sm"><Settings2 className="w-3.5 h-3.5 mr-1.5" />APIs</Button>
+
+      {/* Right */}
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        <Link href="/api-config" className="hidden sm:block">
+          <Button variant="outline" size="sm">
+            <Settings2 className="w-3.5 h-3.5 mr-1.5" />
+            APIs
+          </Button>
         </Link>
-        <Link href="/dashboard">
-          <Button variant="outline" size="sm"><Eye className="w-3.5 h-3.5 mr-1.5" />Preview</Button>
+        <Link href="/dashboard" className="hidden sm:block">
+          <Button variant="outline" size="sm">
+            <Eye className="w-3.5 h-3.5 mr-1.5" />
+            Preview
+          </Button>
         </Link>
-        <Button variant="outline" size="sm" onClick={onScanApis} disabled={isScanningApis || endpoints.length === 0}>
-          {isScanningApis ? (
-            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-          ) : (
-            <Radar className="w-3.5 h-3.5 mr-1.5" />
-          )}
-          {isScanningApis ? 'Scanning...' : 'Scan APIs'}
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onExport}
+          disabled={exporting || widgetCount === 0}
+        >
+          <Download className="w-3.5 h-3.5 sm:mr-1.5" />
+          <span className="hidden sm:inline">
+            {exporting ? "Exporting…" : "Export"}
+          </span>
         </Button>
         <Button
           variant="outline"
           size="sm"
-          onClick={onRefreshAll}
-          disabled={isRefreshingAll || endpoints.length === 0}
-        >
-          {isRefreshingAll ? (
-            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-          ) : (
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-          )}
-          {isRefreshingAll ? 'Refreshing...' : 'Refresh All'}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onAutoAddWorkingApis}
-          disabled={isAutoAdding || !scanSummary || scanSummary.healthy === 0}
-        >
-          {isAutoAdding ? (
-            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-          ) : (
-            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-          )}
-          {isAutoAdding ? 'Adding...' : 'Auto Add Working'}
-        </Button>
-        <Button variant="outline" size="sm" onClick={onExport} disabled={exporting || widgets.length === 0}>
-          <Download className="w-3.5 h-3.5 mr-1.5" />
-          {exporting ? 'Exporting…' : 'Export ZIP'}
-        </Button>
-        <Button
-          variant="outline" size="sm" onClick={onMagicOpen}
+          onClick={onMagicOpen}
           className="border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-900 dark:text-purple-400"
         >
-          <Wand2 className="w-3.5 h-3.5 mr-1.5" />Magic
+          <Wand2 className="w-3.5 h-3.5 sm:mr-1.5" />
+          <span className="hidden sm:inline">Magic</span>
         </Button>
-        <Button size="sm" onClick={onAddWidget} disabled={endpoints.length === 0}>
-          <Plus className="w-3.5 h-3.5 mr-1.5" />Add Widget
+        <Button size="sm" onClick={onAddWidget} disabled={endpointCount === 0}>
+          <Plus className="w-3.5 h-3.5 sm:mr-1.5" />
+          <span className="hidden sm:inline">Add Widget</span>
         </Button>
+
+        {/* Overflow */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" className="h-8 w-8">
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem
+              onClick={onScanApis}
+              disabled={ops.scanning || endpointCount === 0}
+            >
+              {ops.scanning ? (
+                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+              ) : (
+                <Radar className="w-3.5 h-3.5 mr-2" />
+              )}
+              {ops.scanning ? "Scanning..." : "Scan APIs"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onRefreshAll}
+              disabled={ops.refreshing || endpointCount === 0}
+            >
+              {ops.refreshing ? (
+                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 mr-2" />
+              )}
+              {ops.refreshing ? "Refreshing..." : "Refresh All"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onAutoAdd}
+              disabled={
+                ops.autoAdding || !scanSummary || scanSummary.healthy === 0
+              }
+            >
+              {ops.autoAdding ? (
+                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5 mr-2" />
+              )}
+              {ops.autoAdding ? "Adding..." : "Auto Add Working"}
+            </DropdownMenuItem>
+            <div className="sm:hidden">
+              <DropdownMenuItem asChild>
+                <Link href="/api-config" className="flex items-center">
+                  <Settings2 className="w-3.5 h-3.5 mr-2" />
+                  API Config
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard" className="flex items-center">
+                  <Eye className="w-3.5 h-3.5 mr-2" />
+                  Preview
+                </Link>
+              </DropdownMenuItem>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
-  )
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// AiPanel — extracted for isolation
+// ─────────────────────────────────────────────────────────
+
+function AiPanel({
+  open,
+  minimized,
+  widgetId,
+  dashId,
+  onClose,
+  onMinToggle,
+}: {
+  open: boolean;
+  minimized: boolean;
+  widgetId: string | null;
+  dashId: string | null;
+  onClose: () => void;
+  onMinToggle: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="ai"
+          initial={{ opacity: 0, y: 24, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 24, scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 300, damping: 28 }}
+          className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-card w-[calc(100vw-2rem)] sm:w-[400px]"
+          style={{ height: minimized ? "auto" : "min(600px, 75vh)" }}
+        >
+          <Tabs defaultValue="chat" className="flex flex-col h-full">
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 border-b bg-gradient-to-r from-blue-600/10 to-purple-600/10 flex-shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-3 h-3 text-white" />
+                </div>
+                <span className="text-sm font-semibold truncate">
+                  AI Assistant
+                </span>
+                {widgetId && !minimized && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] hidden sm:inline-flex"
+                  >
+                    Widget
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <TabsList className="h-6">
+                  <TabsTrigger
+                    value="chat"
+                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
+                  >
+                    <Bot className="w-2.5 h-2.5" />
+                    <span className="hidden sm:inline">Chat</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="suggest"
+                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
+                  >
+                    <LayoutGrid className="w-2.5 h-2.5" />
+                    <span className="hidden sm:inline">Suggest</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="style"
+                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
+                  >
+                    <Palette className="w-2.5 h-2.5" />
+                    <span className="hidden sm:inline">Style</span>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="config"
+                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
+                  >
+                    <SlidersHorizontal className="w-2.5 h-2.5" />
+                    <span className="hidden sm:inline">Config</span>
+                  </TabsTrigger>
+                </TabsList>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={onMinToggle}
+                >
+                  {minimized ? (
+                    <Maximize2 className="w-3 h-3" />
+                  ) : (
+                    <Minimize2 className="w-3 h-3" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={onClose}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+            {!minimized && (
+              <div className="flex-1 overflow-hidden min-h-0">
+                <TabsContent
+                  value="chat"
+                  className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+                >
+                  <ConfigChatbot
+                    selectedWidgetId={widgetId}
+                    onClose={onClose}
+                  />
+                </TabsContent>
+                <TabsContent
+                  value="suggest"
+                  className="mt-0 h-full overflow-y-auto p-4"
+                >
+                  <ChartSuggester />
+                </TabsContent>
+                <TabsContent
+                  value="style"
+                  className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+                >
+                  <WidgetStylePanel selectedWidgetId={widgetId} />
+                </TabsContent>
+                <TabsContent
+                  value="config"
+                  className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+                >
+                  {dashId ? (
+                    <ProjectConfigPanel dashboardId={dashId} />
+                  ) : (
+                    <div className="flex items-center justify-center h-full p-6 text-center">
+                      <div>
+                        <SlidersHorizontal className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+                        <p className="text-sm text-muted-foreground">
+                          Select a dashboard first
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </div>
+            )}
+          </Tabs>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 }

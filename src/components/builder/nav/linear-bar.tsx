@@ -1,246 +1,338 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { ChevronDown, Layers3, Sparkles } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import {
-  CHART_NAV_ALL,
-  CHART_NAV_ALL_LABEL,
-  type ChartNavCategory,
-  type ChartNavTree,
-  getSubgroupsForGroup,
+// src/components/builder/nav/linear-bar.tsx
+// ─────────────────────────────────────────────────────────
+// Frozen V3 "Linear Bar" — uses real ChartNavTree types
+// All counts derived from subgroup.charts.length
+// ─────────────────────────────────────────────────────────
+
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronDown, X, Layers, LayoutGrid } from 'lucide-react'
+import type {
+  ChartNavTree,
+  ChartNavCategory,
+  ChartNavSubgroup,
 } from '@/lib/builder/chart-nav-model'
-import { getUppclCategoryAccent } from '@/lib/builder/uppcl-api-taxonomy'
+
+// ── Color palette ────────────────────────────────────────
+const COLORS = [
+  '#2563eb', '#e11d48', '#7c3aed', '#d97706',
+  '#059669', '#0891b2', '#db2777', '#475569',
+  '#6d28d9', '#0284c7', '#b91c1c', '#047857',
+] as const
+
+// ── Helpers — derive counts from tree ────────────────────
+
+function getCategoryChartCount(cat: ChartNavCategory): number {
+  return cat.subgroups.reduce((sum, sub) => sum + sub.charts.length, 0)
+}
+
+function getTreeTotalCharts(tree: ChartNavTree): number {
+  return tree.categories.reduce((sum, cat) => sum + getCategoryChartCount(cat), 0)
+}
+
+// ── Types ────────────────────────────────────────────────
+
+export interface NavSelection {
+  groupId: string
+  subgroupId: string
+}
 
 interface FrozenChartNavProps {
   tree: ChartNavTree
   activeGroupId: string
   activeSubgroupId: string
-  onSelectionChange: (selection: { groupId: string; subgroupId: string }) => void
-  className?: string
+  onSelectionChange: (sel: NavSelection) => void
 }
 
-const FALLBACK_TONES = ['#0ea5e9', '#22c55e', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899', '#ef4444', '#64748b']
+// ── MAIN COMPONENT ───────────────────────────────────────
 
-function getSelectionCount(
-  categories: ChartNavCategory[],
-  groupId: string,
-  subgroupId: string,
-): number {
-  return categories
-    .flatMap(category => category.subgroups.flatMap(subgroup =>
-      subgroup.charts.map(chart => ({
-        id: chart.id,
-        groupId: category.id,
-        subgroupId: subgroup.id,
-      })),
-    ))
-    .filter(item => (
-      (groupId === CHART_NAV_ALL || item.groupId === groupId) &&
-      (subgroupId === CHART_NAV_ALL || item.subgroupId === subgroupId)
-    ))
-    .length
-}
-
-function resolveCategoryTone(label: string, index: number): string {
-  return getUppclCategoryAccent(label) ?? FALLBACK_TONES[index % FALLBACK_TONES.length]
-}
-
-export function FrozenChartNav({
+export const FrozenChartNav = memo(function FrozenChartNav({
   tree,
   activeGroupId,
   activeSubgroupId,
   onSelectionChange,
-  className,
 }: FrozenChartNavProps) {
-  const [groupPickerOpen, setGroupPickerOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  const categories = tree.categories
-  const subgroups = useMemo(
-    () => getSubgroupsForGroup(tree, activeGroupId),
-    [tree, activeGroupId],
-  )
-  const activeGroup = categories.find(category => category.id === activeGroupId)
-  const activeTone = resolveCategoryTone(activeGroup?.label ?? CHART_NAV_ALL_LABEL, 0)
-  const selectedCount = useMemo(
-    () => getSelectionCount(categories, activeGroupId, activeSubgroupId),
-    [categories, activeGroupId, activeSubgroupId],
+  const activeCategory = useMemo(
+    () => tree.categories.find(c => c.id === activeGroupId),
+    [tree.categories, activeGroupId],
   )
 
-  if (categories.length === 0) return null
+  const activeCategoryIndex = useMemo(
+    () => tree.categories.findIndex(c => c.id === activeGroupId),
+    [tree.categories, activeGroupId],
+  )
 
-  const handleSelectGroup = (groupId: string) => {
-    onSelectionChange({ groupId, subgroupId: CHART_NAV_ALL })
-    setGroupPickerOpen(false)
+  const activeColor =
+    activeCategoryIndex >= 0
+      ? COLORS[activeCategoryIndex % COLORS.length]
+      : '#94a3b8'
+
+  const subgroups = activeCategory?.subgroups ?? []
+
+  const totalCharts = useMemo(() => getTreeTotalCharts(tree), [tree])
+
+  const visibleCount = useMemo(() => {
+    if (!activeCategory) return totalCharts
+    if (activeSubgroupId === '__all__' || activeSubgroupId === 'all')
+      return getCategoryChartCount(activeCategory)
+    const sub = subgroups.find(s => s.id === activeSubgroupId)
+    return sub?.charts.length ?? getCategoryChartCount(activeCategory)
+  }, [activeCategory, activeSubgroupId, subgroups, totalCharts])
+
+  // ── Handlers ───────────────────────────────────────────
+
+  const pickCategory = useCallback(
+    (catId: string) => {
+      onSelectionChange({ groupId: catId, subgroupId: '__all__' })
+      setModalOpen(false)
+    },
+    [onSelectionChange],
+  )
+
+  const pickAll = useCallback(() => {
+    onSelectionChange({ groupId: '__all__', subgroupId: '__all__' })
+    setModalOpen(false)
+  }, [onSelectionChange])
+
+  const pickSubgroup = useCallback(
+    (subId: string) => {
+      onSelectionChange({ groupId: activeGroupId, subgroupId: subId })
+    },
+    [activeGroupId, onSelectionChange],
+  )
+
+  const isAllSelected = activeGroupId === '__all__' || activeGroupId === 'all'
+
+  // ── No categories — minimal bar ────────────────────────
+  if (tree.categories.length === 0) {
+    return (
+      <div className="flex items-center h-11 rounded-xl border bg-card px-4 shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+        <LayoutGrid className="w-4 h-4 text-muted-foreground mr-2.5" />
+        <span className="text-[13px] font-semibold text-foreground">All Charts</span>
+        <div className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground bg-muted/50 px-2.5 h-[26px] rounded-lg">
+          <div className="w-[5px] h-[5px] rounded-full bg-emerald-500" />
+          {totalCharts} charts
+        </div>
+      </div>
+    )
   }
+
+  // ── Full bar ───────────────────────────────────────────
 
   return (
     <>
-      <div
-        className={cn(
-          'relative overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-r from-white via-slate-50/70 to-cyan-50/60 p-2.5 shadow-[0_12px_30px_-24px_rgba(14,116,144,0.7)] dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-cyan-950/40',
-          className,
-        )}
-      >
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-white/80 to-transparent dark:from-slate-900/60" />
+      {/* ── THE BAR — 44px, never shifts ───────────────── */}
+      <div className="flex items-center h-11 rounded-xl border bg-card shadow-[0_1px_3px_rgba(0,0,0,0.03)] overflow-hidden">
+        {/* Group trigger pill */}
+        <button
+          onClick={() => setModalOpen(true)}
+          className="flex items-center gap-2 px-3.5 h-9 rounded-lg mx-0.5 shrink-0 transition-colors hover:bg-muted/60 active:bg-muted group"
+        >
+          <div
+            className="w-[6px] h-[6px] rounded-full shrink-0 transition-colors"
+            style={{ backgroundColor: isAllSelected ? '#94a3b8' : activeColor }}
+          />
+          <span className="text-[13px] font-semibold text-foreground whitespace-nowrap max-w-[120px] sm:max-w-[180px] truncate">
+            {isAllSelected ? 'All' : activeCategory?.label ?? 'All'}
+          </span>
+          <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform group-hover:text-foreground" />
+        </button>
 
-        <div className="relative flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-10 rounded-xl border border-slate-200/80 bg-white/90 px-3 text-sm font-semibold text-slate-900 shadow-sm hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            onClick={() => setGroupPickerOpen(true)}
-          >
-            <Layers3 className="mr-1.5 h-4 w-4" style={{ color: activeTone }} />
-            <span className="max-w-[150px] truncate">{activeGroup?.label ?? CHART_NAV_ALL_LABEL}</span>
-            <ChevronDown className="ml-1.5 h-3.5 w-3.5 text-slate-500" />
-          </Button>
+        {/* Divider */}
+        <div className="w-px h-5 bg-border shrink-0" />
 
-          <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" />
+        {/* Subcategory tabs — horizontal scroll */}
+        {subgroups.length > 0 && (
+          <div className="relative flex-1 min-w-0 overflow-hidden">
+            {/* Fade masks */}
+            <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-card to-transparent z-10" />
+            <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-card to-transparent z-10" />
 
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
-            <button
-              type="button"
-              className={cn(
-                'relative h-8 whitespace-nowrap rounded-lg border px-3 text-xs font-semibold transition',
-                activeSubgroupId === CHART_NAV_ALL
-                  ? 'border-slate-200 bg-white text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
-                  : 'border-transparent text-slate-600 hover:bg-white/80 dark:text-slate-300 dark:hover:bg-slate-900/70',
-              )}
-              onClick={() => onSelectionChange({ groupId: activeGroupId, subgroupId: CHART_NAV_ALL })}
+            <div
+              ref={scrollRef}
+              className="flex items-center gap-0.5 px-2 overflow-x-auto scrollbar-none scroll-smooth"
             >
-              {CHART_NAV_ALL_LABEL}
-              {activeSubgroupId === CHART_NAV_ALL && (
-                <span className="absolute inset-x-3 -bottom-[1px] h-0.5 rounded-full" style={{ backgroundColor: activeTone }} />
-              )}
-            </button>
-
-            {subgroups.map(subgroup => {
-              const isActive = activeSubgroupId === subgroup.id
-              return (
-                <button
-                  key={subgroup.id}
-                  type="button"
-                  className={cn(
-                    'relative h-8 whitespace-nowrap rounded-lg border px-3 text-xs font-semibold transition',
-                    isActive
-                      ? 'border-slate-200 bg-white text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100'
-                      : 'border-transparent text-slate-600 hover:bg-white/80 dark:text-slate-300 dark:hover:bg-slate-900/70',
-                  )}
-                  onClick={() => onSelectionChange({ groupId: activeGroupId, subgroupId: subgroup.id })}
-                >
-                  {subgroup.label}
-                  {isActive && (
-                    <span className="absolute inset-x-3 -bottom-[1px] h-0.5 rounded-full" style={{ backgroundColor: activeTone }} />
-                  )}
-                </button>
-              )
-            })}
+              {/* "All" within group */}
+              <SubTab
+                label="All"
+                isActive={activeSubgroupId === '__all__' || activeSubgroupId === 'all'}
+                activeColor={activeColor}
+                onClick={() => pickSubgroup('__all__')}
+              />
+              {subgroups.map(sub => (
+                <SubTab
+                  key={sub.id}
+                  label={sub.label}
+                  isActive={activeSubgroupId === sub.id}
+                  activeColor={activeColor}
+                  onClick={() => pickSubgroup(sub.id)}
+                />
+              ))}
+            </div>
           </div>
+        )}
 
-          <Badge
-            variant="outline"
-            className="ml-auto h-8 rounded-lg border-slate-200 bg-white/80 px-2.5 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-          >
-            <Sparkles className="mr-1.5 h-3.5 w-3.5" style={{ color: activeTone }} />
-            {selectedCount} charts
-          </Badge>
+        {/* Spacer when no subgroups */}
+        {subgroups.length === 0 && <div className="flex-1" />}
+
+        {/* Chart count badge */}
+        <div className="flex items-center gap-1.5 px-2.5 h-[26px] rounded-lg bg-muted/50 text-[11px] font-semibold text-muted-foreground shrink-0 mr-1">
+          <div className="w-[5px] h-[5px] rounded-full bg-emerald-500" />
+          {visibleCount} chart{visibleCount !== 1 ? 's' : ''}
         </div>
       </div>
 
-      <Dialog open={groupPickerOpen} onOpenChange={setGroupPickerOpen}>
-        <DialogContent className="max-w-xl overflow-hidden border-slate-200/80 p-0 dark:border-slate-800">
-          <DialogHeader className="border-b bg-gradient-to-r from-slate-50 to-cyan-50/60 px-5 py-4 dark:from-slate-900 dark:to-cyan-950/30">
-            <DialogTitle className="text-sm">Select Category</DialogTitle>
-            <p className="text-xs text-muted-foreground">
-              Organized from API group and subgroup mapping.
-            </p>
-          </DialogHeader>
+      {/* ── MODAL ───────────────────────────────────────── */}
+      <AnimatePresence>
+        {modalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.12 }}
+            className="fixed inset-0 z-[60] flex items-start justify-center pt-[12vh] sm:pt-[14vh] px-4"
+            onClick={() => setModalOpen(false)}
+          >
+            <div className="absolute inset-0 bg-black/15 backdrop-blur-[2px]" />
 
-          <div className="max-h-[62vh] space-y-2 overflow-y-auto p-3">
-            <button
-              type="button"
-              onClick={() => handleSelectGroup(CHART_NAV_ALL)}
-              className={cn(
-                'w-full rounded-xl border p-3 text-left transition-colors',
-                activeGroupId === CHART_NAV_ALL
-                  ? 'border-cyan-300 bg-cyan-50/70 dark:border-cyan-800 dark:bg-cyan-950/30'
-                  : 'border-slate-200/80 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800',
-              )}
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.97 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+              className="relative w-full max-w-xs bg-card rounded-2xl border shadow-[0_12px_40px_rgba(0,0,0,0.1)] overflow-hidden"
+              onClick={e => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold">{CHART_NAV_ALL_LABEL}</p>
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                  {categories.reduce((sum, category) => (
-                    sum + category.subgroups.reduce((cSum, subgroup) => cSum + subgroup.charts.length, 0)
-                  ), 0)}
-                </Badge>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Browse all categories and subgroups.
-              </p>
-            </button>
-
-            {categories.map((category, index) => {
-              const categoryCount = category.subgroups.reduce((sum, subgroup) => sum + subgroup.charts.length, 0)
-              const isActive = activeGroupId === category.id
-              const tone = resolveCategoryTone(category.label, index)
-
-              return (
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.1em]">
+                  Select Category
+                </span>
                 <button
-                  key={category.id}
-                  type="button"
-                  onClick={() => handleSelectGroup(category.id)}
-                  className={cn(
-                    'w-full rounded-xl border p-3 text-left transition-colors',
-                    isActive
-                      ? 'border-cyan-300 bg-cyan-50/70 dark:border-cyan-800 dark:bg-cyan-950/30'
-                      : 'border-slate-200/80 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800',
-                  )}
+                  onClick={() => setModalOpen(false)}
+                  className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tone }} />
-                      <p className="truncate text-sm font-semibold">{category.label}</p>
-                    </div>
-                    <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                      {categoryCount}
-                    </Badge>
-                  </div>
-
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {category.subgroups.length} subgroup{category.subgroups.length !== 1 ? 's' : ''}
-                  </p>
-
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {category.subgroups.slice(0, 4).map(subgroup => (
-                      <span
-                        key={subgroup.id}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                      >
-                        {subgroup.label}
-                      </span>
-                    ))}
-                    {category.subgroups.length > 4 && (
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                        +{category.subgroups.length - 4}
-                      </span>
-                    )}
-                  </div>
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              )
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
+              </div>
+
+              {/* "All" option */}
+              <div className="px-1.5 pb-1">
+                <button
+                  onClick={pickAll}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-colors ${
+                    isAllSelected ? 'bg-muted/60' : 'hover:bg-muted/40'
+                  }`}
+                >
+                  <div className="w-[30px] h-[30px] rounded-[9px] bg-muted flex items-center justify-center shrink-0">
+                    <LayoutGrid className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="text-[12.5px] font-semibold text-foreground">All Charts</div>
+                    <div className="text-[10.5px] text-muted-foreground">
+                      {totalCharts} widget{totalCharts !== 1 ? 's' : ''} total
+                    </div>
+                  </div>
+                  {isAllSelected && (
+                    <div className="w-[6px] h-[6px] rounded-full bg-muted-foreground shrink-0" />
+                  )}
+                </button>
+              </div>
+
+              <div className="h-px bg-border mx-4 my-0.5" />
+
+              {/* Category list */}
+              <div className="px-1.5 pt-1 pb-2 max-h-[50vh] overflow-y-auto">
+                {tree.categories.map((cat, idx) => {
+                  const isActive = activeGroupId === cat.id
+                  const color = COLORS[idx % COLORS.length]
+                  const chartCount = getCategoryChartCount(cat)
+
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => pickCategory(cat.id)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all ${
+                        isActive ? '' : 'hover:bg-muted/40'
+                      }`}
+                      style={{
+                        backgroundColor: isActive ? `${color}08` : undefined,
+                      }}
+                    >
+                      <div
+                        className="w-[30px] h-[30px] rounded-[9px] flex items-center justify-center shrink-0"
+                        style={{
+                          backgroundColor: isActive ? `${color}15` : '#f4f5f7',
+                        }}
+                      >
+                        <Layers
+                          className="w-4 h-4"
+                          style={{ color: isActive ? color : '#94a3b8' }}
+                        />
+                      </div>
+                      <div className="flex-1 text-left min-w-0">
+                        <div
+                          className="text-[12.5px] font-semibold truncate"
+                          style={{ color: isActive ? color : undefined }}
+                        >
+                          {cat.label}
+                        </div>
+                        <div className="text-[10.5px] text-muted-foreground">
+                          {cat.subgroups.length} sub · {chartCount} chart{chartCount !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                      {isActive && (
+                        <div
+                          className="w-[6px] h-[6px] rounded-full shrink-0"
+                          style={{ backgroundColor: color }}
+                        />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
+  )
+})
+
+// ── SubTab — extracted for cleaner JSX ───────────────────
+
+function SubTab({
+  label,
+  isActive,
+  activeColor,
+  onClick,
+}: {
+  label: string
+  isActive: boolean
+  activeColor: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative px-3 h-8 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-all ${
+        isActive
+          ? 'text-foreground bg-muted/80'
+          : 'text-muted-foreground hover:text-foreground/70 hover:bg-muted/30'
+      }`}
+    >
+      {label}
+      {isActive && (
+        <div
+          className="absolute bottom-1 left-1/2 -translate-x-1/2 w-3.5 h-[2px] rounded-full"
+          style={{ backgroundColor: activeColor }}
+        />
+      )}
+    </button>
   )
 }
