@@ -106,35 +106,41 @@ const normalizeWidgetPosition = (row: Record<string, unknown>) => {
 
 const updateWidgetRecordWithLayoutFallback = async (
   id: string,
-  userId: string,
+  _userId: string,
   payload: Record<string, unknown>,
   position: { x: number; y: number; w: number; h: number },
 ) => {
-  const attempts: Array<Record<string, unknown>> = [
-    { ...payload, position, size: position },
-    { ...payload, position },
-    { ...payload, position: position.y, size: position },
-    { ...payload, position: position.y },
-  ]
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`
+    }
 
-  let latestError: { message: string } | null = null
-  for (const attempt of attempts) {
-    const { error } = await supabase
-      .from('widgets')
-      .upsert(
-        {
-          id,
-          user_id: userId,
-          ...attempt,
-        },
-        { onConflict: 'id' },
-      )
+    const response = await fetch('/api/widgets/update', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        id,
+        payload,
+        position,
+      }),
+    })
 
-    if (!error) return null
-    latestError = error
+    if (response.ok) return null
+
+    const parsed = await response.json().catch(() => null)
+    const message =
+      typeof parsed?.error === 'string'
+        ? parsed.error
+        : `Widget update failed (${response.status})`
+    return { message }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { message }
   }
-
-  return latestError
 }
 
 interface DashboardStore {
