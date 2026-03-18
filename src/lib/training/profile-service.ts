@@ -29,6 +29,7 @@ export interface DemoSessionPayload {
   token: string
   headerName?: string
   prefix?: string
+  envTarget?: string
 }
 
 export interface EndpointProfileComputation extends TrainingEndpointResult {
@@ -85,6 +86,7 @@ function buildRequestInit(endpoint: TrainingTargetEndpoint, demoSession?: DemoSe
   const headerName = demoSession?.headerName?.trim() || 'Authorization'
   const prefix = demoSession?.prefix?.trim() || 'Bearer'
   const token = demoSession?.token?.trim()
+  const envTarget = demoSession?.envTarget?.trim()
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -94,6 +96,9 @@ function buildRequestInit(endpoint: TrainingTargetEndpoint, demoSession?: DemoSe
   if (token) {
     headers['x-builder-demo-token'] = token
     headers[headerName] = prefix ? `${prefix} ${token}` : token
+  }
+  if (envTarget) {
+    headers['x-bosch-env'] = envTarget
   }
 
   const init: RequestInit = {

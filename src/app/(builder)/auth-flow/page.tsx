@@ -123,6 +123,11 @@ function maskToken(token: string): string {
   return `${token.slice(0, 6)}...${token.slice(-6)}`
 }
 
+function normalizeEnvTarget(value: string): string | undefined {
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')
+  return normalized || undefined
+}
+
 function formatRemainingTime(remainingMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000))
   const hours = Math.floor(totalSeconds / 3600)
@@ -180,6 +185,7 @@ export default function AuthFlowPage() {
   const [tokenHeaderName, setTokenHeaderName] = useState('Authorization')
   const [tokenPrefix, setTokenPrefix] = useState('Bearer')
   const [autoApplyToken, setAutoApplyToken] = useState(true)
+  const [boschTargetEnv, setBoschTargetEnv] = useState('')
 
   const [demoUsername, setDemoUsername] = useState('')
   const [demoPassword, setDemoPassword] = useState('')
@@ -203,6 +209,7 @@ export default function AuthFlowPage() {
   const syncSessionState = useCallback(() => {
     const session = getBuilderDemoAuthSession()
     setSessionToken(session?.token ?? '')
+    setBoschTargetEnv(session?.targetEnv ?? '')
     setSessionClockMs(Date.now())
   }, [])
 
@@ -257,6 +264,7 @@ export default function AuthFlowPage() {
     setTokenHeaderName('Authorization')
     setTokenPrefix('Bearer')
     setAutoApplyToken(true)
+    setBoschTargetEnv((prev) => normalizeEnvTarget(prev) ?? '')
     toast.success('Bosch login preset applied')
   }
 
@@ -271,6 +279,7 @@ export default function AuthFlowPage() {
       token: token.trim(),
       headerName: tokenHeaderName.trim() || 'Authorization',
       prefix: tokenPrefix,
+      targetEnv: normalizeEnvTarget(boschTargetEnv),
       enabled: true,
       createdAt: new Date().toISOString(),
     })
@@ -450,6 +459,16 @@ export default function AuthFlowPage() {
             value={endpoint}
             onChange={(event) => setEndpoint(event.target.value)}
             placeholder="/userLogin"
+            className="font-mono text-xs"
+            disabled={isDisabled}
+          />
+        </Field>
+
+        <Field label="Bosch Environment (optional)">
+          <Input
+            value={boschTargetEnv}
+            onChange={(event) => setBoschTargetEnv(event.target.value)}
+            placeholder="AGRA / KASHI / PRAYAGRAJ"
             className="font-mono text-xs"
             disabled={isDisabled}
           />
