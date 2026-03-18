@@ -1,6 +1,8 @@
 // src/lib/ai/chart-generator.ts
 import { ChartType } from '@/types/widget'
 import { DataField } from './data-analyzer'
+import { resolveMappingWithFallback } from '@/lib/training/mapping-engine'
+import { fetchAIFallbackMapping } from '@/lib/training/ai-fallback'
 
 export interface AIChartSuggestion {
   title: string
@@ -26,20 +28,51 @@ export async function generateAIChartSuggestions(
   endpointName: string,
 ): Promise<AIChartGeneratorResult> {
   try {
-    const res = await fetch('/api/ai/suggest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields, sampleData, endpointName }),
+    const rows = sampleData
+      .filter(item => item && typeof item === 'object' && !Array.isArray(item))
+      .slice(0, 120) as Record<string, unknown>[]
+
+    if (!rows.length) {
+      throw new Error('No valid data rows available for suggestion')
+    }
+
+    const mapping = await resolveMappingWithFallback({
+      rows,
+      endpointName,
+    }, {
+      aiFallback: ({ fields: inferredFields, sampleRows }) => fetchAIFallbackMapping({
+        fields: inferredFields,
+        sampleRows,
+        endpointName,
+      }),
     })
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
+    const topSuggestion = mapping.candidate
+    if (!topSuggestion) {
+      throw new Error('No mapping candidate available')
+    }
 
-    if (!data.suggestions?.length) throw new Error('No suggestions returned')
+    const tableXAxis = fields[0]?.name ?? topSuggestion.xAxis ?? 'label'
+    const tableYAxis = fields[1]?.name ?? topSuggestion.yAxis ?? tableXAxis
 
     return {
-      suggestions: data.suggestions as AIChartSuggestion[],
-      source: 'ai',
+      suggestions: [
+        {
+          title: `${endpointName} Overview`,
+          type: topSuggestion.type,
+          xAxis: topSuggestion.xAxis,
+          yAxis: topSuggestion.yAxis ?? '',
+          reason: topSuggestion.reason,
+        },
+        {
+          title: 'Raw Data Grid',
+          type: 'table',
+          xAxis: tableXAxis,
+          yAxis: tableYAxis,
+          reason: 'Tabular fallback for full field visibility',
+        },
+      ],
+      source: mapping.aiFallbackUsed ? 'ai' : 'heuristic',
     }
   } catch (err: any) {
     // ── Heuristic fallback ─────────────────────────────────────────────

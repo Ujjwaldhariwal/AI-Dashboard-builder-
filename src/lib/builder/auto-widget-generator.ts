@@ -3,6 +3,9 @@ import {
   fetchEndpointPayloadWithCache,
   type EndpointRuntimeTarget,
 } from '@/lib/api/endpoint-runtime-cache'
+import { getBoschSeedMapping } from '@/lib/training/bosch-seed-mappings'
+import { resolveMappingWithFallback } from '@/lib/training/mapping-engine'
+import type { EndpointProfile, MappingCandidate } from '@/types/training'
 import type { ChartType, Widget, YAxisConfig } from '@/types/widget'
 
 const AUTO_CHART_TYPES = new Set<ChartType>([
@@ -42,6 +45,7 @@ export interface AutoWidgetBuildResult {
   skippedExisting: number
   skippedNoData: number
   skippedFetch: number
+  skippedReview: number
   eligibleCount: number
 }
 
@@ -112,11 +116,13 @@ export function applyAutoLayout(
   })
 }
 
-export function buildAutoWidgetDraftFromPayload(input: {
+export async function buildAutoWidgetDraftFromPayload(input: {
   endpointId: string
   endpointName: string
+  endpointUrl: string
   payload: unknown
-}): Omit<AutoWidgetDraft, 'position'> | null {
+  preferredMapping?: MappingCandidate | null
+}): Promise<Omit<AutoWidgetDraft, 'position'> | null> {
   const rows = DataAnalyzer.extractDataArray(input.payload)
   if (!rows || rows.length === 0) return null
 
@@ -128,12 +134,18 @@ export function buildAutoWidgetDraftFromPayload(input: {
   const analysis = DataAnalyzer.analyzeArray(validRows)
   if (!analysis.fields.length) return null
 
-  const bestSuggestion =
-    analysis.suggestedCharts.find(suggestion => suggestion.type !== 'table') ??
-    analysis.suggestedCharts[0]
-  if (!bestSuggestion) return null
+  const fieldNames = new Set(analysis.fields.map(field => field.name))
+  const numericFields = new Set(
+    analysis.fields.filter(field => field.type === 'number').map(field => field.name),
+  )
 
-  const type = isChartType(bestSuggestion.type) ? bestSuggestion.type : 'table'
+  const preferred = input.preferredMapping ?? null
+  const isPreferredValid = preferred
+    && (!preferred.xAxis || fieldNames.has(preferred.xAxis))
+    && (!preferred.yAxis || fieldNames.has(preferred.yAxis))
+    && (!preferred.yAxis || preferred.type === 'table' || numericFields.has(preferred.yAxis))
+    && (!preferred.yAxes || preferred.yAxes.every(axis => fieldNames.has(axis.key) && numericFields.has(axis.key)))
+
   const fallbackXAxis = analysis.fields.find(field => field.type === 'string' || field.type === 'date')?.name
     ?? analysis.fields[0]?.name
     ?? ''
@@ -142,8 +154,37 @@ export function buildAutoWidgetDraftFromPayload(input: {
     ?? analysis.fields[0]?.name
     ?? ''
 
-  const xAxis = bestSuggestion.xAxis ?? bestSuggestion.groupBy ?? fallbackXAxis
-  const yAxis = bestSuggestion.yAxis ?? fallbackYAxis
+  const fallbackSuggestion =
+    analysis.suggestedCharts.find(suggestion => suggestion.type !== 'table') ??
+    analysis.suggestedCharts[0]
+
+  const suggestedCandidate: MappingCandidate | null = isPreferredValid
+    ? preferred
+    : (await resolveMappingWithFallback({
+      rows: validRows,
+      endpointName: input.endpointName,
+      endpointUrl: input.endpointUrl,
+      seedMapping: getBoschSeedMapping({
+        endpointUrl: input.endpointUrl,
+        endpointName: input.endpointName,
+      }),
+    })).candidate
+
+  const candidateType = suggestedCandidate?.type
+  const fallbackType = fallbackSuggestion?.type
+  let type: ChartType = 'table'
+  if (candidateType && isChartType(candidateType)) {
+    type = candidateType
+  } else if (fallbackType && isChartType(fallbackType)) {
+    type = fallbackType
+  }
+  const xAxis = suggestedCandidate?.xAxis
+    ?? fallbackSuggestion?.xAxis
+    ?? fallbackSuggestion?.groupBy
+    ?? fallbackXAxis
+  const yAxis = suggestedCandidate?.yAxis
+    ?? fallbackSuggestion?.yAxis
+    ?? fallbackYAxis
   const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(type)
   if (needsXAxis && !xAxis) return null
   if (!yAxis && type !== 'table') return null
@@ -156,7 +197,7 @@ export function buildAutoWidgetDraftFromPayload(input: {
     type,
     xAxis: xAxis || analysis.fields[0]?.name || 'label',
     yAxis: yAxis || undefined,
-    yAxes: yAxis ? [{ key: yAxis, color: '#3b82f6' }] : undefined,
+    yAxes: suggestedCandidate?.yAxes ?? (yAxis ? [{ key: yAxis, color: '#3b82f6' }] : undefined),
   }
 }
 
@@ -165,6 +206,7 @@ export async function buildAutoWidgetsFromEndpoints(params: {
   widgets: Widget[]
   sessionScope: string
   healthyEndpointIds?: Set<string>
+  trainedProfilesByEndpointId?: Record<string, EndpointProfile>
 }): Promise<AutoWidgetBuildResult> {
   const uniqueByEndpointId = new Map<string, EndpointRuntimeTarget>()
   params.endpoints.forEach(endpoint => {
@@ -187,18 +229,28 @@ export async function buildAutoWidgetsFromEndpoints(params: {
   const skippedExisting = eligibleEndpoints.length - eligibleForCreate.length
   let skippedNoData = 0
   let skippedFetch = 0
+  let skippedReview = 0
   const draftCollection: Array<Omit<AutoWidgetDraft, 'position'>> = []
 
   for (const endpoint of eligibleForCreate) {
     if (!endpoint.id) continue
+    const profile = params.trainedProfilesByEndpointId?.[endpoint.id]
+    const preferredMapping = profile?.bestMapping
+    if (profile?.confidenceBand === 'review' || profile?.confidenceBand === 'low') {
+      skippedReview += 1
+      continue
+    }
+
     try {
       const { value } = await fetchEndpointPayloadWithCache(endpoint, {
         sessionScope: params.sessionScope,
       })
-      const draft = buildAutoWidgetDraftFromPayload({
+      const draft = await buildAutoWidgetDraftFromPayload({
         endpointId: endpoint.id,
         endpointName: endpoint.name ?? endpoint.url,
+        endpointUrl: endpoint.url,
         payload: value.payload,
+        preferredMapping,
       })
       if (!draft) {
         skippedNoData += 1
@@ -215,6 +267,7 @@ export async function buildAutoWidgetsFromEndpoints(params: {
     skippedExisting,
     skippedNoData,
     skippedFetch,
+    skippedReview,
     eligibleCount: eligibleEndpoints.length,
   }
 }

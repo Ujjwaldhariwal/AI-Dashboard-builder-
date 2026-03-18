@@ -56,7 +56,6 @@ import {
 import { generateProjectFromConfig } from "@/lib/code-generator/template-generator";
 import { packageProjectAsZip } from "@/lib/code-generator/zip-packager";
 import { motion, AnimatePresence } from "framer-motion";
-import type { Widget } from "@/types/widget";
 import { useDashboardEndpointPrefetch } from "@/hooks/use-dashboard-endpoint-prefetch";
 import { clearEndpointResponseCache } from "@/lib/api/endpoint-response-cache";
 import {
@@ -68,6 +67,10 @@ import {
   type DashboardEndpointProbeSummary,
 } from "@/lib/api/endpoint-runtime-cache";
 import { buildAutoWidgetsFromEndpoints } from "@/lib/builder/auto-widget-generator";
+import {
+  fetchTrainingProfiles,
+  profileMapFromList,
+} from "@/lib/training/profile-client";
 import { dispatchDashboardWidgetRefresh } from "@/lib/builder/widget-refresh-events";
 import {
   BUILDER_API_HEALTH_RESCAN_EVENT,
@@ -80,15 +83,11 @@ import {
   filterWidgetsByNavSelection,
   normalizeChartNavSelection,
 } from "@/lib/builder/chart-nav-model";
+import type { EndpointProfile } from "@/types/training";
 
 // ─────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────
-
-interface EndpointSummary {
-  id: string;
-  name: string;
-}
 
 interface NavSelection {
   groupId: string;
@@ -395,16 +394,26 @@ export default function BuilderPage() {
         toast.info("No healthy APIs.", { id: "auto-add" });
         return;
       }
-      const { drafts, skippedExisting, skippedFetch, skippedNoData } =
+
+      let trainedProfilesByEndpointId: Record<string, EndpointProfile> | undefined;
+      try {
+        const profiles = await fetchTrainingProfiles(currentDashboardId);
+        trainedProfilesByEndpointId = profileMapFromList(profiles);
+      } catch {
+        trainedProfilesByEndpointId = undefined;
+      }
+
+      const { drafts, skippedExisting, skippedFetch, skippedNoData, skippedReview } =
         await buildAutoWidgetsFromEndpoints({
           endpoints: activeDashboardEndpoints,
           widgets,
           sessionScope,
           healthyEndpointIds: healthyIds,
+          trainedProfilesByEndpointId,
         });
       if (drafts.length === 0) {
         toast.info(
-          `No new widgets. Skip: ${skippedExisting} existing, ${skippedNoData} no-data, ${skippedFetch} failed.`,
+          `No new widgets. Skip: ${skippedExisting} existing, ${skippedReview} review, ${skippedNoData} no-data, ${skippedFetch} failed.`,
           { id: "auto-add" },
         );
         return;

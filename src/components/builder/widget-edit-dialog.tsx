@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
+import { saveEndpointMappingFeedback } from '@/lib/training/profile-client'
 
 interface WidgetEditDialogProps {
   widget: Widget
@@ -148,6 +149,33 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
         yAxis: yAxis || undefined,
         aliases: Object.keys(aliases).length > 0 ? aliases : undefined,
       },
+    })
+
+    void saveEndpointMappingFeedback({
+      dashboardId: widget.dashboardId,
+      endpointId: widget.endpointId,
+      widgetId: widget.id,
+      sourceAction: 'edit_widget',
+      acceptedMapping: {
+        type,
+        xAxis,
+        yAxis: yAxis || undefined,
+        yAxes: widget.dataMapping.yAxes,
+        reason: 'Manual widget edit action',
+        confidence: 92,
+        source: 'manual',
+      },
+      previousMapping: {
+        type: widget.type,
+        xAxis: widget.dataMapping.xAxis,
+        yAxis: widget.dataMapping.yAxis,
+        yAxes: widget.dataMapping.yAxes,
+        reason: 'Previous widget mapping',
+        confidence: 70,
+        source: 'manual',
+      },
+    }).catch(() => {
+      // non-blocking feedback write
     })
 
     toast.success('Widget updated')
