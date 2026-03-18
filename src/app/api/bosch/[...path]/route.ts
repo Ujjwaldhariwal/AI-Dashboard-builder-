@@ -270,11 +270,19 @@ async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
   }
 
   try {
-    const rawBody = await req.text()
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method: 'POST',
+    const upstreamUrl = new URL(`${baseUrl}${endpoint}`)
+    req.nextUrl.searchParams.forEach((value, key) => {
+      if (key.toLowerCase() === 'env') return
+      upstreamUrl.searchParams.append(key, value)
+    })
+
+    const method = req.method.toUpperCase()
+    const rawBody = method === 'POST' ? await req.text() : ''
+
+    const response = await fetch(upstreamUrl.toString(), {
+      method,
       headers: buildUpstreamHeaders(req, endpoint, credentials),
-      body: rawBody?.trim() ? rawBody : '{}',
+      body: method === 'POST' ? (rawBody?.trim() ? rawBody : '{}') : undefined,
       cache: 'no-store',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })

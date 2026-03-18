@@ -25,11 +25,13 @@ import { ModernRingGaugeChartFromData } from '@/components/charts/modern-ring-ga
 import { ModernStatusCard } from '@/components/charts/modern-status-card'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
+import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 
 interface SharedWidgetData {
   id: string
   title: string
   type: string
+  endpointId: string
   data: Record<string, unknown>[]
   xAxis: string
   yAxis: string
@@ -43,12 +45,17 @@ interface Props {
 
 export function SharedDashboardViewer({ payload }: Props) {
   const widgets = useMemo(() => payload.widgets, [payload.widgets])
+  const endpointLookup = useMemo(
+    () => new Map(payload.endpoints.map(endpoint => [endpoint.id, endpoint])),
+    [payload.endpoints],
+  )
 
   const [widgetData, setWidgetData] = useState<SharedWidgetData[]>(
     widgets.map(w => ({
       id: w.id,
       title: w.title,
       type: w.type,
+      endpointId: w.endpointId,
       data: [],
       xAxis: w.xAxis,
       yAxis: w.yAxis,
@@ -64,7 +71,19 @@ export function SharedDashboardViewer({ payload }: Props) {
 
     const results = await Promise.allSettled(
       widgets.map(async w => {
-        const res = await fetch(w.endpointUrl, { method: w.method })
+        const endpoint = endpointLookup.get(w.endpointId)
+        if (!endpoint) {
+          throw new Error('Endpoint configuration missing in shared link')
+        }
+
+        const res = await fetch(
+          endpoint.url,
+          buildEndpointRequestInit({
+            method: endpoint.method,
+            headers: endpoint.headers,
+            body: endpoint.body,
+          }),
+        )
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const json = await res.json()
         const arr: Record<string, unknown>[] =
@@ -87,7 +106,7 @@ export function SharedDashboardViewer({ payload }: Props) {
       }),
     )
     setLastRefreshed(new Date())
-  }, [widgets])
+  }, [widgets, endpointLookup])
 
   useEffect(() => {
     fetchAll()
