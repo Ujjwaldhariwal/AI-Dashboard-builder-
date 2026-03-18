@@ -121,9 +121,14 @@ const updateWidgetRecordWithLayoutFallback = async (
   for (const attempt of attempts) {
     const { error } = await supabase
       .from('widgets')
-      .update(attempt)
-      .eq('id', id)
-      .eq('user_id', userId)
+      .upsert(
+        {
+          id,
+          user_id: userId,
+          ...attempt,
+        },
+        { onConflict: 'id' },
+      )
 
     if (!error) return null
     latestError = error
@@ -443,9 +448,14 @@ export const useDashboardStore = create<DashboardStore>()(
           try {
             const { error } = await supabase
               .from('dashboards')
-              .update(payload)
-              .eq('id', id)
-              .eq('user_id', userId)
+              .upsert(
+                {
+                  id,
+                  user_id: userId,
+                  ...payload,
+                },
+                { onConflict: 'id' },
+              )
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
@@ -713,17 +723,20 @@ export const useDashboardStore = create<DashboardStore>()(
           try {
             const { error } = await supabase
               .from('endpoints')
-              .update({
-                name: endpoint.name,
-                url: endpoint.url,
-                method: endpoint.method,
-                auth_type: endpoint.authType,
-                headers: endpoint.headers ?? {},
-                body,
-                refresh_interval: endpoint.refreshInterval,
-              })
-              .eq('id', id)
-              .eq('user_id', userId)
+              .upsert(
+                {
+                  id,
+                  user_id: userId,
+                  name: endpoint.name,
+                  url: endpoint.url,
+                  method: endpoint.method,
+                  auth_type: endpoint.authType,
+                  headers: endpoint.headers ?? {},
+                  body,
+                  refresh_interval: endpoint.refreshInterval,
+                },
+                { onConflict: 'id' },
+              )
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
@@ -1043,16 +1056,21 @@ addWidget: (config) => {
         set({ isSyncing: true })
         void (async () => {
           try {
-            const { error } = await supabase
-              .from('widgets')
-              .update({
+            const layout = widget.position ?? { ...DEFAULT_WIDGET_POSITION }
+            const error = await updateWidgetRecordWithLayoutFallback(
+              id,
+              userId,
+              {
                 style: widget.style,
-              })
-              .eq('id', id)
-              .eq('user_id', userId)
+                data_mapping: widget.dataMapping,
+              },
+              layout,
+            )
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
+            } else {
+              set({ lastSyncError: null })
             }
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error)
