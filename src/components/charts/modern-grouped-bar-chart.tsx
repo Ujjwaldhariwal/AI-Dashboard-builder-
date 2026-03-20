@@ -2,13 +2,21 @@
 
 import { useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
-import type { WidgetStyle } from '@/types/widget'
+import { graphic } from 'echarts'
+import type { WidgetStyle, YAxisConfig } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { withAlpha } from '@/lib/echarts/utils'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
+}
+
+interface SeriesMeta {
+  key: string
+  label: string
+  color: string
 }
 
 interface ModernGroupedBarChartProps {
@@ -16,6 +24,7 @@ interface ModernGroupedBarChartProps {
   xField: string
   yField?: string
   yFields?: string[]
+  yAxisConfig?: YAxisConfig[]
   style?: WidgetStyle
 }
 
@@ -44,6 +53,7 @@ export function ModernGroupedBarChart({
   xField,
   yField,
   yFields,
+  yAxisConfig,
   style,
 }: ModernGroupedBarChartProps) {
   useEnterpriseTheme()
@@ -52,19 +62,46 @@ export function ModernGroupedBarChart({
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
   const metrics = useMemo(() => inferMetrics(data, xField, yField, yFields), [data, xField, yField, yFields])
-
-  const labels = useMemo(
-    () => data.slice(0, 20).map((row, i) => String(row[xField] ?? `#${i + 1}`).slice(0, 18)),
+  const rows = useMemo(
+    () =>
+      data.slice(0, 20).map((row, i) => ({
+        label: String(row[xField] ?? `#${i + 1}`).slice(0, 18),
+        raw: row,
+      })),
     [data, xField],
   )
 
+  const seriesMeta = useMemo<SeriesMeta[]>(() => {
+    const configured = (yAxisConfig ?? [])
+      .map((cfg, i) => {
+        const key = String(cfg.key ?? '').trim()
+        if (!key) return null
+        return {
+          key,
+          label: cfg.label?.trim() || key,
+          color: cfg.color || s.colors[i % s.colors.length],
+        } satisfies SeriesMeta
+      })
+      .filter((cfg): cfg is SeriesMeta => Boolean(cfg))
+
+    if (configured.length) return configured
+
+    return metrics.map((key, i) => ({
+      key,
+      label: key,
+      color: s.colors[i % s.colors.length],
+    }))
+  }, [metrics, s.colors, yAxisConfig])
+
+  const labels = useMemo(() => rows.map(row => row.label), [rows])
+
   const option = useMemo(() => ({
     animation: true,
-    animationDuration: 700,
+    animationDuration: 760,
     animationEasing: 'cubicOut' as const,
-    color: s.colors,
+    color: seriesMeta.map(meta => meta.color),
     backgroundColor: 'transparent',
-    grid: { top: 28, right: 14, bottom: 48, left: 10, containLabel: true },
+    grid: { top: 34, right: 14, bottom: 48, left: 10, containLabel: true },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -72,7 +109,14 @@ export function ModernGroupedBarChart({
       valueFormatter: (v: number) => fmtValue(v, s.labelFormat),
     },
     legend: s.showLegend
-      ? { show: true, top: 0, textStyle: { fontSize: 10, color: axis.label } }
+      ? {
+          show: true,
+          top: 0,
+          icon: 'roundRect',
+          itemWidth: 10,
+          itemHeight: 6,
+          textStyle: { fontSize: 10, color: axis.label },
+        }
       : { show: false },
     xAxis: {
       type: 'category',
@@ -99,16 +143,24 @@ export function ModernGroupedBarChart({
         lineStyle: { type: 'dashed' as const, color: axis.splitLine },
       },
     },
-    series: metrics.map(metric => ({
-      name: metric,
+    series: seriesMeta.map(meta => ({
+      name: meta.label,
       type: 'bar',
-      barMaxWidth: 34,
-      data: data.slice(0, 20).map(row => Number(row[metric]) || 0),
-      itemStyle: { borderRadius: [6, 6, 0, 0] },
+      barMaxWidth: 28,
+      data: rows.map(row => Number(row.raw[meta.key]) || 0),
+      itemStyle: {
+        borderRadius: [8, 8, 0, 0],
+        color: new graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: withAlpha(meta.color, 0.95) },
+          { offset: 1, color: withAlpha(meta.color, 0.55) },
+        ]),
+        shadowBlur: 8,
+        shadowColor: withAlpha(meta.color, 0.3),
+      },
     })),
-  }), [axis.label, axis.splitLine, data, labels, metrics, s, tt])
+  }), [axis.label, axis.splitLine, labels, rows, s, seriesMeta, tt])
 
-  if (!metrics.length) {
+  if (!seriesMeta.length) {
     return (
       <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
         No numeric fields found for grouped chart
@@ -126,4 +178,3 @@ export function ModernGroupedBarChart({
     />
   )
 }
-

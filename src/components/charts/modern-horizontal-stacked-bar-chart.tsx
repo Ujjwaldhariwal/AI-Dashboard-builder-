@@ -2,13 +2,22 @@
 
 import { useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
-import type { WidgetStyle } from '@/types/widget'
+import { graphic } from 'echarts'
+import type { WidgetStyle, YAxisConfig } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { withAlpha } from '@/lib/echarts/utils'
+import { sortLabels } from '@/lib/charts/domain-order'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
+}
+
+interface SeriesMeta {
+  key: string
+  label: string
+  color: string
 }
 
 interface ModernHorizontalStackedBarChartProps {
@@ -16,6 +25,7 @@ interface ModernHorizontalStackedBarChartProps {
   xField: string
   yField?: string
   yFields?: string[]
+  yAxisConfig?: YAxisConfig[]
   style?: WidgetStyle
 }
 
@@ -46,6 +56,7 @@ export function ModernHorizontalStackedBarChart({
   xField,
   yField,
   yFields,
+  yAxisConfig,
   style,
 }: ModernHorizontalStackedBarChartProps) {
   useEnterpriseTheme()
@@ -57,20 +68,41 @@ export function ModernHorizontalStackedBarChart({
     () => getNumericFields(data, xField, yField, yFields),
     [data, xField, yField, yFields],
   )
+  const seriesMeta = useMemo<SeriesMeta[]>(() => {
+    const configured = (yAxisConfig ?? [])
+      .map((cfg, i) => {
+        const key = String(cfg.key ?? '').trim()
+        if (!key) return null
+        return {
+          key,
+          label: cfg.label?.trim() || key,
+          color: cfg.color || s.colors[i % s.colors.length],
+        } satisfies SeriesMeta
+      })
+      .filter((cfg): cfg is SeriesMeta => Boolean(cfg))
+
+    if (configured.length) return configured
+
+    return sortLabels(metrics).map((key, i) => ({
+      key,
+      label: key,
+      color: s.colors[i % s.colors.length],
+    }))
+  }, [metrics, s.colors, yAxisConfig])
 
   const rows = useMemo(() => {
     return data.slice(0, 20).map((row, i) => ({
       name: String(row[xField] ?? `#${i + 1}`).slice(0, 28),
-      values: metrics.map(m => Number(row[m]) || 0),
+      values: seriesMeta.map(meta => Number(row[meta.key]) || 0),
     }))
-  }, [data, metrics, xField])
+  }, [data, seriesMeta, xField])
 
   const option = useMemo(() => ({
     animation: true,
-    animationDuration: 650,
+    animationDuration: 740,
     animationEasing: 'cubicOut' as const,
     backgroundColor: 'transparent',
-    color: s.colors,
+    color: seriesMeta.map(meta => meta.color),
     grid: { top: 18, right: 16, bottom: 22, left: 10, containLabel: true },
     tooltip: {
       trigger: 'axis',
@@ -79,7 +111,14 @@ export function ModernHorizontalStackedBarChart({
       valueFormatter: (v: number) => fmtValue(v, s.labelFormat),
     },
     legend: s.showLegend
-      ? { show: true, top: 0, textStyle: { fontSize: 10, color: axis.label } }
+      ? {
+          show: true,
+          top: 0,
+          icon: 'roundRect',
+          itemWidth: 10,
+          itemHeight: 6,
+          textStyle: { fontSize: 10, color: axis.label },
+        }
       : { show: false },
     xAxis: {
       type: 'value',
@@ -102,18 +141,26 @@ export function ModernHorizontalStackedBarChart({
       axisTick: { show: false },
       axisLabel: { color: axis.label, fontSize: 11 },
     },
-    series: metrics.map((metric, idx) => ({
-      name: metric,
+    series: seriesMeta.map((meta, idx) => ({
+      name: meta.label,
       type: 'bar',
       stack: 'total',
       emphasis: { focus: 'series' as const },
       barMaxWidth: 26,
       data: rows.map(r => r.values[idx]),
-      itemStyle: { borderRadius: idx === metrics.length - 1 ? [0, 6, 6, 0] : 0 },
+      itemStyle: {
+        borderRadius: idx === seriesMeta.length - 1 ? [0, 8, 8, 0] : 0,
+        color: new graphic.LinearGradient(1, 0, 0, 0, [
+          { offset: 0, color: withAlpha(meta.color, 0.95) },
+          { offset: 1, color: withAlpha(meta.color, 0.6) },
+        ]),
+        borderWidth: 0.8,
+        borderColor: withAlpha(axis.border, 0.22),
+      },
     })),
-  }), [axis.label, axis.splitLine, metrics, rows, s, tt])
+  }), [axis.border, axis.label, axis.splitLine, rows, s, seriesMeta, tt])
 
-  if (!metrics.length) {
+  if (!seriesMeta.length) {
     return (
       <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
         No numeric fields found for stacked chart
@@ -131,4 +178,3 @@ export function ModernHorizontalStackedBarChart({
     />
   )
 }
-

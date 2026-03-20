@@ -6,6 +6,8 @@ import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle } from '@/lib/echarts/style-translator'
+import { withAlpha } from '@/lib/echarts/utils'
+import { sortNamedValues } from '@/lib/charts/domain-order'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -48,21 +50,24 @@ export function ModernPieChart({
         const k = String(item[nameField] ?? 'Unknown').slice(0, 22)
         grouped[k] = (grouped[k] ?? 0) + (parseFloat(String(item[valueField])) || 0)
       })
-      return Object.entries(grouped)
+      const ranked = Object.entries(grouped)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8)
         .map(([name, value]) => ({ name, value }))
+      return sortNamedValues(ranked)
     }
     const counts: Record<string, number> = {}
     data.forEach(item => {
       const k = String(item[nameField] ?? 'Unknown').slice(0, 22)
       counts[k] = (counts[k] ?? 0) + 1
     })
-    return Object.entries(counts)
+    const ranked = Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([name, value]) => ({ name, value }))
+    return sortNamedValues(ranked)
   }, [data, nameField, valueField])
+  const total = useMemo(() => chartData.reduce((sum, item) => sum + item.value, 0), [chartData])
 
   const option = useMemo(() => ({
     animation:         true,
@@ -99,15 +104,43 @@ export function ModernPieChart({
         formatter: (p: LabelParam) => p.percent >= 8 ? `${p.percent.toFixed(0)}%` : '',
       },
       labelLine: { show: false },
-      itemStyle: { borderWidth: 2, borderColor: 'transparent' },
+      itemStyle: {
+        borderWidth: 1,
+        borderColor: withAlpha(axis.border, 0.28),
+        shadowBlur: 8,
+        shadowColor: 'rgba(15,23,42,0.12)',
+      },
       emphasis: {
-        itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' },
+        itemStyle: { shadowBlur: 14, shadowColor: 'rgba(0,0,0,0.24)' },
         scale:     true,
         scaleSize: 5,
       },
     }],
+    graphic: donut ? [
+      {
+        type: 'text',
+        left: 'center',
+        top: '35%',
+        style: {
+          text: total.toLocaleString(),
+          fontSize: 18,
+          fontWeight: 700,
+          fill: axis.label,
+        },
+      },
+      {
+        type: 'text',
+        left: 'center',
+        top: '42%',
+        style: {
+          text: 'Total',
+          fontSize: 10,
+          fill: withAlpha(axis.label, 0.7),
+        },
+      },
+    ] : undefined,
   // deps are intentionally coarse — s/colors/axis/tt derive from listed deps
-  }), [chartData, colors, donut, s, axis, tt]) // ← Fix #7: donut added, eslint-disable removed
+  }), [axis, chartData, colors, donut, s, total, tt]) // ← Fix #7: donut added, eslint-disable removed
 
   return (
     <ReactECharts

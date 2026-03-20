@@ -1,5 +1,7 @@
 // src/lib/share-utils.ts
 
+import type { WidgetStyle, YAxisConfig } from '@/types/widget'
+
 export type ShareEndpointMethod = 'GET' | 'POST'
 
 export interface ShareEndpointConfig {
@@ -17,6 +19,9 @@ export interface ShareWidgetConfig {
   endpointId: string
   xAxis: string
   yAxis: string
+  yAxes?: YAxisConfig[]
+  aliases?: Record<string, string>
+  style?: Partial<WidgetStyle>
 }
 
 export interface SharePayload {
@@ -46,6 +51,72 @@ function normalizeHeaders(value: unknown): Record<string, string> | undefined {
 
   if (entries.length === 0) return undefined
   return Object.fromEntries(entries)
+}
+
+function normalizeAliases(value: unknown): Record<string, string> | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+
+  const entries = Object.entries(record)
+    .filter(([key]) => key.trim().length > 0)
+    .map(([key, alias]) => [key.trim(), String(alias).trim()] as const)
+    .filter(([, alias]) => alias.length > 0)
+
+  if (!entries.length) return undefined
+  return Object.fromEntries(entries)
+}
+
+function normalizeYAxisConfigs(value: unknown): YAxisConfig[] | undefined {
+  if (!Array.isArray(value)) return undefined
+
+  const parsed = value
+    .map(item => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map(item => {
+      const key = typeof item.key === 'string' ? item.key.trim() : ''
+      if (!key) return null
+      const color = typeof item.color === 'string' && item.color.trim().length > 0
+        ? item.color.trim()
+        : '#3b82f6'
+      const label = typeof item.label === 'string' && item.label.trim().length > 0
+        ? item.label.trim()
+        : undefined
+      return { key, color, label } satisfies YAxisConfig
+    })
+    .filter((item): item is YAxisConfig => Boolean(item))
+
+  return parsed.length ? parsed : undefined
+}
+
+function normalizeWidgetStyle(value: unknown): Partial<WidgetStyle> | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+
+  const normalized: Partial<WidgetStyle> = {}
+
+  if (Array.isArray(record.colors)) {
+    const colors = record.colors
+      .map(color => String(color).trim())
+      .filter(color => color.length > 0)
+    if (colors.length) normalized.colors = colors
+  }
+
+  if (typeof record.tooltipBg === 'string' && record.tooltipBg.trim().length > 0) {
+    normalized.tooltipBg = record.tooltipBg.trim()
+  }
+  if (typeof record.tooltipBorder === 'string' && record.tooltipBorder.trim().length > 0) {
+    normalized.tooltipBorder = record.tooltipBorder.trim()
+  }
+  if (record.labelFormat === 'currency' || record.labelFormat === 'percent') {
+    normalized.labelFormat = record.labelFormat
+  }
+  if (typeof record.barRadius === 'number' && Number.isFinite(record.barRadius)) {
+    normalized.barRadius = record.barRadius
+  }
+  if (typeof record.showLegend === 'boolean') normalized.showLegend = record.showLegend
+  if (typeof record.showGrid === 'boolean') normalized.showGrid = record.showGrid
+
+  return Object.keys(normalized).length ? normalized : undefined
 }
 
 function safeStringify(value: unknown): string {
@@ -110,6 +181,9 @@ function normalizePayload(parsed: unknown): SharePayload | null {
       : 'bar'
     const xAxis = typeof widgetRecord.xAxis === 'string' ? widgetRecord.xAxis : ''
     const yAxis = typeof widgetRecord.yAxis === 'string' ? widgetRecord.yAxis : ''
+    const yAxes = normalizeYAxisConfigs(widgetRecord.yAxes)
+    const aliases = normalizeAliases(widgetRecord.aliases)
+    const style = normalizeWidgetStyle(widgetRecord.style)
 
     let endpointId = typeof widgetRecord.endpointId === 'string'
       ? widgetRecord.endpointId.trim()
@@ -156,6 +230,9 @@ function normalizePayload(parsed: unknown): SharePayload | null {
       endpointId,
       xAxis,
       yAxis,
+      yAxes,
+      aliases,
+      style,
     })
   })
 

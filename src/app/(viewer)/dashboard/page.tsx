@@ -191,6 +191,9 @@ export default function ViewerPage() {
         endpointId: ep?.id ?? w.endpointId,
         xAxis: w.dataMapping.xAxis,
         yAxis: w.dataMapping.yAxis ?? "",
+        yAxes: w.dataMapping.yAxes,
+        aliases: w.dataMapping.aliases,
+        style: w.style,
       };
     });
 
