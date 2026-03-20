@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
+import { graphic } from 'echarts'
 import { Button } from '@/components/ui/button'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { withAlpha } from '@/lib/echarts/utils'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -16,6 +18,7 @@ interface ModernDrilldownBarChartProps {
   data: Record<string, unknown>[]
   xField: string
   yField: string
+  drillField?: string
   style?: WidgetStyle
 }
 
@@ -36,19 +39,56 @@ function sumByField(
     .sort((a, b) => b.value - a.value)
 }
 
-function inferDrillField(data: Record<string, unknown>[], xField: string): string | null {
+function inferDrillField(
+  data: Record<string, unknown>[],
+  xField: string,
+  yField: string,
+): string | null {
   if (!data.length) return null
-  const keys = Object.keys(data[0]).filter(k => k !== xField)
-  const stringKeys = keys.filter(k =>
-    data.some(row => typeof row[k] === 'string' && String(row[k]).trim().length > 0),
-  )
-  return stringKeys[0] ?? null
+  const sample = data.slice(0, 200)
+  const keys = Object.keys(sample[0]).filter(k => k !== xField && k !== yField)
+
+  type Candidate = {
+    key: string
+    coverage: number
+    unique: number
+    preferredBand: boolean
+    isIdLike: boolean
+  }
+
+  const candidates: Candidate[] = keys
+    .map(key => {
+      const values = sample
+        .map(row => row[key])
+        .filter(v => typeof v === 'string')
+        .map(v => String(v).trim())
+        .filter(Boolean)
+
+      if (!values.length) return null
+
+      const unique = new Set(values).size
+      const coverage = values.length / sample.length
+      const preferredBand = unique >= 2 && unique <= Math.max(20, Math.floor(sample.length * 0.8))
+      const isIdLike = unique >= Math.floor(sample.length * 0.95)
+
+      return { key, coverage, unique, preferredBand, isIdLike } satisfies Candidate
+    })
+    .filter((item): item is Candidate => Boolean(item))
+    .sort((a, b) => {
+      if (a.preferredBand !== b.preferredBand) return a.preferredBand ? -1 : 1
+      if (a.isIdLike !== b.isIdLike) return a.isIdLike ? 1 : -1
+      if (a.coverage !== b.coverage) return b.coverage - a.coverage
+      return b.unique - a.unique
+    })
+
+  return candidates[0]?.key ?? null
 }
 
 export function ModernDrilldownBarChart({
   data,
   xField,
   yField,
+  drillField: drillFieldProp,
   style,
 }: ModernDrilldownBarChartProps) {
   useEnterpriseTheme()
@@ -59,7 +99,10 @@ export function ModernDrilldownBarChart({
 
   const [selectedPrimary, setSelectedPrimary] = useState<string | null>(null)
 
-  const drillField = useMemo(() => inferDrillField(data, xField), [data, xField])
+  const drillField = useMemo(
+    () => drillFieldProp ?? inferDrillField(data, xField, yField),
+    [data, drillFieldProp, xField, yField],
+  )
 
   const topLevel = useMemo(
     () => sumByField(data, xField, yField).slice(0, 20),
@@ -121,7 +164,15 @@ export function ModernDrilldownBarChart({
         type: 'bar',
         data: rows.map(row => row.value),
         barMaxWidth: 42,
-        itemStyle: { borderRadius: [6, 6, 0, 0] },
+        itemStyle: {
+          borderRadius: [8, 8, 0, 0],
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: withAlpha(s.colors[0] ?? '#3b82f6', 0.95) },
+            { offset: 1, color: withAlpha(s.colors[0] ?? '#3b82f6', 0.58) },
+          ]),
+          shadowBlur: 9,
+          shadowColor: withAlpha(s.colors[0] ?? '#3b82f6', 0.35),
+        },
       },
     ],
   }), [axis.label, axis.splitLine, rows, s, tt])
@@ -155,4 +206,3 @@ export function ModernDrilldownBarChart({
     </div>
   )
 }
-

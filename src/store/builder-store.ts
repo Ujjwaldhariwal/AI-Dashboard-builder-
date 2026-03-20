@@ -106,30 +106,41 @@ const normalizeWidgetPosition = (row: Record<string, unknown>) => {
 
 const updateWidgetRecordWithLayoutFallback = async (
   id: string,
-  userId: string,
+  _userId: string,
   payload: Record<string, unknown>,
   position: { x: number; y: number; w: number; h: number },
 ) => {
-  const attempts: Array<Record<string, unknown>> = [
-    { ...payload, position, size: position },
-    { ...payload, position },
-    { ...payload, position: position.y, size: position },
-    { ...payload, position: position.y },
-  ]
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`
+    }
 
-  let latestError: { message: string } | null = null
-  for (const attempt of attempts) {
-    const { error } = await supabase
-      .from('widgets')
-      .update(attempt)
-      .eq('id', id)
-      .eq('user_id', userId)
+    const response = await fetch('/api/widgets/update', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        id,
+        payload,
+        position,
+      }),
+    })
 
-    if (!error) return null
-    latestError = error
+    if (response.ok) return null
+
+    const parsed = await response.json().catch(() => null)
+    const message =
+      typeof parsed?.error === 'string'
+        ? parsed.error
+        : `Widget update failed (${response.status})`
+    return { message }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { message }
   }
-
-  return latestError
 }
 
 interface DashboardStore {
@@ -443,9 +454,14 @@ export const useDashboardStore = create<DashboardStore>()(
           try {
             const { error } = await supabase
               .from('dashboards')
-              .update(payload)
-              .eq('id', id)
-              .eq('user_id', userId)
+              .upsert(
+                {
+                  id,
+                  user_id: userId,
+                  ...payload,
+                },
+                { onConflict: 'id' },
+              )
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
@@ -713,17 +729,20 @@ export const useDashboardStore = create<DashboardStore>()(
           try {
             const { error } = await supabase
               .from('endpoints')
-              .update({
-                name: endpoint.name,
-                url: endpoint.url,
-                method: endpoint.method,
-                auth_type: endpoint.authType,
-                headers: endpoint.headers ?? {},
-                body,
-                refresh_interval: endpoint.refreshInterval,
-              })
-              .eq('id', id)
-              .eq('user_id', userId)
+              .upsert(
+                {
+                  id,
+                  user_id: userId,
+                  name: endpoint.name,
+                  url: endpoint.url,
+                  method: endpoint.method,
+                  auth_type: endpoint.authType,
+                  headers: endpoint.headers ?? {},
+                  body,
+                  refresh_interval: endpoint.refreshInterval,
+                },
+                { onConflict: 'id' },
+              )
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
@@ -1043,16 +1062,21 @@ addWidget: (config) => {
         set({ isSyncing: true })
         void (async () => {
           try {
-            const { error } = await supabase
-              .from('widgets')
-              .update({
+            const layout = widget.position ?? { ...DEFAULT_WIDGET_POSITION }
+            const error = await updateWidgetRecordWithLayoutFallback(
+              id,
+              userId,
+              {
                 style: widget.style,
-              })
-              .eq('id', id)
-              .eq('user_id', userId)
+                data_mapping: widget.dataMapping,
+              },
+              layout,
+            )
             if (error) {
               set({ lastSyncError: error.message })
               void get().syncFromSupabase()
+            } else {
+              set({ lastSyncError: null })
             }
           } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error)

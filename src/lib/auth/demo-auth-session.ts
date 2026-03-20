@@ -5,6 +5,7 @@ export interface BuilderDemoAuthSession {
   token: string
   headerName: string
   prefix: string
+  targetEnv?: string
   enabled: boolean
   createdAt: string
 }
@@ -13,6 +14,12 @@ const STORAGE_KEY = 'builder_demo_auth_session_v1'
 
 function isBrowser() {
   return typeof window !== 'undefined'
+}
+
+function normalizeEnvTarget(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')
+  return normalized || undefined
 }
 
 function decodeBase64Url(input: string): string | null {
@@ -88,6 +95,9 @@ export function getBuilderDemoAuthSession(): BuilderDemoAuthSession | null {
         ? parsed.headerName.trim()
         : 'Authorization',
       prefix: typeof parsed.prefix === 'string' ? parsed.prefix : 'Bearer',
+      targetEnv: normalizeEnvTarget(
+        typeof parsed.targetEnv === 'string' ? parsed.targetEnv : undefined,
+      ),
       enabled: parsed.enabled !== false,
       createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : new Date().toISOString(),
     }
@@ -119,8 +129,12 @@ export function getBuilderDemoAuthHeaders(): Record<string, string> {
   const prefix = session.prefix?.trim() ?? ''
   const headerValue = prefix ? `${prefix} ${session.token}` : session.token
 
-  return {
+  const headers: Record<string, string> = {
     [headerName]: headerValue,
     'x-builder-demo-token': session.token,
   }
+  if (session.targetEnv) {
+    headers['x-bosch-env'] = session.targetEnv
+  }
+  return headers
 }

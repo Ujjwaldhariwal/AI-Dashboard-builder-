@@ -140,6 +140,7 @@ export interface TrainingProfileRequest {
     token: string
     headerName?: string
     prefix?: string
+    envTarget?: string
   }
 }
 

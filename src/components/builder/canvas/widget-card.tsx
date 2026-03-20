@@ -33,7 +33,7 @@ import {
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
-import type { Widget } from '@/types/widget'
+import type { Widget, YAxisConfig } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
 import { toast } from 'sonner'
@@ -369,10 +369,22 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
   const xField = resolveField(widget.dataMapping.xAxis)
   const yField = resolveField(widget.dataMapping.yAxis)
-  const yFields = useMemo(
-    () => (widget.dataMapping.yAxes ?? []).map(axisCfg => resolveField(axisCfg.key)).filter(Boolean),
+  const yAxisConfig = useMemo<YAxisConfig[]>(
+    () =>
+      (widget.dataMapping.yAxes ?? [])
+        .map(axisCfg => {
+          const key = resolveField(axisCfg.key)
+          if (!key) return null
+          return {
+            ...axisCfg,
+            key,
+            label: axisCfg.label ?? key,
+          } satisfies YAxisConfig
+        })
+        .filter((axis): axis is YAxisConfig => Boolean(axis)),
     [resolveField, widget.dataMapping.yAxes],
   )
+  const yFields = useMemo(() => yAxisConfig.map(axis => axis.key), [yAxisConfig])
 
   const insightData = useMemo(() => {
     if (!aliasedData?.length || !xField || !yField) return null
@@ -442,9 +454,27 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       case 'horizontal-bar':
         return <ModernHorizontalBarChart data={aliasedData} xField={x} yField={y} style={style} />
       case 'horizontal-stacked-bar':
-        return <ModernHorizontalStackedBarChart data={aliasedData} xField={x} yField={y} yFields={yFields} style={style} />
+        return (
+          <ModernHorizontalStackedBarChart
+            data={aliasedData}
+            xField={x}
+            yField={y}
+            yFields={yFields}
+            yAxisConfig={yAxisConfig}
+            style={style}
+          />
+        )
       case 'grouped-bar':
-        return <ModernGroupedBarChart data={aliasedData} xField={x} yField={y} yFields={yFields} style={style} />
+        return (
+          <ModernGroupedBarChart
+            data={aliasedData}
+            xField={x}
+            yField={y}
+            yFields={yFields}
+            yAxisConfig={yAxisConfig}
+            style={style}
+          />
+        )
       case 'drilldown-bar':
         return <ModernDrilldownBarChart data={aliasedData} xField={x} yField={y} style={style} />
       case 'gauge':

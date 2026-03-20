@@ -288,6 +288,7 @@ export default function APIConfigPage() {
               token: session.token,
               headerName: session.headerName,
               prefix: session.prefix,
+              envTarget: session.targetEnv,
             }
           : undefined,
       })

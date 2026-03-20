@@ -23,6 +23,7 @@ import { ModernDrilldownBarChart } from '@/components/charts/modern-drilldown-ba
 import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'
 import { ModernRingGaugeChartFromData } from '@/components/charts/modern-ring-gauge-chart'
 import { ModernStatusCard } from '@/components/charts/modern-status-card'
+import type { WidgetStyle, YAxisConfig } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
@@ -35,12 +36,28 @@ interface SharedWidgetData {
   data: Record<string, unknown>[]
   xAxis: string
   yAxis: string
+  yAxes?: YAxisConfig[]
+  aliases?: Record<string, string>
+  style?: Partial<WidgetStyle>
   loading: boolean
   error: string | null
 }
 
 interface Props {
   payload: SharePayload
+}
+
+function applyAliasesToRow(
+  row: Record<string, unknown>,
+  aliases: Record<string, string>,
+): Record<string, unknown> {
+  if (!Object.keys(aliases).length) return row
+  const renamed: Record<string, unknown> = {}
+  Object.entries(row).forEach(([key, value]) => {
+    const mapped = aliases[key]
+    renamed[mapped ?? key] = value
+  })
+  return renamed
 }
 
 export function SharedDashboardViewer({ payload }: Props) {
@@ -59,6 +76,9 @@ export function SharedDashboardViewer({ payload }: Props) {
       data: [],
       xAxis: w.xAxis,
       yAxis: w.yAxis,
+      yAxes: w.yAxes,
+      aliases: w.aliases,
+      style: w.style,
       loading: true,
       error: null,
     })),
@@ -144,35 +164,62 @@ export function SharedDashboardViewer({ payload }: Props) {
       )
     }
 
-    const s = DEFAULT_STYLE
+    const aliases = wd.aliases ?? {}
+    const resolveField = (field?: string) => (field ? (aliases[field] ?? field) : '')
+    const xField = resolveField(wd.xAxis)
+    const yField = resolveField(wd.yAxis)
+    const seriesConfig = (wd.yAxes ?? [])
+      .map(axis => ({ ...axis, key: resolveField(axis.key) }))
+      .filter(axis => axis.key.length > 0)
+    const yFields = seriesConfig.map(axis => axis.key)
+    const chartData = wd.data.map(row => applyAliasesToRow(row, aliases))
+    const s: WidgetStyle = { ...DEFAULT_STYLE, ...(wd.style ?? {}) }
 
     switch (wd.type) {
       case 'bar':
-        return <ModernBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+        return <ModernBarChart data={chartData} xField={xField} yField={yField} style={s} />
       case 'line':
-        return <ModernLineChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+        return <ModernLineChart data={chartData} xField={xField} yField={yField} style={s} />
       case 'area':
-        return <ModernAreaChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+        return <ModernAreaChart data={chartData} xField={xField} yField={yField} style={s} />
       case 'pie':
-        return <ModernPieChart data={wd.data} nameField={wd.xAxis} valueField={wd.yAxis} style={s} />
+        return <ModernPieChart data={chartData} nameField={xField} valueField={yField} style={s} />
       case 'donut':
-        return <ModernPieChart data={wd.data} nameField={wd.xAxis} valueField={wd.yAxis} donut style={s} />
+        return <ModernPieChart data={chartData} nameField={xField} valueField={yField} donut style={s} />
       case 'horizontal-bar':
-        return <ModernHorizontalBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+        return <ModernHorizontalBarChart data={chartData} xField={xField} yField={yField} style={s} />
       case 'horizontal-stacked-bar':
-        return <ModernHorizontalStackedBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+        return (
+          <ModernHorizontalStackedBarChart
+            data={chartData}
+            xField={xField}
+            yField={yField}
+            yFields={yFields}
+            yAxisConfig={seriesConfig}
+            style={s}
+          />
+        )
       case 'grouped-bar':
-        return <ModernGroupedBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+        return (
+          <ModernGroupedBarChart
+            data={chartData}
+            xField={xField}
+            yField={yField}
+            yFields={yFields}
+            yAxisConfig={seriesConfig}
+            style={s}
+          />
+        )
       case 'drilldown-bar':
-        return <ModernDrilldownBarChart data={wd.data} xField={wd.xAxis} yField={wd.yAxis} style={s} />
+        return <ModernDrilldownBarChart data={chartData} xField={xField} yField={yField} style={s} />
       case 'gauge':
-        return <ModernGaugeChartFromData data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
+        return <ModernGaugeChartFromData data={chartData} yField={yField} label={wd.title} style={s} />
       case 'ring-gauge':
-        return <ModernRingGaugeChartFromData data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
+        return <ModernRingGaugeChartFromData data={chartData} yField={yField} label={wd.title} style={s} />
       case 'status-card':
-        return <ModernStatusCard data={wd.data} yField={wd.yAxis} label={wd.title} style={s} />
+        return <ModernStatusCard data={chartData} yField={yField} label={wd.title} style={s} />
       case 'table': {
-        const cols = Object.keys(wd.data[0] ?? {}).slice(0, 5)
+        const cols = Object.keys(chartData[0] ?? {}).slice(0, 5)
         return (
           <div className="overflow-auto max-h-[220px] rounded border">
             <table className="w-full text-xs">
@@ -186,7 +233,7 @@ export function SharedDashboardViewer({ payload }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {wd.data.slice(0, 30).map((row, i) => (
+                {chartData.slice(0, 30).map((row, i) => (
                   <tr key={i} className="border-b hover:bg-muted/30">
                     {cols.map(c => (
                       <td key={c} className="p-2 max-w-[120px] truncate">
