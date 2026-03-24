@@ -37,7 +37,6 @@ import {
   Sparkles,
   X,
   Bot,
-  LayoutGrid,
   Circle,
   Minimize2,
   Maximize2,
@@ -917,6 +916,8 @@ function AiPanel({
   onClose: () => void;
   onMinToggle: () => void;
 }) {
+  const [assistView, setAssistView] = useState<"chat" | "ideas">("chat");
+
   return (
     <AnimatePresence>
       {open && (
@@ -926,121 +927,130 @@ function AiPanel({
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 24, scale: 0.97 }}
           transition={{ type: "spring", stiffness: 300, damping: 28 }}
-          className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-50 shadow-2xl rounded-2xl overflow-hidden border bg-card w-[calc(100vw-2rem)] sm:w-[400px]"
-          style={{ height: minimized ? "auto" : "min(600px, 75vh)" }}
+          className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-50 overflow-hidden rounded-2xl border bg-card shadow-2xl w-[calc(100vw-1.5rem)] sm:w-[460px]"
+          style={{ height: minimized ? "auto" : "min(680px, 82vh)" }}
         >
-          <Tabs defaultValue="chat" className="flex flex-col h-full">
-            <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 border-b bg-gradient-to-r from-blue-600/10 to-purple-600/10 flex-shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="w-3 h-3 text-white" />
+          <Tabs defaultValue="assist" className="flex h-full flex-col">
+            <div className="flex-shrink-0 border-b bg-background/95 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </div>
+                    <span className="text-sm font-semibold truncate">
+                      Builder Assistant
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    Ask AI, style the selected chart, and configure dashboard
+                    settings in one place.
+                  </p>
                 </div>
-                <span className="text-sm font-semibold truncate">
-                  AI Assistant
-                </span>
-                {widgetId && !minimized && (
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] hidden sm:inline-flex"
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={onMinToggle}
+                    title={minimized ? "Expand panel" : "Minimize panel"}
                   >
-                    Widget
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                <TabsList className="h-6">
-                  <TabsTrigger
-                    value="chat"
-                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
+                    {minimized ? (
+                      <Maximize2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <Minimize2 className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={onClose}
+                    title="Close assistant"
                   >
-                    <Bot className="w-2.5 h-2.5" />
-                    <span className="hidden sm:inline">Chat</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="suggest"
-                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
-                  >
-                    <LayoutGrid className="w-2.5 h-2.5" />
-                    <span className="hidden sm:inline">Suggest</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="style"
-                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
-                  >
-                    <Palette className="w-2.5 h-2.5" />
-                    <span className="hidden sm:inline">Style</span>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="config"
-                    className="text-[10px] h-5 px-1.5 sm:px-2 gap-0.5"
-                  >
-                    <SlidersHorizontal className="w-2.5 h-2.5" />
-                    <span className="hidden sm:inline">Config</span>
-                  </TabsTrigger>
-                </TabsList>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={onMinToggle}
-                >
-                  {minimized ? (
-                    <Maximize2 className="w-3 h-3" />
-                  ) : (
-                    <Minimize2 className="w-3 h-3" />
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={onClose}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
             {!minimized && (
-              <div className="flex-1 overflow-hidden min-h-0">
-                <TabsContent
-                  value="chat"
-                  className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-                >
-                  <ConfigChatbot
-                    selectedWidgetId={widgetId}
-                    onClose={onClose}
-                  />
-                </TabsContent>
-                <TabsContent
-                  value="suggest"
-                  className="mt-0 h-full overflow-y-auto p-4"
-                >
-                  <ChartSuggester />
-                </TabsContent>
+              <>
+                <div className="border-b bg-muted/35 px-3 py-2">
+                  <TabsList className="grid h-8 w-full grid-cols-3">
+                    <TabsTrigger
+                      value="assist"
+                      className="h-7 gap-1.5 text-[11px]"
+                      onClick={() => setAssistView("chat")}
+                    >
+                      <Bot className="h-3.5 w-3.5" />
+                      Assistant
+                    </TabsTrigger>
+                    <TabsTrigger value="style" className="h-7 gap-1.5 text-[11px]">
+                      <Palette className="h-3.5 w-3.5" />
+                      Style
+                    </TabsTrigger>
+                    <TabsTrigger value="config" className="h-7 gap-1.5 text-[11px]">
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Dashboard
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <TabsContent
+                    value="assist"
+                    className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+                  >
+                    <div className="flex items-center justify-between gap-3 border-b bg-muted/15 px-3 py-2">
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        {assistView === "chat"
+                          ? "Use natural language to build charts or update the selected chart style."
+                          : "Analyze API data and add recommended charts in one click."}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 flex-shrink-0 text-[11px]"
+                        onClick={() =>
+                          setAssistView((v) => (v === "chat" ? "ideas" : "chat"))
+                        }
+                      >
+                        {assistView === "chat" ? "Chart Ideas" : "Back to Chat"}
+                      </Button>
+                    </div>
+                    {assistView === "chat" ? (
+                      <ConfigChatbot selectedWidgetId={widgetId} />
+                    ) : (
+                      <div className="h-full overflow-y-auto p-3">
+                        <ChartSuggester />
+                      </div>
+                    )}
+                  </TabsContent>
                 <TabsContent
                   value="style"
                   className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
                 >
-                  <WidgetStylePanel selectedWidgetId={widgetId} />
-                </TabsContent>
-                <TabsContent
-                  value="config"
-                  className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-                >
-                  {dashId ? (
-                    <ProjectConfigPanel dashboardId={dashId} />
-                  ) : (
-                    <div className="flex items-center justify-center h-full p-6 text-center">
-                      <div>
-                        <SlidersHorizontal className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                        <p className="text-sm text-muted-foreground">
-                          Select a dashboard first
-                        </p>
+                    <WidgetStylePanel selectedWidgetId={widgetId} />
+                  </TabsContent>
+                  <TabsContent
+                    value="config"
+                    className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
+                  >
+                    {dashId ? (
+                      <ProjectConfigPanel dashboardId={dashId} />
+                    ) : (
+                      <div className="flex h-full items-center justify-center p-6 text-center">
+                        <div>
+                          <SlidersHorizontal className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">
+                            Select a dashboard first
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </TabsContent>
-              </div>
+                    )}
+                  </TabsContent>
+                </div>
+              </>
             )}
           </Tabs>
         </motion.div>
