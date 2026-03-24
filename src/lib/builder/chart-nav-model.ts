@@ -44,6 +44,7 @@ export interface ChartNavEndpointRef {
 
 export interface ChartNavBuildOptions {
   endpointLookup?: Record<string, ChartNavEndpointRef>
+  useTaxonomyFallback?: boolean
 }
 
 type MutableSubgroup = {
@@ -109,13 +110,16 @@ function resolveWidgetPlacement(
   groupsById: Map<string, ChartGroup>,
   groupsByName: Map<string, ChartGroup>,
   endpointLookup: Record<string, ChartNavEndpointRef> | undefined,
+  useTaxonomyFallback: boolean,
 ): ResolvedWidgetPlacement {
   const explicitGroup = widget.groupId ? groupsById.get(widget.groupId) : undefined
   const endpoint = widget.endpointId ? endpointLookup?.[widget.endpointId] : undefined
-  const taxonomyMatch = resolveUppclTaxonomy({
-    endpointName: endpoint?.name,
-    endpointUrl: endpoint?.url,
-  })
+  const taxonomyMatch = useTaxonomyFallback
+    ? resolveUppclTaxonomy({
+      endpointName: endpoint?.name,
+      endpointUrl: endpoint?.url,
+    })
+    : null
 
   let groupId = CHART_NAV_UNGROUPED
   let groupLabel = CHART_NAV_UNGROUPED_LABEL
@@ -172,6 +176,7 @@ export function buildChartNavTree(
   options: ChartNavBuildOptions = {},
 ): ChartNavTree {
   const { orderedGroups, groupsById, groupsByName } = buildGroupIndexes(groups)
+  const useTaxonomyFallback = options.useTaxonomyFallback ?? true
   const categories = new Map<string, MutableCategory>()
 
   orderedGroups.forEach(group => {
@@ -209,6 +214,7 @@ export function buildChartNavTree(
       groupsById,
       groupsByName,
       options.endpointLookup,
+      useTaxonomyFallback,
     )
     const category = upsertCategory(placement.groupId, placement.groupLabel, placement.groupOrder)
 
@@ -314,6 +320,7 @@ export function filterWidgetsByNavSelection(
   options: ChartNavBuildOptions = {},
 ): Widget[] {
   const { groupsById, groupsByName } = buildGroupIndexes(groups)
+  const useTaxonomyFallback = options.useTaxonomyFallback ?? true
 
   return widgets.filter(widget => {
     const placement = resolveWidgetPlacement(
@@ -321,6 +328,7 @@ export function filterWidgetsByNavSelection(
       groupsById,
       groupsByName,
       options.endpointLookup,
+      useTaxonomyFallback,
     )
 
     const groupMatches = activeGroupId === CHART_NAV_ALL || placement.groupId === activeGroupId

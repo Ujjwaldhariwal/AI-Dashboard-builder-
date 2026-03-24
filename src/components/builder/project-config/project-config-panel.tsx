@@ -33,6 +33,8 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
     getProjectConfig, setProjectConfig, resetProjectConfig,
     getGroupsByDashboard, addChartGroup, removeChartGroup,
     updateChartGroup, reorderGroups, assignWidgetToGroup,
+    getSubgroupsByGroup, addChartSubgroup, removeChartSubgroup,
+    updateChartSubgroup, reorderSubgroups, assignWidgetToSubgroup,
     getWidgetsByDashboard,
   } = store
 
@@ -40,6 +42,7 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
   const groups  = getGroupsByDashboard(dashboardId)
   const widgets = getWidgetsByDashboard(dashboardId)
   const [newGroupName, setNewGroupName] = useState('')
+  const [newSubgroupNameByGroup, setNewSubgroupNameByGroup] = useState<Record<string, string>>({})
 
   // Generic field updater — supports dot notation e.g. "login.endpoint"
   const update = (path: string, value: any) => {
@@ -99,6 +102,14 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
     toast.success(`Group "${newGroupName.trim()}" added`)
   }
 
+  const handleAddSubgroup = (groupId: string) => {
+    const name = newSubgroupNameByGroup[groupId]?.trim()
+    if (!name) return
+    addChartSubgroup(dashboardId, groupId, name)
+    setNewSubgroupNameByGroup(prev => ({ ...prev, [groupId]: '' }))
+    toast.success(`Subgroup "${name}" added`)
+  }
+
   const handleAssign = (widgetId: string, groupId: string) => {
     assignWidgetToGroup(widgetId, groupId)
     const w = widgets.find(w => w.id === widgetId)
@@ -110,6 +121,10 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
     assignWidgetToGroup(widgetId, null)
   }
 
+  const handleAssignSubgroup = (widgetId: string, subgroupId: string | null) => {
+    assignWidgetToSubgroup(widgetId, subgroupId)
+  }
+
   const updateDefaultHeader = (key: string, value: string) => {
     setProjectConfig(dashboardId, {
       defaultHeaders: {
@@ -117,11 +132,6 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
         [key]: value,
       },
     })
-  }
-
-  // Safe nested value reader for dot-path
-  const getNestedVal = (path: string): string => {
-    return path.split('.').reduce((o: any, k) => o?.[k], config) ?? ''
   }
 
   return (
@@ -378,7 +388,7 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
         {/* ── Groups Tab ───────────────────────────────────── */}
         <TabsContent value="groups" className="flex-1 overflow-y-auto px-4 py-3 mt-0 space-y-4">
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Groups become sidebar sections in the output dashboard.
+            Groups and subgroups drive chart navigation and PDF filtering.
           </p>
 
           {/* Add group input */}
@@ -412,6 +422,8 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
             {groups.map(group => {
               const groupWidgets   = widgets.filter(w => w.groupId === group.id)
               const unassigned     = widgets.filter(w => !w.groupId)
+              const subgroups      = getSubgroupsByGroup(group.id)
+              const subgroupNameInput = newSubgroupNameByGroup[group.id] ?? ''
 
               return (
                 <div key={group.id} className="rounded-lg border bg-card p-3 space-y-2">
@@ -448,14 +460,34 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
 
                   {/* Assigned widgets */}
                   {groupWidgets.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-2 border-t">
+                    <div className="pt-2 border-t space-y-2">
                       {groupWidgets.map(w => (
-                        <div key={w.id}
-                          className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                          <span className="max-w-[100px] truncate">{w.title}</span>
+                        <div
+                          key={w.id}
+                          className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[10px]"
+                        >
+                          <span className="max-w-[120px] truncate font-medium">{w.title}</span>
+                          <Select
+                            value={w.subgroupId ?? '__none__'}
+                            onValueChange={value =>
+                              handleAssignSubgroup(w.id, value === '__none__' ? null : value)
+                            }
+                          >
+                            <SelectTrigger className="h-6 min-w-[130px] text-[10px]">
+                              <SelectValue placeholder="General" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">General</SelectItem>
+                              {subgroups.map(subgroup => (
+                                <SelectItem key={subgroup.id} value={subgroup.id}>
+                                  {subgroup.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <button
                             onClick={() => handleUnassign(w.id)}
-                            className="hover:text-destructive ml-0.5 flex-shrink-0"
+                            className="hover:text-destructive ml-auto flex-shrink-0"
                           >
                             ✕
                           </button>
@@ -463,6 +495,88 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
                       ))}
                     </div>
                   )}
+
+                  <div className="pt-2 border-t space-y-2">
+                    <p className="text-[9px] text-muted-foreground">Subgroups</p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={subgroupNameInput}
+                        onChange={e =>
+                          setNewSubgroupNameByGroup(prev => ({
+                            ...prev,
+                            [group.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="e.g. Daily Reports"
+                        className="h-7 text-[10px] flex-1"
+                        onKeyDown={e => e.key === 'Enter' && handleAddSubgroup(group.id)}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={!subgroupNameInput.trim()}
+                        onClick={() => handleAddSubgroup(group.id)}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </Button>
+                    </div>
+
+                    {subgroups.length === 0 ? (
+                      <p className="text-[9px] text-muted-foreground">
+                        No subgroups yet. Use "General" or add one.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {subgroups.map(subgroup => {
+                          const subgroupWidgets = groupWidgets.filter(w => w.subgroupId === subgroup.id)
+                          return (
+                            <div
+                              key={subgroup.id}
+                              className="flex items-center gap-1 rounded-md border px-2 py-1"
+                            >
+                              <Input
+                                value={subgroup.name}
+                                onChange={e =>
+                                  updateChartSubgroup(subgroup.id, { name: e.target.value })
+                                }
+                                className="h-5 text-[10px] flex-1 border-0 bg-transparent p-0 focus-visible:ring-0"
+                              />
+                              <Badge variant="outline" className="text-[9px]">
+                                {subgroupWidgets.length}
+                              </Badge>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => reorderSubgroups(group.id, subgroup.id, 'up')}
+                              >
+                                <ChevronUp className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => reorderSubgroups(group.id, subgroup.id, 'down')}
+                              >
+                                <ChevronDown className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  removeChartSubgroup(subgroup.id)
+                                  toast.success('Subgroup removed')
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Quick-add unassigned widgets */}
                   {unassigned.length > 0 && (

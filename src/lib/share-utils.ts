@@ -69,21 +69,22 @@ function normalizeAliases(value: unknown): Record<string, string> | undefined {
 function normalizeYAxisConfigs(value: unknown): YAxisConfig[] | undefined {
   if (!Array.isArray(value)) return undefined
 
-  const parsed = value
-    .map(item => asRecord(item))
-    .filter((item): item is Record<string, unknown> => Boolean(item))
-    .map(item => {
-      const key = typeof item.key === 'string' ? item.key.trim() : ''
-      if (!key) return null
-      const color = typeof item.color === 'string' && item.color.trim().length > 0
-        ? item.color.trim()
-        : '#3b82f6'
-      const label = typeof item.label === 'string' && item.label.trim().length > 0
-        ? item.label.trim()
-        : undefined
-      return { key, color, label } satisfies YAxisConfig
-    })
-    .filter((item): item is YAxisConfig => Boolean(item))
+  const parsed = value.flatMap(item => {
+    const record = asRecord(item)
+    if (!record) return []
+
+    const key = typeof record.key === 'string' ? record.key.trim() : ''
+    if (!key) return []
+
+    const color = typeof record.color === 'string' && record.color.trim().length > 0
+      ? record.color.trim()
+      : '#3b82f6'
+    const label = typeof record.label === 'string' && record.label.trim().length > 0
+      ? record.label.trim()
+      : undefined
+
+    return [{ key, color, label }]
+  })
 
   return parsed.length ? parsed : undefined
 }

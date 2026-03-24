@@ -101,6 +101,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         endpoints:          [],
         projectConfigs:     {},
         chartGroups:        [],
+        chartSubgroups:     [],
         currentDashboardId: null,
       })
       useMonitoringStore.setState({

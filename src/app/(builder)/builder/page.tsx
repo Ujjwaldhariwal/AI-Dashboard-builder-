@@ -185,13 +185,15 @@ export default function BuilderPage() {
     () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
     [currentDashboardId, getGroupsByDashboard],
   );
+  const useTaxonomyFallback = collections.length === 0;
 
   const navTree = useMemo(
     () =>
       buildChartNavTree(widgets, collections, {
         endpointLookup: navEndpointLookup,
+        useTaxonomyFallback,
       }),
-    [widgets, collections, navEndpointLookup],
+    [widgets, collections, navEndpointLookup, useTaxonomyFallback],
   );
 
   const visibleWidgets = useMemo(
@@ -201,7 +203,10 @@ export default function BuilderPage() {
         navSelection.groupId,
         navSelection.subgroupId,
         collections,
-        { endpointLookup: navEndpointLookup },
+        {
+          endpointLookup: navEndpointLookup,
+          useTaxonomyFallback,
+        },
       ),
     [
       widgets,
@@ -209,6 +214,7 @@ export default function BuilderPage() {
       navSelection.subgroupId,
       collections,
       navEndpointLookup,
+      useTaxonomyFallback,
     ],
   );
 

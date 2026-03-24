@@ -70,6 +70,30 @@ export function PdfSelector({
     onSelectionChange(new Set())
   }
 
+  const setCategorySelection = (categoryId: string, include: boolean) => {
+    const category = categories.find(item => item.id === categoryId)
+    if (!category) return
+    const ids = category.subgroups.flatMap(subgroup => subgroup.charts.map(chart => chart.id))
+    const next = new Set(selectedIds)
+    ids.forEach(id => {
+      if (include) next.add(id)
+      else next.delete(id)
+    })
+    onSelectionChange(next)
+  }
+
+  const setSubgroupSelection = (subgroupId: string, include: boolean) => {
+    const ids = allCharts
+      .filter(chart => chart.subgroupId === subgroupId && chart.groupId === activeCategory?.id)
+      .map(chart => chart.id)
+    const next = new Set(selectedIds)
+    ids.forEach(id => {
+      if (include) next.add(id)
+      else next.delete(id)
+    })
+    onSelectionChange(next)
+  }
+
   const toggleChart = (chartId: string) => {
     const next = new Set(selectedIds)
     if (next.has(chartId)) {
@@ -169,15 +193,57 @@ export function PdfSelector({
                   <Button type="button" variant="outline" size="sm" className="h-7 text-[11px]" onClick={clearAll}>
                     Clear
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => activeCategory && setCategorySelection(activeCategory.id, true)}
+                    disabled={!activeCategory}
+                  >
+                    + Group
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => activeCategory && setCategorySelection(activeCategory.id, false)}
+                    disabled={!activeCategory}
+                  >
+                    - Group
+                  </Button>
                 </div>
               </div>
 
               <div className="max-h-[48vh] space-y-4 overflow-y-auto pr-1">
                 {(activeCategory?.subgroups ?? []).map(subgroup => (
                   <section key={subgroup.id} className="space-y-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {subgroup.label}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {subgroup.label}
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-[10px] px-2"
+                          onClick={() => setSubgroupSelection(subgroup.id, true)}
+                        >
+                          + Sub
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-[10px] px-2"
+                          onClick={() => setSubgroupSelection(subgroup.id, false)}
+                        >
+                          - Sub
+                        </Button>
+                      </div>
+                    </div>
                     <div className="space-y-1.5">
                       {subgroup.charts.map(chart => {
                         const isSelected = selectedIds.has(chart.id)

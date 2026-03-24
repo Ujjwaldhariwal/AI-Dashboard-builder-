@@ -35,14 +35,16 @@ function PdfExportContent() {
     () => (dashboardId ? getGroupsByDashboard(dashboardId) : []),
     [dashboardId, getGroupsByDashboard],
   )
+  const useTaxonomyFallback = chartGroups.length === 0
   const navTree = useMemo(
     () =>
       buildChartNavTree(widgets, chartGroups, {
         endpointLookup: Object.fromEntries(
           endpoints.map(ep => [ep.id, { name: ep.name, url: ep.url }]),
         ),
+        useTaxonomyFallback,
       }),
-    [widgets, chartGroups, endpoints],
+    [widgets, chartGroups, endpoints, useTaxonomyFallback],
   )
   const allWidgetIds = useMemo(() => {
     const fromTree = listChartIds(navTree)

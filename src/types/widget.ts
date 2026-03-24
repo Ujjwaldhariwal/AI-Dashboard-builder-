@@ -61,6 +61,7 @@ export interface Widget {
   dataMapping: DataMapping      // Layer 2 — user config
   style:       WidgetStyle      // Layer 3 — AI edits only
   groupId?:    string
+  subgroupId?: string
   sectionName?: string
   position?:   WidgetPosition
   createdAt?:  string
@@ -80,6 +81,7 @@ export interface WidgetConfigInput {
   dataMapping?: DataMapping
   style?:       Partial<WidgetStyle>
   groupId?:     string
+  subgroupId?:  string
   sectionName?: string           // ← Fix #5
   position?:    WidgetPosition
 }

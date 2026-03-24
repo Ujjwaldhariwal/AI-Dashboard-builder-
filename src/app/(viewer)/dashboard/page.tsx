@@ -102,12 +102,14 @@ export default function ViewerPage() {
     () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
     [currentDashboardId, getGroupsByDashboard],
   );
+  const useTaxonomyFallback = chartGroups.length === 0;
   const navTree = useMemo(
     () =>
       buildChartNavTree(widgets, chartGroups, {
         endpointLookup: navEndpointLookup,
+        useTaxonomyFallback,
       }),
-    [widgets, chartGroups, navEndpointLookup],
+    [widgets, chartGroups, navEndpointLookup, useTaxonomyFallback],
   );
   const visibleWidgets = useMemo(
     () =>
@@ -116,9 +118,12 @@ export default function ViewerPage() {
         activeGroupId,
         activeSubgroupId,
         chartGroups,
-        { endpointLookup: navEndpointLookup },
+        {
+          endpointLookup: navEndpointLookup,
+          useTaxonomyFallback,
+        },
       ),
-    [widgets, activeGroupId, activeSubgroupId, chartGroups, navEndpointLookup],
+    [widgets, activeGroupId, activeSubgroupId, chartGroups, navEndpointLookup, useTaxonomyFallback],
   );
   const isNavFiltered =
     activeGroupId !== CHART_NAV_ALL || activeSubgroupId !== CHART_NAV_ALL;

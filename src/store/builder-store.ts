@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Widget, WidgetConfigInput, WidgetStyle, ChartType } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
-import type { ProjectConfig, ChartGroup } from '@/types/project-config'
+import type { ProjectConfig, ChartGroup, ChartSubgroup } from '@/types/project-config'
 import { DEFAULT_PROJECT_CONFIG } from '@/types/project-config'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/auth-store'
@@ -37,7 +37,7 @@ interface DragState {
 }
 
 // ── Fix #8 — version field for future migrations ──────────────
-const STORE_VERSION = 3
+const STORE_VERSION = 4
 const supabase = createClient()
 const CHART_TYPES: readonly ChartType[] = [
   'bar',
@@ -185,12 +185,19 @@ interface DashboardStore {
   resetProjectConfig:    (dashboardId: string) => void
 
   chartGroups:           ChartGroup[]
+  chartSubgroups:        ChartSubgroup[]
   addChartGroup:         (dashboardId: string, name: string) => string
   removeChartGroup:      (groupId: string) => void
   updateChartGroup:      (groupId: string, patch: Partial<Pick<ChartGroup, 'name' | 'order'>>) => void
   assignWidgetToGroup:   (widgetId: string, groupId: string | null) => void
   getGroupsByDashboard:  (dashboardId: string) => ChartGroup[]
   reorderGroups:         (dashboardId: string, groupId: string, direction: 'up' | 'down') => void
+  addChartSubgroup:      (dashboardId: string, groupId: string, name: string) => string
+  removeChartSubgroup:   (subgroupId: string) => void
+  updateChartSubgroup:   (subgroupId: string, patch: Partial<Pick<ChartSubgroup, 'name' | 'order'>>) => void
+  assignWidgetToSubgroup: (widgetId: string, subgroupId: string | null) => void
+  getSubgroupsByGroup:   (groupId: string) => ChartSubgroup[]
+  reorderSubgroups:      (groupId: string, subgroupId: string, direction: 'up' | 'down') => void
 }
 
 // ── Shared ID generators ──────────────────────────────────────
@@ -206,7 +213,6 @@ const generateUuid = () => {
 }
 
 const dbId = () => generateUuid()
-const localId = (prefix: string) => `${prefix}-${generateUuid()}`
 
 export const useDashboardStore = create<DashboardStore>()(
   persist(
@@ -235,6 +241,8 @@ export const useDashboardStore = create<DashboardStore>()(
             dashboards: [],
             endpoints: [],
             widgets: [],
+            chartGroups: [],
+            chartSubgroups: [],
             currentDashboardId: null,
             selectedDashboardId: null,
             hasLoadedRemote: true,
@@ -246,7 +254,7 @@ export const useDashboardStore = create<DashboardStore>()(
         set({ isHydrating: true, lastSyncError: null })
 
         try {
-          const [dashRes, endpointRes, widgetRes] = await Promise.all([
+          const [dashRes, endpointRes, widgetRes, groupRes, subgroupRes] = await Promise.all([
             supabase
               .from('dashboards')
               .select('*')
@@ -262,11 +270,23 @@ export const useDashboardStore = create<DashboardStore>()(
               .select('*')
               .eq('user_id', userId)
               .order('created_at', { ascending: true }),
+            supabase
+              .from('chart_groups')
+              .select('*')
+              .eq('user_id', userId)
+              .order('sort_order', { ascending: true }),
+            supabase
+              .from('chart_subgroups')
+              .select('*')
+              .eq('user_id', userId)
+              .order('sort_order', { ascending: true }),
           ])
 
           if (dashRes.error) throw dashRes.error
           if (endpointRes.error) throw endpointRes.error
           if (widgetRes.error) throw widgetRes.error
+          if (groupRes.error) throw groupRes.error
+          if (subgroupRes.error) throw subgroupRes.error
 
           const dashboards = (dashRes.data ?? []).map((row: any) => ({
             id: row.id,
@@ -312,11 +332,46 @@ export const useDashboardStore = create<DashboardStore>()(
               endpointId: row.endpoint_id ?? '',
               dataMapping: (asRecord(row.data_mapping) ?? { xAxis: '' }) as any,
               style: { ...DEFAULT_STYLE, ...(asRecord(row.style) ?? {}) },
+              groupId: row.group_id ?? undefined,
+              subgroupId: row.subgroup_id ?? undefined,
+              sectionName: typeof row.section_name === 'string' ? row.section_name : undefined,
               position: normalizedPosition,
               createdAt: row.created_at ?? new Date().toISOString(),
               updatedAt: row.created_at ?? new Date().toISOString(),
             } as Widget
           })
+
+          const widgetIdsByGroup = new Map<string, string[]>()
+          const widgetIdsBySubgroup = new Map<string, string[]>()
+          widgets.forEach(widget => {
+            if (widget.groupId) {
+              const next = widgetIdsByGroup.get(widget.groupId) ?? []
+              next.push(widget.id)
+              widgetIdsByGroup.set(widget.groupId, next)
+            }
+            if (widget.subgroupId) {
+              const next = widgetIdsBySubgroup.get(widget.subgroupId) ?? []
+              next.push(widget.id)
+              widgetIdsBySubgroup.set(widget.subgroupId, next)
+            }
+          })
+
+          const chartGroups = (groupRes.data ?? []).map((row: any) => ({
+            id: row.id,
+            name: row.name ?? 'Group',
+            dashboardId: row.dashboard_id ?? '',
+            order: typeof row.sort_order === 'number' ? row.sort_order : 0,
+            widgetIds: widgetIdsByGroup.get(row.id) ?? [],
+          } satisfies ChartGroup))
+
+          const chartSubgroups = (subgroupRes.data ?? []).map((row: any) => ({
+            id: row.id,
+            groupId: row.group_id ?? '',
+            name: row.name ?? 'Subgroup',
+            dashboardId: row.dashboard_id ?? '',
+            order: typeof row.sort_order === 'number' ? row.sort_order : 0,
+            widgetIds: widgetIdsBySubgroup.get(row.id) ?? [],
+          } satisfies ChartSubgroup))
 
           const preferred = get().selectedDashboardId ?? get().currentDashboardId
           const resolvedDashboardId = preferred && dashboards.some(d => d.id === preferred)
@@ -327,6 +382,8 @@ export const useDashboardStore = create<DashboardStore>()(
             dashboards,
             endpoints,
             widgets,
+            chartGroups,
+            chartSubgroups,
             currentDashboardId: resolvedDashboardId,
             selectedDashboardId: resolvedDashboardId,
             hasLoadedRemote: true,
@@ -406,6 +463,7 @@ export const useDashboardStore = create<DashboardStore>()(
             widgets:            s.widgets.filter(w => w.dashboardId !== id),
             endpoints:          s.endpoints.filter(e => e.dashboardId !== id),
             chartGroups:        s.chartGroups.filter(g => g.dashboardId !== id),
+            chartSubgroups:     s.chartSubgroups.filter(subgroup => subgroup.dashboardId !== id),
             projectConfigs:     Object.fromEntries(
                                   Object.entries(s.projectConfigs).filter(([k]) => k !== id)
                                 ),
@@ -484,7 +542,7 @@ export const useDashboardStore = create<DashboardStore>()(
       }),
 
       duplicateDashboard: (id) => {
-        const { dashboards, endpoints, widgets, chartGroups, projectConfigs } = get()
+        const { dashboards, endpoints, widgets, chartGroups, chartSubgroups, projectConfigs } = get()
         const source = dashboards.find(d => d.id === id)
         if (!source) return ''
 
@@ -492,6 +550,13 @@ export const useDashboardStore = create<DashboardStore>()(
         const now    = new Date().toISOString()
         const widgetIdMap = new Map<string, string>()
         const endpointIdMap = new Map<string, string>()
+        const groupIdMap = new Map<string, string>()
+        const subgroupIdMap = new Map<string, string>()
+
+        const sourceWidgets = widgets.filter(w => w.dashboardId === id)
+        sourceWidgets.forEach(widget => {
+          widgetIdMap.set(widget.id, dbId())
+        })
 
         const clonedEndpoints = endpoints
           .filter(endpoint => endpoint.dashboardId === id)
@@ -505,29 +570,43 @@ export const useDashboardStore = create<DashboardStore>()(
             }
           })
 
-        const clonedWidgets = widgets
-          .filter(w => w.dashboardId === id)
-          .map(w => {
-            const newWid = dbId()
-            widgetIdMap.set(w.id, newWid)
+        const clonedGroups = chartGroups
+          .filter(g => g.dashboardId === id)
+          .map(g => {
+            const newGroupId = dbId()
+            groupIdMap.set(g.id, newGroupId)
             return {
-              ...w,
-              id: newWid,
+              ...g,
+              id: newGroupId,
               dashboardId: newId,
-              endpointId: endpointIdMap.get(w.endpointId) ?? w.endpointId,
-              createdAt: now,
-              updatedAt: now,
+              widgetIds: g.widgetIds.map(wid => widgetIdMap.get(wid) ?? wid),
             }
           })
 
-        const clonedGroups = chartGroups
-          .filter(g => g.dashboardId === id)
-          .map(g => ({
-            ...g,
-            id:         localId('group'),
-            dashboardId: newId,
-            widgetIds:  g.widgetIds.map(wid => widgetIdMap.get(wid) ?? wid),
-          }))
+        const clonedSubgroups = chartSubgroups
+          .filter(subgroup => subgroup.dashboardId === id)
+          .map(subgroup => {
+            const newSubgroupId = dbId()
+            subgroupIdMap.set(subgroup.id, newSubgroupId)
+            return {
+              ...subgroup,
+              id: newSubgroupId,
+              dashboardId: newId,
+              groupId: groupIdMap.get(subgroup.groupId) ?? subgroup.groupId,
+              widgetIds: subgroup.widgetIds.map(wid => widgetIdMap.get(wid) ?? wid),
+            }
+          })
+
+        const clonedWidgets = sourceWidgets.map(w => ({
+          ...w,
+          id: widgetIdMap.get(w.id) ?? w.id,
+          dashboardId: newId,
+          endpointId: endpointIdMap.get(w.endpointId) ?? w.endpointId,
+          groupId: w.groupId ? (groupIdMap.get(w.groupId) ?? w.groupId) : undefined,
+          subgroupId: w.subgroupId ? (subgroupIdMap.get(w.subgroupId) ?? w.subgroupId) : undefined,
+          createdAt: now,
+          updatedAt: now,
+        }))
 
         const sourceConfig = projectConfigs[id]
         const clonedConfig = sourceConfig
@@ -542,6 +621,7 @@ export const useDashboardStore = create<DashboardStore>()(
           endpoints:      [...s.endpoints, ...clonedEndpoints],
           widgets:        [...s.widgets, ...clonedWidgets],
           chartGroups:    [...s.chartGroups, ...clonedGroups],
+          chartSubgroups: [...s.chartSubgroups, ...clonedSubgroups],
           projectConfigs: clonedConfig
             ? { ...s.projectConfigs, [newId]: clonedConfig }
             : s.projectConfigs,
@@ -587,6 +667,39 @@ export const useDashboardStore = create<DashboardStore>()(
                 if (endpointsError) throw endpointsError
               }
 
+              if (clonedGroups.length > 0) {
+                const groupPayload = clonedGroups.map(group => ({
+                  id: group.id,
+                  dashboard_id: newId,
+                  user_id: userId,
+                  name: group.name,
+                  sort_order: group.order,
+                  created_at: now,
+                  updated_at: now,
+                }))
+                const { error: groupsError } = await supabase
+                  .from('chart_groups')
+                  .insert(groupPayload)
+                if (groupsError) throw groupsError
+              }
+
+              if (clonedSubgroups.length > 0) {
+                const subgroupPayload = clonedSubgroups.map(subgroup => ({
+                  id: subgroup.id,
+                  dashboard_id: newId,
+                  group_id: subgroup.groupId,
+                  user_id: userId,
+                  name: subgroup.name,
+                  sort_order: subgroup.order,
+                  created_at: now,
+                  updated_at: now,
+                }))
+                const { error: subgroupsError } = await supabase
+                  .from('chart_subgroups')
+                  .insert(subgroupPayload)
+                if (subgroupsError) throw subgroupsError
+              }
+
               if (clonedWidgets.length > 0) {
                 const payload = clonedWidgets.map(widget => ({
                   id: widget.id,
@@ -597,6 +710,9 @@ export const useDashboardStore = create<DashboardStore>()(
                   type: widget.type,
                   data_mapping: widget.dataMapping,
                   style: widget.style,
+                  group_id: widget.groupId ?? null,
+                  subgroup_id: widget.subgroupId ?? null,
+                  section_name: widget.sectionName ?? null,
                   position: widget.position ?? { x: 0, y: 0, w: 6, h: 4 },
                   size: widget.position ?? { x: 0, y: 0, w: 6, h: 4 },
                   created_at: now,
@@ -769,7 +885,6 @@ addWidget: (config) => {
     yAxis: config.yAxis,
   }
 
-  // ✅ Fix: gauge and status-card don't need xAxis
   const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(config.type)
   if (needsXAxis && !resolvedMapping.xAxis) return
 
@@ -786,15 +901,27 @@ addWidget: (config) => {
     dataMapping: resolvedMapping,
     style:       { ...DEFAULT_STYLE, ...config.style },
     groupId:     config.groupId,
+    subgroupId:  config.subgroupId,
+    sectionName: config.sectionName,
     position:    config.position ?? { x: 0, y: 0, w: 6, h: 4 },
     createdAt:   now,
     updatedAt:   now,
   }
-  set(s => ({ widgets: [...s.widgets, newWidget] }))
-
-  if (config.groupId) {
-    get().assignWidgetToGroup(id, config.groupId)
-  }
+  set(s => ({
+    widgets: [...s.widgets, newWidget],
+    chartGroups: s.chartGroups.map(group => ({
+      ...group,
+      widgetIds: group.id === newWidget.groupId
+        ? [...new Set([...group.widgetIds, newWidget.id])]
+        : group.widgetIds,
+    })),
+    chartSubgroups: s.chartSubgroups.map(subgroup => ({
+      ...subgroup,
+      widgetIds: subgroup.id === newWidget.subgroupId
+        ? [...new Set([...subgroup.widgetIds, newWidget.id])]
+        : subgroup.widgetIds,
+    })),
+  }))
 
   const userId = getUserId()
   if (!userId) {
@@ -814,6 +941,9 @@ addWidget: (config) => {
         type: newWidget.type,
         data_mapping: newWidget.dataMapping,
         style: newWidget.style,
+        group_id: newWidget.groupId ?? null,
+        subgroup_id: newWidget.subgroupId ?? null,
+        section_name: newWidget.sectionName ?? null,
         created_at: now,
       }
       const layout = newWidget.position ?? { ...DEFAULT_WIDGET_POSITION }
@@ -858,6 +988,10 @@ addWidget: (config) => {
             ...g,
             widgetIds: g.widgetIds.filter(wid => wid !== id),
           })),
+          chartSubgroups: s.chartSubgroups.map(subgroup => ({
+            ...subgroup,
+            widgetIds: subgroup.widgetIds.filter(wid => wid !== id),
+          })),
         }))
 
         const userId = getUserId()
@@ -887,11 +1021,37 @@ addWidget: (config) => {
 
       updateWidget: (id, updates) => {
         const now = new Date().toISOString()
-        set(s => ({
-          widgets: s.widgets.map(w =>
-            w.id === id ? { ...w, ...updates, updatedAt: now } : w
-          ),
-        }))
+        set(s => {
+          const nextWidgets = s.widgets.map(w =>
+            w.id === id ? { ...w, ...updates, updatedAt: now } : w,
+          )
+          const widgetIdsByGroup = new Map<string, string[]>()
+          const widgetIdsBySubgroup = new Map<string, string[]>()
+          nextWidgets.forEach(widget => {
+            if (widget.groupId) {
+              const next = widgetIdsByGroup.get(widget.groupId) ?? []
+              next.push(widget.id)
+              widgetIdsByGroup.set(widget.groupId, next)
+            }
+            if (widget.subgroupId) {
+              const next = widgetIdsBySubgroup.get(widget.subgroupId) ?? []
+              next.push(widget.id)
+              widgetIdsBySubgroup.set(widget.subgroupId, next)
+            }
+          })
+
+          return {
+            widgets: nextWidgets,
+            chartGroups: s.chartGroups.map(group => ({
+              ...group,
+              widgetIds: widgetIdsByGroup.get(group.id) ?? [],
+            })),
+            chartSubgroups: s.chartSubgroups.map(subgroup => ({
+              ...subgroup,
+              widgetIds: widgetIdsBySubgroup.get(subgroup.id) ?? [],
+            })),
+          }
+        })
 
         const userId = getUserId()
         if (!userId) return
@@ -912,6 +1072,9 @@ addWidget: (config) => {
                 endpoint_id: widget.endpointId,
                 data_mapping: widget.dataMapping,
                 style: widget.style,
+                group_id: widget.groupId ?? null,
+                subgroup_id: widget.subgroupId ?? null,
+                section_name: widget.sectionName ?? null,
               },
               layout,
             )
@@ -1120,45 +1283,160 @@ addWidget: (config) => {
 
       // ── Chart Groups ─────────────────────────────────────────
       chartGroups: [],
+      chartSubgroups: [],
 
       addChartGroup: (dashboardId, name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return ''
         const existing = get().chartGroups.filter(g => g.dashboardId === dashboardId)
-        const id       = localId('group')
+        const id       = dbId()
+        const order = existing.length
         set(s => ({
           chartGroups: [
             ...s.chartGroups,
-            { id, name, dashboardId, order: existing.length, widgetIds: [] },
+            { id, name: trimmed, dashboardId, order, widgetIds: [] },
           ],
         }))
+
+        const userId = getUserId()
+        if (!userId) return id
+
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const { error } = await supabase
+              .from('chart_groups')
+              .insert({
+                id,
+                dashboard_id: dashboardId,
+                user_id: userId,
+                name: trimmed,
+                sort_order: order,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+            if (error) {
+              set({ lastSyncError: error.message })
+              void get().syncFromSupabase()
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
+
         return id
       },
 
-      removeChartGroup: (groupId) => set(s => ({
-        chartGroups: s.chartGroups.filter(g => g.id !== groupId),
-        widgets:     s.widgets.map(w =>
-          w.groupId === groupId ? { ...w, groupId: undefined } : w
-        ),
-      })),
+      removeChartGroup: (groupId) => {
+        set(s => {
+          const removedSubgroupIds = new Set(
+            s.chartSubgroups
+              .filter(subgroup => subgroup.groupId === groupId)
+              .map(subgroup => subgroup.id),
+          )
+          return {
+            chartGroups: s.chartGroups.filter(g => g.id !== groupId),
+            chartSubgroups: s.chartSubgroups.filter(subgroup => subgroup.groupId !== groupId),
+            widgets: s.widgets.map(w => {
+              if (w.groupId !== groupId && !removedSubgroupIds.has(w.subgroupId ?? '')) return w
+              return {
+                ...w,
+                groupId: undefined,
+                subgroupId: undefined,
+                sectionName: undefined,
+              }
+            }),
+          }
+        })
 
-      updateChartGroup: (groupId, patch) => set(s => ({
-        chartGroups: s.chartGroups.map(g => g.id === groupId ? { ...g, ...patch } : g),
-      })),
+        const userId = getUserId()
+        if (!userId) return
+
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const [{ error: groupDeleteError }, { error: widgetsUpdateError }] = await Promise.all([
+              supabase.from('chart_groups').delete().eq('id', groupId).eq('user_id', userId),
+              supabase
+                .from('widgets')
+                .update({ group_id: null, subgroup_id: null, section_name: null })
+                .eq('group_id', groupId)
+                .eq('user_id', userId),
+            ])
+            if (groupDeleteError) throw groupDeleteError
+            if (widgetsUpdateError) throw widgetsUpdateError
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
+      },
+
+      updateChartGroup: (groupId, patch) => {
+        set(s => ({
+          chartGroups: s.chartGroups.map(g => g.id === groupId ? { ...g, ...patch } : g),
+        }))
+
+        const userId = getUserId()
+        if (!userId) return
+        const group = get().chartGroups.find(item => item.id === groupId)
+        if (!group) return
+
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const { error } = await supabase
+              .from('chart_groups')
+              .upsert(
+                {
+                  id: group.id,
+                  dashboard_id: group.dashboardId,
+                  user_id: userId,
+                  name: group.name,
+                  sort_order: group.order,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'id' },
+              )
+            if (error) {
+              set({ lastSyncError: error.message })
+              void get().syncFromSupabase()
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
+      },
 
       assignWidgetToGroup: (widgetId, groupId) => {
-        const now = new Date().toISOString()
-        set(s => ({
-          chartGroups: s.chartGroups.map(g => ({
-            ...g,
-            widgetIds: g.id === groupId
-              ? [...new Set([...g.widgetIds, widgetId])]
-              : g.widgetIds.filter(id => id !== widgetId),
-          })),
-          widgets: s.widgets.map(w =>
-            w.id === widgetId
-              ? { ...w, groupId: groupId ?? undefined, updatedAt: now }
-              : w
-          ),
-        }))
+        const widget = get().widgets.find(item => item.id === widgetId)
+        if (!widget) return
+        const currentSubgroup = widget.subgroupId
+          ? get().chartSubgroups.find(subgroup => subgroup.id === widget.subgroupId)
+          : null
+        const nextSubgroupId =
+          groupId && currentSubgroup && currentSubgroup.groupId === groupId
+            ? currentSubgroup.id
+            : undefined
+        const nextSectionName = nextSubgroupId
+          ? get().chartSubgroups.find(subgroup => subgroup.id === nextSubgroupId)?.name
+          : undefined
+        get().updateWidget(widgetId, {
+          groupId: groupId ?? undefined,
+          subgroupId: nextSubgroupId,
+          sectionName: nextSectionName,
+        })
       },
 
       getGroupsByDashboard: (dashboardId) =>
@@ -1189,6 +1467,264 @@ addWidget: (config) => {
             ),
           }
         })
+
+        const userId = getUserId()
+        if (!userId) return
+        const payload = get()
+          .chartGroups
+          .filter(group => group.dashboardId === dashboardId)
+          .map(group => ({
+            id: group.id,
+            dashboard_id: group.dashboardId,
+            user_id: userId,
+            name: group.name,
+            sort_order: group.order,
+            updated_at: new Date().toISOString(),
+          }))
+        if (!payload.length) return
+
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const { error } = await supabase
+              .from('chart_groups')
+              .upsert(payload, { onConflict: 'id' })
+            if (error) {
+              set({ lastSyncError: error.message })
+              void get().syncFromSupabase()
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
+      },
+
+      addChartSubgroup: (dashboardId, groupId, name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return ''
+        const existing = get().chartSubgroups.filter(subgroup => subgroup.groupId === groupId)
+        const id = dbId()
+        const order = existing.length
+        set(s => ({
+          chartSubgroups: [
+            ...s.chartSubgroups,
+            { id, groupId, dashboardId, name: trimmed, order, widgetIds: [] },
+          ],
+        }))
+
+        const userId = getUserId()
+        if (!userId) return id
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const { error } = await supabase
+              .from('chart_subgroups')
+              .insert({
+                id,
+                dashboard_id: dashboardId,
+                group_id: groupId,
+                user_id: userId,
+                name: trimmed,
+                sort_order: order,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+            if (error) {
+              set({ lastSyncError: error.message })
+              void get().syncFromSupabase()
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
+        return id
+      },
+
+      removeChartSubgroup: (subgroupId) => {
+        set(s => ({
+          chartSubgroups: s.chartSubgroups.filter(subgroup => subgroup.id !== subgroupId),
+          widgets: s.widgets.map(widget =>
+            widget.subgroupId === subgroupId
+              ? { ...widget, subgroupId: undefined, sectionName: undefined, updatedAt: new Date().toISOString() }
+              : widget,
+          ),
+        }))
+
+        const userId = getUserId()
+        if (!userId) return
+
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const [{ error: subgroupDeleteError }, { error: widgetsUpdateError }] = await Promise.all([
+              supabase.from('chart_subgroups').delete().eq('id', subgroupId).eq('user_id', userId),
+              supabase
+                .from('widgets')
+                .update({ subgroup_id: null, section_name: null })
+                .eq('subgroup_id', subgroupId)
+                .eq('user_id', userId),
+            ])
+            if (subgroupDeleteError) throw subgroupDeleteError
+            if (widgetsUpdateError) throw widgetsUpdateError
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
+      },
+
+      updateChartSubgroup: (subgroupId, patch) => {
+        set(s => ({
+          chartSubgroups: s.chartSubgroups.map(subgroup =>
+            subgroup.id === subgroupId ? { ...subgroup, ...patch } : subgroup,
+          ),
+          widgets: s.widgets.map(widget => {
+            if (widget.subgroupId !== subgroupId || patch.name === undefined) return widget
+            return { ...widget, sectionName: patch.name, updatedAt: new Date().toISOString() }
+          }),
+        }))
+
+        const userId = getUserId()
+        if (!userId) return
+        const subgroup = get().chartSubgroups.find(item => item.id === subgroupId)
+        if (!subgroup) return
+
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const { error: subgroupError } = await supabase
+              .from('chart_subgroups')
+              .upsert(
+                {
+                  id: subgroup.id,
+                  dashboard_id: subgroup.dashboardId,
+                  group_id: subgroup.groupId,
+                  user_id: userId,
+                  name: subgroup.name,
+                  sort_order: subgroup.order,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: 'id' },
+              )
+            if (subgroupError) {
+              set({ lastSyncError: subgroupError.message })
+              void get().syncFromSupabase()
+              return
+            }
+
+            if (patch.name !== undefined) {
+              const { error: widgetsUpdateError } = await supabase
+                .from('widgets')
+                .update({ section_name: subgroup.name })
+                .eq('subgroup_id', subgroup.id)
+                .eq('user_id', userId)
+              if (widgetsUpdateError) {
+                set({ lastSyncError: widgetsUpdateError.message })
+                void get().syncFromSupabase()
+              }
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
+      },
+
+      assignWidgetToSubgroup: (widgetId, subgroupId) => {
+        const widget = get().widgets.find(item => item.id === widgetId)
+        if (!widget) return
+        if (!subgroupId) {
+          get().updateWidget(widgetId, {
+            subgroupId: undefined,
+            sectionName: undefined,
+          })
+          return
+        }
+        const subgroup = get().chartSubgroups.find(item => item.id === subgroupId)
+        if (!subgroup) return
+        get().updateWidget(widgetId, {
+          groupId: subgroup.groupId,
+          subgroupId: subgroup.id,
+          sectionName: subgroup.name,
+        })
+      },
+
+      getSubgroupsByGroup: (groupId) =>
+        get().chartSubgroups
+          .filter(subgroup => subgroup.groupId === groupId)
+          .sort((a, b) => a.order - b.order),
+
+      reorderSubgroups: (groupId, subgroupId, direction) => {
+        set(s => {
+          const subgroups = s.chartSubgroups
+            .filter(subgroup => subgroup.groupId === groupId)
+            .sort((a, b) => a.order - b.order)
+
+          const idx = subgroups.findIndex(subgroup => subgroup.id === subgroupId)
+          const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+          if (swapIdx < 0 || swapIdx >= subgroups.length) return s
+
+          const updated = subgroups.map(subgroup => ({ ...subgroup }))
+          const tmpOrder = updated[idx].order
+          updated[idx].order = updated[swapIdx].order
+          updated[swapIdx].order = tmpOrder
+
+          const orderMap = new Map(updated.map(subgroup => [subgroup.id, subgroup.order]))
+          return {
+            chartSubgroups: s.chartSubgroups.map(subgroup =>
+              orderMap.has(subgroup.id) ? { ...subgroup, order: orderMap.get(subgroup.id)! } : subgroup,
+            ),
+          }
+        })
+
+        const userId = getUserId()
+        if (!userId) return
+        const payload = get()
+          .chartSubgroups
+          .filter(subgroup => subgroup.groupId === groupId)
+          .map(subgroup => ({
+            id: subgroup.id,
+            dashboard_id: subgroup.dashboardId,
+            group_id: subgroup.groupId,
+            user_id: userId,
+            name: subgroup.name,
+            sort_order: subgroup.order,
+            updated_at: new Date().toISOString(),
+          }))
+        if (!payload.length) return
+
+        set({ isSyncing: true })
+        void (async () => {
+          try {
+            const { error } = await supabase
+              .from('chart_subgroups')
+              .upsert(payload, { onConflict: 'id' })
+            if (error) {
+              set({ lastSyncError: error.message })
+              void get().syncFromSupabase()
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error)
+            set({ lastSyncError: message })
+            void get().syncFromSupabase()
+          } finally {
+            set({ isSyncing: false })
+          }
+        })()
       },
     }),
     {
@@ -1272,6 +1808,8 @@ const initializeAuthSync = () => {
         dashboards: [],
         endpoints: [],
         widgets: [],
+        chartGroups: [],
+        chartSubgroups: [],
         currentDashboardId: null,
         selectedDashboardId: null,
         activeWidgetId: null,

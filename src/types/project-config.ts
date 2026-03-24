@@ -38,6 +38,15 @@ export interface ChartGroup {
   dashboardId: string
 }
 
+export interface ChartSubgroup {
+  id:          string
+  groupId:     string
+  name:        string
+  order:       number
+  widgetIds:   string[]
+  dashboardId: string
+}
+
 export interface ProjectConfig {
   dashboardId:  string
   clientName:   string

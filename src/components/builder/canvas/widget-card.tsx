@@ -371,17 +371,15 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const yField = resolveField(widget.dataMapping.yAxis)
   const yAxisConfig = useMemo<YAxisConfig[]>(
     () =>
-      (widget.dataMapping.yAxes ?? [])
-        .map(axisCfg => {
-          const key = resolveField(axisCfg.key)
-          if (!key) return null
-          return {
-            ...axisCfg,
-            key,
-            label: axisCfg.label ?? key,
-          } satisfies YAxisConfig
-        })
-        .filter((axis): axis is YAxisConfig => Boolean(axis)),
+      (widget.dataMapping.yAxes ?? []).flatMap(axisCfg => {
+        const key = resolveField(axisCfg.key)
+        if (!key) return []
+        return [{
+          ...axisCfg,
+          key,
+          label: axisCfg.label ?? key,
+        } satisfies YAxisConfig]
+      }),
     [resolveField, widget.dataMapping.yAxes],
   )
   const yFields = useMemo(() => yAxisConfig.map(axis => axis.key), [yAxisConfig])
