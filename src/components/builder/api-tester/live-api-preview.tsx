@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -143,6 +143,19 @@ export function LiveAPIPreview({
     availableFields: { name: string; type: string }[]
   } | null>(null)
   const [sessionActive, setSessionActive] = useState(Boolean(getBuilderDemoAuthSession()?.token))
+  const activeRequestRef = useRef<AbortController | null>(null)
+  const hasAutoRunTriggeredRef = useRef(false)
+  const lastRunTokenRef = useRef(0)
+  const onAnalysisCompleteRef = useRef(onAnalysisComplete)
+
+  useEffect(() => {
+    onAnalysisCompleteRef.current = onAnalysisComplete
+  }, [onAnalysisComplete])
+
+  useEffect(() => () => {
+    activeRequestRef.current?.abort()
+    activeRequestRef.current = null
+  }, [])
 
   useEffect(() => {
     const listener = () => setSessionActive(Boolean(getBuilderDemoAuthSession()?.token))
@@ -156,6 +169,10 @@ export function LiveAPIPreview({
       return
     }
 
+    activeRequestRef.current?.abort()
+    const controller = new AbortController()
+    activeRequestRef.current = controller
+
     setLoading(true)
     setLoadingStage('connecting')
     setError(null)
@@ -167,13 +184,17 @@ export function LiveAPIPreview({
     const startedAt = performance.now()
 
     try {
+      const requestInit = buildEndpointRequestInit({
+        method,
+        headers,
+        body: {},
+      })
       const response = await fetch(
         url,
-        buildEndpointRequestInit({
-          method,
-          headers,
-          body: {},
-        }),
+        {
+          ...requestInit,
+          signal: controller.signal,
+        },
       )
       setLoadingStage('fetching')
       const payload = await response.json().catch(() => null)
@@ -236,7 +257,7 @@ export function LiveAPIPreview({
       }
 
       setAnalysis(mergedAnalysis)
-      onAnalysisComplete?.(mergedAnalysis)
+      onAnalysisCompleteRef.current?.(mergedAnalysis)
 
       const latencyMs = Math.round(performance.now() - startedAt)
       setMeta({
@@ -246,6 +267,9 @@ export function LiveAPIPreview({
         passed: true,
       })
     } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === 'AbortError') {
+        return
+      }
       const latencyMs = Math.round(performance.now() - startedAt)
       const message = normalizeErrorMessage(requestError)
       setError(message)
@@ -254,17 +278,28 @@ export function LiveAPIPreview({
         latencyMs,
       })
     } finally {
-      setLoading(false)
+      const isLatestRequest = activeRequestRef.current === controller
+      if (isLatestRequest) {
+        activeRequestRef.current = null
+        setLoading(false)
+      }
     }
-  }, [endpoint?.name, endpoint?.url, headers, method, onAnalysisComplete, url])
+  }, [endpoint?.name, endpoint?.url, headers, method, url])
 
   useEffect(() => {
-    if (!autoRun) return
+    if (!autoRun) {
+      hasAutoRunTriggeredRef.current = false
+      return
+    }
+    if (hasAutoRunTriggeredRef.current) return
+    hasAutoRunTriggeredRef.current = true
     handleTest()
   }, [autoRun, handleTest])
 
   useEffect(() => {
     if (!runToken) return
+    if (lastRunTokenRef.current === runToken) return
+    lastRunTokenRef.current = runToken
     handleTest()
   }, [runToken, handleTest])
 

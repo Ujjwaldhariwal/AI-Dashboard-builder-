@@ -1110,7 +1110,6 @@ export default function APIConfigPage() {
                         endpointId={endpoint.id}
                         hideActionButton
                         runToken={previewRunToken}
-                        onAnalysisComplete={() => {}}
                       />
                     </div>
                   )}

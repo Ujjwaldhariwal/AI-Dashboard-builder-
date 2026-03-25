@@ -2,7 +2,7 @@
 
 // src/components/builder/widget-config-dialog.tsx
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Dialog, DialogContent, DialogDescription,
   DialogFooter, DialogHeader, DialogTitle,
@@ -38,7 +38,7 @@ interface WidgetConfigDialogProps {
   availableFields?:  Array<{ name: string; type: string }>
 }
 
-// ── Fix #3 — typed icon map ───────────────────────────────────
+// Typed icon map.
 const chartIcons: Record<ChartType, LucideIcon> = {
   line:             LineChart,
   bar:              BarChart3,
@@ -87,6 +87,14 @@ export function WidgetConfigDialog({
   availableFields,
 }: WidgetConfigDialogProps) {
   const { addWidget, endpoints, currentDashboardId } = useDashboardStore()
+  const dashboardEndpoints = useMemo(
+    () =>
+      endpoints.filter(endpoint =>
+        (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+      ),
+    [currentDashboardId, endpoints],
+  )
+  const candidateEndpoints = dashboardEndpoints.length > 0 ? dashboardEndpoints : endpoints
 
   const [title, setTitle]               = useState('')
   const [type, setType]                 = useState<ChartType>('bar')
@@ -95,13 +103,13 @@ export function WidgetConfigDialog({
   const [aliases, setAliases]           = useState<Record<string, string>>({})
   const [fields, setFields]             = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
-  const [selectedEndpointId, setSelectedEndpointId] = useState<string>(
-    endpointId ?? endpoints[0]?.id ?? '',
-  )
+  const [selectedEndpointId, setSelectedEndpointId] = useState<string>('')
 
-  const endpoint = endpoints.find(e => e.id === selectedEndpointId)
+  const endpoint =
+    candidateEndpoints.find(e => e.id === selectedEndpointId) ??
+    endpoints.find(e => e.id === selectedEndpointId)
 
-  // ── Fix #6 — useCallback so it's stable across renders ───────
+  // Keep fetch function stable across renders.
   const fetchFields = useCallback(async (ep: {
     url: string
     method: 'GET' | 'POST'
@@ -129,7 +137,7 @@ export function WidgetConfigDialog({
       if (!suggestedXAxis) setXAxis(analysis.fields[0]?.name ?? '')
       if (!suggestedYAxis) setYAxis(analysis.fields[1]?.name ?? analysis.fields[0]?.name ?? '')
     } catch (err) {
-      // ── Fix #4 — log the actual error ────────────────────────
+      // Log diagnostic fetch errors for debugging.
       console.warn('[WidgetConfigDialog] fetchFields failed:', err)
       toast.error('Could not fetch fields. Enter axis names manually.')
       setFields([])
@@ -138,15 +146,13 @@ export function WidgetConfigDialog({
     }
   }, [suggestedXAxis, suggestedYAxis])
 
-  // ── Fix #2 — all prop deps listed, effect is intentionally
-  //    init-only (fires when dialog opens). eslint-disable is
-  //    explicit here rather than silently missing deps. ─────────
+  // Initialize form state from dialog inputs whenever the dialog opens.
   useEffect(() => {
     if (!open) return
 
     const ep = endpointId
       ? endpoints.find(e => e.id === endpointId)
-      : endpoints[0]
+      : candidateEndpoints[0]
 
     setSelectedEndpointId(ep?.id ?? '')
     setTitle(ep?.name ?? '')
@@ -160,19 +166,28 @@ export function WidgetConfigDialog({
       setXAxis(suggestedXAxis ?? availableFields[0]?.name ?? '')
       setYAxis(suggestedYAxis ?? availableFields[1]?.name ?? availableFields[0]?.name ?? '')
     } else if (ep) {
-      fetchFields(ep)
+      void fetchFields(ep)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]) // ← intentional: init fires once on open, not on every prop change
+  }, [
+    open,
+    endpointId,
+    endpoints,
+    candidateEndpoints,
+    suggestedType,
+    suggestedXAxis,
+    suggestedYAxis,
+    availableFields,
+    fetchFields,
+  ])
 
   const handleEndpointChange = (id: string) => {
-    const ep = endpoints.find(e => e.id === id)
+    const ep = candidateEndpoints.find(e => e.id === id)
     if (!ep) return
     setSelectedEndpointId(id)
     setTitle(ep.name)
     setXAxis('')
     setYAxis('')
-    fetchFields(ep)
+    void fetchFields(ep)
   }
 
   const handleCreate = () => {
@@ -273,7 +288,7 @@ export function WidgetConfigDialog({
                   <SelectValue placeholder="Select API endpoint" />
                 </SelectTrigger>
                 <SelectContent>
-                  {endpoints.map(ep => (
+                  {candidateEndpoints.map(ep => (
                     <SelectItem key={ep.id} value={ep.id}>{ep.name}</SelectItem>
                   ))}
                 </SelectContent>

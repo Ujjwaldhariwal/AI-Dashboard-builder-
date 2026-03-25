@@ -112,8 +112,11 @@ export function DragDropCanvas({
   const [addWidgetOpen, setAddWidgetOpen] = useState(false)
   const [magicOpen, setMagicOpen]         = useState(false)
 
+  const dashboardEndpoints = endpoints.filter(
+    endpoint => (endpoint.dashboardId ?? currentDashboardId) === currentDashboardId,
+  )
   const dashboardWidgets = widgetsOverride ?? widgets.filter(w => w.dashboardId === currentDashboardId)
-  const hasEndpoints     = endpoints.length > 0
+  const hasEndpoints     = dashboardEndpoints.length > 0
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
