@@ -466,7 +466,12 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
                           key={w.id}
                           className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[10px]"
                         >
-                          <span className="max-w-[120px] truncate font-medium">{w.title}</span>
+                          <span
+                            className="max-w-[120px] truncate font-medium"
+                            title={w.title}
+                          >
+                            {w.title}
+                          </span>
                           <Select
                             value={w.subgroupId ?? '__none__'}
                             onValueChange={value =>
@@ -589,6 +594,7 @@ export function ProjectConfigPanel({ dashboardId }: Props) {
                           <button
                             key={w.id}
                             onClick={() => handleAssign(w.id, group.id)}
+                            title={w.title}
                             className="text-[9px] px-2 py-0.5 rounded-full border border-dashed hover:bg-muted hover:border-solid transition-all truncate max-w-[120px]"
                           >
                             + {w.title}
