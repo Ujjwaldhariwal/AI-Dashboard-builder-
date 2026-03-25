@@ -169,7 +169,9 @@ export function LiveAPIPreview({
       return
     }
 
-    activeRequestRef.current?.abort()
+    if (activeRequestRef.current) {
+      return
+    }
     const controller = new AbortController()
     activeRequestRef.current = controller
 
