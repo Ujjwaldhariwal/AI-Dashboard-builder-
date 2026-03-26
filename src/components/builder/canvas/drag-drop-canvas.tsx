@@ -188,6 +188,7 @@ export function DragDropCanvas({
             {dashboardWidgets.map(widget => (
               <div
                 key={widget.id}
+                data-widget-id={widget.id}
                 onClick={(e) => handleWidgetClick(e, widget.id)}
                 className={`rounded-xl transition-all duration-150 ${getWidgetGridSpanClass(widget.position)} ${
                   selectedWidgetId === widget.id
