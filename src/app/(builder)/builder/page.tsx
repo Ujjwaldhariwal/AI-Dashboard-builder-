@@ -76,27 +76,7 @@ import {
   dispatchBuilderApiHealthSummary,
 } from "@/lib/builder/api-health-events";
 import { FrozenChartNav } from "@/components/builder/nav/linear-bar";
-import {
-  CHART_NAV_ALL,
-  buildChartNavTree,
-  filterWidgetsByNavSelection,
-  normalizeChartNavSelection,
-} from "@/lib/builder/chart-nav-model";
 import type { EndpointProfile } from "@/types/training";
-
-// ─────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────
-
-interface NavSelection {
-  groupId: string;
-  subgroupId: string;
-}
-
-const DEFAULT_NAV: NavSelection = {
-  groupId: CHART_NAV_ALL,
-  subgroupId: CHART_NAV_ALL,
-};
 
 // ─────────────────────────────────────────────────────────
 // Main Page
@@ -131,7 +111,6 @@ export default function BuilderPage() {
   });
 
   // ── Nav state — single object ──────────────────────────
-  const [navSelection, setNavSelection] = useState<NavSelection>(DEFAULT_NAV);
 
   // ── API health ─────────────────────────────────────────
   const [scanSummary, setScanSummary] =
@@ -172,54 +151,10 @@ export default function BuilderPage() {
     [dashboardEndpoints],
   );
 
-  const navEndpointLookup = useMemo(
-    () =>
-      Object.fromEntries(
-        dashboardEndpoints.map((ep) => [ep.id, { name: ep.name, url: ep.url }]),
-      ),
-    [dashboardEndpoints],
-  );
-
   const collections = useMemo(
     () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
     [currentDashboardId, getGroupsByDashboard],
   );
-  const useTaxonomyFallback = collections.length === 0;
-
-  const navTree = useMemo(
-    () =>
-      buildChartNavTree(widgets, collections, {
-        endpointLookup: navEndpointLookup,
-        useTaxonomyFallback,
-      }),
-    [widgets, collections, navEndpointLookup, useTaxonomyFallback],
-  );
-
-  const visibleWidgets = useMemo(
-    () =>
-      filterWidgetsByNavSelection(
-        widgets,
-        navSelection.groupId,
-        navSelection.subgroupId,
-        collections,
-        {
-          endpointLookup: navEndpointLookup,
-          useTaxonomyFallback,
-        },
-      ),
-    [
-      widgets,
-      navSelection.groupId,
-      navSelection.subgroupId,
-      collections,
-      navEndpointLookup,
-      useTaxonomyFallback,
-    ],
-  );
-
-  const isNavFiltered =
-    navSelection.groupId !== CHART_NAV_ALL ||
-    navSelection.subgroupId !== CHART_NAV_ALL;
 
   const sectionCount = useMemo(() => {
     const names = new Set<string>();
@@ -229,6 +164,22 @@ export default function BuilderPage() {
     }
     return names.size;
   }, [widgets]);
+
+  const orderedWidgets = useMemo(
+    () =>
+      [...widgets].sort((a, b) => {
+        const ay = a.position?.y ?? 0;
+        const by = b.position?.y ?? 0;
+        if (ay !== by) return ay - by;
+
+        const ax = a.position?.x ?? 0;
+        const bx = b.position?.x ?? 0;
+        if (ax !== bx) return ax - bx;
+
+        return a.id.localeCompare(b.id);
+      }),
+    [widgets],
+  );
 
   // ── Prefetch ───────────────────────────────────────────
   useDashboardEndpointPrefetch(activeDashboardEndpoints);
@@ -244,7 +195,6 @@ export default function BuilderPage() {
 
   // Reset state when dashboard changes
   useEffect(() => {
-    setNavSelection(DEFAULT_NAV);
     setSelectedWidgetId(null);
   }, [currentDashboardId]);
 
@@ -257,30 +207,6 @@ export default function BuilderPage() {
   }, []);
 
   // Normalize nav selection — guarded against infinite loops
-  const prevNormKey = useRef("");
-  useEffect(() => {
-    const normalized = normalizeChartNavSelection(navTree, navSelection);
-    const key = `${normalized.groupId}|${normalized.subgroupId}`;
-    if (
-      key !== prevNormKey.current &&
-      (normalized.groupId !== navSelection.groupId ||
-        normalized.subgroupId !== navSelection.subgroupId)
-    ) {
-      prevNormKey.current = key;
-      setNavSelection(normalized);
-    }
-  }, [navTree, navSelection]);
-
-  // Deselect widget if not visible
-  useEffect(() => {
-    if (
-      selectedWidgetId &&
-      !visibleWidgets.some((w) => w.id === selectedWidgetId)
-    ) {
-      setSelectedWidgetId(null);
-    }
-  }, [selectedWidgetId, visibleWidgets]);
-
   // Unsaved tracking
   useEffect(() => {
     if (!hasMounted.current) {
@@ -489,12 +415,15 @@ export default function BuilderPage() {
     }
   }, [currentDash, widgets, allEndpoints, allWidgets]);
 
-  const handleNavChange = useCallback(
-    (sel: NavSelection) => setNavSelection(sel),
-    [],
-  );
+  const handleWidgetNavSelect = useCallback((widgetId: string) => {
+    setSelectedWidgetId(widgetId);
 
-  const resetNav = useCallback(() => setNavSelection(DEFAULT_NAV), []);
+    const target = document.querySelector<HTMLElement>(
+      `[data-widget-id="${widgetId}"]`,
+    );
+    target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
+
   const openAi = useCallback(
     () => setAiPanel({ open: true, minimized: false }),
     [],
@@ -617,31 +546,25 @@ export default function BuilderPage() {
         className="flex-1 overflow-y-auto p-4 sm:p-6"
         onClick={handleCanvasClick}
       >
-        {widgets.length > 0 && (
-          <div className="mb-4">
+        {orderedWidgets.length > 0 && (
+          <div className="mb-4" onClick={(event) => event.stopPropagation()}>
             <FrozenChartNav
-              tree={navTree}
-              activeGroupId={navSelection.groupId}
-              activeSubgroupId={navSelection.subgroupId}
-              onSelectionChange={handleNavChange}
+              items={orderedWidgets.map((widget) => ({
+                id: widget.id,
+                title: widget.title,
+                type: widget.type,
+              }))}
+              activeWidgetId={selectedWidgetId}
+              onWidgetSelect={handleWidgetNavSelect}
             />
-            {isNavFiltered && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Showing {visibleWidgets.length} of {widgets.length} charts
-              </p>
-            )}
           </div>
         )}
 
-        {visibleWidgets.length > 0 ? (
-          <DragDropCanvas
-            selectedWidgetId={selectedWidgetId}
-            onSelectWidget={setSelectedWidgetId}
-            widgetsOverride={visibleWidgets}
-          />
-        ) : (
-          <EmptyFilterState onReset={resetNav} />
-        )}
+        <DragDropCanvas
+          selectedWidgetId={selectedWidgetId}
+          onSelectWidget={setSelectedWidgetId}
+          widgetsOverride={orderedWidgets}
+        />
       </div>
 
       {/* AI panel */}
@@ -672,24 +595,6 @@ export default function BuilderPage() {
         onOpenChange={setAddWidgetOpen}
       />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// EmptyFilterState
-// ─────────────────────────────────────────────────────────
-
-function EmptyFilterState({ onReset }: { onReset: () => void }) {
-  return (
-    <div className="flex min-h-[42vh] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center px-4">
-      <p className="text-sm font-semibold">No charts in this selection</p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Switch category/subgroup to view available charts.
-      </p>
-      <Button variant="outline" size="sm" className="mt-3" onClick={onReset}>
-        Reset Filters
-      </Button>
     </div>
   );
 }
