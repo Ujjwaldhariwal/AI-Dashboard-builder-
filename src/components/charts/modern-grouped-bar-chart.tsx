@@ -8,6 +8,13 @@ import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
+import {
+  getCategoryTickInterval,
+  getChartMargin,
+  getLegendVisibility,
+  showValueLabels,
+} from '@/lib/charts/chart-constants'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -26,6 +33,7 @@ interface ModernGroupedBarChartProps {
   yFields?: string[]
   yAxisConfig?: YAxisConfig[]
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
 function inferMetrics(
@@ -55,12 +63,14 @@ export function ModernGroupedBarChart({
   yFields,
   yAxisConfig,
   style,
+  sizePreset = 'medium',
 }: ModernGroupedBarChartProps) {
   useEnterpriseTheme()
 
   const s = { ...DEFAULT_STYLE, ...style }
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
+  const margin = getChartMargin(sizePreset)
   const metrics = useMemo(() => inferMetrics(data, xField, yField, yFields), [data, xField, yField, yFields])
   const rows = useMemo(
     () =>
@@ -94,6 +104,9 @@ export function ModernGroupedBarChart({
   }, [metrics, s.colors, yAxisConfig])
 
   const labels = useMemo(() => rows.map(row => row.label), [rows])
+  const tickInterval = getCategoryTickInterval(sizePreset, labels.length)
+  const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
+  const displayLabels = showValueLabels(sizePreset, labels.length)
 
   const option = useMemo(() => ({
     animation: true,
@@ -101,22 +114,38 @@ export function ModernGroupedBarChart({
     animationEasing: 'cubicOut' as const,
     color: seriesMeta.map(meta => meta.color),
     backgroundColor: 'transparent',
-    grid: { top: 34, right: 14, bottom: 48, left: 10, containLabel: true },
+    grid: {
+      top: margin.top + (displayLegend ? 20 : 0),
+      right: margin.right,
+      bottom: margin.bottom + (labels.length > 8 ? 24 : 12) + (displayLegend && sizePreset !== 'medium' ? 14 : 0),
+      left: margin.left,
+      containLabel: true,
+    },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
       valueFormatter: (v: number) => fmtValue(v, s.labelFormat),
     },
-    legend: s.showLegend
-      ? {
-          show: true,
-          top: 0,
-          icon: 'roundRect',
-          itemWidth: 10,
-          itemHeight: 6,
-          textStyle: { fontSize: 10, color: axis.label },
-        }
+    legend: displayLegend
+      ? sizePreset === 'medium'
+        ? {
+            show: true,
+            top: margin.top - 4,
+            right: margin.right,
+            icon: 'roundRect',
+            itemWidth: 10,
+            itemHeight: 6,
+            textStyle: { fontSize: 10, color: axis.label },
+          }
+        : {
+            show: true,
+            bottom: margin.bottom - 8,
+            icon: 'roundRect',
+            itemWidth: 10,
+            itemHeight: 6,
+            textStyle: { fontSize: 10, color: axis.label },
+          }
       : { show: false },
     xAxis: {
       type: 'category',
@@ -127,6 +156,7 @@ export function ModernGroupedBarChart({
         color: axis.label,
         fontSize: 10,
         rotate: labels.length > 8 ? -32 : 0,
+        interval: tickInterval,
       },
     },
     yAxis: {
@@ -148,6 +178,15 @@ export function ModernGroupedBarChart({
       type: 'bar',
       barMaxWidth: 28,
       data: rows.map(row => Number(row.raw[meta.key]) || 0),
+      label: displayLabels
+        ? {
+            show: true,
+            position: 'top',
+            fontSize: 9,
+            color: axis.label,
+            formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
+          }
+        : { show: false },
       itemStyle: {
         borderRadius: [8, 8, 0, 0],
         color: new graphic.LinearGradient(0, 0, 0, 1, [
@@ -162,7 +201,7 @@ export function ModernGroupedBarChart({
 
   if (!seriesMeta.length) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
+      <div className="flex h-full min-h-0 items-center justify-center text-xs text-muted-foreground">
         No numeric fields found for grouped chart
       </div>
     )
@@ -173,7 +212,7 @@ export function ModernGroupedBarChart({
       option={option}
       theme="enterprise"
       notMerge={true}
-      style={{ height: 300, width: '100%' }}
+      style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />
   )

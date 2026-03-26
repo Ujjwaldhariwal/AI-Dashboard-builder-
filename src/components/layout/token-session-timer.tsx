@@ -16,9 +16,17 @@ function formatRemainingTime(remainingMs: number) {
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
 
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`
-  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`
-  return `${seconds}s`
+  if (hours > 0) {
+    return {
+      value: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+      format: 'hh:mm:ss' as const,
+    }
+  }
+
+  return {
+    value: `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+    format: 'mm:ss' as const,
+  }
 }
 
 export function TokenSessionTimer() {
@@ -48,6 +56,7 @@ export function TokenSessionTimer() {
   const countdown = tokenMeta?.remainingMs !== null && tokenMeta?.remainingMs !== undefined
     ? formatRemainingTime(tokenMeta.remainingMs)
     : null
+  const timerWidthClass = countdown?.format === 'hh:mm:ss' ? 'min-w-[88px]' : 'min-w-[72px]'
 
   if (!session?.token || !tokenMeta) return null
 
@@ -82,11 +91,21 @@ export function TokenSessionTimer() {
           <p className="text-[10px] uppercase tracking-wide font-semibold">
             {tokenMeta.isExpired ? 'Session Expired' : 'Token Session'}
           </p>
-          <p className="text-[11px] font-medium">
+          <p className="text-[11px] font-medium flex items-center gap-1.5">
             {tokenMeta.isExpired
               ? 'Re-login required'
               : countdown
-                ? `Expires in ${countdown}`
+                ? (
+                    <>
+                      <span>Expires in</span>
+                      <span
+                        className={`inline-block text-right font-mono tabular-nums ${timerWidthClass}`}
+                        style={{ fontVariantNumeric: 'tabular-nums' }}
+                      >
+                        {countdown.value}
+                      </span>
+                    </>
+                  )
                 : 'Active (no exp claim)'}
           </p>
         </div>
