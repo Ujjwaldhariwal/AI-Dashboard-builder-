@@ -1,12 +1,18 @@
-'use client'
-
 // src/components/builder/canvas/widget-card.tsx
+// ──────────────────────────────────────────────
+// FIXES APPLIED:
+//  P7  — Chart content div: min-h-[280px] → h-full min-h-0
+//  P8  — CardContent: added min-h-0 overflow-hidden, pb-4 → pb-2
+//  P9  — isDragClone prop to skip data fetching in DragOverlay
+//  P10 — pb-4 → pb-2 (less bottom padding)
+//  P11 — GripVertical: <button> → <div> (avoids double role="button")
+//  P12 — ChartWrapper wraps every Recharts return in renderChart()
+'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription,
@@ -22,6 +28,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -29,7 +36,7 @@ import {
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
   AlignLeft, Clock, Wifi, WifiOff, Circle,
-  Maximize2, Shrink, Sparkles,
+  Shrink, Sparkles, MoreHorizontal,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
@@ -59,6 +66,9 @@ import {
   type WidgetSizePreset,
 } from '@/lib/builder/widget-size'
 
+// ── FIX P12: Import ChartWrapper ──
+import { ChartWrapper } from '@/components/charts/chart-wrapper'
+
 import { ModernBarChart }           from '@/components/charts/modern-bar-chart'
 import { ModernLineChart }          from '@/components/charts/modern-line-chart'
 import { ModernAreaChart }          from '@/components/charts/modern-area-chart'
@@ -71,9 +81,11 @@ import { ModernDrilldownBarChart } from '@/components/charts/modern-drilldown-ba
 import { ModernRingGaugeChartFromData } from '@/components/charts/modern-ring-gauge-chart'
 import { ModernStatusCard }         from '@/components/charts/modern-status-card'
 
+// ── FIX P9: isDragClone prop added ──
 interface WidgetCardProps {
-  widget:    Widget
-  viewMode?: boolean
+  widget:       Widget
+  viewMode?:    boolean
+  isDragClone?: boolean
 }
 
 const chartTypeIcon: Record<string, LucideIcon> = {
@@ -165,7 +177,7 @@ function DataTableView({
   )
 }
 
-export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
+export function WidgetCard({ widget, viewMode = false, isDragClone = false }: WidgetCardProps) {
   const { endpoints, removeWidget, updateWidget } = useDashboardStore()
   const { addLog, updateEndpointHealth } = useMonitoringStore()
 
@@ -176,7 +188,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
   const [deleteOpen, setDeleteOpen]   = useState(false)
   const [lastFetched, setLastFetched] = useState<Date | null>(null)
   const [latency, setLatency]         = useState<number | null>(null)
-  const [expandedOpen, setExpandedOpen] = useState(false)
   const [insightsOpen, setInsightsOpen] = useState(false)
   const [activeView, setActiveView] = useState<'chart' | 'table'>(
     widget.type === 'table' ? 'table' : 'chart',
@@ -323,11 +334,16 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     updateEndpointHealth,
   ])
 
+  // ── FIX P9: Skip data fetching for drag overlay clones ──
   useEffect(() => {
+    if (isDragClone) return
     void fetchData()
-  }, [fetchData])
+  }, [fetchData, isDragClone])
 
+  // ── FIX P9: Skip refresh listener for drag overlay clones ──
   useEffect(() => {
+    if (isDragClone) return
+
     const handleRefresh = (event: Event) => {
       const detail = (event as CustomEvent<DashboardWidgetRefreshDetail>).detail
       if (!detail) return
@@ -343,7 +359,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     return () => {
       window.removeEventListener(DASHBOARD_WIDGET_REFRESH_EVENT, handleRefresh as EventListener)
     }
-  }, [fetchData, widget.endpointId])
+  }, [fetchData, widget.endpointId, isDragClone])
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const Icon = chartTypeIcon[widget.type] ?? BarChart3
@@ -433,6 +449,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     toast.success(`Widget size set to ${WIDGET_SIZE_LABEL[preset]}`)
   }
 
+  // ── FIX P12: Every Recharts chart wrapped in <ChartWrapper> ──
   const renderChart = () => {
     if (!aliasedData?.length) return null
     const x = xField
@@ -440,45 +457,86 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
 
     switch (widget.type) {
       case 'bar':
-        return <ModernBarChart data={aliasedData} xField={x} yField={y} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernBarChart data={aliasedData} xField={x} yField={y} style={style} />
+          </ChartWrapper>
+        )
       case 'line':
-        return <ModernLineChart data={aliasedData} xField={x} yField={y} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernLineChart data={aliasedData} xField={x} yField={y} style={style} />
+          </ChartWrapper>
+        )
       case 'area':
-        return <ModernAreaChart data={aliasedData} xField={x} yField={y} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernAreaChart data={aliasedData} xField={x} yField={y} style={style} />
+          </ChartWrapper>
+        )
       case 'pie':
-        return <ModernPieChart data={aliasedData} nameField={x} valueField={y} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernPieChart data={aliasedData} nameField={x} valueField={y} style={style} />
+          </ChartWrapper>
+        )
       case 'donut':
-        return <ModernPieChart data={aliasedData} nameField={x} valueField={y} donut style={style} />
+        return (
+          <ChartWrapper>
+            <ModernPieChart data={aliasedData} nameField={x} valueField={y} donut style={style} />
+          </ChartWrapper>
+        )
       case 'horizontal-bar':
-        return <ModernHorizontalBarChart data={aliasedData} xField={x} yField={y} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernHorizontalBarChart data={aliasedData} xField={x} yField={y} style={style} />
+          </ChartWrapper>
+        )
       case 'horizontal-stacked-bar':
         return (
-          <ModernHorizontalStackedBarChart
-            data={aliasedData}
-            xField={x}
-            yField={y}
-            yFields={yFields}
-            yAxisConfig={yAxisConfig}
-            style={style}
-          />
+          <ChartWrapper>
+            <ModernHorizontalStackedBarChart
+              data={aliasedData}
+              xField={x}
+              yField={y}
+              yFields={yFields}
+              yAxisConfig={yAxisConfig}
+              style={style}
+            />
+          </ChartWrapper>
         )
       case 'grouped-bar':
         return (
-          <ModernGroupedBarChart
-            data={aliasedData}
-            xField={x}
-            yField={y}
-            yFields={yFields}
-            yAxisConfig={yAxisConfig}
-            style={style}
-          />
+          <ChartWrapper>
+            <ModernGroupedBarChart
+              data={aliasedData}
+              xField={x}
+              yField={y}
+              yFields={yFields}
+              yAxisConfig={yAxisConfig}
+              style={style}
+            />
+          </ChartWrapper>
         )
       case 'drilldown-bar':
-        return <ModernDrilldownBarChart data={aliasedData} xField={x} yField={y} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernDrilldownBarChart data={aliasedData} xField={x} yField={y} style={style} />
+          </ChartWrapper>
+        )
       case 'gauge':
-        return <ModernGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
+          </ChartWrapper>
+        )
       case 'ring-gauge':
-        return <ModernRingGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernRingGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
+          </ChartWrapper>
+        )
+      // status-card and table are NOT Recharts — no ChartWrapper needed
       case 'status-card':
         return <ModernStatusCard data={aliasedData} yField={y} label={widget.title} style={style} />
       case 'table':
@@ -498,6 +556,12 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
     : 'text-green-500'
 
   const currentSizePreset = getWidgetSizePreset(widget.position)
+  const isSmallWidget = currentSizePreset === 'small'
+  const showTableToggle = !isSmallWidget && widget.type !== 'table'
+  const showInsightsButton = !isSmallWidget && shouldShowInsights
+  const showRuntimeMeta = !isSmallWidget
+  const showCompactActionMenu = !viewMode && isSmallWidget
+  const sizePresets: WidgetSizePreset[] = ['small', 'medium', 'large', 'full']
 
   const RefreshButton = (
     <Button
@@ -526,29 +590,29 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
             : 'hover:shadow-md'
         }`}
       >
-        <CardHeader className="pb-2 px-4 pt-3">
+        <CardHeader className="pb-2 px-4 pt-3 flex-shrink-0">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {/* ── FIX P11: <button> → <div> to avoid double role="button" ── */}
               {!viewMode && (
-                <button
-                  {...attributes} {...listeners}
+                <div
+                  {...attributes}
+                  {...listeners}
                   className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors flex-shrink-0 touch-none"
                 >
                   <GripVertical className="w-3.5 h-3.5" />
-                </button>
+                </div>
               )}
               <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center flex-shrink-0">
                 <Icon className="w-3.5 h-3.5 text-white" />
               </div>
-              <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
+              <CardTitle className="text-sm truncate" title={widget.title}>
+                {widget.title}
+              </CardTitle>
             </div>
 
             <div className="flex items-center gap-0.5 flex-shrink-0">
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 mr-1">
-                {widget.type.toUpperCase()}
-              </Badge>
-
-              {widget.type !== 'table' && (
+              {showTableToggle && (
                 <div className="hidden sm:flex items-center rounded-md border mr-1">
                   <Button
                     type="button"
@@ -574,7 +638,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                 : <Wifi className={`w-3 h-3 ${healthColor} mr-1`} />
               }
 
-              {shouldShowInsights && (
+              {showInsightsButton && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -588,98 +652,124 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
                 </Button>
               )}
 
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => setExpandedOpen(true)}
-                title="Expand view"
-              >
-                <Maximize2 className="w-3 h-3" />
-              </Button>
+              {RefreshButton}
 
               {!viewMode && (
                 <>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget size">
-                        <Shrink className="w-3 h-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-36">
-                      {(['small', 'medium', 'large', 'full'] as WidgetSizePreset[]).map(preset => (
-                        <DropdownMenuItem
-                          key={preset}
-                          onClick={() => handleSizeChange(preset)}
-                          className="text-xs"
-                        >
-                          {WIDGET_SIZE_LABEL[preset]}
-                          {currentSizePreset === preset ? '  (current)' : ''}
+                  {showCompactActionMenu ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget actions">
+                          <MoreHorizontal className="w-3 h-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onClick={() => setEditOpen(true)} className="text-xs">
+                          Edit widget
                         </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <DropdownMenuSeparator />
+                        {sizePresets.map(preset => (
+                          <DropdownMenuItem
+                            key={preset}
+                            onClick={() => handleSizeChange(preset)}
+                            className="text-xs"
+                          >
+                            {WIDGET_SIZE_LABEL[preset]}
+                            {currentSizePreset === preset ? '  (current)' : ''}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => setDeleteOpen(true)}
+                          className="text-xs text-red-600 focus:text-red-700"
+                        >
+                          Delete widget
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget size">
+                            <Shrink className="w-3 h-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-36">
+                          {sizePresets.map(preset => (
+                            <DropdownMenuItem
+                              key={preset}
+                              onClick={() => handleSizeChange(preset)}
+                              className="text-xs"
+                            >
+                              {WIDGET_SIZE_LABEL[preset]}
+                              {currentSizePreset === preset ? '  (current)' : ''}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setEditOpen(true)}
-                    title="Edit widget"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => setEditOpen(true)}
+                        title="Edit widget"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </Button>
 
-                  {RefreshButton}
-
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-red-500 hover:text-red-700"
-                    onClick={() => setDeleteOpen(true)}
-                    title="Delete widget"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-red-500 hover:text-red-700"
+                        onClick={() => setDeleteOpen(true)}
+                        title="Delete widget"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </>
+                  )}
                 </>
               )}
-
-              {viewMode && RefreshButton}
             </div>
           </div>
 
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-[10px] text-muted-foreground truncate flex-1">
               {endpoint?.name ?? 'Unknown'}
-              {xField ? ` - ${xField}` : ''}
-              {yField ? ` -> ${yField}` : ''}
+              {xField ? ` — ${xField}` : ''}
+              {yField ? ` → ${yField}` : ''}
             </p>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              {latency !== null && (
-                <span className={`text-[10px] font-mono ${latency > 2000 ? 'text-amber-500' : 'text-green-600'}`}>
-                  {latency}ms
-                </span>
-              )}
-              {cacheInfo.fromCache && (
-                <span className="text-[10px] text-cyan-600 font-medium">
-                  cache {Math.round(cacheInfo.cacheAgeMs / 1000)}s
-                </span>
-              )}
-              {lastFetched && (
-                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                  <Clock className="w-2.5 h-2.5" />
-                  {lastFetched.toLocaleTimeString([], {
-                    hour:   '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                  })}
-                </span>
-              )}
-            </div>
+            {showRuntimeMeta && (
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {latency !== null && (
+                  <span className={`text-[10px] font-mono ${latency > 2000 ? 'text-amber-500' : 'text-green-600'}`}>
+                    {latency}ms
+                  </span>
+                )}
+                {cacheInfo.fromCache && (
+                  <span className="text-[10px] text-cyan-600 font-medium">
+                    cache {Math.round(cacheInfo.cacheAgeMs / 1000)}s
+                  </span>
+                )}
+                {lastFetched && (
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                    <Clock className="w-2.5 h-2.5" />
+                    {lastFetched.toLocaleTimeString([], {
+                      hour:   '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </CardHeader>
 
-        <CardContent className="px-4 pb-4 flex-1">
+        {/* ── FIX P8/P10: flex-1 min-h-0 overflow-hidden, pb-4 → pb-2 ── */}
+        <CardContent className="px-4 pb-2 flex-1 min-h-0 overflow-hidden">
           {loading && !rawData && <WidgetSkeleton />}
 
           {error && (
@@ -711,8 +801,9 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
             </div>
           )}
 
+          {/* ── FIX P7: min-h-[280px] → h-full min-h-0 ── */}
           {!loading && !error && rawData && (
-            <div className="w-full min-h-[280px]">
+            <div className="w-full h-full min-h-0">
               {activeView === 'table' && aliasedData
                 ? <DataTableView rows={aliasedData} />
                 : renderChart()}
@@ -726,53 +817,6 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={expandedOpen} onOpenChange={setExpandedOpen}>
-        <DialogContent className="max-w-6xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between gap-2">
-              <span className="truncate">{widget.title}</span>
-              <Badge variant="outline" className="text-[10px]">Expanded View</Badge>
-            </DialogTitle>
-          </DialogHeader>
-
-          {widget.type !== 'table' && (
-            <div className="flex items-center rounded-md border w-fit">
-              <Button
-                type="button"
-                variant="ghost"
-                className={`h-8 rounded-r-none px-3 text-xs ${activeView === 'chart' ? 'bg-muted font-medium' : ''}`}
-                onClick={() => setActiveView('chart')}
-              >
-                Chart
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className={`h-8 rounded-l-none px-3 text-xs ${activeView === 'table' ? 'bg-muted font-medium' : ''}`}
-                onClick={() => setActiveView('table')}
-              >
-                Table
-              </Button>
-            </div>
-          )}
-
-          <div className="rounded-xl border bg-gradient-to-b from-muted/20 to-background p-4 min-h-[460px]">
-            {loading && !rawData && <WidgetSkeleton />}
-            {error && (
-              <div className="flex items-center gap-2 text-red-600 text-sm">
-                <AlertCircle className="w-4 h-4" />
-                {error}
-              </div>
-            )}
-            {!loading && !error && aliasedData && (
-              activeView === 'table'
-                ? <DataTableView rows={aliasedData} limit={100} maxHeight="max-h-[520px]" />
-                : renderChart()
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={insightsOpen} onOpenChange={setInsightsOpen}>
         <DialogContent className="sm:max-w-2xl p-0 overflow-hidden">
@@ -813,7 +857,7 @@ export function WidgetCard({ widget, viewMode = false }: WidgetCardProps) {
       <AlertDialog open={deleteOpen} onOpenChange={(v: boolean) => !v && setDeleteOpen(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{widget.title}"?</AlertDialogTitle>
+            <AlertDialogTitle>Delete &ldquo;{widget.title}&rdquo;?</AlertDialogTitle>
             <AlertDialogDescription>
               This widget will be permanently removed from the dashboard.
             </AlertDialogDescription>
