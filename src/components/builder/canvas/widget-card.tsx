@@ -65,6 +65,7 @@ import {
   WIDGET_SIZE_LABEL,
   type WidgetSizePreset,
 } from '@/lib/builder/widget-size'
+import { applyTransforms } from '@/lib/builder/data-transformer'
 
 // ── FIX P12: Import ChartWrapper ──
 import { ChartWrapper } from '@/components/charts/chart-wrapper'
@@ -382,6 +383,10 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
     () => rawData?.map(row => applyAliasesToRow(row, aliases)) ?? null,
     [aliases, rawData],
   )
+  const transformedData = useMemo(() => {
+    if (!aliasedData) return null
+    return applyTransforms(aliasedData, widget.dataMapping.transforms ?? [])
+  }, [aliasedData, widget.dataMapping.transforms])
 
   const xField = resolveField(widget.dataMapping.xAxis)
   const yField = resolveField(widget.dataMapping.yAxis)
@@ -401,8 +406,8 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
   const yFields = useMemo(() => yAxisConfig.map(axis => axis.key), [yAxisConfig])
 
   const insightData = useMemo(() => {
-    if (!aliasedData?.length || !xField || !yField) return null
-    const points = aliasedData
+    if (!transformedData?.length || !xField || !yField) return null
+    const points = transformedData
       .map(row => {
         const rawY = row[yField]
         const yNum = typeof rawY === 'number' ? rawY : Number(rawY)
@@ -413,7 +418,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
       })
       .filter(point => Number.isFinite(point.y))
     return points.length >= 2 ? points : null
-  }, [aliasedData, xField, yField])
+  }, [transformedData, xField, yField])
 
   const insightSummary = useMemo(
     () => (insightData ? TrendAnalyzer.analyze(insightData) : null),
@@ -423,9 +428,9 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
   const shouldShowInsights = !['table', 'gauge', 'ring-gauge', 'status-card'].includes(widget.type)
 
   const fieldWarning = useMemo(() => {
-    if (!aliasedData?.length) return null
+    if (!transformedData?.length) return null
     const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(widget.type)
-    const keys = Object.keys(aliasedData[0])
+    const keys = Object.keys(transformedData[0])
     if (needsXAxis && xField && !keys.includes(xField)) {
       return `xAxis field "${xField}" not found in data. Available: ${keys.slice(0, 5).join(', ')}`
     }
@@ -433,7 +438,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
       return `yAxis field "${yField}" not found in data. Available: ${keys.slice(0, 5).join(', ')}`
     }
     return null
-  }, [aliasedData, widget.type, xField, yField])
+  }, [transformedData, widget.type, xField, yField])
 
   const handleSizeChange = (preset: WidgetSizePreset) => {
     if (viewMode) return
@@ -451,7 +456,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
 
   // ── FIX P12: Every Recharts chart wrapped in <ChartWrapper> ──
   const renderChart = () => {
-    if (!aliasedData?.length) return null
+    if (!transformedData?.length) return null
     const x = xField
     const y = yField
 
@@ -459,44 +464,44 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
       case 'bar':
         return (
           <ChartWrapper>
-            <ModernBarChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
+            <ModernBarChart data={transformedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'line':
         return (
           <ChartWrapper>
-            <ModernLineChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
+            <ModernLineChart data={transformedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'area':
         return (
           <ChartWrapper>
-            <ModernAreaChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
+            <ModernAreaChart data={transformedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'pie':
         return (
           <ChartWrapper>
-            <ModernPieChart data={aliasedData} nameField={x} valueField={y} style={style} sizePreset={currentSizePreset} />
+            <ModernPieChart data={transformedData} nameField={x} valueField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'donut':
         return (
           <ChartWrapper>
-            <ModernPieChart data={aliasedData} nameField={x} valueField={y} donut style={style} sizePreset={currentSizePreset} />
+            <ModernPieChart data={transformedData} nameField={x} valueField={y} donut style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'horizontal-bar':
         return (
           <ChartWrapper>
-            <ModernHorizontalBarChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
+            <ModernHorizontalBarChart data={transformedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'horizontal-stacked-bar':
         return (
           <ChartWrapper>
             <ModernHorizontalStackedBarChart
-              data={aliasedData}
+              data={transformedData}
               xField={x}
               yField={y}
               yFields={yFields}
@@ -510,7 +515,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
         return (
           <ChartWrapper>
             <ModernGroupedBarChart
-              data={aliasedData}
+              data={transformedData}
               xField={x}
               yField={y}
               yFields={yFields}
@@ -523,30 +528,30 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
       case 'drilldown-bar':
         return (
           <ChartWrapper>
-            <ModernDrilldownBarChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
+            <ModernDrilldownBarChart data={transformedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'gauge':
         return (
           <ChartWrapper>
-            <ModernGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
+            <ModernGaugeChartFromData data={transformedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'ring-gauge':
         return (
           <ChartWrapper>
-            <ModernRingGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
+            <ModernRingGaugeChartFromData data={transformedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       // status-card and table are NOT Recharts — no ChartWrapper needed
       case 'status-card':
         return (
           <ChartWrapper>
-            <ModernStatusCard data={aliasedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
+            <ModernStatusCard data={transformedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'table':
-        return <DataTableView rows={aliasedData} maxHeight="max-h-[340px]" />
+        return <DataTableView rows={transformedData} maxHeight="max-h-[340px]" />
       default:
         return (
           <p className="text-xs text-muted-foreground">
@@ -810,13 +815,13 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
           {/* ── FIX P7: min-h-[280px] → h-full min-h-0 ── */}
           {!loading && !error && rawData && (
             <div className="w-full h-full min-h-0">
-              {activeView === 'table' && aliasedData
-                ? <DataTableView rows={aliasedData} />
+              {activeView === 'table' && transformedData
+                ? <DataTableView rows={transformedData} />
                 : renderChart()}
             </div>
           )}
 
-          {!loading && !error && aliasedData?.length === 0 && (
+          {!loading && !error && transformedData?.length === 0 && (
             <div className="flex items-center justify-center h-[200px]">
               <p className="text-xs text-muted-foreground">No data returned</p>
             </div>
@@ -890,3 +895,4 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
     </>
   )
 }
+
