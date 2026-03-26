@@ -1,10 +1,10 @@
 "use client";
 
 // src/app/(builder)/builder/page.tsx
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Optimized: reduced state, fixed effect loops, responsive
 // header, memoized computations, modular sub-components
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -84,23 +84,19 @@ import {
 } from "@/lib/builder/chart-nav-model";
 import type { EndpointProfile } from "@/types/training";
 
-// ─────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────
-
 interface NavSelection {
   groupId: string;
   subgroupId: string;
 }
 
-const DEFAULT_NAV: NavSelection = {
+const DEFAULT_NAV_SELECTION: NavSelection = {
   groupId: CHART_NAV_ALL,
   subgroupId: CHART_NAV_ALL,
 };
 
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Main Page
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function BuilderPage() {
   const router = useRouter();
@@ -114,38 +110,40 @@ export default function BuilderPage() {
     getGroupsByDashboard,
   } = useDashboardStore();
 
-  // ── Core UI state ──────────────────────────────────────
+  // â”€â”€ Core UI state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [magicOpen, setMagicOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
 
-  // ── AI panel — single object ───────────────────────────
+  // â”€â”€ AI panel â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [aiPanel, setAiPanel] = useState({ open: false, minimized: false });
 
-  // ── Async ops — single object ──────────────────────────
+  // â”€â”€ Async ops â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [ops, setOps] = useState({
     scanning: false,
     autoAdding: false,
     refreshing: false,
   });
 
-  // ── Nav state — single object ──────────────────────────
-  const [navSelection, setNavSelection] = useState<NavSelection>(DEFAULT_NAV);
+  const [navSelection, setNavSelection] =
+    useState<NavSelection>(DEFAULT_NAV_SELECTION);
 
-  // ── API health ─────────────────────────────────────────
+  // â”€â”€ Nav state â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  // â”€â”€ API health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [scanSummary, setScanSummary] =
     useState<DashboardEndpointProbeSummary | null>(null);
   const [sessionScope, setSessionScope] = useState(() =>
     getEndpointSessionScope(),
   );
 
-  // ── Unsaved tracking ───────────────────────────────────
+  // â”€â”€ Unsaved tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const hasMounted = useRef(false);
   const lastSavedCount = useRef(0);
   const [unsaved, setUnsaved] = useState(false);
 
-  // ── Derived data (all memoized) ────────────────────────
+  // â”€â”€ Derived data (all memoized) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const currentDash = useMemo(
     () => dashboards.find((d) => d.id === currentDashboardId),
     [dashboards, currentDashboardId],
@@ -172,6 +170,11 @@ export default function BuilderPage() {
     [dashboardEndpoints],
   );
 
+  const collections = useMemo(
+    () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
+    [currentDashboardId, getGroupsByDashboard],
+  );
+
   const navEndpointLookup = useMemo(
     () =>
       Object.fromEntries(
@@ -180,46 +183,7 @@ export default function BuilderPage() {
     [dashboardEndpoints],
   );
 
-  const collections = useMemo(
-    () => (currentDashboardId ? getGroupsByDashboard(currentDashboardId) : []),
-    [currentDashboardId, getGroupsByDashboard],
-  );
   const useTaxonomyFallback = collections.length === 0;
-
-  const navTree = useMemo(
-    () =>
-      buildChartNavTree(widgets, collections, {
-        endpointLookup: navEndpointLookup,
-        useTaxonomyFallback,
-      }),
-    [widgets, collections, navEndpointLookup, useTaxonomyFallback],
-  );
-
-  const visibleWidgets = useMemo(
-    () =>
-      filterWidgetsByNavSelection(
-        widgets,
-        navSelection.groupId,
-        navSelection.subgroupId,
-        collections,
-        {
-          endpointLookup: navEndpointLookup,
-          useTaxonomyFallback,
-        },
-      ),
-    [
-      widgets,
-      navSelection.groupId,
-      navSelection.subgroupId,
-      collections,
-      navEndpointLookup,
-      useTaxonomyFallback,
-    ],
-  );
-
-  const isNavFiltered =
-    navSelection.groupId !== CHART_NAV_ALL ||
-    navSelection.subgroupId !== CHART_NAV_ALL;
 
   const sectionCount = useMemo(() => {
     const names = new Set<string>();
@@ -230,10 +194,66 @@ export default function BuilderPage() {
     return names.size;
   }, [widgets]);
 
-  // ── Prefetch ───────────────────────────────────────────
+  const orderedWidgets = useMemo(
+    () =>
+      [...widgets].sort((a, b) => {
+        const ay = a.position?.y ?? 0;
+        const by = b.position?.y ?? 0;
+        if (ay !== by) return ay - by;
+
+        const ax = a.position?.x ?? 0;
+        const bx = b.position?.x ?? 0;
+        if (ax !== bx) return ax - bx;
+
+        return a.id.localeCompare(b.id);
+      }),
+    [widgets],
+  );
+
+  const navTree = useMemo(
+    () =>
+      buildChartNavTree(orderedWidgets, collections, {
+        endpointLookup: navEndpointLookup,
+        useTaxonomyFallback,
+      }),
+    [orderedWidgets, collections, navEndpointLookup, useTaxonomyFallback],
+  );
+
+  const visibleWidgets = useMemo(
+    () =>
+      filterWidgetsByNavSelection(
+        orderedWidgets,
+        navSelection.groupId,
+        navSelection.subgroupId,
+        collections,
+        {
+          endpointLookup: navEndpointLookup,
+          useTaxonomyFallback,
+        },
+      ),
+    [
+      orderedWidgets,
+      navSelection.groupId,
+      navSelection.subgroupId,
+      collections,
+      navEndpointLookup,
+      useTaxonomyFallback,
+    ],
+  );
+
+  const allWidgetsWithoutGroup = useMemo(
+    () =>
+      orderedWidgets.length > 0 &&
+      orderedWidgets.every(
+        (widget) => !widget.groupId || widget.groupId.trim().length === 0,
+      ),
+    [orderedWidgets],
+  );
+
+  // â”€â”€ Prefetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useDashboardEndpointPrefetch(activeDashboardEndpoints);
 
-  // ── Effects ────────────────────────────────────────────
+  // â”€â”€ Effects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   // Auto-select first dashboard
   useEffect(() => {
@@ -244,7 +264,7 @@ export default function BuilderPage() {
 
   // Reset state when dashboard changes
   useEffect(() => {
-    setNavSelection(DEFAULT_NAV);
+    setNavSelection(DEFAULT_NAV_SELECTION);
     setSelectedWidgetId(null);
   }, [currentDashboardId]);
 
@@ -256,7 +276,6 @@ export default function BuilderPage() {
       window.removeEventListener("builderDemoAuthSessionChanged", handler);
   }, []);
 
-  // Normalize nav selection — guarded against infinite loops
   const prevNormKey = useRef("");
   useEffect(() => {
     const normalized = normalizeChartNavSelection(navTree, navSelection);
@@ -271,11 +290,10 @@ export default function BuilderPage() {
     }
   }, [navTree, navSelection]);
 
-  // Deselect widget if not visible
   useEffect(() => {
     if (
       selectedWidgetId &&
-      !visibleWidgets.some((w) => w.id === selectedWidgetId)
+      !visibleWidgets.some((widget) => widget.id === selectedWidgetId)
     ) {
       setSelectedWidgetId(null);
     }
@@ -291,7 +309,7 @@ export default function BuilderPage() {
     if (widgets.length !== lastSavedCount.current) setUnsaved(true);
   }, [widgets.length]);
 
-  // ── API Scan ───────────────────────────────────────────
+  // â”€â”€ API Scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const runApiScan = useCallback(
     async (opts: { force?: boolean; silent?: boolean } = {}) => {
@@ -346,7 +364,7 @@ export default function BuilderPage() {
     };
   }, [runApiScan]);
 
-  // ── Handlers ───────────────────────────────────────────
+  // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleScanApis = useCallback(
     () => void runApiScan({ force: true }),
@@ -457,7 +475,7 @@ export default function BuilderPage() {
       return;
     }
     setExporting(true);
-    toast.loading("Generating project…", { id: "export" });
+    toast.loading("Generating projectâ€¦", { id: "export" });
     try {
       const store = useDashboardStore.getState();
       const config = buildDashboardConfig(
@@ -489,12 +507,10 @@ export default function BuilderPage() {
     }
   }, [currentDash, widgets, allEndpoints, allWidgets]);
 
-  const handleNavChange = useCallback(
-    (sel: NavSelection) => setNavSelection(sel),
-    [],
-  );
+  const handleNavChange = useCallback((selection: NavSelection) => {
+    setNavSelection(selection);
+  }, []);
 
-  const resetNav = useCallback(() => setNavSelection(DEFAULT_NAV), []);
   const openAi = useCallback(
     () => setAiPanel({ open: true, minimized: false }),
     [],
@@ -508,7 +524,7 @@ export default function BuilderPage() {
     [],
   );
 
-  // ── Empty states ───────────────────────────────────────
+  // â”€â”€ Empty states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   if (dashboards.length === 0) {
     return (
@@ -587,7 +603,7 @@ export default function BuilderPage() {
     );
   }
 
-  // ── Main layout ────────────────────────────────────────
+  // â”€â”€ Main layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
@@ -617,31 +633,23 @@ export default function BuilderPage() {
         className="flex-1 overflow-y-auto p-4 sm:p-6"
         onClick={handleCanvasClick}
       >
-        {widgets.length > 0 && (
-          <div className="mb-4">
+        {orderedWidgets.length > 0 && (
+          <div className="mb-4" onClick={(event) => event.stopPropagation()}>
             <FrozenChartNav
               tree={navTree}
               activeGroupId={navSelection.groupId}
               activeSubgroupId={navSelection.subgroupId}
               onSelectionChange={handleNavChange}
+              showUngroupedHint={allWidgetsWithoutGroup}
             />
-            {isNavFiltered && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Showing {visibleWidgets.length} of {widgets.length} charts
-              </p>
-            )}
           </div>
         )}
 
-        {visibleWidgets.length > 0 ? (
-          <DragDropCanvas
-            selectedWidgetId={selectedWidgetId}
-            onSelectWidget={setSelectedWidgetId}
-            widgetsOverride={visibleWidgets}
-          />
-        ) : (
-          <EmptyFilterState onReset={resetNav} />
-        )}
+        <DragDropCanvas
+          selectedWidgetId={selectedWidgetId}
+          onSelectWidget={setSelectedWidgetId}
+          widgetsOverride={visibleWidgets}
+        />
       </div>
 
       {/* AI panel */}
@@ -676,27 +684,9 @@ export default function BuilderPage() {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// EmptyFilterState
-// ─────────────────────────────────────────────────────────
-
-function EmptyFilterState({ onReset }: { onReset: () => void }) {
-  return (
-    <div className="flex min-h-[42vh] flex-col items-center justify-center rounded-xl border border-dashed bg-muted/20 text-center px-4">
-      <p className="text-sm font-semibold">No charts in this selection</p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Switch category/subgroup to view available charts.
-      </p>
-      <Button variant="outline" size="sm" className="mt-3" onClick={onReset}>
-        Reset Filters
-      </Button>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────
-// BuilderHeader — responsive with overflow menu
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// BuilderHeader â€” responsive with overflow menu
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface BuilderHeaderProps {
   currentDash: { id: string; name: string; description?: string } | undefined;
@@ -816,7 +806,7 @@ function BuilderHeader({
         >
           <Download className="w-3.5 h-3.5 sm:mr-1.5" />
           <span className="hidden sm:inline">
-            {exporting ? "Exporting…" : "Export"}
+            {exporting ? "Exportingâ€¦" : "Export"}
           </span>
         </Button>
         <Button
@@ -897,9 +887,9 @@ function BuilderHeader({
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// AiPanel — extracted for isolation
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// AiPanel â€” extracted for isolation
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AiPanel({
   open,
