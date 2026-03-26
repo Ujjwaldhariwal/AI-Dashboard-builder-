@@ -6,12 +6,14 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 
 interface ModernStatusCardProps {
   data:   Record<string, unknown>[]  // ← Fix #5
   yField: string
   label?: string
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
 export function ModernStatusCard({ data, yField, label, style }: ModernStatusCardProps) {
@@ -25,7 +27,7 @@ export function ModernStatusCard({ data, yField, label, style }: ModernStatusCar
 
   if (!values.length) {
     return (
-      <div className="flex items-center justify-center h-[120px]">
+      <div className="flex items-center justify-center h-full min-h-0">
         <p className="text-xs text-muted-foreground">No numeric data</p>
       </div>
     )
@@ -54,7 +56,7 @@ export function ModernStatusCard({ data, yField, label, style }: ModernStatusCar
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-3 p-1">
+    <div className="h-full min-h-0 grid grid-cols-2 gap-3 p-1">
       {/* Latest value */}
       <div
         className="col-span-2 flex items-end justify-between p-3 rounded-xl border"

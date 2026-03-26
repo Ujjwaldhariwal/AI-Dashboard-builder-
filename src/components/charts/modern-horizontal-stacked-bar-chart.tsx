@@ -9,6 +9,12 @@ import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils'
 import { sortLabels } from '@/lib/charts/domain-order'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
+import {
+  getChartMargin,
+  getLegendVisibility,
+  showValueLabels,
+} from '@/lib/charts/chart-constants'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -27,6 +33,7 @@ interface ModernHorizontalStackedBarChartProps {
   yFields?: string[]
   yAxisConfig?: YAxisConfig[]
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
 function getNumericFields(
@@ -58,12 +65,14 @@ export function ModernHorizontalStackedBarChart({
   yFields,
   yAxisConfig,
   style,
+  sizePreset = 'medium',
 }: ModernHorizontalStackedBarChartProps) {
   useEnterpriseTheme()
 
   const s = { ...DEFAULT_STYLE, ...style }
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
+  const margin = getChartMargin(sizePreset)
   const metrics = useMemo(
     () => getNumericFields(data, xField, yField, yFields),
     [data, xField, yField, yFields],
@@ -96,6 +105,8 @@ export function ModernHorizontalStackedBarChart({
       values: seriesMeta.map(meta => Number(row[meta.key]) || 0),
     }))
   }, [data, seriesMeta, xField])
+  const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
+  const displayLabels = showValueLabels(sizePreset, rows.length)
 
   const option = useMemo(() => ({
     animation: true,
@@ -103,22 +114,38 @@ export function ModernHorizontalStackedBarChart({
     animationEasing: 'cubicOut' as const,
     backgroundColor: 'transparent',
     color: seriesMeta.map(meta => meta.color),
-    grid: { top: 18, right: 16, bottom: 22, left: 10, containLabel: true },
+    grid: {
+      top: margin.top + (displayLegend ? 20 : 0),
+      right: margin.right + (displayLabels ? 20 : 8),
+      bottom: margin.bottom + (displayLegend && sizePreset !== 'medium' ? 14 : 0),
+      left: margin.left,
+      containLabel: true,
+    },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
       valueFormatter: (v: number) => fmtValue(v, s.labelFormat),
     },
-    legend: s.showLegend
-      ? {
-          show: true,
-          top: 0,
-          icon: 'roundRect',
-          itemWidth: 10,
-          itemHeight: 6,
-          textStyle: { fontSize: 10, color: axis.label },
-        }
+    legend: displayLegend
+      ? sizePreset === 'medium'
+        ? {
+            show: true,
+            top: margin.top - 4,
+            right: margin.right,
+            icon: 'roundRect',
+            itemWidth: 10,
+            itemHeight: 6,
+            textStyle: { fontSize: 10, color: axis.label },
+          }
+        : {
+            show: true,
+            bottom: margin.bottom - 8,
+            icon: 'roundRect',
+            itemWidth: 10,
+            itemHeight: 6,
+            textStyle: { fontSize: 10, color: axis.label },
+          }
       : { show: false },
     xAxis: {
       type: 'value',
@@ -148,6 +175,15 @@ export function ModernHorizontalStackedBarChart({
       emphasis: { focus: 'series' as const },
       barMaxWidth: 26,
       data: rows.map(r => r.values[idx]),
+      label: displayLabels
+        ? {
+            show: true,
+            position: 'insideRight',
+            fontSize: 9,
+            color: '#f8fafc',
+            formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
+          }
+        : { show: false },
       itemStyle: {
         borderRadius: idx === seriesMeta.length - 1 ? [0, 8, 8, 0] : 0,
         color: new graphic.LinearGradient(1, 0, 0, 0, [
@@ -162,7 +198,7 @@ export function ModernHorizontalStackedBarChart({
 
   if (!seriesMeta.length) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-xs text-muted-foreground">
+      <div className="flex h-full min-h-0 items-center justify-center text-xs text-muted-foreground">
         No numeric fields found for stacked chart
       </div>
     )
@@ -173,7 +209,7 @@ export function ModernHorizontalStackedBarChart({
       option={option}
       theme="enterprise"
       notMerge={true}
-      style={{ height: 300, width: '100%' }}
+      style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />
   )

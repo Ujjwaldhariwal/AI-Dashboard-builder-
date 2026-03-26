@@ -8,6 +8,11 @@ import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils'
 import { sortNamedValues } from '@/lib/charts/domain-order'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
+import {
+  getChartMargin,
+  getLegendVisibility,
+} from '@/lib/charts/chart-constants'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -30,10 +35,11 @@ interface ModernPieChartProps {
   title?:     string
   donut?:     boolean
   style?:     WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
 export function ModernPieChart({
-  data, nameField, valueField, donut = false, style,
+  data, nameField, valueField, donut = false, style, sizePreset = 'medium',
 }: ModernPieChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
@@ -41,6 +47,7 @@ export function ModernPieChart({
   const colors = s.colors
   const axis   = getAxisColors()
   const tt     = getTooltipStyle(s)
+  const margin = getChartMargin(sizePreset)
 
   const chartData = useMemo(() => {
     const isNumeric = data.length > 0 && !isNaN(Number(data[0]?.[valueField]))
@@ -68,6 +75,7 @@ export function ModernPieChart({
     return sortNamedValues(ranked)
   }, [data, nameField, valueField])
   const total = useMemo(() => chartData.reduce((sum, item) => sum + item.value, 0), [chartData])
+  const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
 
   const option = useMemo(() => ({
     animation:         true,
@@ -82,19 +90,33 @@ export function ModernPieChart({
       formatter: (p: TooltipParam) =>
         `<b>${p.name}</b><br/>Value: <strong>${p.value?.toLocaleString()}</strong><br/>${p.percent?.toFixed(1)}%`,
     },
-    legend: s.showLegend ? {
-      show:      true,
-      bottom:    0,
-      type:      'scroll' as const,
-      orient:    'horizontal' as const,
-      textStyle: { fontSize: 10, color: axis.label },
-      formatter: (name: string) => name.length > 12 ? name.slice(0, 10) + '…' : name,
-    } : { show: false },
+    legend: displayLegend
+      ? sizePreset === 'medium'
+        ? {
+            show: true,
+            top: margin.top - 4,
+            right: margin.right,
+            type: 'scroll' as const,
+            orient: 'vertical' as const,
+            textStyle: { fontSize: 10, color: axis.label },
+            formatter: (name: string) => name.length > 12 ? name.slice(0, 10) + '…' : name,
+          }
+        : {
+            show: true,
+            bottom: margin.bottom - 8,
+            type: 'scroll' as const,
+            orient: 'horizontal' as const,
+            textStyle: { fontSize: 10, color: axis.label },
+            formatter: (name: string) => name.length > 12 ? name.slice(0, 10) + '…' : name,
+          }
+      : { show: false },
     series: [{
       type:     'pie',
-      center:   ['50%', '42%'],
+      center:   sizePreset === 'medium' && displayLegend ? ['40%', '52%'] : ['50%', '46%'],
       // ── donut now correctly in deps via donut var ─────────
-      radius:   donut ? ['26%', '52%'] : ['0%', '52%'],
+      radius:   donut
+        ? (sizePreset === 'small' ? ['24%', '50%'] : ['26%', '52%'])
+        : ['0%', sizePreset === 'small' ? '50%' : '52%'],
       padAngle: donut ? 3 : 1,
       data:     chartData,
       label: {
@@ -147,7 +169,7 @@ export function ModernPieChart({
       option={option}
       theme="enterprise"
       notMerge={true}           // ← Fix #2
-      style={{ height: 340, width: '100%' }}
+      style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />
   )

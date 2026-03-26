@@ -5,6 +5,7 @@ import ReactECharts from 'echarts-for-react'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -14,6 +15,7 @@ interface ModernRingGaugeChartProps {
   value: number
   label?: string
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
 function toPercent(value: number) {
@@ -25,6 +27,7 @@ export function ModernRingGaugeChart({
   value,
   label = 'Progress',
   style,
+  sizePreset = 'medium',
 }: ModernRingGaugeChartProps) {
   useEnterpriseTheme()
 
@@ -41,7 +44,7 @@ export function ModernRingGaugeChart({
         type: 'gauge',
         startAngle: 90,
         endAngle: -270,
-        radius: '88%',
+        radius: sizePreset === 'small' ? '80%' : '88%',
         center: ['50%', '52%'],
         min: 0,
         max: 100,
@@ -88,7 +91,7 @@ export function ModernRingGaugeChart({
       option={option}
       theme="enterprise"
       notMerge={true}
-      style={{ height: 220, width: '100%' }}
+      style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />
   )
@@ -99,24 +102,25 @@ export function ModernRingGaugeChartFromData({
   yField,
   label,
   style,
+  sizePreset = 'medium',
 }: {
   data: Record<string, unknown>[]
   yField: string
   label?: string
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }) {
   const values = data
     .map(row => Number(row[yField]))
     .filter(v => !Number.isNaN(v))
 
   if (!values.length) {
-    return <ModernRingGaugeChart value={0} label={label ?? yField} style={style} />
+    return <ModernRingGaugeChart value={0} label={label ?? yField} style={style} sizePreset={sizePreset} />
   }
 
   const avg = values.reduce((sum, n) => sum + n, 0) / values.length
   const max = Math.max(...values)
   const percent = max > 100 ? (avg / max) * 100 : avg
 
-  return <ModernRingGaugeChart value={percent} label={label ?? yField} style={style} />
+  return <ModernRingGaugeChart value={percent} label={label ?? yField} style={style} sizePreset={sizePreset} />
 }
-
