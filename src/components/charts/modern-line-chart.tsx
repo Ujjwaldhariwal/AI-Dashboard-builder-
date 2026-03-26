@@ -3,11 +3,16 @@
 import { useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { graphic } from 'echarts'
-import { getChartHeight, getTickInterval, getBottomMargin } from './chart-registry'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
+import {
+  getCategoryTickInterval,
+  getChartMargin,
+  getLegendVisibility,
+} from '@/lib/charts/chart-constants'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -25,9 +30,10 @@ interface ModernLineChartProps {
   yField: string
   title?: string
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
-export function ModernLineChart({ data, xField, yField, style }: ModernLineChartProps) {
+export function ModernLineChart({ data, xField, yField, style, sizePreset = 'medium' }: ModernLineChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
   const s      = { ...DEFAULT_STYLE, ...style }
@@ -44,8 +50,10 @@ export function ModernLineChart({ data, xField, yField, style }: ModernLineChart
       : 0
   , [chartData])
 
-  const h      = getChartHeight(chartData.length)
-  const rotate = chartData.length > 8
+  const margin = getChartMargin(sizePreset)
+  const rotate = sizePreset === 'small' ? chartData.length > 5 : chartData.length > 8
+  const tickInterval = getCategoryTickInterval(sizePreset, chartData.length)
+  const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
   const axis   = getAxisColors()
   const tt     = getTooltipStyle(s)
 
@@ -56,9 +64,11 @@ export function ModernLineChart({ data, xField, yField, style }: ModernLineChart
     backgroundColor:   'transparent',
     color: colors,
     grid: {
-      top: 8, right: 28,
-      bottom: getBottomMargin(chartData.length),
-      left: 8, containLabel: true,
+      top: margin.top + (displayLegend ? 18 : 0),
+      right: margin.right + (sizePreset === 'medium' ? 16 : 0),
+      bottom: margin.bottom + (rotate ? 28 : 14) + (displayLegend && sizePreset !== 'medium' ? 14 : 0),
+      left: margin.left,
+      containLabel: true,
     },
     tooltip: {
       trigger: 'axis',
@@ -77,7 +87,7 @@ export function ModernLineChart({ data, xField, yField, style }: ModernLineChart
         color:     axis.label,
         fontSize:  chartData.length > 15 ? 10 : 11,
         rotate:    rotate ? -35 : 0,
-        interval:  getTickInterval(chartData.length),
+        interval:  tickInterval,
         formatter: (v: string) => v.length > 14 ? v.slice(0, 12) + '…' : v,
       },
       axisLine:  { show: false },
@@ -98,8 +108,19 @@ export function ModernLineChart({ data, xField, yField, style }: ModernLineChart
         lineStyle: { type: 'dashed' as const, color: axis.splitLine },
       },
     },
-    legend: s.showLegend
-      ? { show: true, bottom: 0, textStyle: { fontSize: 11, color: axis.label } }
+    legend: displayLegend
+      ? sizePreset === 'medium'
+        ? {
+            show: true,
+            top: margin.top - 4,
+            right: margin.right,
+            textStyle: { fontSize: 10, color: axis.label },
+          }
+        : {
+            show: true,
+            bottom: margin.bottom - 8,
+            textStyle: { fontSize: 11, color: axis.label },
+          }
       : { show: false },
     series: [{
       type:       'line',
@@ -140,7 +161,7 @@ export function ModernLineChart({ data, xField, yField, style }: ModernLineChart
       option={option}
       theme="enterprise"
       notMerge={true}    // ← Fix #2
-      style={{ height: h, width: '100%' }}
+      style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />
   )

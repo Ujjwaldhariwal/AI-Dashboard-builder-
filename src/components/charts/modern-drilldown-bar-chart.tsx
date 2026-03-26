@@ -9,6 +9,12 @@ import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
+import {
+  getCategoryTickInterval,
+  getChartMargin,
+  showValueLabels,
+} from '@/lib/charts/chart-constants'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -20,6 +26,7 @@ interface ModernDrilldownBarChartProps {
   yField: string
   drillField?: string
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
 function sumByField(
@@ -90,12 +97,14 @@ export function ModernDrilldownBarChart({
   yField,
   drillField: drillFieldProp,
   style,
+  sizePreset = 'medium',
 }: ModernDrilldownBarChartProps) {
   useEnterpriseTheme()
 
   const s = { ...DEFAULT_STYLE, ...style }
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
+  const margin = getChartMargin(sizePreset)
 
   const [selectedPrimary, setSelectedPrimary] = useState<string | null>(null)
 
@@ -116,6 +125,8 @@ export function ModernDrilldownBarChart({
   }, [data, drillField, selectedPrimary, xField, yField])
 
   const rows = selectedPrimary && drillLevel.length > 0 ? drillLevel : topLevel
+  const tickInterval = getCategoryTickInterval(sizePreset, rows.length)
+  const displayLabels = showValueLabels(sizePreset, rows.length)
   const subtitle = selectedPrimary && drillField
     ? `${selectedPrimary} -> ${drillField}`
     : xField
@@ -126,7 +137,13 @@ export function ModernDrilldownBarChart({
     animationEasing: 'cubicOut' as const,
     backgroundColor: 'transparent',
     color: s.colors,
-    grid: { top: 12, right: 12, bottom: 42, left: 10, containLabel: true },
+    grid: {
+      top: margin.top,
+      right: margin.right,
+      bottom: margin.bottom + (rows.length > 8 ? 24 : 12),
+      left: margin.left,
+      containLabel: true,
+    },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -142,6 +159,7 @@ export function ModernDrilldownBarChart({
         color: axis.label,
         fontSize: 10,
         rotate: rows.length > 8 ? -28 : 0,
+        interval: tickInterval,
         formatter: (v: string) => v.length > 18 ? `${v.slice(0, 16)}..` : v,
       },
     },
@@ -164,6 +182,15 @@ export function ModernDrilldownBarChart({
         type: 'bar',
         data: rows.map(row => row.value),
         barMaxWidth: 42,
+        label: displayLabels
+          ? {
+              show: true,
+              position: 'top',
+              fontSize: 9,
+              color: axis.label,
+              formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
+            }
+          : { show: false },
         itemStyle: {
           borderRadius: [8, 8, 0, 0],
           color: new graphic.LinearGradient(0, 0, 0, 1, [
@@ -178,7 +205,7 @@ export function ModernDrilldownBarChart({
   }), [axis.label, axis.splitLine, rows, s, tt])
 
   return (
-    <div className="space-y-2">
+    <div className="h-full min-h-0 flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <p className="text-[11px] text-muted-foreground truncate">
           Drill path: <span className="font-mono">{subtitle}</span>
@@ -193,7 +220,7 @@ export function ModernDrilldownBarChart({
         option={option}
         theme="enterprise"
         notMerge={true}
-        style={{ height: 300, width: '100%' }}
+        style={{ height: '100%', width: '100%', flex: 1 }}
         opts={{ renderer: 'svg' }}
         onEvents={{
           click: (params: { name?: string }) => {

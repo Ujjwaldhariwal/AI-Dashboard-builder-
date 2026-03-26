@@ -459,37 +459,37 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
       case 'bar':
         return (
           <ChartWrapper>
-            <ModernBarChart data={aliasedData} xField={x} yField={y} style={style} />
+            <ModernBarChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'line':
         return (
           <ChartWrapper>
-            <ModernLineChart data={aliasedData} xField={x} yField={y} style={style} />
+            <ModernLineChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'area':
         return (
           <ChartWrapper>
-            <ModernAreaChart data={aliasedData} xField={x} yField={y} style={style} />
+            <ModernAreaChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'pie':
         return (
           <ChartWrapper>
-            <ModernPieChart data={aliasedData} nameField={x} valueField={y} style={style} />
+            <ModernPieChart data={aliasedData} nameField={x} valueField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'donut':
         return (
           <ChartWrapper>
-            <ModernPieChart data={aliasedData} nameField={x} valueField={y} donut style={style} />
+            <ModernPieChart data={aliasedData} nameField={x} valueField={y} donut style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'horizontal-bar':
         return (
           <ChartWrapper>
-            <ModernHorizontalBarChart data={aliasedData} xField={x} yField={y} style={style} />
+            <ModernHorizontalBarChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'horizontal-stacked-bar':
@@ -502,6 +502,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
               yFields={yFields}
               yAxisConfig={yAxisConfig}
               style={style}
+              sizePreset={currentSizePreset}
             />
           </ChartWrapper>
         )
@@ -515,30 +516,35 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
               yFields={yFields}
               yAxisConfig={yAxisConfig}
               style={style}
+              sizePreset={currentSizePreset}
             />
           </ChartWrapper>
         )
       case 'drilldown-bar':
         return (
           <ChartWrapper>
-            <ModernDrilldownBarChart data={aliasedData} xField={x} yField={y} style={style} />
+            <ModernDrilldownBarChart data={aliasedData} xField={x} yField={y} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'gauge':
         return (
           <ChartWrapper>
-            <ModernGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
+            <ModernGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       case 'ring-gauge':
         return (
           <ChartWrapper>
-            <ModernRingGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} />
+            <ModernRingGaugeChartFromData data={aliasedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
           </ChartWrapper>
         )
       // status-card and table are NOT Recharts — no ChartWrapper needed
       case 'status-card':
-        return <ModernStatusCard data={aliasedData} yField={y} label={widget.title} style={style} />
+        return (
+          <ChartWrapper>
+            <ModernStatusCard data={aliasedData} yField={y} label={widget.title} style={style} sizePreset={currentSizePreset} />
+          </ChartWrapper>
+        )
       case 'table':
         return <DataTableView rows={aliasedData} maxHeight="max-h-[340px]" />
       default:

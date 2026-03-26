@@ -3,12 +3,16 @@
 import { useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { graphic } from 'echarts'
-import { getChartHeight } from './chart-registry'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils' // ← Fix #6
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
+import {
+  getChartMargin,
+  showValueLabels,
+} from '@/lib/charts/chart-constants'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -30,14 +34,22 @@ interface ModernHorizontalBarChartProps {
   yField:   string
   stacked?: boolean
   style?:   WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
-export function ModernHorizontalBarChart({ data, xField, yField, style }: ModernHorizontalBarChartProps) {
+export function ModernHorizontalBarChart({
+  data,
+  xField,
+  yField,
+  style,
+  sizePreset = 'medium',
+}: ModernHorizontalBarChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
   const s      = { ...DEFAULT_STYLE, ...style }
   const colors = s.colors
   const r      = s.barRadius ?? 6
+  const margin = getChartMargin(sizePreset)
   const axis   = getAxisColors()
   const tt     = getTooltipStyle(s)
 
@@ -60,7 +72,7 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Modern
       .map(([name, value]) => ({ name, value }))
   }, [data, xField, yField])
 
-  const h = getChartHeight(chartData.length)
+  const displayLabels = showValueLabels(sizePreset, chartData.length)
 
   const option = useMemo(() => ({
     animation:         true,
@@ -68,7 +80,13 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Modern
     animationEasing:   'cubicOut' as const,
     backgroundColor:   'transparent',
     color: colors,
-    grid: { top: 4, right: 56, bottom: 4, left: 8, containLabel: true },
+    grid: {
+      top: margin.top,
+      right: margin.right + (displayLabels ? 44 : 20),
+      bottom: margin.bottom,
+      left: margin.left,
+      containLabel: true,
+    },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -115,7 +133,7 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Modern
         },
       })),
       label: {
-        show:      true,
+        show:      displayLabels,
         position:  'right' as const,
         // ── Fix #5 — typed label formatter ───────────────────
         formatter: (p: LabelParam) => fmtValue(p.value, s.labelFormat),
@@ -134,7 +152,7 @@ export function ModernHorizontalBarChart({ data, xField, yField, style }: Modern
       option={option}
       theme="enterprise"
       notMerge={true}           // ← Fix #2
-      style={{ height: h, width: '100%' }}
+      style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />
   )

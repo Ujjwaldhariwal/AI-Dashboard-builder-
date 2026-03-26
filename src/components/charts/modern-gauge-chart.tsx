@@ -5,6 +5,7 @@ import ReactECharts from 'echarts-for-react'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 
 function useEnterpriseTheme() {
   useEffect(() => { registerEnterpriseTheme() }, [])
@@ -28,6 +29,7 @@ interface ModernGaugeChartProps {
   label?:      string
   thresholds?: { warn: number; danger: number }
   style?:      WidgetStyle
+  sizePreset?: WidgetSizePreset
 }
 
 export function ModernGaugeChart({
@@ -35,6 +37,7 @@ export function ModernGaugeChart({
   label      = 'Score',
   thresholds = { warn: 60, danger: 80 },
   style,
+  sizePreset = 'medium',
 }: ModernGaugeChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
@@ -61,7 +64,7 @@ export function ModernGaugeChart({
       endAngle:   0,
       min:        0,
       max:        100,
-      radius:     '90%',
+      radius:     sizePreset === 'small' ? '82%' : '90%',
       center:     ['50%', '72%'],
       progress: {
         show:      true,
@@ -101,7 +104,7 @@ export function ModernGaugeChart({
       option={option}
       theme="enterprise"
       notMerge={true}           // ← Fix #2
-      style={{ height: 200, width: '100%' }}
+      style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />
   )
@@ -112,11 +115,13 @@ export function ModernGaugeChartFromData({
   yField,
   label,
   style,
+  sizePreset = 'medium',
 }: {
   data:   Record<string, unknown>[]  // ← Fix #5
   yField: string
   label?: string
   style?: WidgetStyle
+  sizePreset?: WidgetSizePreset
 }) {
   const values = data
     .map(d => parseFloat(String(d[yField])))
@@ -124,12 +129,12 @@ export function ModernGaugeChartFromData({
 
   // ── Fix #8 — guard against empty array before Math.max ───────
   if (!values.length) {
-    return <ModernGaugeChart value={0} label={label ?? yField} style={style} />
+    return <ModernGaugeChart value={0} label={label ?? yField} style={style} sizePreset={sizePreset} />
   }
 
   const avg        = values.reduce((a, b) => a + b, 0) / values.length
   const max        = Math.max(...values)
   const normalised = max > 0 ? (avg / max) * 100 : 0
 
-  return <ModernGaugeChart value={normalised} label={label ?? yField} style={style} />
+  return <ModernGaugeChart value={normalised} label={label ?? yField} style={style} sizePreset={sizePreset} />
 }
