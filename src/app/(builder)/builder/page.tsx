@@ -1,10 +1,10 @@
 "use client";
 
 // src/app/(builder)/builder/page.tsx
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Optimized: reduced state, fixed effect loops, responsive
 // header, memoized computations, modular sub-components
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -76,11 +76,27 @@ import {
   dispatchBuilderApiHealthSummary,
 } from "@/lib/builder/api-health-events";
 import { FrozenChartNav } from "@/components/builder/nav/linear-bar";
+import {
+  CHART_NAV_ALL,
+  buildChartNavTree,
+  filterWidgetsByNavSelection,
+  normalizeChartNavSelection,
+} from "@/lib/builder/chart-nav-model";
 import type { EndpointProfile } from "@/types/training";
 
-// ─────────────────────────────────────────────────────────
+interface NavSelection {
+  groupId: string;
+  subgroupId: string;
+}
+
+const DEFAULT_NAV_SELECTION: NavSelection = {
+  groupId: CHART_NAV_ALL,
+  subgroupId: CHART_NAV_ALL,
+};
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Main Page
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function BuilderPage() {
   const router = useRouter();
@@ -94,37 +110,40 @@ export default function BuilderPage() {
     getGroupsByDashboard,
   } = useDashboardStore();
 
-  // ── Core UI state ──────────────────────────────────────
+  // â”€â”€ Core UI state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [magicOpen, setMagicOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
 
-  // ── AI panel — single object ───────────────────────────
+  // â”€â”€ AI panel â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [aiPanel, setAiPanel] = useState({ open: false, minimized: false });
 
-  // ── Async ops — single object ──────────────────────────
+  // â”€â”€ Async ops â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [ops, setOps] = useState({
     scanning: false,
     autoAdding: false,
     refreshing: false,
   });
 
-  // ── Nav state — single object ──────────────────────────
+  const [navSelection, setNavSelection] =
+    useState<NavSelection>(DEFAULT_NAV_SELECTION);
 
-  // ── API health ─────────────────────────────────────────
+  // â”€â”€ Nav state â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  // â”€â”€ API health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [scanSummary, setScanSummary] =
     useState<DashboardEndpointProbeSummary | null>(null);
   const [sessionScope, setSessionScope] = useState(() =>
     getEndpointSessionScope(),
   );
 
-  // ── Unsaved tracking ───────────────────────────────────
+  // â”€â”€ Unsaved tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const hasMounted = useRef(false);
   const lastSavedCount = useRef(0);
   const [unsaved, setUnsaved] = useState(false);
 
-  // ── Derived data (all memoized) ────────────────────────
+  // â”€â”€ Derived data (all memoized) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const currentDash = useMemo(
     () => dashboards.find((d) => d.id === currentDashboardId),
     [dashboards, currentDashboardId],
@@ -156,6 +175,16 @@ export default function BuilderPage() {
     [currentDashboardId, getGroupsByDashboard],
   );
 
+  const navEndpointLookup = useMemo(
+    () =>
+      Object.fromEntries(
+        dashboardEndpoints.map((ep) => [ep.id, { name: ep.name, url: ep.url }]),
+      ),
+    [dashboardEndpoints],
+  );
+
+  const useTaxonomyFallback = collections.length === 0;
+
   const sectionCount = useMemo(() => {
     const names = new Set<string>();
     for (const w of widgets) {
@@ -181,10 +210,50 @@ export default function BuilderPage() {
     [widgets],
   );
 
-  // ── Prefetch ───────────────────────────────────────────
+  const navTree = useMemo(
+    () =>
+      buildChartNavTree(orderedWidgets, collections, {
+        endpointLookup: navEndpointLookup,
+        useTaxonomyFallback,
+      }),
+    [orderedWidgets, collections, navEndpointLookup, useTaxonomyFallback],
+  );
+
+  const visibleWidgets = useMemo(
+    () =>
+      filterWidgetsByNavSelection(
+        orderedWidgets,
+        navSelection.groupId,
+        navSelection.subgroupId,
+        collections,
+        {
+          endpointLookup: navEndpointLookup,
+          useTaxonomyFallback,
+        },
+      ),
+    [
+      orderedWidgets,
+      navSelection.groupId,
+      navSelection.subgroupId,
+      collections,
+      navEndpointLookup,
+      useTaxonomyFallback,
+    ],
+  );
+
+  const allWidgetsWithoutGroup = useMemo(
+    () =>
+      orderedWidgets.length > 0 &&
+      orderedWidgets.every(
+        (widget) => !widget.groupId || widget.groupId.trim().length === 0,
+      ),
+    [orderedWidgets],
+  );
+
+  // â”€â”€ Prefetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useDashboardEndpointPrefetch(activeDashboardEndpoints);
 
-  // ── Effects ────────────────────────────────────────────
+  // â”€â”€ Effects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   // Auto-select first dashboard
   useEffect(() => {
@@ -195,6 +264,7 @@ export default function BuilderPage() {
 
   // Reset state when dashboard changes
   useEffect(() => {
+    setNavSelection(DEFAULT_NAV_SELECTION);
     setSelectedWidgetId(null);
   }, [currentDashboardId]);
 
@@ -206,7 +276,29 @@ export default function BuilderPage() {
       window.removeEventListener("builderDemoAuthSessionChanged", handler);
   }, []);
 
-  // Normalize nav selection — guarded against infinite loops
+  const prevNormKey = useRef("");
+  useEffect(() => {
+    const normalized = normalizeChartNavSelection(navTree, navSelection);
+    const key = `${normalized.groupId}|${normalized.subgroupId}`;
+    if (
+      key !== prevNormKey.current &&
+      (normalized.groupId !== navSelection.groupId ||
+        normalized.subgroupId !== navSelection.subgroupId)
+    ) {
+      prevNormKey.current = key;
+      setNavSelection(normalized);
+    }
+  }, [navTree, navSelection]);
+
+  useEffect(() => {
+    if (
+      selectedWidgetId &&
+      !visibleWidgets.some((widget) => widget.id === selectedWidgetId)
+    ) {
+      setSelectedWidgetId(null);
+    }
+  }, [selectedWidgetId, visibleWidgets]);
+
   // Unsaved tracking
   useEffect(() => {
     if (!hasMounted.current) {
@@ -217,7 +309,7 @@ export default function BuilderPage() {
     if (widgets.length !== lastSavedCount.current) setUnsaved(true);
   }, [widgets.length]);
 
-  // ── API Scan ───────────────────────────────────────────
+  // â”€â”€ API Scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const runApiScan = useCallback(
     async (opts: { force?: boolean; silent?: boolean } = {}) => {
@@ -272,7 +364,7 @@ export default function BuilderPage() {
     };
   }, [runApiScan]);
 
-  // ── Handlers ───────────────────────────────────────────
+  // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const handleScanApis = useCallback(
     () => void runApiScan({ force: true }),
@@ -383,7 +475,7 @@ export default function BuilderPage() {
       return;
     }
     setExporting(true);
-    toast.loading("Generating project…", { id: "export" });
+    toast.loading("Generating projectâ€¦", { id: "export" });
     try {
       const store = useDashboardStore.getState();
       const config = buildDashboardConfig(
@@ -415,13 +507,8 @@ export default function BuilderPage() {
     }
   }, [currentDash, widgets, allEndpoints, allWidgets]);
 
-  const handleWidgetNavSelect = useCallback((widgetId: string) => {
-    setSelectedWidgetId(widgetId);
-
-    const target = document.querySelector<HTMLElement>(
-      `[data-widget-id="${widgetId}"]`,
-    );
-    target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  const handleNavChange = useCallback((selection: NavSelection) => {
+    setNavSelection(selection);
   }, []);
 
   const openAi = useCallback(
@@ -437,7 +524,7 @@ export default function BuilderPage() {
     [],
   );
 
-  // ── Empty states ───────────────────────────────────────
+  // â”€â”€ Empty states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   if (dashboards.length === 0) {
     return (
@@ -516,7 +603,7 @@ export default function BuilderPage() {
     );
   }
 
-  // ── Main layout ────────────────────────────────────────
+  // â”€â”€ Main layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
@@ -549,13 +636,11 @@ export default function BuilderPage() {
         {orderedWidgets.length > 0 && (
           <div className="mb-4" onClick={(event) => event.stopPropagation()}>
             <FrozenChartNav
-              items={orderedWidgets.map((widget) => ({
-                id: widget.id,
-                title: widget.title,
-                type: widget.type,
-              }))}
-              activeWidgetId={selectedWidgetId}
-              onWidgetSelect={handleWidgetNavSelect}
+              tree={navTree}
+              activeGroupId={navSelection.groupId}
+              activeSubgroupId={navSelection.subgroupId}
+              onSelectionChange={handleNavChange}
+              showUngroupedHint={allWidgetsWithoutGroup}
             />
           </div>
         )}
@@ -563,7 +648,7 @@ export default function BuilderPage() {
         <DragDropCanvas
           selectedWidgetId={selectedWidgetId}
           onSelectWidget={setSelectedWidgetId}
-          widgetsOverride={orderedWidgets}
+          widgetsOverride={visibleWidgets}
         />
       </div>
 
@@ -599,9 +684,9 @@ export default function BuilderPage() {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// BuilderHeader — responsive with overflow menu
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// BuilderHeader â€” responsive with overflow menu
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface BuilderHeaderProps {
   currentDash: { id: string; name: string; description?: string } | undefined;
@@ -721,7 +806,7 @@ function BuilderHeader({
         >
           <Download className="w-3.5 h-3.5 sm:mr-1.5" />
           <span className="hidden sm:inline">
-            {exporting ? "Exporting…" : "Export"}
+            {exporting ? "Exportingâ€¦" : "Export"}
           </span>
         </Button>
         <Button
@@ -802,9 +887,9 @@ function BuilderHeader({
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// AiPanel — extracted for isolation
-// ─────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// AiPanel â€” extracted for isolation
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AiPanel({
   open,

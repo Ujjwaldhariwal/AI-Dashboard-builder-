@@ -19,12 +19,14 @@ export interface ChartNavItem {
 export interface ChartNavSubgroup {
   id: string
   label: string
+  widgetCount: number
   charts: ChartNavItem[]
 }
 
 export interface ChartNavCategory {
   id: string
   label: string
+  widgetCount: number
   subgroups: ChartNavSubgroup[]
 }
 
@@ -245,11 +247,16 @@ export function buildChartNavTree(
     .map(category => ({
       id: category.id,
       label: category.label,
+      widgetCount: Array.from(category.subgroups.values()).reduce(
+        (sum, subgroup) => sum + subgroup.charts.length,
+        0,
+      ),
       subgroups: Array.from(category.subgroups.values())
         .sort(compareByOrderThenLabel)
         .map(subgroup => ({
           id: subgroup.id,
           label: subgroup.label,
+          widgetCount: subgroup.charts.length,
           charts: subgroup.charts,
         })),
     }))
@@ -272,6 +279,7 @@ export function getSubgroupsForGroup(
       if (existing) {
         merged.set(subgroup.id, {
           ...existing,
+          widgetCount: existing.widgetCount + subgroup.charts.length,
           charts: [...existing.charts, ...subgroup.charts],
         })
         return
@@ -279,6 +287,7 @@ export function getSubgroupsForGroup(
       merged.set(subgroup.id, {
         id: subgroup.id,
         label: subgroup.label,
+        widgetCount: subgroup.charts.length,
         charts: [...subgroup.charts],
       })
     })
@@ -331,10 +340,12 @@ export function filterWidgetsByNavSelection(
       useTaxonomyFallback,
     )
 
-    const groupMatches = activeGroupId === CHART_NAV_ALL || placement.groupId === activeGroupId
+    const isAllGroup = activeGroupId === CHART_NAV_ALL || activeGroupId === 'all'
+    const groupMatches = isAllGroup || placement.groupId === activeGroupId
     if (!groupMatches) return false
 
-    const subgroupMatches = activeSubgroupId === CHART_NAV_ALL || placement.subgroupId === activeSubgroupId
+    const isAllSubgroup = activeSubgroupId === CHART_NAV_ALL || activeSubgroupId === 'all'
+    const subgroupMatches = isAllSubgroup || placement.subgroupId === activeSubgroupId
     return subgroupMatches
   })
 }
