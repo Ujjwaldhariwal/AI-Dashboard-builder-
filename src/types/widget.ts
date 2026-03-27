@@ -36,11 +36,26 @@ export interface YAxisConfig {
   label?: string
 }
 
+export type TransformMathOperator = '+' | '-' | '*' | '/'
+export type TransformFilterOperator = '>' | '<' | '=' | '!=' | '>=' | '<='
+export type TransformSortOrder = 'asc' | 'desc'
+
+export type TransformOp =
+  | { type: 'parse_number'; field: string }
+  | { type: 'concat'; fields: string[]; separator: string; outputField: string }
+  | { type: 'rename'; from: string; to: string }
+  | { type: 'math'; field: string; operator: TransformMathOperator; value: number; outputField: string }
+  | { type: 'percent_of_total'; field: string; outputField: string }
+  | { type: 'filter_rows'; field: string; operator: TransformFilterOperator; value: unknown }
+  | { type: 'sort'; field: string; order: TransformSortOrder }
+  | { type: 'limit'; count: number }
+
 export interface DataMapping {
   xAxis:      string
   yAxis?:     string
   yAxes?:     YAxisConfig[]
   aliases?:   Record<string, string>
+  transforms?: TransformOp[]
   sortBy?:    string
   sortOrder?: 'asc' | 'desc'
   limit?:     number
