@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useMonitoringStore, type LogLevel } from '@/store/monitoring-store'
 import { useDashboardStore } from '@/store/builder-store'
+import { StatusIcon, LatencyBadge, ErrorBadge } from '@/components/ui/status-icon'
 
 interface MonitoringPanelProps {
   onClose: () => void
@@ -63,10 +64,10 @@ export function MonitoringPanel({ onClose }: MonitoringPanelProps) {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearLogs} title="Clear logs">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearLogs} title="Clear logs" aria-label="Clear logs">
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} aria-label="Close monitoring panel">
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -164,28 +165,19 @@ export function MonitoringPanel({ onClose }: MonitoringPanelProps) {
           ) : (
             healthList.map(({ endpoint, health }) => {
               const status = health?.status ?? 'unknown'
-              const statusColor = {
-                healthy:  'text-green-600 bg-green-50 dark:bg-green-950/30',
-                degraded: 'text-amber-600 bg-amber-50 dark:bg-amber-950/30',
-                down:     'text-red-600 bg-red-50 dark:bg-red-950/30',
-                unknown:  'text-gray-500 bg-gray-50 dark:bg-gray-900/30',
-              }[status]
 
               return (
                 <div key={endpoint.id} className="p-3 rounded-lg border space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{
-                        backgroundColor: {
-                          healthy: '#22c55e',
-                          degraded: '#f59e0b',
-                          down: '#ef4444',
-                          unknown: '#9ca3af',
-                        }[status],
-                      }} />
+                      <StatusIcon
+                        status={status}
+                        size="sm"
+                        aria-label={`${endpoint.name}: ${status}`}
+                      />
                       <p className="text-xs font-semibold truncate">{endpoint.name}</p>
                     </div>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${statusColor}`}>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-muted/40 text-muted-foreground capitalize">
                       {status}
                     </span>
                   </div>
@@ -194,19 +186,12 @@ export function MonitoringPanel({ onClose }: MonitoringPanelProps) {
                     {endpoint.url}
                   </p>
 
-                  <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                    {health?.latencyMs !== undefined && (
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5" />
-                        {health.latencyMs}ms
-                      </span>
-                    )}
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+                    <LatencyBadge latencyMs={health?.latencyMs} />
+                    <ErrorBadge count={health?.errorCount ?? 0} />
                     {health && (
                       <>
-                        <span className="text-green-600">{health.successCount} ok</span>
-                        {health.errorCount > 0 && (
-                          <span className="text-red-500">{health.errorCount} err</span>
-                        )}
+                        <span className="text-muted-foreground tabular-nums">{health.successCount} ok</span>
                       </>
                     )}
                     {health?.lastChecked && (
@@ -218,7 +203,7 @@ export function MonitoringPanel({ onClose }: MonitoringPanelProps) {
                   </div>
 
                   {health?.lastError && (
-                    <p className="text-[10px] text-red-600 truncate">
+                    <p className="text-[10px] text-muted-foreground truncate">
                       Last error: {health.lastError}
                     </p>
                   )}
