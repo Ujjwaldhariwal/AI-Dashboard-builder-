@@ -2,18 +2,21 @@
 
 // src/components/builder/style-panel/widget-style-panel.tsx
 
+import { useState } from 'react'
 import { useDashboardStore } from '@/store/builder-store'
 import type { WidgetStyle, LabelFormat } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { BOSCH_COLORS, ENTERPRISE_COLORS } from '@/lib/echarts/theme'
+import { askUiDesigner } from '@/lib/ai/agent-client'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem,
   SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { Paintbrush, RotateCcw, Palette, Eye, Sliders } from 'lucide-react'
+import { Paintbrush, RotateCcw, Palette, Eye, Sliders, Sparkles, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface WidgetStylePanelProps {
@@ -50,6 +53,8 @@ const colorsMatch = (left: string[], right: string[]) =>
 
 export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
   const { widgets, updateWidgetStyle,resetWidgetStyle  } = useDashboardStore()
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiApplying, setAiApplying] = useState(false)
 
   // ── Fix #3 — resetWidgetStyle may not exist in store ─────────
   // Use updateWidgetStyle with DEFAULT_STYLE as the safe fallback.
@@ -96,6 +101,26 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
   const handleReset = () => {
     resetWidgetStyle(widget.id)
     toast.success(`"${widget.title}" reset to default style`)
+  }
+
+  const handleApplyAiStyle = async () => {
+    const prompt = aiPrompt.trim()
+    if (!prompt) {
+      toast.error('Describe the style you want first')
+      return
+    }
+
+    setAiApplying(true)
+    try {
+      const nextStyle = await askUiDesigner(prompt, style)
+      updateWidgetStyle(widget.id, nextStyle)
+      toast.success(`AI style applied to "${widget.title}"`)
+      setAiPrompt('')
+    } catch {
+      // Error toast handled in askUiDesigner.
+    } finally {
+      setAiApplying(false)
+    }
   }
 
   // ── Fix #10 — resolve stored format to typed value ────────────
@@ -268,6 +293,42 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
               </div>
             ))}
           </div>
+        </section>
+
+        {/* AI style assistant */}
+        <section className="space-y-2.5 rounded-lg border p-3 bg-muted/20">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
+            <Label className="text-xs font-semibold">AI Style Assistant</Label>
+          </div>
+          <Input
+            className="h-8 text-xs"
+            placeholder='e.g., "Use enterprise dark tooltip and muted teal palette"'
+            value={aiPrompt}
+            onChange={e => setAiPrompt(e.target.value)}
+            disabled={aiApplying}
+          />
+          <Button
+            size="sm"
+            className="h-8 w-full text-xs"
+            onClick={() => void handleApplyAiStyle()}
+            disabled={aiApplying}
+          >
+            {aiApplying ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Applying...
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                Apply AI Style
+              </>
+            )}
+          </Button>
+          <p className="text-[10px] text-muted-foreground">
+            AI output is validated against strict WidgetStyle schema.
+          </p>
         </section>
 
       </div>

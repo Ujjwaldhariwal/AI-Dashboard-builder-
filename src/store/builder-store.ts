@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Widget, WidgetConfigInput, WidgetStyle, ChartType } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
-import type { ProjectConfig, ChartGroup, ChartSubgroup } from '@/types/project-config'
+import type { AIExportConfig, ProjectConfig, ChartGroup, ChartSubgroup } from '@/types/project-config'
 import { DEFAULT_PROJECT_CONFIG } from '@/types/project-config'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/auth-store'
@@ -181,6 +181,7 @@ interface DashboardStore {
 
   projectConfigs:        Record<string, ProjectConfig>
   setProjectConfig:      (dashboardId: string, config: Partial<Omit<ProjectConfig, 'dashboardId'>>) => void
+  setAIExportConfig:     (dashboardId: string, config: AIExportConfig) => void
   getProjectConfig:      (dashboardId: string) => ProjectConfig
   resetProjectConfig:    (dashboardId: string) => void
 
@@ -1264,6 +1265,25 @@ addWidget: (config) => {
             projectConfigs: {
               ...s.projectConfigs,
               [dashboardId]: { ...existing, ...config, dashboardId },
+            },
+          }
+        })
+      },
+
+      setAIExportConfig: (dashboardId, config) => {
+        set(s => {
+          const existing = s.projectConfigs[dashboardId] ?? {
+            ...DEFAULT_PROJECT_CONFIG,
+            dashboardId,
+          }
+          return {
+            projectConfigs: {
+              ...s.projectConfigs,
+              [dashboardId]: {
+                ...existing,
+                dashboardId,
+                aiExportConfig: config,
+              },
             },
           }
         })

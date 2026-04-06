@@ -50,6 +50,7 @@ import {
   clearEndpointFailureCache,
   clearEndpointProbeCache,
 } from "@/lib/api/endpoint-runtime-cache";
+import { PdfDownloadButton } from "@/components/viewer/pdf/pdf-download-button";
 import { useDashboardEndpointPrefetch } from "@/hooks/use-dashboard-endpoint-prefetch";
 import { dispatchDashboardWidgetRefresh } from "@/lib/builder/widget-refresh-events";
 import {
@@ -349,6 +350,8 @@ export default function ViewerPage() {
               />
               {refreshing ? "Refreshing..." : "Refresh"}
             </Button>
+
+            <PdfDownloadButton dashboardTitle={currentDash.name} widgets={widgets} />
 
             <Link href="/builder" className="hidden sm:block">
               <Button size="sm">Edit</Button>

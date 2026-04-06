@@ -33,6 +33,7 @@ import {
   Plus, Trash2, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
+import { askDataTransformer } from '@/lib/ai/agent-client'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { saveEndpointMappingFeedback } from '@/lib/training/profile-client'
 
@@ -153,10 +154,13 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
   const [aliases, setAliases]           = useState<Record<string, string>>(widget.dataMapping.aliases ?? {})
   const [fields, setFields]             = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
+  const [sampleRows, setSampleRows] = useState<Record<string, unknown>[]>([])
   const [transforms, setTransforms] = useState<TransformOp[]>(widget.dataMapping.transforms ?? [])
   const [transformsOpen, setTransformsOpen] = useState(
     (widget.dataMapping.transforms?.length ?? 0) > 0,
   )
+  const [aiTransformPrompt, setAiTransformPrompt] = useState('')
+  const [aiTransformLoading, setAiTransformLoading] = useState(false)
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
 
@@ -171,8 +175,9 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     const existingTransforms = widget.dataMapping.transforms ?? []
     setTransforms(existingTransforms)
     setTransformsOpen(existingTransforms.length > 0)
+    setAiTransformPrompt('')
     void fetchFields()
-  }, [open, widget])
+  }, [open, widget.id])
 
   // ── Fetch fields from endpoint ─────────────────────────────────────────
   const fetchFields = async () => {
@@ -196,6 +201,11 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
 
       const analysis = DataAnalyzer.analyzeArray(dataArray)
       setFields(analysis.fields)
+      const rows = dataArray.filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === 'object' && !Array.isArray(row),
+      )
+      setSampleRows(rows.slice(0, 5))
     } catch {
       // Fallback: show existing axes so user can still switch
       setFields([
@@ -204,6 +214,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
           ? [{ name: widget.dataMapping.yAxis, type: 'number' }]
           : []),
       ])
+      setSampleRows([])
     } finally {
       setLoadingFields(false)
     }
@@ -299,6 +310,45 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     setTransforms(prev => prev.map((op, idx) => (
       idx === index ? createDefaultTransform(nextType) : op
     )))
+  }
+
+  const handleAiTransform = async (mode: 'append' | 'replace') => {
+    const prompt = aiTransformPrompt.trim()
+    if (!prompt) {
+      toast.error('Describe the transform goal first')
+      return
+    }
+    if (!sampleRows.length) {
+      toast.error('No sample data available. Refresh fields first.')
+      return
+    }
+
+    setAiTransformLoading(true)
+    try {
+      const aiOperations = await askDataTransformer(prompt, sampleRows.slice(0, 5))
+      const nextTransforms = mode === 'append'
+        ? [...transforms, ...aiOperations]
+        : aiOperations
+
+      setTransforms(nextTransforms)
+      setTransformsOpen(true)
+      updateWidget(widget.id, {
+        dataMapping: {
+          ...widget.dataMapping,
+          transforms: nextTransforms.length > 0 ? nextTransforms : undefined,
+        },
+      })
+      toast.success(
+        mode === 'append'
+          ? `Appended ${aiOperations.length} AI transform${aiOperations.length === 1 ? '' : 's'}`
+          : `Replaced transforms with ${aiOperations.length} AI step${aiOperations.length === 1 ? '' : 's'}`,
+      )
+      setAiTransformPrompt('')
+    } catch {
+      // Error toast handled in askDataTransformer.
+    } finally {
+      setAiTransformLoading(false)
+    }
   }
 
   return (
@@ -515,6 +565,49 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
 
             {transformsOpen && (
               <div className="space-y-2 pt-1">
+                <div className="rounded-md border border-dashed px-3 py-3 space-y-2 bg-muted/20">
+                  <Label className="text-[11px] font-medium">AI Transform</Label>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder='e.g., "parse amount, filter > 1000, sort desc, top 5"'
+                    value={aiTransformPrompt}
+                    onChange={e => setAiTransformPrompt(e.target.value)}
+                    disabled={aiTransformLoading}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      onClick={() => void handleAiTransform('replace')}
+                      disabled={aiTransformLoading}
+                    >
+                      {aiTransformLoading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        'Replace with AI'
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      onClick={() => void handleAiTransform('append')}
+                      disabled={aiTransformLoading}
+                    >
+                      Append AI Steps
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Uses up to 5 sample rows from this endpoint.
+                  </p>
+                </div>
+
                 {transforms.length === 0 && (
                   <div className="rounded-md border border-dashed px-3 py-3 flex items-center justify-between gap-2">
                     <p className="text-[11px] text-muted-foreground">

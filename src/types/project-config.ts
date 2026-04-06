@@ -6,6 +6,18 @@ export type EncodingType  = 'btoa' | 'plain' | 'none'
 export type NavDensity    = 'compact' | 'comfortable'
 export type ChartTheme    = 'enterprise' | 'bosch-uppcl'
 
+export interface AIExportConfig {
+  enabled: boolean
+  provider: 'google' | 'openai' | 'anthropic'
+  apiKey: string // Will NOT be persisted to Supabase, only used during ZIP generation
+  features: {
+    dataTransformer: boolean
+    uiDesigner: boolean
+    pdfReport: boolean
+    chat: boolean
+  }
+}
+
 export interface LoginConfig {
   endpoint:      string      // e.g. /userLogin
   usernameField: string      // body key for username
@@ -59,6 +71,7 @@ export interface ProjectConfig {
   header:       HeaderConfig
   login:        LoginConfig
   session:      SessionConfig
+  aiExportConfig?: AIExportConfig
 }
 
 export const DEFAULT_PROJECT_CONFIG: Omit<ProjectConfig, 'dashboardId'> = {

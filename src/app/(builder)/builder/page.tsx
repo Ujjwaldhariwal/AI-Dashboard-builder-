@@ -25,6 +25,7 @@ import { ConfigChatbot } from "@/components/builder/ai-assistant/config-chatbot"
 import { ChartSuggester } from "@/components/builder/ai-assistant/chart-suggester";
 import { WidgetStylePanel } from "@/components/builder/style-panel/widget-style-panel";
 import { ProjectConfigPanel } from "@/components/builder/project-config/project-config-panel";
+import { ExportConfigModal } from "@/components/builder/export/export-config-modal";
 import { toast } from "sonner";
 import {
   Plus,
@@ -82,6 +83,7 @@ import {
   filterWidgetsByNavSelection,
   normalizeChartNavSelection,
 } from "@/lib/builder/chart-nav-model";
+import type { AIExportConfig } from "@/types/project-config";
 import type { EndpointProfile } from "@/types/training";
 
 interface NavSelection {
@@ -107,12 +109,14 @@ export default function BuilderPage() {
     endpoints: allEndpoints,
     widgets: allWidgets,
     addWidget,
+    getProjectConfig,
     getGroupsByDashboard,
   } = useDashboardStore();
 
   // â”€â”€ Core UI state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [magicOpen, setMagicOpen] = useState(false);
+  const [exportConfigOpen, setExportConfigOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
 
@@ -147,6 +151,10 @@ export default function BuilderPage() {
   const currentDash = useMemo(
     () => dashboards.find((d) => d.id === currentDashboardId),
     [dashboards, currentDashboardId],
+  );
+  const currentAIExportConfig = useMemo(
+    () => (currentDash ? getProjectConfig(currentDash.id).aiExportConfig : undefined),
+    [currentDash, getProjectConfig],
   );
 
   const dashboardEndpoints = useMemo(
@@ -465,7 +473,7 @@ export default function BuilderPage() {
 
   const handleCanvasClick = useCallback(() => setSelectedWidgetId(null), []);
 
-  const handleExport = useCallback(async () => {
+  const handleExport = useCallback(() => {
     if (!currentDash) {
       toast.error("No active dashboard");
       return;
@@ -474,38 +482,63 @@ export default function BuilderPage() {
       toast.error("Add at least one widget first");
       return;
     }
-    setExporting(true);
-    toast.loading("Generating projectâ€¦", { id: "export" });
-    try {
-      const store = useDashboardStore.getState();
-      const config = buildDashboardConfig(
-        currentDash,
-        allEndpoints,
-        allWidgets,
-        store.getProjectConfig(currentDash.id),
-        store.getGroupsByDashboard(currentDash.id),
+    setExportConfigOpen(true);
+  }, [currentDash, widgets.length]);
+
+  const handleGenerateZip = useCallback(
+    async (dashboardId: string, aiExportConfig: AIExportConfig) => {
+      const dashboard = dashboards.find((item) => item.id === dashboardId);
+      if (!dashboard) {
+        toast.error("No active dashboard");
+        return;
+      }
+
+      const dashboardWidgets = allWidgets.filter(
+        (widget) => widget.dashboardId === dashboardId,
       );
-      const blob = await packageProjectAsZip(generateProjectFromConfig(config));
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${slugifyDashboardName(currentDash.name)}-dashboard.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success("Export ready!", { id: "export" });
-      lastSavedCount.current = widgets.length;
-      setUnsaved(false);
-    } catch (err) {
-      toast.error(
-        `Export failed: ${err instanceof Error ? err.message : err}`,
-        { id: "export" },
-      );
-    } finally {
-      setExporting(false);
-    }
-  }, [currentDash, widgets, allEndpoints, allWidgets]);
+      if (dashboardWidgets.length === 0) {
+        toast.error("Add at least one widget first");
+        return;
+      }
+
+      setExporting(true);
+      toast.loading("Generating project...", { id: "export" });
+      try {
+        const store = useDashboardStore.getState();
+        const baseProjectConfig = store.getProjectConfig(dashboardId);
+        const config = buildDashboardConfig(
+          dashboard,
+          allEndpoints,
+          allWidgets,
+          {
+            ...baseProjectConfig,
+            aiExportConfig,
+          },
+          store.getGroupsByDashboard(dashboardId),
+        );
+        const blob = await packageProjectAsZip(generateProjectFromConfig(config));
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${slugifyDashboardName(dashboard.name)}-dashboard.zip`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+        toast.success("Export ready!", { id: "export" });
+        lastSavedCount.current = dashboardWidgets.length;
+        setUnsaved(false);
+      } catch (err) {
+        toast.error(
+          `Export failed: ${err instanceof Error ? err.message : err}`,
+          { id: "export" },
+        );
+      } finally {
+        setExporting(false);
+      }
+    },
+    [dashboards, allWidgets, allEndpoints],
+  );
 
   const handleNavChange = useCallback((selection: NavSelection) => {
     setNavSelection(selection);
@@ -599,6 +632,16 @@ export default function BuilderPage() {
           isOpen={magicOpen}
           onClose={() => setMagicOpen(false)}
         />
+        {currentDash && (
+          <ExportConfigModal
+            open={exportConfigOpen}
+            onOpenChange={setExportConfigOpen}
+            dashboardId={currentDash.id}
+            initialConfig={currentAIExportConfig}
+            exporting={exporting}
+            generateZip={handleGenerateZip}
+          />
+        )}
       </div>
     );
   }
@@ -680,6 +723,16 @@ export default function BuilderPage() {
         onOpenChange={setAddWidgetOpen}
       />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
+      {currentDash && (
+        <ExportConfigModal
+          open={exportConfigOpen}
+          onOpenChange={setExportConfigOpen}
+          dashboardId={currentDash.id}
+          initialConfig={currentAIExportConfig}
+          exporting={exporting}
+          generateZip={handleGenerateZip}
+        />
+      )}
     </div>
   );
 }
@@ -1048,3 +1101,4 @@ function AiPanel({
     </AnimatePresence>
   );
 }
+

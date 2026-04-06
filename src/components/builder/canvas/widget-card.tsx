@@ -35,12 +35,13 @@ import {
   Trash2, RefreshCw, Loader2, AlertCircle,
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
-  AlignLeft, Clock, Wifi, WifiOff, Circle,
+  AlignLeft, Wifi, WifiOff, Circle,
   Shrink, Sparkles, MoreHorizontal,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
 import type { Widget, YAxisConfig } from '@/types/widget'
+import type { StatusLevel } from '@/components/ui/status-icon'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
 import { toast } from 'sonner'
@@ -175,6 +176,262 @@ function DataTableView({
         </tbody>
       </table>
     </div>
+  )
+}
+
+interface WidgetHeaderProps {
+  widget: Widget
+  sizePreset: ReturnType<typeof getWidgetSizePreset>
+  isLoading: boolean
+  latencyMs?: number
+  cacheAgeText?: string
+  lastFetched?: Date
+  healthStatus: StatusLevel
+  isDataValid: boolean
+  activeView: 'chart' | 'table'
+  canToggleView: boolean
+  isDragMode: boolean
+  viewOnly: boolean
+  dragHandleAttributes?: React.HTMLAttributes<HTMLDivElement>
+  dragHandleListeners?: React.HTMLAttributes<HTMLDivElement>
+  onRefresh: () => void
+  onSetChartView: () => void
+  onSetTableView: () => void
+  onOpenInsights?: () => void
+  onEditWidget: () => void
+  onDeleteWidget: () => void
+  onSizeChange?: (size: 'small' | 'medium' | 'large' | 'full') => void
+  endpointMetaText: string
+}
+
+function WidgetHeader({
+  widget,
+  sizePreset,
+  isLoading,
+  latencyMs,
+  cacheAgeText,
+  lastFetched,
+  healthStatus,
+  isDataValid,
+  activeView,
+  canToggleView,
+  isDragMode,
+  viewOnly,
+  dragHandleAttributes,
+  dragHandleListeners,
+  onRefresh,
+  onSetChartView,
+  onSetTableView,
+  onOpenInsights,
+  onEditWidget,
+  onDeleteWidget,
+  onSizeChange,
+  endpointMetaText,
+}: WidgetHeaderProps) {
+  const Icon = chartTypeIcon[widget.type] ?? BarChart3
+  const sizePresets: WidgetSizePreset[] = ['small', 'medium', 'large', 'full']
+
+  const isSmall = sizePreset === 'small'
+  const isMedium = sizePreset === 'medium'
+  const isLargeUp = sizePreset === 'large' || sizePreset === 'full'
+
+  const showDragHandle = isDragMode
+  const showToggle = !isSmall && canToggleView
+  const showHealth = !isSmall
+  const showInsights = isDataValid && Boolean(onOpenInsights)
+  const showRuntimeRow = !isSmall
+  const showMediumActionMenu = !viewOnly && isMedium
+  const showLargeActionButtons = !viewOnly && isLargeUp
+  const showLatency = !isSmall
+  const showCache = isLargeUp && Boolean(cacheAgeText)
+  const showLastFetched = isLargeUp && Boolean(lastFetched)
+
+  const healthColorClass: Record<StatusLevel, string> = {
+    healthy: 'text-green-500',
+    degraded: 'text-amber-500',
+    down: 'text-red-500',
+    unknown: 'text-muted-foreground',
+  }
+  const HealthIcon = healthStatus === 'down' ? WifiOff : Wifi
+
+  return (
+    <CardHeader className="pb-2 px-4 pt-3 flex-shrink-0">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {showDragHandle && (
+            <div
+              {...dragHandleAttributes}
+              {...dragHandleListeners}
+              className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors flex-shrink-0 touch-none"
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+          )}
+
+          <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center flex-shrink-0">
+            <Icon className="w-3.5 h-3.5 text-white" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-sm truncate" title={widget.title}>
+              {widget.title}
+            </CardTitle>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          {showToggle && (
+            <div className="hidden sm:flex items-center rounded-md border mr-1">
+              <Button
+                type="button"
+                variant="ghost"
+                className={`h-6 rounded-r-none px-2 text-[10px] ${activeView === 'chart' ? 'bg-muted font-medium' : ''}`}
+                onClick={onSetChartView}
+              >
+                Chart
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className={`h-6 rounded-l-none px-2 text-[10px] ${activeView === 'table' ? 'bg-muted font-medium' : ''}`}
+                onClick={onSetTableView}
+              >
+                Table
+              </Button>
+            </div>
+          )}
+
+          {showHealth && (
+            <HealthIcon className={`w-3 h-3 ${healthColorClass[healthStatus]} mr-1`} />
+          )}
+
+          {showInsights && onOpenInsights && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-[10px] gap-1"
+              onClick={onOpenInsights}
+              title="Open AI insights"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span className="hidden sm:inline">AI</span>
+            </Button>
+          )}
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onRefresh}
+            disabled={isLoading}
+            title="Refresh this chart"
+          >
+            {isLoading
+              ? <Loader2 className="w-3 h-3 animate-spin" />
+              : <RefreshCw className="w-3 h-3" />
+            }
+          </Button>
+
+          {showMediumActionMenu && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget actions">
+                  <MoreHorizontal className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onClick={onEditWidget} className="text-xs">
+                  Edit widget
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={onDeleteWidget}
+                  className="text-xs text-red-600 focus:text-red-700"
+                >
+                  Delete widget
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {showLargeActionButtons && (
+            <>
+              {onSizeChange && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget size">
+                      <Shrink className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-36">
+                    {sizePresets.map(preset => (
+                      <DropdownMenuItem
+                        key={preset}
+                        onClick={() => onSizeChange(preset)}
+                        className="text-xs"
+                      >
+                        {WIDGET_SIZE_LABEL[preset]}
+                        {sizePreset === preset ? '  (current)' : ''}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={onEditWidget}
+                title="Edit widget"
+              >
+                <Pencil className="w-3 h-3" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-red-500 hover:text-red-700"
+                onClick={onDeleteWidget}
+                title="Delete widget"
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {showRuntimeRow && (
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="text-[10px] text-muted-foreground truncate flex-1">
+            {endpointMetaText}
+          </p>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {showLatency && (
+              <span className="font-mono tabular-nums text-xs text-muted-foreground min-w-[4.5rem] text-right inline-block">
+                {latencyMs != null ? `${latencyMs} ms` : '— ms'}
+              </span>
+            )}
+            {showCache && (
+              <span className="text-xs text-cyan-600 font-medium">
+                {cacheAgeText}
+              </span>
+            )}
+            {showLastFetched && (
+              <span className="font-mono tabular-nums text-xs text-muted-foreground min-w-[5rem] text-right inline-block">
+                {lastFetched?.toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </CardHeader>
   )
 }
 
@@ -363,7 +620,6 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
   }, [fetchData, widget.endpointId, isDragClone])
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
-  const Icon = chartTypeIcon[widget.type] ?? BarChart3
   const style = { ...DEFAULT_STYLE, ...widget.style }
   const cardHeightClass = getWidgetCardHeightClass(widget.position)
 
@@ -561,34 +817,20 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
     }
   }
 
-  const healthColor =
-    error                        ? 'text-red-500'
-    : latency && latency > 2000  ? 'text-amber-500'
-    : 'text-green-500'
-
   const currentSizePreset = getWidgetSizePreset(widget.position)
-  const isSmallWidget = currentSizePreset === 'small'
-  const showTableToggle = !isSmallWidget && widget.type !== 'table'
-  const showInsightsButton = !isSmallWidget && shouldShowInsights
-  const showRuntimeMeta = !isSmallWidget
-  const showCompactActionMenu = !viewMode && isSmallWidget
-  const sizePresets: WidgetSizePreset[] = ['small', 'medium', 'large', 'full']
-
-  const RefreshButton = (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-6 w-6"
-      onClick={() => void fetchData({ force: true })}
-      disabled={loading}
-      title="Refresh this chart"
-    >
-      {loading
-        ? <Loader2 className="w-3 h-3 animate-spin" />
-        : <RefreshCw className="w-3 h-3" />
-      }
-    </Button>
-  )
+  const healthStatus: StatusLevel =
+    error
+      ? 'down'
+      : latency == null
+        ? 'unknown'
+        : latency > 2000
+          ? 'degraded'
+          : 'healthy'
+  const cacheAgeText = cacheInfo.fromCache
+    ? `cache ${Math.round(cacheInfo.cacheAgeMs / 1000)}s`
+    : undefined
+  const endpointMetaText = `${endpoint?.name ?? 'Unknown'}${xField ? ` - ${xField}` : ''}${yField ? ` -> ${yField}` : ''}`
+  const isDataValid = shouldShowInsights && Boolean(insightSummary) && !loading && !error
 
   return (
     <>
@@ -601,183 +843,30 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
             : 'hover:shadow-md'
         }`}
       >
-        <CardHeader className="pb-2 px-4 pt-3 flex-shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              {/* ── FIX P11: <button> → <div> to avoid double role="button" ── */}
-              {!viewMode && (
-                <div
-                  {...attributes}
-                  {...listeners}
-                  className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors flex-shrink-0 touch-none"
-                >
-                  <GripVertical className="w-3.5 h-3.5" />
-                </div>
-              )}
-              <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center flex-shrink-0">
-                <Icon className="w-3.5 h-3.5 text-white" />
-              </div>
-              <CardTitle className="text-sm truncate" title={widget.title}>
-                {widget.title}
-              </CardTitle>
-            </div>
-
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              {showTableToggle && (
-                <div className="hidden sm:flex items-center rounded-md border mr-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className={`h-6 rounded-r-none px-2 text-[10px] ${activeView === 'chart' ? 'bg-muted font-medium' : ''}`}
-                    onClick={() => setActiveView('chart')}
-                  >
-                    Chart
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className={`h-6 rounded-l-none px-2 text-[10px] ${activeView === 'table' ? 'bg-muted font-medium' : ''}`}
-                    onClick={() => setActiveView('table')}
-                  >
-                    Table
-                  </Button>
-                </div>
-              )}
-
-              {error
-                ? <WifiOff className={`w-3 h-3 ${healthColor} mr-1`} />
-                : <Wifi className={`w-3 h-3 ${healthColor} mr-1`} />
-              }
-
-              {showInsightsButton && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-[10px] gap-1"
-                  onClick={() => setInsightsOpen(true)}
-                  disabled={!insightSummary || loading || !!error}
-                  title={insightSummary ? 'Open AI insights' : 'AI insights unavailable for this chart'}
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span className="hidden sm:inline">AI</span>
-                </Button>
-              )}
-
-              {RefreshButton}
-
-              {!viewMode && (
-                <>
-                  {showCompactActionMenu ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget actions">
-                          <MoreHorizontal className="w-3 h-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuItem onClick={() => setEditOpen(true)} className="text-xs">
-                          Edit widget
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {sizePresets.map(preset => (
-                          <DropdownMenuItem
-                            key={preset}
-                            onClick={() => handleSizeChange(preset)}
-                            className="text-xs"
-                          >
-                            {WIDGET_SIZE_LABEL[preset]}
-                            {currentSizePreset === preset ? '  (current)' : ''}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => setDeleteOpen(true)}
-                          className="text-xs text-red-600 focus:text-red-700"
-                        >
-                          Delete widget
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget size">
-                            <Shrink className="w-3 h-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-36">
-                          {sizePresets.map(preset => (
-                            <DropdownMenuItem
-                              key={preset}
-                              onClick={() => handleSizeChange(preset)}
-                              className="text-xs"
-                            >
-                              {WIDGET_SIZE_LABEL[preset]}
-                              {currentSizePreset === preset ? '  (current)' : ''}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => setEditOpen(true)}
-                        title="Edit widget"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-red-500 hover:text-red-700"
-                        onClick={() => setDeleteOpen(true)}
-                        title="Delete widget"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-[10px] text-muted-foreground truncate flex-1">
-              {endpoint?.name ?? 'Unknown'}
-              {xField ? ` — ${xField}` : ''}
-              {yField ? ` → ${yField}` : ''}
-            </p>
-            {showRuntimeMeta && (
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {latency !== null && (
-                  <span className={`text-[10px] font-mono ${latency > 2000 ? 'text-amber-500' : 'text-green-600'}`}>
-                    {latency}ms
-                  </span>
-                )}
-                {cacheInfo.fromCache && (
-                  <span className="text-[10px] text-cyan-600 font-medium">
-                    cache {Math.round(cacheInfo.cacheAgeMs / 1000)}s
-                  </span>
-                )}
-                {lastFetched && (
-                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                    <Clock className="w-2.5 h-2.5" />
-                    {lastFetched.toLocaleTimeString([], {
-                      hour:   '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                    })}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        </CardHeader>
+        <WidgetHeader
+          widget={widget}
+          sizePreset={currentSizePreset}
+          isLoading={loading}
+          latencyMs={latency ?? undefined}
+          cacheAgeText={cacheAgeText}
+          lastFetched={lastFetched ?? undefined}
+          healthStatus={healthStatus}
+          isDataValid={isDataValid}
+          activeView={activeView}
+          canToggleView={widget.type !== 'table'}
+          isDragMode={!viewMode}
+          viewOnly={viewMode}
+          dragHandleAttributes={!viewMode ? attributes : undefined}
+          dragHandleListeners={!viewMode ? listeners : undefined}
+          onRefresh={() => void fetchData({ force: true })}
+          onSetChartView={() => setActiveView('chart')}
+          onSetTableView={() => setActiveView('table')}
+          onOpenInsights={shouldShowInsights ? () => setInsightsOpen(true) : undefined}
+          onEditWidget={() => setEditOpen(true)}
+          onDeleteWidget={() => setDeleteOpen(true)}
+          onSizeChange={handleSizeChange}
+          endpointMetaText={endpointMetaText}
+        />
 
         {/* ── FIX P8/P10: flex-1 min-h-0 overflow-hidden, pb-4 → pb-2 ── */}
         <CardContent className="px-4 pb-2 flex-1 min-h-0 overflow-hidden">
@@ -895,4 +984,5 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
     </>
   )
 }
+
 

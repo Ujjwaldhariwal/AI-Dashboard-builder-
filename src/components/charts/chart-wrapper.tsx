@@ -8,6 +8,8 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
+export const DEFAULT_CHART_MARGIN = { top: 16, right: 16, bottom: 16, left: 16 } as const
+
 interface ChartWrapperProps {
   children:   ReactNode
   className?: string
