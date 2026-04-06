@@ -61,3 +61,16 @@ export const TransformOpSchema = z.discriminatedUnion('type', [
   }).strict(),
 ])
 
+export const ReportInsightSchema = z.object({
+  executiveSummary: z
+    .string()
+    .describe("A high-level summary of the entire dashboard's data."),
+  anomalies: z
+    .array(z.string())
+    .describe('Any concerning trends, spikes, or drops in the data.'),
+  widgetInsights: z
+    .record(z.string(), z.string())
+    .describe('Key: Widget ID. Value: A 1-2 sentence analytical insight about that specific chart.'),
+})
+
+export type ReportInsight = z.infer<typeof ReportInsightSchema>

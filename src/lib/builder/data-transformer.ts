@@ -1,3 +1,4 @@
+//src/lib/builder/data-transformer.ts
 import type { TransformFilterOperator, TransformOp } from '@/types/widget'
 
 type DataRow = Record<string, unknown>
