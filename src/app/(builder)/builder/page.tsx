@@ -501,11 +501,17 @@ export default function BuilderPage() {
         return;
       }
 
+      const store = useDashboardStore.getState();
+      const baseProjectConfig = store.getProjectConfig(dashboardId);
+      const loginEndpoint = baseProjectConfig.login.endpoint.trim();
+      if (!loginEndpoint) {
+        toast.error("Login endpoint is required to export standalone dashboard.");
+        return;
+      }
+
       setExporting(true);
       toast.loading("Generating project...", { id: "export" });
       try {
-        const store = useDashboardStore.getState();
-        const baseProjectConfig = store.getProjectConfig(dashboardId);
         const config = buildDashboardConfig(
           dashboard,
           allEndpoints,

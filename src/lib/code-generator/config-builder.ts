@@ -1,5 +1,11 @@
 // src/lib/code-generator/config-builder.ts
-import type { Widget, ChartType } from '@/types/widget'
+import type {
+  Widget,
+  ChartType,
+  TransformOp,
+  TransformSortOrder,
+  YAxisConfig,
+} from '@/types/widget'
 import type { ProjectConfig, ChartGroup } from '@/types/project-config'
 import { BOSCH_COLORS } from '@/lib/echarts/theme'
 
@@ -16,6 +22,7 @@ interface EndpointShape {
   method:   string
   authType?: string
   headers?: Record<string, string>
+  body?: unknown
 }
 
 export interface ExportWidget {
@@ -23,8 +30,16 @@ export interface ExportWidget {
   title:        string
   type:         ChartType
   endpointId:   string
-  xAxis:        string
-  yAxis:        string
+  dataMapping: {
+    xAxis: string
+    yAxis?: string
+    yAxes?: YAxisConfig[]
+    aliases?: Record<string, string>
+    transforms?: TransformOp[]
+    sortBy?: string
+    sortOrder?: TransformSortOrder
+    limit?: number
+  }
   groupId?:     string
   sectionName?: string
   colors:       string[]
@@ -39,6 +54,8 @@ export interface ExportEndpoint {
   url:      string
   method:   string
   authType?: string
+  headers?: Record<string, string>
+  body?: string
 }
 
 export interface ExportGroup {
@@ -76,6 +93,8 @@ export function buildDashboardConfig(
     ? BOSCH_COLORS
     : null
 
+  const resolvedBaseUrl = resolveBaseUrl(projectConfig, endpoints)
+
   return {
     meta: {
       id:          dashboard.id,
@@ -85,6 +104,7 @@ export function buildDashboardConfig(
     },
     projectConfig: {
       ...projectConfig,
+      baseUrl: resolvedBaseUrl,
       dashboardId:  dashboard.id,
       projectTitle: projectConfig.projectTitle || dashboard.name,
     },
@@ -97,14 +117,24 @@ export function buildDashboardConfig(
         url:      e.url,
         method:   e.method,
         authType: e.authType,
+        headers:  e.headers,
+        body:     stringifyEndpointBody(e.body),
       })),
     widgets: dashboardWidgets.map(w => ({
       id:          w.id,
       title:       w.title,
       type:        w.type,
       endpointId:  w.endpointId,
-      xAxis:       w.dataMapping.xAxis,
-      yAxis:       w.dataMapping.yAxis ?? '',
+      dataMapping: {
+        xAxis:      w.dataMapping.xAxis,
+        yAxis:      w.dataMapping.yAxis,
+        yAxes:      w.dataMapping.yAxes,
+        aliases:    w.dataMapping.aliases,
+        transforms: w.dataMapping.transforms,
+        sortBy:     w.dataMapping.sortBy,
+        sortOrder:  w.dataMapping.sortOrder,
+        limit:      w.dataMapping.limit,
+      },
       groupId:     w.groupId,
       sectionName: w.sectionName,
       colors:      exportPalette ? [...exportPalette] : w.style.colors,
@@ -129,4 +159,100 @@ export function slugifyDashboardName(name: string): string {
   return slug.endsWith('-dashboard')
     ? (slug.replace(/-dashboard$/, '') || 'dashboard')
     : slug
+}
+
+function resolveBaseUrl(projectConfig: ProjectConfig, endpoints: EndpointShape[]): string {
+  const baseUrl = projectConfig.baseUrl.trim()
+  if (baseUrl.length > 0) {
+    return baseUrl.replace(/\/+$/, '')
+  }
+
+  const loginEndpoint = projectConfig.login.endpoint.trim()
+  const loginUrl = tryParseAbsoluteUrl(loginEndpoint)
+  if (loginUrl) {
+    const pathname = stripLoginSuffix(loginUrl.pathname)
+    return joinOriginAndPath(loginUrl.origin, pathname)
+  }
+
+  const firstAbsoluteEndpoint = endpoints
+    .map(endpoint => endpoint.url.trim())
+    .map(url => tryParseAbsoluteUrl(url))
+    .find((url): url is URL => Boolean(url))
+
+  if (firstAbsoluteEndpoint) {
+    const endpointPath = stripLastPathSegment(firstAbsoluteEndpoint.pathname)
+    return joinOriginAndPath(firstAbsoluteEndpoint.origin, endpointPath)
+  }
+
+  if (shouldUseBoschProxyFallback(projectConfig, endpoints)) {
+    return '/api/bosch'
+  }
+
+  return ''
+}
+
+function tryParseAbsoluteUrl(value: string): URL | null {
+  if (!/^https?:\/\//i.test(value)) return null
+  try {
+    return new URL(value)
+  } catch {
+    return null
+  }
+}
+
+function stripLoginSuffix(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '')
+  const lower = normalized.toLowerCase()
+  const loginSuffixes = ['/user/login', '/userlogin', '/login']
+
+  for (const suffix of loginSuffixes) {
+    if (lower.endsWith(suffix)) {
+      const next = normalized.slice(0, normalized.length - suffix.length)
+      return next || ''
+    }
+  }
+
+  return normalized
+}
+
+function stripLastPathSegment(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '')
+  if (!normalized || normalized === '/') return ''
+
+  const lastSlashIndex = normalized.lastIndexOf('/')
+  if (lastSlashIndex <= 0) return ''
+  return normalized.slice(0, lastSlashIndex)
+}
+
+function joinOriginAndPath(origin: string, pathname: string): string {
+  const normalizedPath = pathname.replace(/\/+$/, '')
+  if (!normalizedPath) return origin
+  return normalizedPath.startsWith('/')
+    ? `${origin}${normalizedPath}`
+    : `${origin}/${normalizedPath}`
+}
+
+function shouldUseBoschProxyFallback(projectConfig: ProjectConfig, endpoints: EndpointShape[]): boolean {
+  if (projectConfig.chartTheme === 'bosch-uppcl') return true
+
+  const context = [
+    projectConfig.clientName,
+    projectConfig.projectTitle,
+    projectConfig.login.endpoint,
+    ...endpoints.map(endpoint => endpoint.url),
+  ]
+    .map(value => value?.toLowerCase() ?? '')
+    .join(' ')
+
+  return context.includes('bosch') || context.includes('uppcl')
+}
+
+function stringifyEndpointBody(body: unknown): string | undefined {
+  if (body === undefined || body === null) return undefined
+  if (typeof body === 'string') return body
+  try {
+    return JSON.stringify(body)
+  } catch {
+    return String(body)
+  }
 }

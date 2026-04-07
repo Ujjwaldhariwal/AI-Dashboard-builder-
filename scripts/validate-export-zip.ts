@@ -44,8 +44,11 @@ function buildValidationConfig(): DashboardExportConfig {
     title: `${chartType} widget`,
     type: chartType,
     endpointId: endpoints[index].id,
-    xAxis: 'label',
-    yAxis: 'value',
+    dataMapping: {
+      xAxis: 'label',
+      yAxis: 'value',
+      transforms: [],
+    },
     colors: ['#E20015', '#007BC0', '#00A651', '#F5A623'],
     barRadius: 5,
     showLegend: true,

@@ -223,6 +223,14 @@ export default function ViewerPage() {
       toast.error("No widgets to export");
       return;
     }
+
+    const projectConfig = getProjectConfig(currentDash.id);
+    const loginEndpoint = projectConfig.login.endpoint.trim();
+    if (!loginEndpoint) {
+      toast.error("Login endpoint is required to export standalone dashboard.");
+      return;
+    }
+
     setExporting(true);
     toast.loading("Generating project...", { id: "export" });
     try {
@@ -230,7 +238,7 @@ export default function ViewerPage() {
         currentDash,
         endpoints,
         allWidgets,
-        getProjectConfig(currentDash.id),
+        projectConfig,
         getGroupsByDashboard(currentDash.id),
       );
       const blob = await packageProjectAsZip(generateProjectFromConfig(config));

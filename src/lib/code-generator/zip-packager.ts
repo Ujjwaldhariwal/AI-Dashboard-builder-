@@ -20,6 +20,8 @@ interface DashboardExportConfigLike {
   }
 }
 
+const INTERNAL_AI_CONFIG_PATH = '__codex/ai-export-config.json'
+
 const AI_DEPENDENCY_VERSIONS = {
   ai: '^6.0.145',
   google: '^3.0.57',
@@ -60,9 +62,22 @@ function parseExportConfig(files: GeneratedFileMap): DashboardExportConfigLike |
   }
 }
 
+function parseInternalAIConfig(files: GeneratedFileMap): Partial<AIExportConfig> | null {
+  const source = files[INTERNAL_AI_CONFIG_PATH]
+  if (!source) return null
+
+  try {
+    const parsed = JSON.parse(source) as Partial<AIExportConfig> | null
+    return parsed ?? null
+  } catch {
+    return null
+  }
+}
+
 function normalizeAIExportConfig(files: GeneratedFileMap): AIExportConfig | null {
   const parsed = parseExportConfig(files)
-  const raw = parsed?.projectConfig?.aiExportConfig
+  const internal = parseInternalAIConfig(files)
+  const raw = internal ?? parsed?.projectConfig?.aiExportConfig
   if (!raw || raw.enabled !== true) return null
 
   const provider = raw.provider === 'openai' || raw.provider === 'anthropic'
@@ -143,6 +158,7 @@ function injectAIFiles(files: GeneratedFileMap, aiConfig: AIExportConfig) {
 function prepareFilesForExport(files: GeneratedFileMap): GeneratedFileMap {
   const prepared: GeneratedFileMap = { ...files }
   const aiConfig = normalizeAIExportConfig(prepared)
+  delete prepared[INTERNAL_AI_CONFIG_PATH]
 
   if (!aiConfig?.enabled) {
     return prepared
