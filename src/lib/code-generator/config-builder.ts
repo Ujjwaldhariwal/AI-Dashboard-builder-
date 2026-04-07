@@ -1,5 +1,11 @@
 // src/lib/code-generator/config-builder.ts
-import type { Widget, ChartType } from '@/types/widget'
+import type {
+  Widget,
+  ChartType,
+  TransformOp,
+  TransformSortOrder,
+  YAxisConfig,
+} from '@/types/widget'
 import type { ProjectConfig, ChartGroup } from '@/types/project-config'
 import { BOSCH_COLORS } from '@/lib/echarts/theme'
 
@@ -16,6 +22,7 @@ interface EndpointShape {
   method:   string
   authType?: string
   headers?: Record<string, string>
+  body?: unknown
 }
 
 export interface ExportWidget {
@@ -23,8 +30,16 @@ export interface ExportWidget {
   title:        string
   type:         ChartType
   endpointId:   string
-  xAxis:        string
-  yAxis:        string
+  dataMapping: {
+    xAxis: string
+    yAxis?: string
+    yAxes?: YAxisConfig[]
+    aliases?: Record<string, string>
+    transforms?: TransformOp[]
+    sortBy?: string
+    sortOrder?: TransformSortOrder
+    limit?: number
+  }
   groupId?:     string
   sectionName?: string
   colors:       string[]
@@ -39,6 +54,8 @@ export interface ExportEndpoint {
   url:      string
   method:   string
   authType?: string
+  headers?: Record<string, string>
+  body?: string
 }
 
 export interface ExportGroup {
@@ -76,6 +93,8 @@ export function buildDashboardConfig(
     ? BOSCH_COLORS
     : null
 
+  const resolvedBaseUrl = resolveBaseUrl(projectConfig)
+
   return {
     meta: {
       id:          dashboard.id,
@@ -85,6 +104,7 @@ export function buildDashboardConfig(
     },
     projectConfig: {
       ...projectConfig,
+      baseUrl: resolvedBaseUrl,
       dashboardId:  dashboard.id,
       projectTitle: projectConfig.projectTitle || dashboard.name,
     },
@@ -97,14 +117,24 @@ export function buildDashboardConfig(
         url:      e.url,
         method:   e.method,
         authType: e.authType,
+        headers:  e.headers,
+        body:     stringifyEndpointBody(e.body),
       })),
     widgets: dashboardWidgets.map(w => ({
       id:          w.id,
       title:       w.title,
       type:        w.type,
       endpointId:  w.endpointId,
-      xAxis:       w.dataMapping.xAxis,
-      yAxis:       w.dataMapping.yAxis ?? '',
+      dataMapping: {
+        xAxis:      w.dataMapping.xAxis,
+        yAxis:      w.dataMapping.yAxis,
+        yAxes:      w.dataMapping.yAxes,
+        aliases:    w.dataMapping.aliases,
+        transforms: w.dataMapping.transforms,
+        sortBy:     w.dataMapping.sortBy,
+        sortOrder:  w.dataMapping.sortOrder,
+        limit:      w.dataMapping.limit,
+      },
       groupId:     w.groupId,
       sectionName: w.sectionName,
       colors:      exportPalette ? [...exportPalette] : w.style.colors,
@@ -129,4 +159,32 @@ export function slugifyDashboardName(name: string): string {
   return slug.endsWith('-dashboard')
     ? (slug.replace(/-dashboard$/, '') || 'dashboard')
     : slug
+}
+
+function resolveBaseUrl(projectConfig: ProjectConfig): string {
+  const baseUrl = projectConfig.baseUrl.trim()
+  if (baseUrl.length > 0) {
+    return baseUrl.replace(/\/+$/, '')
+  }
+
+  const loginEndpoint = projectConfig.login.endpoint.trim()
+  if (!/^https?:\/\//i.test(loginEndpoint)) {
+    return ''
+  }
+
+  try {
+    return new URL(loginEndpoint).origin
+  } catch {
+    return ''
+  }
+}
+
+function stringifyEndpointBody(body: unknown): string | undefined {
+  if (body === undefined || body === null) return undefined
+  if (typeof body === 'string') return body
+  try {
+    return JSON.stringify(body)
+  } catch {
+    return String(body)
+  }
 }

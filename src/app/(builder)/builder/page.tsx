@@ -501,11 +501,41 @@ export default function BuilderPage() {
         return;
       }
 
+      const store = useDashboardStore.getState();
+      const baseProjectConfig = store.getProjectConfig(dashboardId);
+      const loginEndpoint = baseProjectConfig.login.endpoint.trim();
+      if (!loginEndpoint) {
+        toast.error("Login endpoint is required to export standalone dashboard.");
+        return;
+      }
+
+      const isAbsoluteUrl = (value: string) => /^https?:\/\//i.test(value.trim());
+      const loginOrigin = isAbsoluteUrl(loginEndpoint)
+        ? (() => {
+            try {
+              return new URL(loginEndpoint).origin;
+            } catch {
+              return "";
+            }
+          })()
+        : "";
+      const configuredBaseUrl = baseProjectConfig.baseUrl.trim();
+      const resolvedBaseUrl = configuredBaseUrl || loginOrigin;
+      const dashboardEndpoints = allEndpoints.filter(
+        (endpoint) => (endpoint.dashboardId ?? dashboardId) === dashboardId,
+      );
+      const hasAbsoluteBaseUrl = isAbsoluteUrl(resolvedBaseUrl);
+      const hasRelativeEndpoint = dashboardEndpoints.some(
+        (endpoint) => !isAbsoluteUrl(endpoint.url),
+      );
+      if (!hasAbsoluteBaseUrl && (hasRelativeEndpoint || !isAbsoluteUrl(loginEndpoint))) {
+        toast.error("Standalone export requires an absolute Base URL (https://...).");
+        return;
+      }
+
       setExporting(true);
       toast.loading("Generating project...", { id: "export" });
       try {
-        const store = useDashboardStore.getState();
-        const baseProjectConfig = store.getProjectConfig(dashboardId);
         const config = buildDashboardConfig(
           dashboard,
           allEndpoints,

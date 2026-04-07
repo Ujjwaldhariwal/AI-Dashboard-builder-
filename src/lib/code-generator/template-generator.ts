@@ -23,8 +23,9 @@ export function generateProjectFromConfig(
 ): GeneratedFileMap {
   const files: GeneratedFileMap = {}
   const { projectConfig: pc } = config
+  const clientSafeConfig = buildClientSafeExportConfig(config)
 
-  // ── package.json ──────────────────────────────────────────────
+  // â”€â”€ package.json â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   files['package.json'] = JSON.stringify({
     name:    slugify(config.meta.name),
     version: '0.1.0',
@@ -48,13 +49,13 @@ export function generateProjectFromConfig(
     },
   }, null, 2)
 
-  // ── next.config.mjs ───────────────────────────────────────────
+  // â”€â”€ next.config.mjs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   files['next.config.mjs'] = `/** @type {import('next').NextConfig} */
 const nextConfig = {}
 export default nextConfig
 `
 
-  // ── tsconfig.json ─────────────────────────────────────────────
+  // â”€â”€ tsconfig.json â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   files['tsconfig.json'] = JSON.stringify({
     compilerOptions: {
       target:            'ES2017',
@@ -77,7 +78,7 @@ export default nextConfig
     exclude: ['node_modules'],
   }, null, 2)
 
-  // ── globals.css ───────────────────────────────────────────────
+  // â”€â”€ globals.css â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   files['src/app/globals.css'] = `*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Inter', system-ui, sans-serif; background: #f1f5f9; color: #0f172a; }
 input, button, select { font-family: inherit; }
@@ -86,7 +87,7 @@ input, button, select { font-family: inherit; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
 `
 
-  // ── layout ────────────────────────────────────────────────────
+  // â”€â”€ layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   files['src/app/layout.tsx'] = `import type { Metadata } from 'next'
 import './globals.css'
 
@@ -104,7 +105,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 `
 
-  // ── root page → redirect ──────────────────────────────────────
+  // â”€â”€ root page â†’ redirect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   files['src/app/page.tsx'] = `'use client'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -128,11 +129,17 @@ export default function RootPage() {
 
 import type { DashboardConfig } from './types'
 
-export const dashboardConfig: DashboardConfig = ${JSON.stringify(config, null, 2)} as const
+export const dashboardConfig: DashboardConfig = ${JSON.stringify(clientSafeConfig, null, 2)} as const
 `
+  files['__codex/ai-export-config.json']   = JSON.stringify(
+    config.projectConfig.aiExportConfig ?? null,
+    null,
+    2,
+  )
   files['src/lib/types.ts']                = generateTypes()
   files['src/lib/apiClient.ts']            = generateApiClient(config)
   files['src/hooks/useChartData.ts']       = generateUseChartData()
+  files['src/lib/builder/data-transformer.ts'] = generateDataTransformer()
   files['src/components/Sidebar.tsx']      = generateSidebar(config)
   files['src/components/Header.tsx']       = generateHeader(config)
   files['src/components/WidgetChart.tsx']  = generateWidgetChart()
@@ -143,10 +150,28 @@ export const dashboardConfig: DashboardConfig = ${JSON.stringify(config, null, 2
   return files
 }
 
+function buildClientSafeExportConfig(config: DashboardExportConfig): DashboardExportConfig {
+  const aiExportConfig = config.projectConfig.aiExportConfig
+  const safeAiExportConfig = aiExportConfig
+    ? {
+        ...aiExportConfig,
+        apiKey: '',
+      }
+    : undefined
 
-// ─────────────────────────────────────────────────────────────
+  return {
+    ...config,
+    projectConfig: {
+      ...config.projectConfig,
+      aiExportConfig: safeAiExportConfig,
+    },
+  }
+}
+
+
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // GENERATORS
-// ─────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function generateLoginPage(config: DashboardExportConfig): string {
   const { projectConfig: pc } = config
@@ -156,7 +181,7 @@ function generateLoginPage(config: DashboardExportConfig): string {
   return `'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { apiClient } from '@/lib/apiClient'
+import { apiClient, resolveRequestUrl } from '@/lib/apiClient'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -174,7 +199,8 @@ export default function LoginPage() {
         ${pc.login.usernameField}: ${isBtoa ? "btoa(username + ':' + password)" : 'username'},
         ${isBasic ? `${pc.login.passwordField}: password,` : ''}
       }
-      const res   = await apiClient.post('${pc.login.endpoint}', body)
+      const loginUrl = resolveRequestUrl('${pc.login.endpoint}')
+      const res   = await apiClient.post(loginUrl, body)
       const data  = res.data
       const tokenValue = '${pc.login.tokenPath}'.split('.').reduce<unknown>((acc, key) => {
         if (!acc || typeof acc !== 'object') return undefined
@@ -184,7 +210,7 @@ export default function LoginPage() {
       localStorage.setItem('authUser', JSON.stringify({ ...data?.data, token, username }))
       router.push('/dashboard')
     } catch (err: unknown) {
-      // ✅ err typed as unknown — safe extraction
+      // âœ… err typed as unknown â€” safe extraction
       const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
       setError(message || 'Login failed. Check credentials.')
     } finally {
@@ -203,7 +229,7 @@ export default function LoginPage() {
           </div>
         </div>
         <h1 style={styles.title}>${pc.projectTitle}</h1>
-        <p style={styles.sub}>${pc.clientName ? pc.clientName + ' · ' : ''}Sign in to continue</p>
+        <p style={styles.sub}>${pc.clientName ? pc.clientName + ' Â· ' : ''}Sign in to continue</p>
         <form onSubmit={handleLogin} style={styles.form}>
           <div style={styles.field}>
             <label style={styles.label}>Username</label>
@@ -218,7 +244,7 @@ export default function LoginPage() {
           {error && <p style={styles.error}>{error}</p>}
           <button type="submit" disabled={loading}
             style={{ ...styles.btn, background: loading ? '#94a3b8' : '${pc.header.accentColor}' }}>
-            {loading ? 'Signing in…' : 'Sign In'}
+            {loading ? 'Signing inâ€¦' : 'Sign In'}
           </button>
         </form>
       </div>
@@ -327,16 +353,46 @@ const styles: Record<string, React.CSSProperties> = {
 `
 }
 
-// ✅ S6-2 — concrete types instead of any
+// âœ… S6-2 â€” concrete types instead of any
 function generateTypes(): string {
   return `// Auto-generated types
+export type TransformMathOperator = '+' | '-' | '*' | '/'
+export type TransformFilterOperator = '>' | '<' | '=' | '!=' | '>=' | '<='
+export type TransformSortOrder = 'asc' | 'desc'
+
+export type TransformOp =
+  | { type: 'parse_number'; field: string }
+  | { type: 'concat'; fields: string[]; separator: string; outputField: string }
+  | { type: 'rename'; from: string; to: string }
+  | { type: 'math'; field: string; operator: TransformMathOperator; value: number; outputField: string }
+  | { type: 'percent_of_total'; field: string; outputField: string }
+  | { type: 'filter_rows'; field: string; operator: TransformFilterOperator; value: unknown }
+  | { type: 'sort'; field: string; order: TransformSortOrder }
+  | { type: 'limit'; count: number }
+
+export interface YAxisConfig {
+  key: string
+  color: string
+  label?: string
+}
+
+export interface DataMapping {
+  xAxis: string
+  yAxis?: string
+  yAxes?: YAxisConfig[]
+  aliases?: Record<string, string>
+  transforms?: TransformOp[]
+  sortBy?: string
+  sortOrder?: TransformSortOrder
+  limit?: number
+}
+
 export interface ExportWidget {
   id:          string
   title:       string
   type:        string
   endpointId:  string
-  xAxis:       string
-  yAxis:       string
+  dataMapping: DataMapping
   groupId?:    string
   colors:      string[]
   barRadius:   number
@@ -350,6 +406,8 @@ export interface ExportEndpoint {
   url:      string
   method:   string
   authType?: string
+  headers?: Record<string, string>
+  body?:    string
 }
 
 export interface ExportGroup {
@@ -391,7 +449,6 @@ export interface ExportProjectConfig {
   }
 }
 
-// ✅ concrete types — no any
 export interface DashboardConfig {
   meta:          ExportMeta
   projectConfig: ExportProjectConfig
@@ -405,10 +462,48 @@ export interface DashboardConfig {
 function generateApiClient(config: DashboardExportConfig): string {
   const { projectConfig: pc } = config
   const encodedDefaultHeaders = JSON.stringify(pc.defaultHeaders ?? {}, null, 2)
-  return `import axios from 'axios'
+  return `import axios, { type InternalAxiosRequestConfig } from 'axios'
+
+const API_BASE_URL = '${pc.baseUrl}'
+
+export function resolveRequestUrl(url: string): string {
+  const trimmed = (url ?? '').trim()
+  const lower = trimmed.toLowerCase()
+  let base = API_BASE_URL
+  while (base.endsWith('/')) {
+    base = base.slice(0, -1)
+  }
+
+  if (!trimmed) return base || '/'
+  if (lower.startsWith('http://') || lower.startsWith('https://')) return trimmed
+
+  const relative = trimmed.startsWith('/') ? trimmed : \`/\${trimmed}\`
+  if (base && !base.toLowerCase().startsWith('http://') && !base.toLowerCase().startsWith('https://')) {
+    const baseWithSlash = \`\${base}/\`
+    if (relative === base || relative.startsWith(baseWithSlash)) {
+      return relative
+    }
+  }
+
+  if (base && (base.toLowerCase().startsWith('http://') || base.toLowerCase().startsWith('https://'))) {
+    try {
+      const parsedBase = new URL(base)
+      let basePath = parsedBase.pathname
+      while (basePath.endsWith('/')) {
+        basePath = basePath.slice(0, -1)
+      }
+      if (basePath && (relative === basePath || relative.startsWith(\`\${basePath}/\`))) {
+        return \`\${parsedBase.origin}\${relative}\`
+      }
+    } catch {
+      // noop - fallback to default composition below
+    }
+  }
+
+  return base ? \`\${base}\${relative}\` : relative
+}
 
 export const apiClient = axios.create({
-  baseURL:         '${pc.baseUrl}',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -416,19 +511,25 @@ export const apiClient = axios.create({
   },
 })
 
-apiClient.interceptors.request.use(config => {
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  config.url = resolveRequestUrl(config.url ?? '')
+
   try {
-    const raw  = localStorage.getItem('authUser')
+    const raw = localStorage.getItem('authUser')
     const user = raw ? JSON.parse(raw) : null
-    if (user?.token) config.headers['Authorization'] = \`Bearer \${user.token}\`
+    if (user?.token) {
+      config.headers = config.headers ?? {}
+      ;(config.headers as Record<string, string>).Authorization = \`Bearer \${user.token}\`
+    }
   } catch {}
+
   return config
 })
 
 apiClient.interceptors.response.use(
   res => res,
   err => {
-    const status  = err?.response?.status
+    const status = err?.response?.status
     const message = err?.response?.data?.message ?? ''
     if (status === ${pc.session.logoutOn401 ? 401 : 999} || message.includes('${pc.session.logoutOnMessage}')) {
       localStorage.removeItem('authUser')
@@ -440,50 +541,118 @@ apiClient.interceptors.response.use(
 `
 }
 
-// ✅ hasFetched ref removed — endpoint.id dep handles refetch correctly
 function generateUseChartData(): string {
   return `'use client'
-import { useState, useEffect } from 'react'
-import { apiClient }           from '@/lib/apiClient'
-import type { ExportEndpoint } from '@/lib/types'
+import { useEffect, useMemo, useState } from 'react'
+import { apiClient } from '@/lib/apiClient'
+import { applyTransforms } from '@/lib/builder/data-transformer'
+import type { DataMapping, ExportEndpoint } from '@/lib/types'
 
-export function useChartData(endpoint: ExportEndpoint | undefined) {
-  const [data, setData]       = useState<Record<string, unknown>[]>([])
+function parseEndpointBody(body?: string): unknown {
+  if (body === undefined) return undefined
+  try {
+    return JSON.parse(body)
+  } catch {
+    return body
+  }
+}
+
+function normalizeRows(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) return payload as Record<string, unknown>[]
+  if (payload && typeof payload === 'object') {
+    const obj = payload as Record<string, unknown>
+    const candidate = obj.data ?? obj.results ?? obj.items ?? obj.list
+    if (Array.isArray(candidate)) return candidate as Record<string, unknown>[]
+    return [obj]
+  }
+  return []
+}
+
+function parseComparable(value: unknown): number | string {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const asNumber = Number(value)
+  if (!Number.isNaN(asNumber) && value !== null && value !== undefined && String(value).trim() !== '') {
+    return asNumber
+  }
+  return String(value ?? '')
+}
+
+function applySortAndLimit(rows: Record<string, unknown>[], dataMapping: DataMapping): Record<string, unknown>[] {
+  let nextRows = rows
+
+  if (dataMapping.sortBy) {
+    const direction = dataMapping.sortOrder === 'asc' ? 1 : -1
+    nextRows = [...nextRows].sort((a, b) => {
+      const left = parseComparable(a[dataMapping.sortBy as string])
+      const right = parseComparable(b[dataMapping.sortBy as string])
+
+      if (typeof left === 'number' && typeof right === 'number') {
+        return (left - right) * direction
+      }
+      return String(left).localeCompare(String(right)) * direction
+    })
+  }
+
+  if (typeof dataMapping.limit === 'number' && dataMapping.limit > 0) {
+    nextRows = nextRows.slice(0, Math.trunc(dataMapping.limit))
+  }
+
+  return nextRows
+}
+
+export function useChartData(endpoint: ExportEndpoint | undefined, dataMapping: DataMapping) {
+  const [data, setData] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const endpointHeadersKey = useMemo(() => JSON.stringify(endpoint?.headers ?? {}), [endpoint?.headers])
+  const transformsKey = useMemo(() => JSON.stringify(dataMapping.transforms ?? []), [dataMapping.transforms])
 
   useEffect(() => {
-    if (!endpoint) { setLoading(false); return }
+    if (!endpoint) {
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError(null)
 
-    const req = endpoint.method === 'POST'
-      ? apiClient.post(endpoint.url)
-      : apiClient.get(endpoint.url)
+    const requestConfig = endpoint.headers && Object.keys(endpoint.headers).length > 0
+      ? { headers: endpoint.headers }
+      : undefined
 
-    req.then(res => {
-      const json = res.data
-      const arr: Record<string, unknown>[] =
-        Array.isArray(json)            ? json
-        : Array.isArray(json?.data)    ? json.data
-        : Array.isArray(json?.results) ? json.results
-        : Array.isArray(json?.items)   ? json.items
-        : Array.isArray(json?.list)    ? json.list
-        : [json]
-      setData(arr)
-    })
-    .catch((e: unknown) => {
-      const msg = e instanceof Error ? e.message : String(e)
-      setError(msg)
-    })
-    .finally(() => setLoading(false))
-  }, [endpoint?.id])  // ✅ re-fetches when endpoint changes
+    const request = endpoint.method === 'POST'
+      ? apiClient.post(endpoint.url, parseEndpointBody(endpoint.body), requestConfig)
+      : apiClient.get(endpoint.url, requestConfig)
+
+    request
+      .then((res) => {
+        const rawRows = normalizeRows(res.data)
+        const transformed = applyTransforms(rawRows, dataMapping.transforms ?? [])
+        const finalized = applySortAndLimit(transformed, dataMapping)
+        setData(finalized)
+      })
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e)
+        setError(msg)
+      })
+      .finally(() => setLoading(false))
+  }, [
+    endpoint?.id,
+    endpoint?.url,
+    endpoint?.method,
+    endpoint?.body,
+    endpointHeadersKey,
+    transformsKey,
+    dataMapping.sortBy,
+    dataMapping.sortOrder,
+    dataMapping.limit,
+  ])
 
   return { data, loading, error }
 }
 `
 }
-
 function generateSidebar(config: DashboardExportConfig): string {
   const { projectConfig: pc } = config
   const isCompact = pc.header.navDensity === 'compact'
@@ -547,7 +716,7 @@ export function Sidebar() {
           onClick={() => setCollapsed(c => !c)}
           style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16 }}
         >
-          {collapsed ? '→' : '←'}
+          {collapsed ? 'â†’' : 'â†'}
         </button>
       </div>
 
@@ -569,7 +738,7 @@ export function Sidebar() {
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <span style={{ fontSize: 12 }}>📊</span>
+                  <span style={{ fontSize: 12 }}>ðŸ“Š</span>
                   {!collapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.title}</span>}
                 </a>
               )
@@ -580,7 +749,7 @@ export function Sidebar() {
             <a key={w.id} href={\`#widget-\${w.id}\`}
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: ${navPaddingExpr}, color: 'rgba(255,255,255,0.75)', fontSize: '${navFontSize}', textDecoration: 'none', borderRadius: 8, margin: '1px 8px' }}
             >
-              <span style={{ fontSize: 12 }}>📊</span>
+              <span style={{ fontSize: 12 }}>ðŸ“Š</span>
               {!collapsed && w.title}
             </a>
           ))
@@ -591,7 +760,7 @@ export function Sidebar() {
       <div style={{ padding: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <button onClick={handleLogout}
           style={{ width: '100%', padding: ${logoutPaddingExpr}, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: 8, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: '${navFontSize}', display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 8 }}>
-          🚪 {!collapsed && 'Logout'}
+          ðŸšª {!collapsed && 'Logout'}
         </button>
       </div>
     </aside>
@@ -656,7 +825,7 @@ interface Props {
 
 export function WidgetChart({ widget, endpoints }: Props) {
   const endpoint                 = endpoints.find(e => e.id === widget.endpointId)
-  const { data, loading, error } = useChartData(endpoint)
+  const { data, loading, error } = useChartData(endpoint, widget.dataMapping)
   const chartRef                 = useRef<ReactECharts>(null)
 
   const cardStyle: React.CSSProperties = {
@@ -673,7 +842,7 @@ export function WidgetChart({ widget, endpoints }: Props) {
   if (loading) return (
     <div id={\`widget-\${widget.id}\`} style={{ ...cardStyle, minHeight: 240, alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-      <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 8 }}>Loading {widget.title}…</p>
+      <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 8 }}>Loading {widget.title}â€¦</p>
       <style>{'@keyframes spin { to { transform: rotate(360deg) } }'}</style>
     </div>
   )
@@ -691,7 +860,7 @@ export function WidgetChart({ widget, endpoints }: Props) {
     <div id={\`widget-\${widget.id}\`} style={cardStyle}>
       <p style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>{widget.title}</p>
       {widget.type === 'table'
-        ? <DataTable data={data} xAxis={widget.xAxis} />
+        ? <DataTable data={data} xAxis={widget.dataMapping.xAxis} />
         : <ReactECharts
             ref={chartRef}
             option={option}
@@ -705,16 +874,18 @@ export function WidgetChart({ widget, endpoints }: Props) {
 
 function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[]) {
   const colors  = widget.colors
-  const isNum   = data.length > 0 && !isNaN(Number(data[0]?.[widget.yAxis]))
+  const xAxisKey = widget.dataMapping.xAxis
+  const yAxisKey = widget.dataMapping.yAxis ?? widget.dataMapping.yAxes?.[0]?.key ?? ''
+  const isNum   = data.length > 0 && !isNaN(Number(data[0]?.[yAxisKey]))
   const prepared = isNum
     ? data.slice(0, 30).map((r, i) => ({
-        name:  String(r[widget.xAxis] ?? i).slice(0, 20),
-        value: parseFloat(String(r[widget.yAxis])) || 0,
+        name:  String(r[xAxisKey] ?? i).slice(0, 20),
+        value: parseFloat(String(r[yAxisKey])) || 0,
       }))
     : (() => {
         const counts: Record<string, number> = {}
         data.forEach(r => {
-          const k = String(r[widget.xAxis] ?? 'Unknown')
+          const k = String(r[xAxisKey] ?? 'Unknown')
           counts[k] = (counts[k] ?? 0) + 1
         })
         return Object.entries(counts)
@@ -748,7 +919,7 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
         ? { type: 'category', data: xData }
         : { type: 'value', splitLine: { show: widget.showGrid } },
       series: [{
-        type: 'bar', data: yData, barMaxWidth: 48, name: widget.yAxis,
+        type: 'bar', data: yData, barMaxWidth: 48, name: yAxisKey,
         stack: widget.type === 'horizontal-stacked-bar' ? 'total' : undefined,
         itemStyle: {
           borderRadius: ['horizontal-bar', 'horizontal-stacked-bar'].includes(widget.type)
@@ -765,7 +936,7 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
       xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 11 } },
       yAxis: { type: 'value', splitLine: { show: widget.showGrid } },
       series: [{
-        type: 'line', data: yData, smooth: true, name: widget.yAxis,
+        type: 'line', data: yData, smooth: true, name: yAxisKey,
         areaStyle: widget.type === 'area' ? { opacity: 0.2 } : undefined,
         lineStyle: { width: 2 },
       }],
@@ -790,7 +961,7 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
         type:   'gauge',
         min:    0,
         max:    Math.max(...yData, 100),
-        data:   [{ value: yData[0] ?? 0, name: widget.yAxis }],
+        data:   [{ value: yData[0] ?? 0, name: yAxisKey }],
         detail: { fontSize: 18, color: colors[0] },
         axisLine: { lineStyle: { color: [[1, colors[0]]] } },
       }],
@@ -820,7 +991,7 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
         axisTick: { show: false },
         splitLine: { show: false },
         axisLabel: { show: false },
-        data: [{ value: yData[0] ?? 0, name: widget.yAxis }],
+        data: [{ value: yData[0] ?? 0, name: yAxisKey }],
         detail: {
           valueAnimation: true,
           formatter: '{value}',
@@ -831,7 +1002,7 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
       }],
     }
 
-    // ✅ S5-1 — status-card rendered as big KPI number
+    // âœ… S5-1 â€” status-card rendered as big KPI number
     case 'status-card': return {
       color: colors,
       graphic: [{
@@ -839,7 +1010,7 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
         left: 'center',
         top:  'center',
         style: {
-          text:      String(yData[0] ?? '—'),
+          text:      String(yData[0] ?? 'â€”'),
           fontSize:  48,
           fontWeight: 'bold',
           fill:      colors[0] ?? '#6366f1',
@@ -849,7 +1020,7 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
         left: 'center',
         top:  '65%',
         style: {
-          text:     widget.yAxis,
+          text:     yAxisKey,
           fontSize: 13,
           fill:     '#94a3b8',
         },
@@ -958,7 +1129,7 @@ export function PDFExport({ widgets }: Props) {
         onClick={() => setOpen(true)}
         style={{ padding: '0.5rem 1.25rem', background: '${config.projectConfig.header.accentColor}', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
       >
-        📄 Export PDF
+        ðŸ“„ Export PDF
       </button>
 
       {open && (
@@ -966,7 +1137,7 @@ export function PDFExport({ widgets }: Props) {
           <div style={{ background: '#fff', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ fontWeight: 700, fontSize: '1.1rem' }}>Select Charts for PDF</h2>
-              <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}>✕</button>
+              <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}>âœ•</button>
             </div>
             <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0.4rem', cursor: 'pointer', borderRadius: 6, background: '#f8fafc' }}>
@@ -991,7 +1162,7 @@ export function PDFExport({ widgets }: Props) {
               </button>
               <button onClick={handleExport} disabled={loading || selected.size === 0}
                 style={{ flex: 2, padding: '0.6rem', background: selected.size === 0 ? '#94a3b8' : '${config.projectConfig.header.accentColor}', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}>
-                {loading ? 'Generating…' : \`Export \${selected.size} Chart\${selected.size !== 1 ? 's' : ''}\`}
+                {loading ? 'Generatingâ€¦' : \`Export \${selected.size} Chart\${selected.size !== 1 ? 's' : ''}\`}
               </button>
             </div>
           </div>
@@ -1028,12 +1199,230 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 `
 }
 
+function generateDataTransformer(): string {
+  return `import type { TransformFilterOperator, TransformOp } from '@/lib/types'
+
+type DataRow = Record<string, unknown>
+
+const hasOwn = (row: DataRow, key: string) =>
+  Object.prototype.hasOwnProperty.call(row, key)
+
+const sanitizeNumericString = (value: unknown) =>
+  String(value).replace(/[^0-9.\\-]/g, '')
+
+const parseSanitizedNumber = (value: unknown): number | null => {
+  const parsed = parseFloat(sanitizeNumericString(value))
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+const parseComparableNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+const roundTo2 = (value: number) => Math.round(value * 100) / 100
+
+const compareFilterValues = (
+  left: unknown,
+  right: unknown,
+  operator: TransformFilterOperator,
+) => {
+  const leftNum = parseComparableNumber(left)
+  const rightNum = parseComparableNumber(right)
+  const isNumericCompare = leftNum !== null && rightNum !== null
+
+  if (isNumericCompare) {
+    switch (operator) {
+      case '>':
+        return leftNum > rightNum
+      case '<':
+        return leftNum < rightNum
+      case '=':
+        return leftNum == rightNum
+      case '!=':
+        return leftNum != rightNum
+      case '>=':
+        return leftNum >= rightNum
+      case '<=':
+        return leftNum <= rightNum
+      default:
+        return false
+    }
+  }
+
+  const leftStr = left == null ? '' : String(left)
+  const rightStr = right == null ? '' : String(right)
+  switch (operator) {
+    case '>':
+      return leftStr > rightStr
+    case '<':
+      return leftStr < rightStr
+    case '=':
+      return leftStr === rightStr
+    case '!=':
+      return leftStr !== rightStr
+    case '>=':
+      return leftStr >= rightStr
+    case '<=':
+      return leftStr <= rightStr
+    default:
+      return false
+  }
+}
+
+const applyParseNumber = (rows: DataRow[], op: Extract<TransformOp, { type: 'parse_number' }>) =>
+  rows.map(row => {
+    if (!hasOwn(row, op.field)) return row
+    const parsed = parseFloat(sanitizeNumericString(row[op.field]))
+    if (Number.isNaN(parsed)) return row
+    return { ...row, [op.field]: parsed }
+  })
+
+const applyConcat = (rows: DataRow[], op: Extract<TransformOp, { type: 'concat' }>) =>
+  rows.map(row => {
+    const values = op.fields
+      .filter(field => hasOwn(row, field))
+      .map(field => row[field])
+      .filter(value => value !== null && value !== undefined && String(value).trim().length > 0)
+      .map(value => String(value))
+
+    return {
+      ...row,
+      [op.outputField]: values.length ? values.join(op.separator) : '',
+    }
+  })
+
+const applyRename = (rows: DataRow[], op: Extract<TransformOp, { type: 'rename' }>) =>
+  rows.map(row => {
+    if (!hasOwn(row, op.from)) return row
+    const next: DataRow = { ...row, [op.to]: row[op.from] }
+    if (op.to !== op.from) {
+      delete next[op.from]
+    }
+    return next
+  })
+
+const applyMath = (rows: DataRow[], op: Extract<TransformOp, { type: 'math' }>) =>
+  rows.map(row => {
+    if (!hasOwn(row, op.field)) return row
+    const left = parseSanitizedNumber(row[op.field])
+    if (left === null) return row
+
+    const right = Number(op.value)
+    if (!Number.isFinite(right)) return row
+
+    let result = 0
+    switch (op.operator) {
+      case '+':
+        result = left + right
+        break
+      case '-':
+        result = left - right
+        break
+      case '*':
+        result = left * right
+        break
+      case '/':
+        result = right === 0 ? 0 : left / right
+        break
+    }
+
+    return { ...row, [op.outputField]: Number.isFinite(result) ? result : 0 }
+  })
+
+const applyPercentOfTotal = (
+  rows: DataRow[],
+  op: Extract<TransformOp, { type: 'percent_of_total' }>,
+) => {
+  const numericValues = rows.map(row => parseSanitizedNumber(row[op.field]) ?? 0)
+  const total = numericValues.reduce((sum, value) => sum + value, 0)
+
+  return rows.map((row, index) => ({
+    ...row,
+    [op.outputField]: total === 0 ? 0 : roundTo2((numericValues[index] / total) * 100),
+  }))
+}
+
+const applyFilterRows = (rows: DataRow[], op: Extract<TransformOp, { type: 'filter_rows' }>) =>
+  rows.filter(row => compareFilterValues(row[op.field], op.value, op.operator))
+
+const applySort = (rows: DataRow[], op: Extract<TransformOp, { type: 'sort' }>) => {
+  const sorted = rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const aValue = a.row[op.field]
+      const bValue = b.row[op.field]
+      const aNum = parseComparableNumber(aValue)
+      const bNum = parseComparableNumber(bValue)
+
+      let compare = 0
+      if (aNum !== null && bNum !== null) {
+        compare = aNum - bNum
+      } else {
+        const aStr = aValue == null ? '' : String(aValue)
+        const bStr = bValue == null ? '' : String(bValue)
+        compare = aStr.localeCompare(bStr)
+      }
+
+      if (compare !== 0) {
+        return op.order === 'asc' ? compare : -compare
+      }
+      return a.index - b.index
+    })
+
+  return sorted.map(item => item.row)
+}
+
+const applyLimit = (rows: DataRow[], op: Extract<TransformOp, { type: 'limit' }>) => {
+  const count = Math.trunc(op.count)
+  if (count <= 0) return rows
+  return rows.slice(0, count)
+}
+
+const applyTransformOp = (rows: DataRow[], op: TransformOp): DataRow[] => {
+  switch (op.type) {
+    case 'parse_number':
+      return applyParseNumber(rows, op)
+    case 'concat':
+      return applyConcat(rows, op)
+    case 'rename':
+      return applyRename(rows, op)
+    case 'math':
+      return applyMath(rows, op)
+    case 'percent_of_total':
+      return applyPercentOfTotal(rows, op)
+    case 'filter_rows':
+      return applyFilterRows(rows, op)
+    case 'sort':
+      return applySort(rows, op)
+    case 'limit':
+      return applyLimit(rows, op)
+    default:
+      return rows
+  }
+}
+
+export function applyTransforms(rows: DataRow[], ops: TransformOp[]): DataRow[] {
+  if (!rows.length || !ops.length) return rows
+  return ops.reduce<DataRow[]>((currentRows, op) => applyTransformOp(currentRows, op), rows)
+}
+`
+}
+
 function generateReadme(config: DashboardExportConfig): string {
   const { projectConfig: pc } = config
   return `# ${config.meta.name}
 
-> Generated by **Analytics AI Dashboard Builder** · ${new Date(config.meta.exportedAt).toLocaleDateString()}
-> Client: **${pc.clientName}** · Auth: **${pc.authStrategy}**
+> Generated by **Analytics AI Dashboard Builder** Â· ${new Date(config.meta.exportedAt).toLocaleDateString()}
+> Client: **${pc.clientName}** Â· Auth: **${pc.authStrategy}**
 
 ## Quick Start
 
@@ -1052,11 +1441,11 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ## Widgets (${config.widgets.length})
 
-${config.widgets.map(w => `- **${w.title}** — \`${w.type}\` · X: \`${w.xAxis}\` · Y: \`${w.yAxis || '—'}\``).join('\n')}
+${config.widgets.map(w => `- **${w.title}** â€” \`${w.type}\` Â· X: \`${w.dataMapping.xAxis}\` Â· Y: \`${w.dataMapping.yAxis || 'â€”'}\``).join('\n')}
 
 ## Groups (${config.groups.length})
 
-${config.groups.map(g => `- **${g.name}** — ${g.widgetIds.length} charts`).join('\n') || '_No groups defined_'}
+${config.groups.map(g => `- **${g.name}** â€” ${g.widgetIds.length} charts`).join('\n') || '_No groups defined_'}
 
 ## Endpoints
 
@@ -1064,7 +1453,7 @@ ${config.endpoints.map(e => `- **${e.name}**: \`${e.method} ${e.url}\``).join('\
 `
 }
 
-// ✅ stray `i` removed — was causing TypeScript parse error
+// âœ… stray `i` removed â€” was causing TypeScript parse error
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'dashboard'
 }

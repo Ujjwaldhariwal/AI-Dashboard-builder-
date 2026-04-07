@@ -223,6 +223,35 @@ export default function ViewerPage() {
       toast.error("No widgets to export");
       return;
     }
+
+    const projectConfig = getProjectConfig(currentDash.id);
+    const loginEndpoint = projectConfig.login.endpoint.trim();
+    if (!loginEndpoint) {
+      toast.error("Login endpoint is required to export standalone dashboard.");
+      return;
+    }
+
+    const isAbsoluteUrl = (value: string) => /^https?:\/\//i.test(value.trim());
+    const loginOrigin = isAbsoluteUrl(loginEndpoint)
+      ? (() => {
+          try {
+            return new URL(loginEndpoint).origin;
+          } catch {
+            return "";
+          }
+        })()
+      : "";
+    const configuredBaseUrl = projectConfig.baseUrl.trim();
+    const resolvedBaseUrl = configuredBaseUrl || loginOrigin;
+    const hasAbsoluteBaseUrl = isAbsoluteUrl(resolvedBaseUrl);
+    const hasRelativeEndpoint = dashboardEndpoints.some(
+      (endpoint) => !isAbsoluteUrl(endpoint.url),
+    );
+    if (!hasAbsoluteBaseUrl && (hasRelativeEndpoint || !isAbsoluteUrl(loginEndpoint))) {
+      toast.error("Standalone export requires an absolute Base URL (https://...).");
+      return;
+    }
+
     setExporting(true);
     toast.loading("Generating project...", { id: "export" });
     try {
@@ -230,7 +259,7 @@ export default function ViewerPage() {
         currentDash,
         endpoints,
         allWidgets,
-        getProjectConfig(currentDash.id),
+        projectConfig,
         getGroupsByDashboard(currentDash.id),
       );
       const blob = await packageProjectAsZip(generateProjectFromConfig(config));
@@ -255,6 +284,7 @@ export default function ViewerPage() {
     currentDash,
     widgets,
     endpoints,
+    dashboardEndpoints,
     allWidgets,
     getProjectConfig,
     getGroupsByDashboard,
