@@ -93,7 +93,7 @@ export function buildDashboardConfig(
     ? BOSCH_COLORS
     : null
 
-  const resolvedBaseUrl = resolveBaseUrl(projectConfig)
+  const resolvedBaseUrl = resolveBaseUrl(projectConfig, endpoints)
 
   return {
     meta: {
@@ -161,22 +161,90 @@ export function slugifyDashboardName(name: string): string {
     : slug
 }
 
-function resolveBaseUrl(projectConfig: ProjectConfig): string {
+function resolveBaseUrl(projectConfig: ProjectConfig, endpoints: EndpointShape[]): string {
   const baseUrl = projectConfig.baseUrl.trim()
   if (baseUrl.length > 0) {
     return baseUrl.replace(/\/+$/, '')
   }
 
   const loginEndpoint = projectConfig.login.endpoint.trim()
-  if (!/^https?:\/\//i.test(loginEndpoint)) {
-    return ''
+  const loginUrl = tryParseAbsoluteUrl(loginEndpoint)
+  if (loginUrl) {
+    const pathname = stripLoginSuffix(loginUrl.pathname)
+    return joinOriginAndPath(loginUrl.origin, pathname)
   }
 
-  try {
-    return new URL(loginEndpoint).origin
-  } catch {
-    return ''
+  const firstAbsoluteEndpoint = endpoints
+    .map(endpoint => endpoint.url.trim())
+    .map(url => tryParseAbsoluteUrl(url))
+    .find((url): url is URL => Boolean(url))
+
+  if (firstAbsoluteEndpoint) {
+    const endpointPath = stripLastPathSegment(firstAbsoluteEndpoint.pathname)
+    return joinOriginAndPath(firstAbsoluteEndpoint.origin, endpointPath)
   }
+
+  if (shouldUseBoschProxyFallback(projectConfig, endpoints)) {
+    return '/api/bosch'
+  }
+
+  return ''
+}
+
+function tryParseAbsoluteUrl(value: string): URL | null {
+  if (!/^https?:\/\//i.test(value)) return null
+  try {
+    return new URL(value)
+  } catch {
+    return null
+  }
+}
+
+function stripLoginSuffix(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '')
+  const lower = normalized.toLowerCase()
+  const loginSuffixes = ['/user/login', '/userlogin', '/login']
+
+  for (const suffix of loginSuffixes) {
+    if (lower.endsWith(suffix)) {
+      const next = normalized.slice(0, normalized.length - suffix.length)
+      return next || ''
+    }
+  }
+
+  return normalized
+}
+
+function stripLastPathSegment(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '')
+  if (!normalized || normalized === '/') return ''
+
+  const lastSlashIndex = normalized.lastIndexOf('/')
+  if (lastSlashIndex <= 0) return ''
+  return normalized.slice(0, lastSlashIndex)
+}
+
+function joinOriginAndPath(origin: string, pathname: string): string {
+  const normalizedPath = pathname.replace(/\/+$/, '')
+  if (!normalizedPath) return origin
+  return normalizedPath.startsWith('/')
+    ? `${origin}${normalizedPath}`
+    : `${origin}/${normalizedPath}`
+}
+
+function shouldUseBoschProxyFallback(projectConfig: ProjectConfig, endpoints: EndpointShape[]): boolean {
+  if (projectConfig.chartTheme === 'bosch-uppcl') return true
+
+  const context = [
+    projectConfig.clientName,
+    projectConfig.projectTitle,
+    projectConfig.login.endpoint,
+    ...endpoints.map(endpoint => endpoint.url),
+  ]
+    .map(value => value?.toLowerCase() ?? '')
+    .join(' ')
+
+  return context.includes('bosch') || context.includes('uppcl')
 }
 
 function stringifyEndpointBody(body: unknown): string | undefined {

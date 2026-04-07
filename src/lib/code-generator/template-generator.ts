@@ -25,6 +25,7 @@ export function generateProjectFromConfig(
   const { projectConfig: pc } = config
   const clientSafeConfig = buildClientSafeExportConfig(config)
   const includeBoschProxy = shouldIncludeBoschProxy(config)
+  const boschProxyDefaults = deriveBoschProxyDefaults(config)
 
   // â”€â”€ package.json â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   files['package.json'] = JSON.stringify({
@@ -122,8 +123,12 @@ export default function RootPage() {
 `
 
   files['src/app/login/page.tsx']          = generateLoginPage(config)
+  const generatedEnvLocal = generateEnvLocal(includeBoschProxy, boschProxyDefaults)
+  if (generatedEnvLocal) {
+    files['.env.local'] = generatedEnvLocal
+  }
   if (includeBoschProxy) {
-    files['src/app/api/bosch/[...path]/route.ts'] = generateBoschProxyRoute()
+    files['src/app/api/bosch/[...path]/route.ts'] = generateBoschProxyRoute(boschProxyDefaults)
   }
   files['src/app/dashboard/layout.tsx']    = generateDashboardLayout(config)
   files['src/app/dashboard/page.tsx']      = generateDashboardPage(config)
@@ -162,14 +167,135 @@ function buildClientSafeExportConfig(config: DashboardExportConfig): DashboardEx
         apiKey: '',
       }
     : undefined
+  const safeDefaultHeaders = sanitizeDefaultHeadersForExport(
+    config.projectConfig.defaultHeaders ?? {},
+  )
 
   return {
     ...config,
     projectConfig: {
       ...config.projectConfig,
+      defaultHeaders: safeDefaultHeaders,
       aiExportConfig: safeAiExportConfig,
     },
   }
+}
+
+interface BoschProxyDefaults {
+  defaultTarget: string
+  fallbackBaseUrl: string
+  targetBaseUrls: Record<string, string>
+}
+
+function sanitizeDefaultHeadersForExport(
+  headers: Record<string, string>,
+): Record<string, string> {
+  const sanitized: Record<string, string> = {}
+  Object.entries(headers).forEach(([key, value]) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    if (isTemplatePlaceholder(trimmed)) return
+    sanitized[key] = trimmed
+  })
+  return sanitized
+}
+
+function isTemplatePlaceholder(value: string): boolean {
+  return /^\{\{.+\}\}$/.test(value.trim())
+}
+
+function normalizeEnvTarget(value: string | undefined): string {
+  const normalized = (value ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')
+  return normalized || 'AGRA'
+}
+
+function normalizeUrl(value: string): string {
+  let next = value.trim()
+  while (next.endsWith('/')) next = next.slice(0, -1)
+  return next
+}
+
+function extractAbsoluteBaseFromUrl(value: string): string | null {
+  const trimmed = value.trim()
+  if (!/^https?:\/\//i.test(trimmed)) return null
+
+  try {
+    const parsed = new URL(trimmed)
+    let pathname = parsed.pathname.replace(/\/+$/, '')
+    const lowered = pathname.toLowerCase()
+    const loginSuffixes = ['/user/login', '/userlogin', '/login']
+
+    for (const suffix of loginSuffixes) {
+      if (lowered.endsWith(suffix)) {
+        pathname = pathname.slice(0, pathname.length - suffix.length)
+        return normalizeUrl(`${parsed.origin}${pathname}`)
+      }
+    }
+
+    if (!pathname || pathname === '/') return parsed.origin
+    const lastSlash = pathname.lastIndexOf('/')
+    if (lastSlash <= 0) return parsed.origin
+    pathname = pathname.slice(0, lastSlash)
+    return normalizeUrl(`${parsed.origin}${pathname}`)
+  } catch {
+    return null
+  }
+}
+
+function deriveBoschProxyDefaults(config: DashboardExportConfig): BoschProxyDefaults {
+  const knownTargets: Record<string, string> = {
+    AGRA: 'https://agdashboard.agamismartmeters.com/BOSCH/API',
+    KASHI: 'https://kadashboard.kaamismartmeters.com/BOSCH/API',
+    PRAYAGRAJ: 'https://prdashboard.pramismartmeters.com/BOSCH/API',
+  }
+
+  const defaultTarget = normalizeEnvTarget(
+    config.projectConfig.defaultHeaders['x-bosch-env']
+      ?? config.projectConfig.defaultHeaders['X-Bosch-Env'],
+  )
+
+  const absoluteCandidates = [
+    extractAbsoluteBaseFromUrl(config.projectConfig.baseUrl),
+    extractAbsoluteBaseFromUrl(config.projectConfig.login.endpoint),
+    ...config.endpoints.map(endpoint => extractAbsoluteBaseFromUrl(endpoint.url)),
+  ].filter((value): value is string => Boolean(value))
+
+  const fallbackBaseUrl = absoluteCandidates[0]
+    ?? knownTargets[defaultTarget]
+    ?? knownTargets.AGRA
+
+  return {
+    defaultTarget,
+    fallbackBaseUrl,
+    targetBaseUrls: {
+      ...knownTargets,
+      [defaultTarget]: fallbackBaseUrl,
+    },
+  }
+}
+
+function generateEnvLocal(
+  includeBoschProxy: boolean,
+  defaults: BoschProxyDefaults,
+): string | null {
+  if (!includeBoschProxy) return null
+
+  const targetLines = Object.entries(defaults.targetBaseUrls)
+    .map(([target, baseUrl]) => [normalizeEnvTarget(target), normalizeUrl(baseUrl)] as const)
+    .filter(([, baseUrl]) => Boolean(baseUrl))
+    .map(([target, baseUrl]) => `BOSCH_BASE_URL_${target}=${baseUrl}`)
+    .join('\n')
+
+  return `# Bosch proxy runtime settings (auto-generated)
+# Change these values if your deployment environment differs.
+BOSCH_DEFAULT_ENV=${defaults.defaultTarget}
+BOSCH_BASE_URL=${defaults.fallbackBaseUrl}
+${targetLines}
+
+# Optional service credentials for Bosch gateway (if required by your API)
+BOSCH_USERID=
+BOSCH_PASSWORD=
+`
 }
 
 
@@ -181,16 +307,31 @@ function shouldIncludeBoschProxy(config: DashboardExportConfig): boolean {
   const startsWithBoschProxy = (value: string | undefined) =>
     typeof value === 'string' && value.trim().toLowerCase().startsWith('/api/bosch')
 
+  if (config.projectConfig.chartTheme === 'bosch-uppcl') return true
   if (startsWithBoschProxy(config.projectConfig.baseUrl)) return true
   if (startsWithBoschProxy(config.projectConfig.login.endpoint)) return true
 
-  return config.endpoints.some(endpoint => startsWithBoschProxy(endpoint.url))
+  if (config.endpoints.some(endpoint => startsWithBoschProxy(endpoint.url))) return true
+
+  const context = [
+    config.projectConfig.clientName,
+    config.projectConfig.projectTitle,
+    config.projectConfig.login.endpoint,
+    ...config.endpoints.map(endpoint => endpoint.url),
+  ]
+    .map(value => value.toLowerCase())
+    .join(' ')
+
+  return context.includes('bosch') || context.includes('uppcl')
 }
 
-function generateBoschProxyRoute(): string {
+function generateBoschProxyRoute(defaults: BoschProxyDefaults): string {
+  const targetMap = JSON.stringify(defaults.targetBaseUrls, null, 2)
   return `import { NextRequest, NextResponse } from 'next/server'
 
-const BOSCH_BASE_FALLBACK = 'https://kadashboard.kaamismartmeters.com/BOSCH/API'
+const BOSCH_DEFAULT_ENV = '${defaults.defaultTarget}'
+const BOSCH_BASE_FALLBACK = '${defaults.fallbackBaseUrl}'
+const BOSCH_TARGET_BASES: Record<string, string> = ${targetMap}
 const REQUEST_TIMEOUT_MS = 20000
 
 type RouteContext = {
@@ -202,29 +343,65 @@ function trimValue(value: string | null | undefined): string {
 }
 
 function normalizeBaseUrl(value: string): string {
-  let next = value
+  let next = trimValue(value)
   while (next.endsWith('/')) next = next.slice(0, -1)
   return next
 }
 
-function getHeader(req: NextRequest, name: string): string {
-  return trimValue(req.headers.get(name))
+function normalizeTarget(value: string | null | undefined): string {
+  const normalized = trimValue(value).toUpperCase().replace(/[^A-Z0-9]/g, '_')
+  return normalized || BOSCH_DEFAULT_ENV
 }
 
-function resolveBaseUrl(req: NextRequest): string {
-  const fromHeader = getHeader(req, 'x-bosch-base-url')
-  const fromEnv = trimValue(process.env.BOSCH_BASE_URL)
-  return normalizeBaseUrl(fromHeader || fromEnv || BOSCH_BASE_FALLBACK)
+function pickFirstEnv(...keys: string[]): string {
+  for (const key of keys) {
+    const value = process.env[key]
+    if (value && trimValue(value)) return trimValue(value)
+  }
+  return ''
 }
 
-function resolveCredentials(req: NextRequest): { userid: string; password: string } | null {
-  const envUser = trimValue(process.env.BOSCH_USERID)
-  const envPass = trimValue(process.env.BOSCH_PASSWORD)
-  if (envUser && envPass) return { userid: envUser, password: envPass }
+function isTemplatePlaceholder(value: string): boolean {
+  return /^\\{\\{.+\\}\\}$/.test(trimValue(value))
+}
 
-  const headerUser = getHeader(req, 'userid')
-  const headerPass = getHeader(req, 'password')
-  if (headerUser && headerPass) return { userid: headerUser, password: headerPass }
+function isUsableCredential(value: string): boolean {
+  return Boolean(trimValue(value)) && !isTemplatePlaceholder(value)
+}
+
+function resolveTarget(req: NextRequest): string {
+  const fromHeader = req.headers.get('x-bosch-env')
+  const fromQuery = req.nextUrl.searchParams.get('env')
+  const fromEnv = process.env.BOSCH_DEFAULT_ENV
+  return normalizeTarget(fromHeader ?? fromQuery ?? fromEnv ?? BOSCH_DEFAULT_ENV)
+}
+
+function resolveBaseUrl(req: NextRequest, target: string): string {
+  const fromHeader = trimValue(req.headers.get('x-bosch-base-url'))
+  if (fromHeader) return normalizeBaseUrl(fromHeader)
+
+  const fromTargetEnv = pickFirstEnv(\`BOSCH_BASE_URL_\${target}\`, \`BOSCH_\${target}_BASE_URL\`)
+  if (fromTargetEnv) return normalizeBaseUrl(fromTargetEnv)
+
+  const fromEnv = pickFirstEnv('BOSCH_BASE_URL')
+  if (fromEnv) return normalizeBaseUrl(fromEnv)
+
+  const fromKnownTarget = BOSCH_TARGET_BASES[target]
+  if (fromKnownTarget) return normalizeBaseUrl(fromKnownTarget)
+
+  return normalizeBaseUrl(BOSCH_BASE_FALLBACK)
+}
+
+function resolveCredentials(req: NextRequest, target: string): { userid: string; password: string } | null {
+  const envUser = pickFirstEnv(\`BOSCH_USERID_\${target}\`, \`BOSCH_\${target}_USERID\`, 'BOSCH_USERID')
+  const envPass = pickFirstEnv(\`BOSCH_PASSWORD_\${target}\`, \`BOSCH_\${target}_PASSWORD\`, 'BOSCH_PASSWORD')
+  if (isUsableCredential(envUser) && isUsableCredential(envPass)) return { userid: envUser, password: envPass }
+
+  const headerUser = trimValue(req.headers.get('userid'))
+  const headerPass = trimValue(req.headers.get('password'))
+  if (isUsableCredential(headerUser) && isUsableCredential(headerPass)) {
+    return { userid: headerUser, password: headerPass }
+  }
 
   return null
 }
@@ -242,25 +419,54 @@ function buildBasicAuth(userid: string, password: string): string {
 function buildForwardHeaders(
   req: NextRequest,
   endpoint: string,
-  credentials: { userid: string; password: string },
+  credentials: { userid: string; password: string } | null,
 ): Headers {
   const headers = new Headers()
   headers.set('Content-Type', 'application/json')
 
-  const incomingAuth = getHeader(req, 'authorization')
-  if (incomingAuth && !isLoginEndpoint(endpoint)) {
+  const isLogin = isLoginEndpoint(endpoint)
+  const incomingAuth = trimValue(req.headers.get('authorization'))
+  if (incomingAuth && !isLogin) {
     headers.set('Authorization', incomingAuth)
-  } else {
+  } else if (credentials) {
     headers.set('Authorization', buildBasicAuth(credentials.userid, credentials.password))
+  } else if (incomingAuth) {
+    headers.set('Authorization', incomingAuth)
   }
 
-  headers.set('userid', credentials.userid)
-  headers.set('password', credentials.password)
+  if (credentials) {
+    headers.set('userid', credentials.userid)
+    headers.set('password', credentials.password)
+  }
 
-  const cookie = getHeader(req, 'cookie')
+  const cookie = trimValue(req.headers.get('cookie'))
   if (cookie) headers.set('Cookie', cookie)
 
   return headers
+}
+
+function getSetCookieHeaders(headers: Headers): string[] {
+  const maybeHeaders = headers as Headers & { getSetCookie?: () => string[] }
+  if (typeof maybeHeaders.getSetCookie === 'function') {
+    return maybeHeaders.getSetCookie().filter(Boolean)
+  }
+  const fallback = headers.get('set-cookie')
+  return fallback ? [fallback] : []
+}
+
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return { raw: text }
+  }
+}
+
+function resolveErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const candidate = (error as { cause?: { code?: unknown } }).cause?.code
+  if (typeof candidate === 'string' && candidate.trim()) return candidate
+  return undefined
 }
 
 async function forward(req: NextRequest, ctx: RouteContext) {
@@ -270,13 +476,15 @@ async function forward(req: NextRequest, ctx: RouteContext) {
   }
 
   const endpoint = '/' + path.join('/')
-  const baseUrl = resolveBaseUrl(req)
-  const credentials = resolveCredentials(req)
-  if (!credentials) {
+  const target = resolveTarget(req)
+  const baseUrl = resolveBaseUrl(req, target)
+  const credentials = resolveCredentials(req, target)
+  if (!baseUrl) {
     return NextResponse.json(
       {
-        error: 'Missing Bosch credentials.',
-        hint: 'Set userid/password in API default headers or BOSCH_USERID/BOSCH_PASSWORD env vars.',
+        error: 'Bosch proxy base URL is not configured.',
+        target,
+        hint: 'Set BOSCH_BASE_URL or BOSCH_BASE_URL_<TARGET> in .env.local and restart.',
       },
       { status: 500 },
     )
@@ -301,19 +509,24 @@ async function forward(req: NextRequest, ctx: RouteContext) {
     })
 
     const text = await response.text()
-    let payload: unknown = text ? { raw: text } : null
-    try {
-      payload = text ? JSON.parse(text) : null
-    } catch {}
-
-    const next = NextResponse.json(payload, { status: response.status })
-    const setCookie = response.headers.get('set-cookie')
-    if (setCookie) next.headers.set('set-cookie', setCookie)
-    return next
+    const payload = text ? safeJsonParse(text) : null
+    const proxiedResponse = NextResponse.json(payload, { status: response.status })
+    const setCookies = getSetCookieHeaders(response.headers)
+    setCookies.forEach(cookie => proxiedResponse.headers.append('set-cookie', cookie))
+    return proxiedResponse
   } catch (error) {
     const details = error instanceof Error ? error.message : 'Bosch proxy failed'
+    const code = resolveErrorCode(error)
     return NextResponse.json(
-      { error: 'Bosch proxy request failed.', details, endpoint, baseUrl },
+      {
+        error: 'Bosch proxy request failed.',
+        details,
+        code,
+        endpoint,
+        target,
+        baseUrl,
+        hint: 'Verify VPN/network access and BOSCH_BASE_URL target values.',
+      },
       { status: 502 },
     )
   }
@@ -357,6 +570,18 @@ export default function LoginPage() {
       const loginUrl = resolveRequestUrl('${pc.login.endpoint}')
       const res   = await apiClient.post(loginUrl, body)
       const data  = res.data
+      const failedByBody = Boolean(
+        data &&
+          typeof data === 'object' &&
+          'status' in (data as Record<string, unknown>) &&
+          (data as { status?: unknown }).status === false
+      )
+      if (failedByBody) {
+        const msg = typeof (data as { message?: unknown }).message === 'string'
+          ? (data as { message: string }).message
+          : 'Login failed. Check credentials.'
+        throw new Error(msg)
+      }
       const tokenValue = '${pc.login.tokenPath}'.split('.').reduce<unknown>((acc, key) => {
         if (!acc || typeof acc !== 'object') return undefined
         return (acc as Record<string, unknown>)[key]
