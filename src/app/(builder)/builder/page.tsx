@@ -509,47 +509,6 @@ export default function BuilderPage() {
         return;
       }
 
-      const isAbsoluteUrl = (value: string) => /^https?:\/\//i.test(value.trim());
-      const loginOrigin = isAbsoluteUrl(loginEndpoint)
-        ? (() => {
-            try {
-              return new URL(loginEndpoint).origin;
-            } catch {
-              return "";
-            }
-          })()
-        : "";
-      const configuredBaseUrl = baseProjectConfig.baseUrl.trim();
-      const resolvedBaseUrl = configuredBaseUrl || loginOrigin;
-      const dashboardEndpoints = allEndpoints.filter(
-        (endpoint) => (endpoint.dashboardId ?? dashboardId) === dashboardId,
-      );
-      const hasAbsoluteBaseUrl = isAbsoluteUrl(resolvedBaseUrl);
-      const hasRelativeEndpoint = dashboardEndpoints.some(
-        (endpoint) => !isAbsoluteUrl(endpoint.url),
-      );
-      let exportBaseUrl = resolvedBaseUrl;
-      if (!hasAbsoluteBaseUrl && (hasRelativeEndpoint || !isAbsoluteUrl(loginEndpoint))) {
-        const suggestedBaseUrl = loginOrigin || "";
-        const manualBaseUrl = window.prompt(
-          "Standalone export needs your live API base URL (example: https://api.yourdomain.com).",
-          suggestedBaseUrl,
-        );
-        if (!manualBaseUrl) {
-          toast.error("Export cancelled: Base URL is required.");
-          return;
-        }
-        let normalizedBaseUrl = manualBaseUrl.trim();
-        while (normalizedBaseUrl.endsWith("/")) {
-          normalizedBaseUrl = normalizedBaseUrl.slice(0, -1);
-        }
-        if (!isAbsoluteUrl(normalizedBaseUrl)) {
-          toast.error("Invalid Base URL. Please enter a full https:// URL.");
-          return;
-        }
-        exportBaseUrl = normalizedBaseUrl;
-      }
-
       setExporting(true);
       toast.loading("Generating project...", { id: "export" });
       try {
@@ -559,7 +518,6 @@ export default function BuilderPage() {
           allWidgets,
           {
             ...baseProjectConfig,
-            baseUrl: exportBaseUrl,
             aiExportConfig,
           },
           store.getGroupsByDashboard(dashboardId),
