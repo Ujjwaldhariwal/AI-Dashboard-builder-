@@ -528,9 +528,26 @@ export default function BuilderPage() {
       const hasRelativeEndpoint = dashboardEndpoints.some(
         (endpoint) => !isAbsoluteUrl(endpoint.url),
       );
+      let exportBaseUrl = resolvedBaseUrl;
       if (!hasAbsoluteBaseUrl && (hasRelativeEndpoint || !isAbsoluteUrl(loginEndpoint))) {
-        toast.error("Standalone export requires an absolute Base URL (https://...).");
-        return;
+        const suggestedBaseUrl = loginOrigin || "";
+        const manualBaseUrl = window.prompt(
+          "Standalone export needs your live API base URL (example: https://api.yourdomain.com).",
+          suggestedBaseUrl,
+        );
+        if (!manualBaseUrl) {
+          toast.error("Export cancelled: Base URL is required.");
+          return;
+        }
+        let normalizedBaseUrl = manualBaseUrl.trim();
+        while (normalizedBaseUrl.endsWith("/")) {
+          normalizedBaseUrl = normalizedBaseUrl.slice(0, -1);
+        }
+        if (!isAbsoluteUrl(normalizedBaseUrl)) {
+          toast.error("Invalid Base URL. Please enter a full https:// URL.");
+          return;
+        }
+        exportBaseUrl = normalizedBaseUrl;
       }
 
       setExporting(true);
@@ -542,6 +559,7 @@ export default function BuilderPage() {
           allWidgets,
           {
             ...baseProjectConfig,
+            baseUrl: exportBaseUrl,
             aiExportConfig,
           },
           store.getGroupsByDashboard(dashboardId),
