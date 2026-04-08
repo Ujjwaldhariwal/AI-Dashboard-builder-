@@ -954,7 +954,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </AnimatePresence>
 
         {/* Main content — FIXED xl:ml-[68px] always. Sidebar expansion overlays on top. Content width NEVER changes. */}
-        <main className="w-full flex-1 min-h-[calc(100vh-3.5rem)] bg-muted/20 overflow-x-hidden xl:ml-[68px]">
+        <main className="w-full flex-1 min-h-[calc(100vh-3.5rem)] bg-muted/20 xl:ml-[68px]">
           {children}
         </main>
       </div>

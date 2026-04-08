@@ -1,10 +1,8 @@
 "use client";
 
 // src/app/(builder)/builder/page.tsx
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Optimized: reduced state, fixed effect loops, responsive
 // header, memoized computations, modular sub-components
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -78,10 +76,9 @@ import {
 } from "@/lib/builder/api-health-events";
 import { FrozenChartNav } from "@/components/builder/nav/linear-bar";
 import {
-  CHART_NAV_ALL,
   buildChartNavTree,
   filterWidgetsByNavSelection,
-  normalizeChartNavSelection,
+  type ChartNavTree,
 } from "@/lib/builder/chart-nav-model";
 import type { AIExportConfig } from "@/types/project-config";
 import type { EndpointProfile } from "@/types/training";
@@ -92,13 +89,34 @@ interface NavSelection {
 }
 
 const DEFAULT_NAV_SELECTION: NavSelection = {
-  groupId: CHART_NAV_ALL,
-  subgroupId: CHART_NAV_ALL,
+  groupId: "",
+  subgroupId: "",
 };
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Main Page
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function resolveStrictNavSelection(
+  tree: ChartNavTree,
+  selection: NavSelection,
+): NavSelection {
+  const firstCategory = tree.categories[0];
+  if (!firstCategory) return DEFAULT_NAV_SELECTION;
+
+  const resolvedCategory =
+    tree.categories.find((category) => category.id === selection.groupId) ??
+    firstCategory;
+  const resolvedSubgroup =
+    resolvedCategory.subgroups.find(
+      (subgroup) => subgroup.id === selection.subgroupId,
+    ) ?? resolvedCategory.subgroups[0];
+
+  if (!resolvedSubgroup) {
+    return DEFAULT_NAV_SELECTION;
+  }
+
+  return {
+    groupId: resolvedCategory.id,
+    subgroupId: resolvedSubgroup.id,
+  };
+}
 
 export default function BuilderPage() {
   const router = useRouter();
@@ -113,41 +131,29 @@ export default function BuilderPage() {
     getGroupsByDashboard,
   } = useDashboardStore();
 
-  // â”€â”€ Core UI state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [magicOpen, setMagicOpen] = useState(false);
   const [exportConfigOpen, setExportConfigOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
 
-  // â”€â”€ AI panel â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [aiPanel, setAiPanel] = useState({ open: false, minimized: false });
 
-  // â”€â”€ Async ops â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [ops, setOps] = useState({
     scanning: false,
     autoAdding: false,
     refreshing: false,
   });
 
-  const [navSelection, setNavSelection] =
-    useState<NavSelection>(DEFAULT_NAV_SELECTION);
+  const [navSelection, setNavSelection] = useState<NavSelection>(DEFAULT_NAV_SELECTION);
 
-  // â”€â”€ Nav state â€” single object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const [scanSummary, setScanSummary] = useState<DashboardEndpointProbeSummary | null>(null);
+  const [sessionScope, setSessionScope] = useState(() => getEndpointSessionScope());
 
-  // â”€â”€ API health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const [scanSummary, setScanSummary] =
-    useState<DashboardEndpointProbeSummary | null>(null);
-  const [sessionScope, setSessionScope] = useState(() =>
-    getEndpointSessionScope(),
-  );
-
-  // â”€â”€ Unsaved tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const hasMounted = useRef(false);
   const lastSavedCount = useRef(0);
   const [unsaved, setUnsaved] = useState(false);
 
-  // â”€â”€ Derived data (all memoized) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const currentDash = useMemo(
     () => dashboards.find((d) => d.id === currentDashboardId),
     [dashboards, currentDashboardId],
@@ -158,10 +164,7 @@ export default function BuilderPage() {
   );
 
   const dashboardEndpoints = useMemo(
-    () =>
-      allEndpoints.filter(
-        (ep) => (ep.dashboardId ?? currentDashboardId) === currentDashboardId,
-      ),
+    () => allEndpoints.filter((ep) => (ep.dashboardId ?? currentDashboardId) === currentDashboardId),
     [allEndpoints, currentDashboardId],
   );
 
@@ -171,10 +174,7 @@ export default function BuilderPage() {
   );
 
   const activeDashboardEndpoints = useMemo(
-    () =>
-      dashboardEndpoints.filter(
-        (ep) => ep.status !== "inactive" && ep.url?.trim(),
-      ),
+    () => dashboardEndpoints.filter((ep) => ep.status !== "inactive" && ep.url?.trim()),
     [dashboardEndpoints],
   );
 
@@ -184,10 +184,7 @@ export default function BuilderPage() {
   );
 
   const navEndpointLookup = useMemo(
-    () =>
-      Object.fromEntries(
-        dashboardEndpoints.map((ep) => [ep.id, { name: ep.name, url: ep.url }]),
-      ),
+    () => Object.fromEntries(dashboardEndpoints.map((ep) => [ep.id, { name: ep.name, url: ep.url }])),
     [dashboardEndpoints],
   );
 
@@ -208,11 +205,9 @@ export default function BuilderPage() {
         const ay = a.position?.y ?? 0;
         const by = b.position?.y ?? 0;
         if (ay !== by) return ay - by;
-
         const ax = a.position?.x ?? 0;
         const bx = b.position?.x ?? 0;
         if (ax !== bx) return ax - bx;
-
         return a.id.localeCompare(b.id);
       }),
     [widgets],
@@ -227,87 +222,61 @@ export default function BuilderPage() {
     [orderedWidgets, collections, navEndpointLookup, useTaxonomyFallback],
   );
 
-  const visibleWidgets = useMemo(
-    () =>
-      filterWidgetsByNavSelection(
-        orderedWidgets,
-        navSelection.groupId,
-        navSelection.subgroupId,
-        collections,
-        {
-          endpointLookup: navEndpointLookup,
-          useTaxonomyFallback,
-        },
-      ),
-    [
-      orderedWidgets,
-      navSelection.groupId,
-      navSelection.subgroupId,
-      collections,
-      navEndpointLookup,
-      useTaxonomyFallback,
-    ],
+  const strictNavSelection = useMemo(
+    () => resolveStrictNavSelection(navTree, navSelection),
+    [navTree, navSelection.groupId, navSelection.subgroupId],
   );
 
+  const visibleWidgets = useMemo(() => {
+    if (!strictNavSelection.groupId || !strictNavSelection.subgroupId) {
+      return orderedWidgets;
+    }
+    return filterWidgetsByNavSelection(
+      orderedWidgets,
+      strictNavSelection.groupId,
+      strictNavSelection.subgroupId,
+      collections,
+      { endpointLookup: navEndpointLookup, useTaxonomyFallback },
+    );
+  }, [orderedWidgets, strictNavSelection.groupId, strictNavSelection.subgroupId, collections, navEndpointLookup, useTaxonomyFallback]);
+
   const allWidgetsWithoutGroup = useMemo(
-    () =>
-      orderedWidgets.length > 0 &&
-      orderedWidgets.every(
-        (widget) => !widget.groupId || widget.groupId.trim().length === 0,
-      ),
+    () => orderedWidgets.length > 0 && orderedWidgets.every((widget) => !widget.groupId || widget.groupId.trim().length === 0),
     [orderedWidgets],
   );
 
-  // â”€â”€ Prefetch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useDashboardEndpointPrefetch(activeDashboardEndpoints);
 
-  // â”€â”€ Effects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  // Auto-select first dashboard
   useEffect(() => {
     if (!currentDashboardId && dashboards.length > 0) {
       setCurrentDashboard(dashboards[0].id);
     }
   }, [currentDashboardId, dashboards, setCurrentDashboard]);
 
-  // Reset state when dashboard changes
   useEffect(() => {
     setNavSelection(DEFAULT_NAV_SELECTION);
     setSelectedWidgetId(null);
   }, [currentDashboardId]);
 
-  // Session scope listener
   useEffect(() => {
     const handler = () => setSessionScope(getEndpointSessionScope());
     window.addEventListener("builderDemoAuthSessionChanged", handler);
-    return () =>
-      window.removeEventListener("builderDemoAuthSessionChanged", handler);
+    return () => window.removeEventListener("builderDemoAuthSessionChanged", handler);
   }, []);
 
-  const prevNormKey = useRef("");
   useEffect(() => {
-    const normalized = normalizeChartNavSelection(navTree, navSelection);
-    const key = `${normalized.groupId}|${normalized.subgroupId}`;
-    if (
-      key !== prevNormKey.current &&
-      (normalized.groupId !== navSelection.groupId ||
-        normalized.subgroupId !== navSelection.subgroupId)
-    ) {
-      prevNormKey.current = key;
+    const normalized = strictNavSelection;
+    if (normalized.groupId !== navSelection.groupId || normalized.subgroupId !== navSelection.subgroupId) {
       setNavSelection(normalized);
     }
-  }, [navTree, navSelection]);
+  }, [strictNavSelection, navSelection.groupId, navSelection.subgroupId]);
 
   useEffect(() => {
-    if (
-      selectedWidgetId &&
-      !visibleWidgets.some((widget) => widget.id === selectedWidgetId)
-    ) {
+    if (selectedWidgetId && !visibleWidgets.some((widget) => widget.id === selectedWidgetId)) {
       setSelectedWidgetId(null);
     }
   }, [selectedWidgetId, visibleWidgets]);
 
-  // Unsaved tracking
   useEffect(() => {
     if (!hasMounted.current) {
       lastSavedCount.current = widgets.length;
@@ -317,8 +286,6 @@ export default function BuilderPage() {
     if (widgets.length !== lastSavedCount.current) setUnsaved(true);
   }, [widgets.length]);
 
-  // â”€â”€ API Scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
   const runApiScan = useCallback(
     async (opts: { force?: boolean; silent?: boolean } = {}) => {
       if (activeDashboardEndpoints.length === 0) {
@@ -327,25 +294,14 @@ export default function BuilderPage() {
         return null;
       }
       setOps((p) => ({ ...p, scanning: true }));
-      if (!opts.silent)
-        toast.loading("Scanning API health...", { id: "api-scan" });
+      if (!opts.silent) toast.loading("Scanning API health...", { id: "api-scan" });
       try {
-        const summary = await probeDashboardEndpoints(
-          activeDashboardEndpoints,
-          { force: opts.force, sessionScope },
-        );
+        const summary = await probeDashboardEndpoints(activeDashboardEndpoints, { force: opts.force, sessionScope });
         setScanSummary(summary);
-        if (!opts.silent)
-          toast.success(
-            `Scan: ${summary.healthy} healthy, ${summary.unauthorized} auth, ${summary.failed} failed.`,
-            { id: "api-scan" },
-          );
+        if (!opts.silent) toast.success(`Scan: ${summary.healthy} healthy, ${summary.unauthorized} auth, ${summary.failed} failed.`, { id: "api-scan" });
         return summary;
       } catch (e) {
-        if (!opts.silent)
-          toast.error(`Scan failed: ${e instanceof Error ? e.message : e}`, {
-            id: "api-scan",
-          });
+        if (!opts.silent) toast.error(`Scan failed: ${e instanceof Error ? e.message : e}`, { id: "api-scan" });
         return null;
       } finally {
         setOps((p) => ({ ...p, scanning: false }));
@@ -354,17 +310,14 @@ export default function BuilderPage() {
     [activeDashboardEndpoints, sessionScope],
   );
 
-  // Initial scan + broadcast
-  useEffect(() => {
-    void runApiScan({ silent: true });
-  }, [runApiScan]);
+  useEffect(() => { void runApiScan({ silent: true }); }, [runApiScan]);
+
   useEffect(() => {
     dispatchBuilderApiHealthSummary(scanSummary);
   }, [scanSummary]);
 
-  // Sidebar rescan
   useEffect(() => {
-    const handler = () => void runApiScan({ force: true });
+    const handler = () => { void runApiScan({ force: true }); };
     window.addEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handler);
     return () => {
       window.removeEventListener(BUILDER_API_HEALTH_RESCAN_EVENT, handler);
@@ -372,12 +325,7 @@ export default function BuilderPage() {
     };
   }, [runApiScan]);
 
-  // â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  const handleScanApis = useCallback(
-    () => void runApiScan({ force: true }),
-    [runApiScan],
-  );
+  const handleScanApis = useCallback(() => { void runApiScan({ force: true }); }, [runApiScan]);
 
   const handleRefreshAll = useCallback(async () => {
     setOps((p) => ({ ...p, refreshing: true }));
@@ -387,17 +335,13 @@ export default function BuilderPage() {
       clearEndpointFailureCache();
       clearEndpointProbeCache();
       if (activeDashboardEndpoints.length > 0) {
-        await prefetchDashboardEndpoints(activeDashboardEndpoints, {
-          sessionScope,
-        });
+        await prefetchDashboardEndpoints(activeDashboardEndpoints, { sessionScope });
         await runApiScan({ silent: true });
       }
       dispatchDashboardWidgetRefresh({ scope: "all", force: false });
       toast.success("All widgets refreshed", { id: "refresh" });
     } catch (e) {
-      toast.error(`Refresh failed: ${e instanceof Error ? e.message : e}`, {
-        id: "refresh",
-      });
+      toast.error(`Refresh failed: ${e instanceof Error ? e.message : e}`, { id: "refresh" });
     } finally {
       setOps((p) => ({ ...p, refreshing: false }));
     }
@@ -410,17 +354,15 @@ export default function BuilderPage() {
     }
     setOps((p) => ({ ...p, autoAdding: true }));
     toast.loading("Building widgets...", { id: "auto-add" });
+
     try {
       const summary = scanSummary ?? (await runApiScan({ silent: true }));
       if (!summary) {
         toast.error("Scan required first.", { id: "auto-add" });
         return;
       }
-      const healthyIds = new Set(
-        summary.results
-          .filter((r) => r.status === "healthy" && r.endpointId)
-          .map((r) => r.endpointId as string),
-      );
+
+      const healthyIds = new Set(summary.results.filter((r) => r.status === "healthy").map((r) => r.endpointId as string));
       if (healthyIds.size === 0) {
         toast.info("No healthy APIs.", { id: "auto-add" });
         return;
@@ -434,22 +376,20 @@ export default function BuilderPage() {
         trainedProfilesByEndpointId = undefined;
       }
 
-      const { drafts, skippedExisting, skippedFetch, skippedNoData, skippedReview } =
-        await buildAutoWidgetsFromEndpoints({
-          endpoints: activeDashboardEndpoints,
-          widgets,
-          sessionScope,
-          healthyEndpointIds: healthyIds,
-          trainedProfilesByEndpointId,
-        });
+      const { drafts, skippedExisting, skippedFetch, skippedNoData, skippedReview } = await buildAutoWidgetsFromEndpoints({
+        endpoints: activeDashboardEndpoints,
+        widgets,
+        sessionScope,
+        healthyEndpointIds: healthyIds,
+        trainedProfilesByEndpointId,
+      });
+
       if (drafts.length === 0) {
-        toast.info(
-          `No new widgets. Skip: ${skippedExisting} existing, ${skippedReview} review, ${skippedNoData} no-data, ${skippedFetch} failed.`,
-          { id: "auto-add" },
-        );
+        toast.info(`No new widgets. Skip: ${skippedExisting} existing, ${skippedReview} review, ${skippedNoData} no-data, ${skippedFetch} failed.`, { id: "auto-add" });
         return;
       }
-      for (const d of drafts)
+
+      for (const d of drafts) {
         addWidget({
           title: d.title,
           type: d.type,
@@ -457,114 +397,73 @@ export default function BuilderPage() {
           dataMapping: { xAxis: d.xAxis, yAxis: d.yAxis, yAxes: d.yAxes },
           position: d.position,
         });
+      }
       toast.success(`Added ${drafts.length} widgets.`, { id: "auto-add" });
     } finally {
       setOps((p) => ({ ...p, autoAdding: false }));
     }
-  }, [
-    currentDashboardId,
-    activeDashboardEndpoints,
-    scanSummary,
-    runApiScan,
-    widgets,
-    sessionScope,
-    addWidget,
-  ]);
+  }, [currentDashboardId, activeDashboardEndpoints, scanSummary, runApiScan, widgets, sessionScope, addWidget]);
 
-  const handleCanvasClick = useCallback(() => setSelectedWidgetId(null), []);
+  const handleCanvasClick = useCallback(() => { setSelectedWidgetId(null); }, []);
 
   const handleExport = useCallback(() => {
-    if (!currentDash) {
-      toast.error("No active dashboard");
-      return;
-    }
-    if (!widgets.length) {
-      toast.error("Add at least one widget first");
-      return;
-    }
+    if (!currentDash) return toast.error("No active dashboard");
+    if (!widgets.length) return toast.error("Add at least one widget first");
     setExportConfigOpen(true);
   }, [currentDash, widgets.length]);
 
-  const handleGenerateZip = useCallback(
-    async (dashboardId: string, aiExportConfig: AIExportConfig) => {
-      const dashboard = dashboards.find((item) => item.id === dashboardId);
-      if (!dashboard) {
-        toast.error("No active dashboard");
-        return;
-      }
+  const handleGenerateZip = useCallback(async (dashboardId: string, aiExportConfig: AIExportConfig): Promise<void> => {
+    const dashboard = dashboards.find((item) => item.id === dashboardId);
+    if (!dashboard) {
+      toast.error("No active dashboard");
+      return;
+    }
 
-      const dashboardWidgets = allWidgets.filter(
-        (widget) => widget.dashboardId === dashboardId,
-      );
-      if (dashboardWidgets.length === 0) {
-        toast.error("Add at least one widget first");
-        return;
-      }
+    const dashboardWidgets = allWidgets.filter((widget) => widget.dashboardId === dashboardId);
+    if (dashboardWidgets.length === 0) {
+      toast.error("Add at least one widget first");
+      return;
+    }
 
-      const store = useDashboardStore.getState();
-      const baseProjectConfig = store.getProjectConfig(dashboardId);
-      const loginEndpoint = baseProjectConfig.login.endpoint.trim();
-      if (!loginEndpoint) {
-        toast.error("Login endpoint is required to export standalone dashboard.");
-        return;
-      }
+    const store = useDashboardStore.getState();
+    const baseProjectConfig = store.getProjectConfig(dashboardId);
+    const loginEndpoint = baseProjectConfig.login.endpoint.trim();
+    if (!loginEndpoint) {
+      toast.error("Login endpoint is required to export standalone dashboard.");
+      return;
+    }
 
-      setExporting(true);
-      toast.loading("Generating project...", { id: "export" });
-      try {
-        const config = buildDashboardConfig(
-          dashboard,
-          allEndpoints,
-          allWidgets,
-          {
-            ...baseProjectConfig,
-            aiExportConfig,
-          },
-          store.getGroupsByDashboard(dashboardId),
-        );
-        const blob = await packageProjectAsZip(generateProjectFromConfig(config));
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `${slugifyDashboardName(dashboard.name)}-dashboard.zip`;
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
-        URL.revokeObjectURL(url);
-        toast.success("Export ready!", { id: "export" });
-        lastSavedCount.current = dashboardWidgets.length;
-        setUnsaved(false);
-      } catch (err) {
-        toast.error(
-          `Export failed: ${err instanceof Error ? err.message : err}`,
-          { id: "export" },
-        );
-      } finally {
-        setExporting(false);
-      }
-    },
-    [dashboards, allWidgets, allEndpoints],
-  );
+    setExporting(true);
+    toast.loading("Generating project...", { id: "export" });
 
-  const handleNavChange = useCallback((selection: NavSelection) => {
-    setNavSelection(selection);
-  }, []);
+    try {
+      const config = buildDashboardConfig(dashboard, allEndpoints, allWidgets, { ...baseProjectConfig, aiExportConfig }, store.getGroupsByDashboard(dashboardId));
+      const blob = await packageProjectAsZip(generateProjectFromConfig(config));
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${slugifyDashboardName(dashboard.name)}-dashboard.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      toast.success("Export ready!", { id: "export" });
+      lastSavedCount.current = dashboardWidgets.length;
+      setUnsaved(false);
+    } catch (err) {
+      toast.error(`Export failed: ${err instanceof Error ? err.message : err}`, { id: "export" });
+    } finally {
+      setExporting(false);
+    }
+  }, [dashboards, allWidgets, allEndpoints]);
 
-  const openAi = useCallback(
-    () => setAiPanel({ open: true, minimized: false }),
-    [],
-  );
-  const closeAi = useCallback(
-    () => setAiPanel({ open: false, minimized: false }),
-    [],
-  );
-  const toggleAiMin = useCallback(
-    () => setAiPanel((p) => ({ ...p, minimized: !p.minimized })),
-    [],
-  );
+  const handleNavChange = useCallback((selection: NavSelection) => { setNavSelection(selection); }, []);
 
-  // â”€â”€ Empty states â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const openAi = useCallback(() => { setAiPanel({ open: true, minimized: false }); }, []);
+  const closeAi = useCallback(() => { setAiPanel({ open: false, minimized: false }); }, []);
+  const toggleAiMin = useCallback(() => { setAiPanel((p) => ({ ...p, minimized: !p.minimized })); }, []);
 
+  // Empty state: No Dashboard
   if (dashboards.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] p-6">
@@ -573,71 +472,63 @@ export default function BuilderPage() {
             <FolderKanban className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-xl font-bold mb-2">No Dashboard Yet</h2>
-          <p className="text-sm text-muted-foreground mb-5">
-            Create one from Workspaces first.
-          </p>
-          <Button onClick={() => router.push("/workspaces")}>
-            Go to Workspaces
-          </Button>
+          <p className="text-sm text-muted-foreground mb-5">Create one from Workspaces first.</p>
+          <Button onClick={() => router.push("/workspaces")}>Go to Workspaces</Button>
         </div>
       </div>
     );
   }
 
+  // Empty state: No APIs/Widgets
   if (dashboardEndpoints.length === 0 && widgets.length === 0) {
     return (
-      <div className="p-4 sm:p-6">
-        <BuilderHeader
-          currentDash={currentDash}
-          widgetCount={0}
-          endpointCount={0}
-          collectionCount={0}
-          sectionCount={0}
-          exporting={false}
-          unsaved={false}
-          ops={{ scanning: false, autoAdding: false, refreshing: false }}
-          scanSummary={null}
-          onAddWidget={() => setAddWidgetOpen(true)}
-          onMagicOpen={() => setMagicOpen(true)}
-          onExport={handleExport}
-          onScanApis={handleScanApis}
-          onRefreshAll={handleRefreshAll}
-          onAutoAdd={handleAutoAdd}
-        />
-        <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
-          <div className="text-center max-w-sm px-6">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mx-auto mb-4">
-              <Database className="w-8 h-8 text-white" />
-            </div>
-            <h2 className="text-xl font-bold mb-2">No APIs Connected</h2>
-            <p className="text-sm text-muted-foreground mb-5">
-              Add APIs or let AI build your dashboard instantly.
-            </p>
-            <div className="flex flex-col gap-2">
-              <Button
-                onClick={() => setMagicOpen(true)}
-                className="bg-gradient-to-r from-purple-600 to-blue-600 text-white"
-              >
-                <Wand2 className="w-4 h-4 mr-2" />
-                Magic Auto-Build
-              </Button>
-              <Link href="/api-config">
-                <Button variant="outline" className="w-full">
-                  <Settings2 className="w-4 h-4 mr-2" />
-                  Configure APIs Manually
+      <div className="min-h-[calc(100vh-3.5rem)] bg-background relative">
+        <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-2">
+          <div className="border-b border-border/60 pb-4">
+            <BuilderHeader
+              currentDash={currentDash}
+              widgetCount={0}
+              endpointCount={0}
+              collectionCount={0}
+              sectionCount={0}
+              exporting={false}
+              unsaved={false}
+              ops={{ scanning: false, autoAdding: false, refreshing: false }}
+              scanSummary={null}
+              onAddWidget={() => setAddWidgetOpen(true)}
+              onMagicOpen={() => setMagicOpen(true)}
+              onExport={handleExport}
+              onScanApis={handleScanApis}
+              onRefreshAll={handleRefreshAll}
+              onAutoAdd={handleAutoAdd}
+            />
+          </div>
+        </div>
+        <div className="mx-auto w-full max-w-7xl px-4 py-6">
+          <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
+            <div className="text-center max-w-sm px-6">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mx-auto mb-4">
+                <Database className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-xl font-bold mb-2">No APIs Connected</h2>
+              <p className="text-sm text-muted-foreground mb-5">Add APIs or let AI build your dashboard instantly.</p>
+              <div className="flex flex-col gap-2">
+                <Button onClick={() => setMagicOpen(true)} className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+                  <Wand2 className="w-4 h-4 mr-2" />
+                  Magic Auto-Build
                 </Button>
-              </Link>
+                <Button variant="outline" className="w-full" asChild>
+                  <Link href="/api-config">
+                    <Settings2 className="w-4 h-4 mr-2" />
+                    Configure APIs Manually
+                  </Link>
+                </Button>
+              </div>
             </div>
           </div>
         </div>
-        <WidgetConfigDialog
-          open={addWidgetOpen}
-          onOpenChange={setAddWidgetOpen}
-        />
-        <MagicPasteModal
-          isOpen={magicOpen}
-          onClose={() => setMagicOpen(false)}
-        />
+        <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
+        <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
         {currentDash && (
           <ExportConfigModal
             open={exportConfigOpen}
@@ -652,48 +543,45 @@ export default function BuilderPage() {
     );
   }
 
-  // â”€â”€ Main layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
+  // Main Builder UI
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
-      {/* Header */}
-      <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b bg-card/80 backdrop-blur flex-shrink-0">
-        <BuilderHeader
-          currentDash={currentDash}
-          widgetCount={widgets.length}
-          endpointCount={dashboardEndpoints.length}
-          collectionCount={collections.length}
-          sectionCount={sectionCount}
-          exporting={exporting}
-          unsaved={unsaved}
-          ops={ops}
-          scanSummary={scanSummary}
-          onAddWidget={() => setAddWidgetOpen(true)}
-          onMagicOpen={() => setMagicOpen(true)}
-          onExport={handleExport}
-          onScanApis={handleScanApis}
-          onRefreshAll={handleRefreshAll}
-          onAutoAdd={handleAutoAdd}
-        />
+    <div className="min-h-[calc(100vh-3.5rem)] bg-background relative">
+      
+      {/* The Header scrolls AWAY naturally */}
+      <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-2">
+        <div className="border-b border-border/60 pb-4">
+          <BuilderHeader
+            currentDash={currentDash}
+            widgetCount={widgets.length}
+            endpointCount={dashboardEndpoints.length}
+            collectionCount={collections.length}
+            sectionCount={sectionCount}
+            exporting={exporting}
+            unsaved={unsaved}
+            ops={ops}
+            scanSummary={scanSummary}
+            onAddWidget={() => setAddWidgetOpen(true)}
+            onMagicOpen={() => setMagicOpen(true)}
+            onExport={handleExport}
+            onScanApis={handleScanApis}
+            onRefreshAll={handleRefreshAll}
+            onAutoAdd={handleAutoAdd}
+          />
+        </div>
       </div>
 
-      {/* Canvas */}
-      <div
-        className="flex-1 overflow-y-auto p-4 sm:p-6"
-        onClick={handleCanvasClick}
-      >
-        {orderedWidgets.length > 0 && (
-          <div className="mb-4" onClick={(event) => event.stopPropagation()}>
-            <FrozenChartNav
-              tree={navTree}
-              activeGroupId={navSelection.groupId}
-              activeSubgroupId={navSelection.subgroupId}
-              onSelectionChange={handleNavChange}
-              showUngroupedHint={allWidgetsWithoutGroup}
-            />
-          </div>
-        )}
+      {orderedWidgets.length > 0 && (
+        <FrozenChartNav
+          tree={navTree}
+          activeGroupId={navSelection.groupId}
+          activeSubgroupId={navSelection.subgroupId}
+          onSelectionChange={handleNavChange}
+          showUngroupedHint={allWidgetsWithoutGroup}
+        />
+      )}
 
+      {/* The Canvas uses the rest of the page safely */}
+      <div className="mx-auto w-full max-w-7xl px-4 py-8" onClick={handleCanvasClick}>
         <DragDropCanvas
           selectedWidgetId={selectedWidgetId}
           onSelectWidget={setSelectedWidgetId}
@@ -724,10 +612,7 @@ export default function BuilderPage() {
         </motion.button>
       )}
 
-      <WidgetConfigDialog
-        open={addWidgetOpen}
-        onOpenChange={setAddWidgetOpen}
-      />
+      <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
       {currentDash && (
         <ExportConfigModal
@@ -743,12 +628,12 @@ export default function BuilderPage() {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// BuilderHeader â€” responsive with overflow menu
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ----------------------------------------------------------------------
+// Subcomponents (Identical to your paste)
+// ----------------------------------------------------------------------
 
 interface BuilderHeaderProps {
-  currentDash: { id: string; name: string; description?: string } | undefined;
+  currentDash: any;
   widgetCount: number;
   endpointCount: number;
   collectionCount: number;
@@ -784,7 +669,6 @@ function BuilderHeader({
 }: BuilderHeaderProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      {/* Left */}
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
           <h1 className="text-lg sm:text-xl font-bold truncate max-w-[200px] sm:max-w-none">
@@ -797,38 +681,24 @@ function BuilderHeader({
             {endpointCount} API{endpointCount !== 1 ? "s" : ""}
           </Badge>
           {collectionCount > 0 && (
-            <Badge
-              variant="outline"
-              className="text-[10px] hidden sm:inline-flex"
-            >
+            <Badge variant="outline" className="text-[10px] hidden sm:inline-flex">
               {collectionCount} grp{collectionCount !== 1 ? "s" : ""}
             </Badge>
           )}
           {sectionCount > 0 && (
-            <Badge
-              variant="outline"
-              className="text-[10px] hidden md:inline-flex"
-            >
+            <Badge variant="outline" className="text-[10px] hidden md:inline-flex">
               {sectionCount} sec{sectionCount !== 1 ? "s" : ""}
             </Badge>
           )}
           {scanSummary && (
-            <>
-              <Badge
-                variant="outline"
-                className="text-[10px] border-emerald-300 text-emerald-700 hidden lg:inline-flex"
-              >
-                {scanSummary.healthy} ready
-              </Badge>
-              {scanSummary.unauthorized > 0 && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] border-amber-300 text-amber-700 hidden lg:inline-flex"
-                >
-                  {scanSummary.unauthorized} auth
-                </Badge>
-              )}
-            </>
+            <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700 hidden lg:inline-flex">
+              {scanSummary.healthy} ready
+            </Badge>
+          )}
+          {scanSummary && scanSummary.unauthorized > 0 && (
+            <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 hidden lg:inline-flex">
+              {scanSummary.unauthorized} auth
+            </Badge>
           )}
           {unsaved && (
             <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
@@ -842,7 +712,6 @@ function BuilderHeader({
         </p>
       </div>
 
-      {/* Right */}
       <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
         <Link href="/api-config" className="hidden sm:block">
           <Button variant="outline" size="sm">
@@ -856,24 +725,11 @@ function BuilderHeader({
             Preview
           </Button>
         </Link>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onExport}
-          disabled={exporting || widgetCount === 0}
-        >
+        <Button variant="outline" size="sm" onClick={onExport} disabled={exporting || widgetCount === 0}>
           <Download className="w-3.5 h-3.5 sm:mr-1.5" />
-          <span className="hidden sm:inline">
-            {exporting ? "Exportingâ€¦" : "Export"}
-          </span>
+          <span className="hidden sm:inline">{exporting ? "Exporting..." : "Export"}</span>
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onMagicOpen}
-          className="border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-900 dark:text-purple-400"
-        >
+        <Button variant="outline" size="sm" onClick={onMagicOpen} className="border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-900 dark:text-purple-400">
           <Wand2 className="w-3.5 h-3.5 sm:mr-1.5" />
           <span className="hidden sm:inline">Magic</span>
         </Button>
@@ -881,8 +737,6 @@ function BuilderHeader({
           <Plus className="w-3.5 h-3.5 sm:mr-1.5" />
           <span className="hidden sm:inline">Add Widget</span>
         </Button>
-
-        {/* Overflow */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="icon" className="h-8 w-8">
@@ -890,39 +744,16 @@ function BuilderHeader({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuItem
-              onClick={onScanApis}
-              disabled={ops.scanning || endpointCount === 0}
-            >
-              {ops.scanning ? (
-                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-              ) : (
-                <Radar className="w-3.5 h-3.5 mr-2" />
-              )}
+            <DropdownMenuItem onClick={onScanApis} disabled={ops.scanning || endpointCount === 0}>
+              {ops.scanning ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Radar className="w-3.5 h-3.5 mr-2" />}
               {ops.scanning ? "Scanning..." : "Scan APIs"}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onRefreshAll}
-              disabled={ops.refreshing || endpointCount === 0}
-            >
-              {ops.refreshing ? (
-                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5 mr-2" />
-              )}
+            <DropdownMenuItem onClick={onRefreshAll} disabled={ops.refreshing || endpointCount === 0}>
+              {ops.refreshing ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
               {ops.refreshing ? "Refreshing..." : "Refresh All"}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onAutoAdd}
-              disabled={
-                ops.autoAdding || !scanSummary || scanSummary.healthy === 0
-              }
-            >
-              {ops.autoAdding ? (
-                <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-              ) : (
-                <Sparkles className="w-3.5 h-3.5 mr-2" />
-              )}
+            <DropdownMenuItem onClick={onAutoAdd} disabled={ops.autoAdding || !scanSummary || scanSummary.healthy === 0}>
+              {ops.autoAdding ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-2" />}
               {ops.autoAdding ? "Adding..." : "Auto Add Working"}
             </DropdownMenuItem>
             <div className="sm:hidden">
@@ -946,10 +777,6 @@ function BuilderHeader({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// AiPanel â€” extracted for isolation
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 function AiPanel({
   open,
   minimized,
@@ -966,7 +793,6 @@ function AiPanel({
   onMinToggle: () => void;
 }) {
   const [assistView, setAssistView] = useState<"chat" | "ideas">("chat");
-
   return (
     <AnimatePresence>
       {open && (
@@ -987,83 +813,48 @@ function AiPanel({
                     <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
                       <Sparkles className="h-3.5 w-3.5" />
                     </div>
-                    <span className="text-sm font-semibold truncate">
-                      Builder Assistant
-                    </span>
+                    <span className="text-sm font-semibold truncate">Builder Assistant</span>
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                    Ask AI, style the selected chart, and configure dashboard
-                    settings in one place.
+                    Ask AI, style the selected chart, and configure dashboard settings in one place.
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={onMinToggle}
-                    title={minimized ? "Expand panel" : "Minimize panel"}
-                  >
-                    {minimized ? (
-                      <Maximize2 className="h-3.5 w-3.5" />
-                    ) : (
-                      <Minimize2 className="h-3.5 w-3.5" />
-                    )}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onMinToggle} title={minimized ? "Expand panel" : "Minimize panel"}>
+                    {minimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={onClose}
-                    title="Close assistant"
-                  >
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} title="Close assistant">
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </div>
             </div>
+
             {!minimized && (
               <>
                 <div className="border-b bg-muted/35 px-3 py-2">
                   <TabsList className="grid h-8 w-full grid-cols-3">
-                    <TabsTrigger
-                      value="assist"
-                      className="h-7 gap-1.5 text-[11px]"
-                      onClick={() => setAssistView("chat")}
-                    >
-                      <Bot className="h-3.5 w-3.5" />
-                      Assistant
+                    <TabsTrigger value="assist" className="h-7 gap-1.5 text-[11px]" onClick={() => setAssistView("chat")}>
+                      <Bot className="h-3.5 w-3.5" /> Assistant
                     </TabsTrigger>
                     <TabsTrigger value="style" className="h-7 gap-1.5 text-[11px]">
-                      <Palette className="h-3.5 w-3.5" />
-                      Style
+                      <Palette className="h-3.5 w-3.5" /> Style
                     </TabsTrigger>
                     <TabsTrigger value="config" className="h-7 gap-1.5 text-[11px]">
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      Dashboard
+                      <SlidersHorizontal className="h-3.5 w-3.5" /> Dashboard
                     </TabsTrigger>
                   </TabsList>
                 </div>
+
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <TabsContent
-                    value="assist"
-                    className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-                  >
+                  <TabsContent value="assist" className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
                     <div className="flex items-center justify-between gap-3 border-b bg-muted/15 px-3 py-2">
                       <p className="text-[11px] leading-relaxed text-muted-foreground">
                         {assistView === "chat"
                           ? "Use natural language to build charts or update the selected chart style."
                           : "Analyze API data and add recommended charts in one click."}
                       </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 flex-shrink-0 text-[11px]"
-                        onClick={() =>
-                          setAssistView((v) => (v === "chat" ? "ideas" : "chat"))
-                        }
-                      >
+                      <Button type="button" variant="outline" size="sm" className="h-7 flex-shrink-0 text-[11px]" onClick={() => setAssistView((v) => (v === "chat" ? "ideas" : "chat"))}>
                         {assistView === "chat" ? "Chart Ideas" : "Back to Chat"}
                       </Button>
                     </div>
@@ -1075,25 +866,17 @@ function AiPanel({
                       </div>
                     )}
                   </TabsContent>
-                <TabsContent
-                  value="style"
-                  className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-                >
+                  <TabsContent value="style" className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
                     <WidgetStylePanel selectedWidgetId={widgetId} />
                   </TabsContent>
-                  <TabsContent
-                    value="config"
-                    className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col"
-                  >
+                  <TabsContent value="config" className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
                     {dashId ? (
                       <ProjectConfigPanel dashboardId={dashId} />
                     ) : (
                       <div className="flex h-full items-center justify-center p-6 text-center">
                         <div>
                           <SlidersHorizontal className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground">
-                            Select a dashboard first
-                          </p>
+                          <p className="text-sm text-muted-foreground">Select a dashboard first</p>
                         </div>
                       </div>
                     )}
@@ -1107,4 +890,3 @@ function AiPanel({
     </AnimatePresence>
   );
 }
-
