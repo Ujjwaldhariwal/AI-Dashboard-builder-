@@ -10,6 +10,7 @@ import {
   Loader2,
   Plus,
   Save,
+  Sparkles,
   Trash2,
   Wand2,
 } from 'lucide-react'
@@ -191,14 +192,14 @@ function PreviewTable({
   const columns = rows.length > 0 ? Object.keys(rows[0]).slice(0, 8) : []
 
   return (
-    <div className="min-h-0 rounded-xl border border-border/70 bg-background/80">
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <p className="text-xs font-semibold">{title}</p>
+    <div className="flex min-h-[220px] flex-col overflow-hidden rounded-xl border border-border/70 bg-background/80">
+      <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5">
+        <p className="text-xs font-semibold leading-none">{title}</p>
         <Badge variant="outline" className="text-[10px]">
           {rows.length} row{rows.length === 1 ? '' : 's'}
         </Badge>
       </div>
-      <div className="max-h-[220px] overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex h-[180px] items-center justify-center text-xs text-muted-foreground">
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -265,18 +266,18 @@ function TransformStepEditor({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="rounded-lg border bg-muted/30 p-3"
+      className="rounded-xl border border-border/70 bg-background/75 p-3.5 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur-sm transition-colors hover:border-cyan-300/40"
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-[10px]">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="h-6 px-2 font-mono text-[10px]">
             Step {index + 1}
           </Badge>
           <Select
             value={transform.type}
             onValueChange={(value: TransformType) => setTransformType(index, value)}
           >
-            <SelectTrigger className="h-8 w-[190px] text-xs">
+            <SelectTrigger className="h-8 w-full min-w-[180px] text-xs sm:w-[220px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -288,7 +289,7 @@ function TransformStepEditor({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 self-end sm:self-auto">
           <Button
             type="button"
             variant="ghost"
@@ -891,19 +892,21 @@ export function DataPrepModal({ open, onOpenChange, endpointId }: DataPrepModalP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[90vh] w-[90vw] max-w-none overflow-hidden border border-white/20 bg-background/95 p-0 backdrop-blur-md">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.14),transparent_46%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.10),transparent_52%)]" />
-        <div className="relative flex h-full min-h-0">
-          <aside className="w-[300px] border-r bg-muted/40 p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <Database className="h-4 w-4 text-cyan-600" />
-              <h3 className="text-sm font-semibold">Configured APIs</h3>
+      <DialogContent className="h-[92vh] w-[96vw] max-w-[1560px] overflow-hidden rounded-2xl border border-white/30 bg-background/95 p-0 shadow-2xl backdrop-blur-xl sm:w-[94vw]">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.14),transparent_44%),radial-gradient(circle_at_22%_82%,rgba(59,130,246,0.09),transparent_48%)]" />
+        <div className="relative flex h-full min-h-0 flex-col lg:flex-row">
+          <aside className="flex h-[33vh] min-h-[210px] shrink-0 flex-col border-b border-border/70 bg-muted/20 p-3.5 lg:h-auto lg:w-[300px] lg:border-b-0 lg:border-r lg:p-4">
+            <div className="mb-3 flex items-center gap-2.5">
+              <div className="rounded-lg border border-cyan-200/60 bg-cyan-500/10 p-1.5 text-cyan-700 dark:border-cyan-800/70 dark:text-cyan-300">
+                <Database className="h-3.5 w-3.5" />
+              </div>
+              <h3 className="text-sm font-semibold tracking-tight">Configured APIs</h3>
             </div>
-            <p className="mb-3 text-xs text-muted-foreground">
+            <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
               Select an endpoint to load live raw data and build its transform pipeline.
             </p>
 
-            <div className="max-h-[calc(90vh-170px)] space-y-2 overflow-auto pr-1">
+            <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
               {availableEndpoints.map(endpoint => {
                 const selected = endpoint.id === activeEndpointId
                 const stepCount = endpoint.transforms?.length ?? 0
@@ -916,23 +919,25 @@ export function DataPrepModal({ open, onOpenChange, endpointId }: DataPrepModalP
                       setActiveEndpointId(endpoint.id)
                       lastLoadedEndpointRef.current = null
                     }}
-                    className={`w-full rounded-xl border px-3 py-2.5 text-left transition-all ${
+                    className={`group w-full rounded-xl border px-3 py-2.5 text-left transition-all ${
                       selected
-                        ? 'border-cyan-400/80 bg-cyan-500/10 shadow-sm'
-                        : 'border-border/70 bg-background/70 hover:border-cyan-300/70 hover:bg-background'
+                        ? 'border-cyan-400/80 bg-cyan-500/10 shadow-sm shadow-cyan-500/10'
+                        : 'border-border/70 bg-background/85 hover:border-cyan-300/70 hover:bg-background'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-xs font-semibold">{endpoint.name}</p>
-                      <Badge variant={endpoint.status === 'active' ? 'default' : 'secondary'} className="text-[10px]">
+                      <p className={`truncate text-xs font-semibold transition-colors ${selected ? 'text-foreground' : 'text-foreground/90 group-hover:text-foreground'}`}>
+                        {endpoint.name}
+                      </p>
+                      <Badge variant={endpoint.status === 'active' ? 'default' : 'secondary'} className="h-6 px-2 text-[10px]">
                         {endpoint.status}
                       </Badge>
                     </div>
-                    <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                    <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/80">
                       {endpoint.url}
                     </p>
                     <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{endpoint.method}</span>
+                      <span className="rounded-md border border-border/80 px-1.5 py-0.5 font-medium">{endpoint.method}</span>
                       <span>{stepCount} step{stepCount === 1 ? '' : 's'}</span>
                     </div>
                   </motion.button>
@@ -948,7 +953,7 @@ export function DataPrepModal({ open, onOpenChange, endpointId }: DataPrepModalP
           </aside>
 
           <div className="flex min-h-0 flex-1 flex-col">
-            <DialogHeader className="border-b bg-background/80 px-5 py-4">
+            <DialogHeader className="shrink-0 border-b border-border/70 bg-background/85 px-4 py-4 md:px-5">
               <DialogTitle className="flex items-center gap-2 text-base">
                 <Wand2 className="h-4 w-4 text-cyan-600" />
                 Data Prep Studio
@@ -956,22 +961,34 @@ export function DataPrepModal({ open, onOpenChange, endpointId }: DataPrepModalP
               <DialogDescription className="text-xs">
                 Build endpoint-level transforms so widgets receive clean, chart-ready data.
               </DialogDescription>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="h-6 text-[10px]">
+                  {activeEndpoint ? activeEndpoint.name : 'No endpoint selected'}
+                </Badge>
+                <Badge variant="outline" className="h-6 text-[10px]">
+                  {transforms.length} step{transforms.length === 1 ? '' : 's'}
+                </Badge>
+              </div>
             </DialogHeader>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 py-4 md:gap-4 md:px-5 md:py-5">
               <motion.section
                 layout
-                className="rounded-xl border bg-background/80 p-3"
+                className="rounded-xl border border-border/70 bg-background/80 p-3 shadow-[0_1px_0_rgba(15,23,42,0.05)] backdrop-blur-sm md:p-3.5"
               >
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold">AI Transform Planner</p>
-                    <p className="text-[11px] text-muted-foreground">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-3.5 w-3.5 text-cyan-600" />
+                      <p className="text-xs font-semibold">AI Transform Planner</p>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
                       Describe the transform, paste desired JSON, or paste old JavaScript logic.
                     </p>
                   </div>
                   <Button
                     size="sm"
+                    className="h-9 w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-xs text-white hover:from-cyan-600 hover:to-blue-700 sm:w-auto"
                     onClick={() => void handleGenerateTransforms()}
                     disabled={generatingTransforms || rawRows.length === 0}
                   >
@@ -989,105 +1006,114 @@ export function DataPrepModal({ open, onOpenChange, endpointId }: DataPrepModalP
                   </Button>
                 </div>
                 <Textarea
-                  className="min-h-[110px] resize-y text-xs"
+                  className="min-h-[108px] resize-y text-xs"
                   placeholder="Example: Parse 'loss_percent', keep rows where status != 'offline', then sort by timestamp desc."
                   value={aiPrompt}
                   onChange={event => setAiPrompt(event.target.value)}
                 />
               </motion.section>
-
-              <motion.section
-                layout
-                className="min-h-0 rounded-xl border bg-background/80 p-3"
-              >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs font-semibold">Visual Transform Pipeline</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Reorder and edit each operation before saving to endpoint.
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={addTransform}>
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    Add Step
-                  </Button>
-                </div>
-
-                <div className="max-h-[260px] space-y-2 overflow-auto pr-1">
-                  <AnimatePresence initial={false}>
-                    {transforms.map((transform, index) => (
-                      <TransformStepEditor
-                        key={`${transform.type}-${index}`}
-                        index={index}
-                        transform={transform}
-                        totalSteps={transforms.length}
-                        updateTransform={updateTransform}
-                        setTransformType={setTransformType}
-                        moveTransform={moveTransform}
-                        removeTransform={removeTransform}
-                      />
-                    ))}
-                  </AnimatePresence>
-
-                  {transforms.length === 0 && (
-                    <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-                      No transform steps yet. Generate with AI or add a manual step.
+              <div className="grid min-h-0 gap-3.5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] md:gap-4">
+                <motion.section
+                  layout
+                  className="flex min-h-[320px] flex-col rounded-xl border border-border/70 bg-background/80 p-3 shadow-[0_1px_0_rgba(15,23,42,0.05)] backdrop-blur-sm md:p-3.5"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold">Visual Transform Pipeline</p>
+                      <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        Reorder and edit each operation before saving to endpoint.
+                      </p>
                     </div>
-                  )}
-                </div>
-              </motion.section>
+                    <Button variant="outline" size="sm" className="h-9 w-full text-xs sm:w-auto" onClick={addTransform}>
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Add Step
+                    </Button>
+                  </div>
 
-              <motion.section layout className="rounded-xl border bg-background/80 p-3">
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-semibold">Live Preview</span>
-                  <ArrowRight className="h-3.5 w-3.5 text-cyan-600" />
-                  {activeEndpoint && (
-                    <span className="text-muted-foreground">
-                      {activeEndpoint.name}
-                    </span>
-                  )}
-                  {lastLoadedAt && (
-                    <span className="text-muted-foreground">
-                      (loaded {lastLoadedAt.toLocaleTimeString()})
-                    </span>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto h-7 text-[11px]"
-                    onClick={() => activeEndpoint && void fetchRawData(activeEndpoint)}
-                    disabled={!activeEndpoint || loadingRaw}
-                  >
-                    {loadingRaw ? (
-                      <>
-                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                        Refreshing...
-                      </>
-                    ) : (
-                      'Refresh Raw Data'
+                  <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                    <AnimatePresence initial={false}>
+                      {transforms.map((transform, index) => (
+                        <TransformStepEditor
+                          key={`${transform.type}-${index}`}
+                          index={index}
+                          transform={transform}
+                          totalSteps={transforms.length}
+                          updateTransform={updateTransform}
+                          setTransformType={setTransformType}
+                          moveTransform={moveTransform}
+                          removeTransform={removeTransform}
+                        />
+                      ))}
+                    </AnimatePresence>
+
+                    {transforms.length === 0 && (
+                      <div className="flex min-h-[140px] items-center justify-center rounded-lg border border-dashed px-4 text-center text-xs text-muted-foreground">
+                        No transform steps yet. Generate with AI or add a manual step.
+                      </div>
                     )}
-                  </Button>
-                </div>
+                  </div>
+                </motion.section>
 
-                {rawError ? (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                    {rawError}
-                  </div>
-                ) : (
-                  <div className="grid gap-2 xl:grid-cols-[1fr_auto_1fr]">
-                    <PreviewTable title="Raw API Data (first 5 rows)" rows={rawRows.slice(0, 5)} isLoading={loadingRaw} />
-                    <div className="hidden items-center justify-center xl:flex">
-                      <ArrowRight className="h-4 w-4 text-cyan-600" />
+                <motion.section
+                  layout
+                  className="flex min-h-[320px] flex-col rounded-xl border border-border/70 bg-background/80 p-3 shadow-[0_1px_0_rgba(15,23,42,0.05)] backdrop-blur-sm md:p-3.5"
+                >
+                  <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-semibold">Live Preview</span>
+                      <ArrowRight className="h-3.5 w-3.5 text-cyan-600" />
+                      {activeEndpoint && (
+                        <span className="text-muted-foreground">
+                          {activeEndpoint.name}
+                        </span>
+                      )}
+                      {lastLoadedAt && (
+                        <span className="text-muted-foreground">
+                          (loaded {lastLoadedAt.toLocaleTimeString()})
+                        </span>
+                      )}
                     </div>
-                    <PreviewTable title="Transformed Data (real-time)" rows={transformedRows.slice(0, 5)} isLoading={loadingRaw} />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-full text-[11px] sm:w-auto"
+                      onClick={() => activeEndpoint && void fetchRawData(activeEndpoint)}
+                      disabled={!activeEndpoint || loadingRaw}
+                    >
+                      {loadingRaw ? (
+                        <>
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          Refreshing...
+                        </>
+                      ) : (
+                        'Refresh Raw Data'
+                      )}
+                    </Button>
                   </div>
-                )}
-              </motion.section>
+
+                  {rawError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                      {rawError}
+                    </div>
+                  ) : (
+                    <div className="min-h-0 flex-1">
+                      <div className="grid h-full gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                        <PreviewTable title="Raw API Data (first 5 rows)" rows={rawRows.slice(0, 5)} isLoading={loadingRaw} />
+                        <div className="hidden items-center justify-center lg:flex">
+                          <ArrowRight className="h-4 w-4 text-cyan-600" />
+                        </div>
+                        <PreviewTable title="Transformed Data (real-time)" rows={transformedRows.slice(0, 5)} isLoading={loadingRaw} />
+                      </div>
+                    </div>
+                  )}
+                </motion.section>
+              </div>
             </div>
 
-            <DialogFooter className="border-t bg-background/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:space-x-0">
+            <DialogFooter className="shrink-0 border-t border-border/70 bg-background/90 px-4 py-3 md:px-5 sm:flex-row sm:items-center sm:justify-between sm:space-x-0">
               <Button
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={() => void handleSaveBlueprint()}
                 disabled={!activeEndpoint || savingBlueprint}
               >
@@ -1104,11 +1130,12 @@ export function DataPrepModal({ open, onOpenChange, endpointId }: DataPrepModalP
                 )}
               </Button>
 
-              <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                <Button className="flex-1 sm:flex-none" variant="outline" onClick={() => onOpenChange(false)}>
                   Cancel
                 </Button>
                 <Button
+                  className="flex-1 sm:flex-none"
                   onClick={() => void handleSaveEndpointTransforms()}
                   disabled={!activeEndpoint || savingTransforms}
                 >

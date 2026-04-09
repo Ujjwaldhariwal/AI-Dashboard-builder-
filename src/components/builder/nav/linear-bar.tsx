@@ -228,7 +228,7 @@ export const FrozenChartNav = memo(function FrozenChartNav({
   return (
     <div
       className={cn(
-        'sticky top-[3.5rem] z-[60] w-full px-4 py-2.5 transition-all duration-300',
+        'sticky top-14 z-30 w-full px-4 py-2 md:py-2.5 transition-all duration-300',
         isScrolled ? 'drop-shadow-[0_8px_16px_rgba(15,23,42,0.08)]' : '',
       )}
       onClick={(event) => event.stopPropagation()}
