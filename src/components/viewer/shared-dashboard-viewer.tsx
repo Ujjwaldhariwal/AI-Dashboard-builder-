@@ -23,10 +23,11 @@ import { ModernDrilldownBarChart } from '@/components/charts/modern-drilldown-ba
 import { ModernGaugeChartFromData } from '@/components/charts/modern-gauge-chart'
 import { ModernRingGaugeChartFromData } from '@/components/charts/modern-ring-gauge-chart'
 import { ModernStatusCard } from '@/components/charts/modern-status-card'
-import type { WidgetStyle, YAxisConfig } from '@/types/widget'
+import type { TransformOp, WidgetStyle, YAxisConfig } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
+import { applyTransforms } from '@/lib/builder/data-transformer'
 
 interface SharedWidgetData {
   id: string
@@ -39,6 +40,7 @@ interface SharedWidgetData {
   yAxes?: YAxisConfig[]
   aliases?: Record<string, string>
   style?: Partial<WidgetStyle>
+  endpointTransforms?: TransformOp[]
   loading: boolean
   error: string | null
 }
@@ -109,7 +111,7 @@ export function SharedDashboardViewer({ payload }: Props) {
         const arr: Record<string, unknown>[] =
           DataAnalyzer.extractDataArray(json) ??
           (Array.isArray(json) ? json : [json])
-        return { id: w.id, data: arr }
+        return { id: w.id, data: arr, transforms: endpoint.transforms }
       }),
     )
 
@@ -117,7 +119,13 @@ export function SharedDashboardViewer({ payload }: Props) {
       prev.map((wd, i) => {
         const r = results[i]
         if (r.status === 'fulfilled') {
-          return { ...wd, data: r.value.data, loading: false, error: null }
+          return {
+            ...wd,
+            data: r.value.data,
+            endpointTransforms: r.value.transforms,
+            loading: false,
+            error: null,
+          }
         }
         const message = r.reason instanceof Error
           ? r.reason.message
@@ -172,7 +180,10 @@ export function SharedDashboardViewer({ payload }: Props) {
       .map(axis => ({ ...axis, key: resolveField(axis.key) }))
       .filter(axis => axis.key.length > 0)
     const yFields = seriesConfig.map(axis => axis.key)
-    const chartData = wd.data.map(row => applyAliasesToRow(row, aliases))
+    const endpointPreparedData = wd.endpointTransforms?.length
+      ? applyTransforms(wd.data, wd.endpointTransforms)
+      : wd.data
+    const chartData = endpointPreparedData.map(row => applyAliasesToRow(row, aliases))
     const s: WidgetStyle = { ...DEFAULT_STYLE, ...(wd.style ?? {}) }
 
     switch (wd.type) {

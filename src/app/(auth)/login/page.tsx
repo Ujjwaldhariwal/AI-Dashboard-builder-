@@ -86,7 +86,7 @@ export default function LoginPage() {
 
     // ✅ redirectTo — honor middleware redirect param
     const params     = new URLSearchParams(window.location.search)
-    const redirectTo = params.get('redirectTo') ?? '/workspaces'
+    const redirectTo = params.get('redirectTo') ?? params.get('returnTo') ?? '/workspaces'
     const email      = `${empId.trim().toLowerCase()}@${emailDomain}`
 
     // ✅ Fix #2 — local flag tracks field errors set DURING this call

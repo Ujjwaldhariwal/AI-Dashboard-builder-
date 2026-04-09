@@ -20,6 +20,12 @@ const ReportAgentResponseSchema = z.object({
   report: ReportInsightSchema,
 }).strict()
 
+interface AskDataTransformerOptions {
+  dashboardId?: string
+  endpointId?: string
+  endpointName?: string
+}
+
 function getErrorMessage(payload: unknown, fallback: string) {
   if (payload && typeof payload === 'object' && 'error' in payload) {
     const maybeError = (payload as { error?: unknown }).error
@@ -40,12 +46,19 @@ async function readJsonSafe(response: Response) {
 
 export async function askDataTransformer(
   prompt: string,
-  sampleData: any[],
+  sampleData: unknown[],
+  options: AskDataTransformerOptions = {},
 ): Promise<TransformOp[]> {
   const response = await fetch('/api/agents/transform', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, sampleData }),
+    body: JSON.stringify({
+      prompt,
+      sampleData,
+      dashboardId: options.dashboardId,
+      endpointId: options.endpointId,
+      endpointName: options.endpointName,
+    }),
   })
 
   const payload = await readJsonSafe(response)

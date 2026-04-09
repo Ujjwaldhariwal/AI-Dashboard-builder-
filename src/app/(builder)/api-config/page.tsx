@@ -29,6 +29,7 @@ import { Textarea } from '@/components/ui/textarea'
 import AILoader from '@/components/loaders/ai-loader'
 import { useDashboardStore } from '@/store/builder-store'
 import { LiveAPIPreview } from '@/components/builder/api-tester/live-api-preview'
+import { DataPrepModal } from '@/components/builder/api-tester/data-prep-modal'
 import { toast } from 'sonner'
 import {
   ChevronDown,
@@ -42,6 +43,7 @@ import {
   Search,
   Shield,
   Trash2,
+  Wand2,
   Wifi,
   WifiOff,
   Radar,
@@ -157,6 +159,7 @@ export default function APIConfigPage() {
   const [isTrainingApis, setIsTrainingApis] = useState(false)
   const [reviewMappings, setReviewMappings] = useState<Record<string, MappingCandidate>>({})
   const [savingReviewEndpointId, setSavingReviewEndpointId] = useState<string | null>(null)
+  const [dataPrepEndpointId, setDataPrepEndpointId] = useState<string | null>(null)
 
   useEffect(() => {
     const listener = () => {
@@ -1086,6 +1089,15 @@ export default function APIConfigPage() {
                         variant="outline"
                         size="sm"
                         className="h-7 text-xs px-2"
+                        onClick={() => setDataPrepEndpointId(endpoint.id)}
+                      >
+                        <Wand2 className="w-3 h-3 mr-1" />
+                        Data Prep
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs px-2"
                         onClick={() => toggleAnalysisPanel(endpoint.id)}
                       >
                         Diagnostics
@@ -1130,6 +1142,16 @@ export default function APIConfigPage() {
           )}
         </div>
       </div>
+
+      <DataPrepModal
+        open={Boolean(dataPrepEndpointId)}
+        endpointId={dataPrepEndpointId}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setDataPrepEndpointId(null)
+          }
+        }}
+      />
 
       <AlertDialog open={!!deleteId} onOpenChange={(open: boolean) => !open && setDeleteId(null)}>
         <AlertDialogContent>

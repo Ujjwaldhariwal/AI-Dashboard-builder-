@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { profileEndpointBatch, type PreviousEndpointProfileSnapshot, type TrainingTargetEndpoint } from '@/lib/training/profile-service'
 import type { EndpointProfile, MappingCandidate, TrainingProfileRequest } from '@/types/training'
+import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
@@ -44,8 +45,8 @@ async function getAuthedSupabase(): Promise<{
 } | null> {
   const cookieStore = await cookies()
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    getSupabaseAnonKey(),
     {
       cookies: {
         getAll() {

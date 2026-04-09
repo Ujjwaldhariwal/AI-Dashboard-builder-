@@ -1,3 +1,5 @@
+import type { TransformOp } from '@/types/widget'
+
 // Module: Index
 //index.ts
 export interface ApiEndpoint {
@@ -8,6 +10,7 @@ export interface ApiEndpoint {
   headers?: Record<string, string>
   body?: any
   refreshInterval?: number
+  transforms?: TransformOp[]
 }
 
 export interface ChartConfig {

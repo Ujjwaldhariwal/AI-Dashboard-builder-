@@ -622,6 +622,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const style = { ...DEFAULT_STYLE, ...widget.style }
   const cardHeightClass = getWidgetCardHeightClass(widget.position)
+  const endpointTransforms = endpoint?.transforms ?? []
 
   const aliases = useMemo(() => {
     const entries = Object.entries(widget.dataMapping.aliases ?? {})
@@ -635,14 +636,18 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
     [aliases],
   )
 
+  const endpointPreparedData = useMemo(() => {
+    if (!rawData) return null
+    if (endpointTransforms.length === 0) return rawData
+    return applyTransforms(rawData, endpointTransforms)
+  }, [endpointTransforms, rawData])
+
   const aliasedData = useMemo(
-    () => rawData?.map(row => applyAliasesToRow(row, aliases)) ?? null,
-    [aliases, rawData],
+    () => endpointPreparedData?.map(row => applyAliasesToRow(row, aliases)) ?? null,
+    [aliases, endpointPreparedData],
   )
-  const transformedData = useMemo(() => {
-    if (!aliasedData) return null
-    return applyTransforms(aliasedData, widget.dataMapping.transforms ?? [])
-  }, [aliasedData, widget.dataMapping.transforms])
+
+  const transformedData = aliasedData
 
   const xField = resolveField(widget.dataMapping.xAxis)
   const yField = resolveField(widget.dataMapping.yAxis)

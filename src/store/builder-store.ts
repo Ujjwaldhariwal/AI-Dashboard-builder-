@@ -1,9 +1,15 @@
 // src/store/builder-store.ts
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Widget, WidgetConfigInput, WidgetStyle, ChartType } from '@/types/widget'
+import type { Widget, WidgetConfigInput, WidgetStyle, ChartType, TransformOp } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
-import type { AIExportConfig, ProjectConfig, ChartGroup, ChartSubgroup } from '@/types/project-config'
+import type {
+  AIExportConfig,
+  ProjectConfig,
+  ChartGroup,
+  ChartSubgroup,
+  ApiEndpointConfig,
+} from '@/types/project-config'
 import { DEFAULT_PROJECT_CONFIG } from '@/types/project-config'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/auth-store'
@@ -17,18 +23,7 @@ interface Dashboard {
   ownerId?:    string
 }
 
-interface APIEndpoint {
-  id:              string
-  dashboardId?:    string
-  name:            string
-  url:             string
-  method:          'GET' | 'POST'
-  authType:        'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
-  headers?:        Record<string, string>
-  body?:           unknown
-  refreshInterval: number
-  status:          'active' | 'inactive'
-}
+type APIEndpoint = ApiEndpointConfig
 
 interface DragState {
   isDragging: boolean
@@ -77,6 +72,60 @@ const normalizeHeaders = (value: unknown): Record<string, string> => {
   return Object.fromEntries(
     Object.entries(record).map(([key, val]) => [key, String(val)]),
   )
+}
+
+const isMathOperator = (
+  value: unknown,
+): value is Extract<TransformOp, { type: 'math' }>['operator'] =>
+  value === '+' || value === '-' || value === '*' || value === '/'
+
+const isFilterOperator = (
+  value: unknown,
+): value is Extract<TransformOp, { type: 'filter_rows' }>['operator'] =>
+  value === '>' || value === '<' || value === '=' || value === '!=' || value === '>=' || value === '<='
+
+const isSortOrder = (
+  value: unknown,
+): value is Extract<TransformOp, { type: 'sort' }>['order'] =>
+  value === 'asc' || value === 'desc'
+
+const isTransformOp = (value: unknown): value is TransformOp => {
+  const record = asRecord(value)
+  if (!record || typeof record.type !== 'string') return false
+
+  switch (record.type) {
+    case 'parse_number':
+      return typeof record.field === 'string'
+    case 'concat':
+      return Array.isArray(record.fields)
+        && record.fields.every(field => typeof field === 'string')
+        && typeof record.separator === 'string'
+        && typeof record.outputField === 'string'
+    case 'rename':
+      return typeof record.from === 'string' && typeof record.to === 'string'
+    case 'math':
+      return typeof record.field === 'string'
+        && isMathOperator(record.operator)
+        && typeof record.value === 'number'
+        && Number.isFinite(record.value)
+        && typeof record.outputField === 'string'
+    case 'percent_of_total':
+      return typeof record.field === 'string' && typeof record.outputField === 'string'
+    case 'filter_rows':
+      return typeof record.field === 'string' && isFilterOperator(record.operator)
+    case 'sort':
+      return typeof record.field === 'string' && isSortOrder(record.order)
+    case 'limit':
+      return typeof record.count === 'number' && Number.isFinite(record.count)
+    default:
+      return false
+  }
+}
+
+const normalizeEndpointTransforms = (value: unknown): TransformOp[] | undefined => {
+  if (!Array.isArray(value)) return undefined
+  const parsed = value.filter(isTransformOp)
+  return parsed.length > 0 ? parsed : undefined
 }
 
 const normalizeWidgetPosition = (row: Record<string, unknown>) => {
@@ -168,6 +217,7 @@ interface DashboardStore {
   addEndpoint:           (e: Omit<APIEndpoint, 'id'>) => string
   removeEndpoint:        (id: string) => void
   updateEndpoint:        (id: string, updates: Partial<APIEndpoint>) => void
+  updateEndpointTransforms: (id: string, transforms: TransformOp[]) => void
 
   widgets:               Widget[]
   addWidget:             (config: WidgetConfigInput) => void
@@ -303,6 +353,7 @@ export const useDashboardStore = create<DashboardStore>()(
             const metaStatus = body && typeof body.__meta_status === 'string'
               ? body.__meta_status
               : null
+            const metaTransforms = normalizeEndpointTransforms(body?.__meta_transforms)
             return {
               id: row.id,
               dashboardId: row.dashboard_id ?? undefined,
@@ -319,6 +370,7 @@ export const useDashboardStore = create<DashboardStore>()(
               body: payload === null ? undefined : payload,
               refreshInterval: typeof row.refresh_interval === 'number' ? row.refresh_interval : 30,
               status: metaStatus === 'inactive' ? 'inactive' : 'active',
+              transforms: metaTransforms,
             } as APIEndpoint
           })
 
@@ -658,6 +710,7 @@ export const useDashboardStore = create<DashboardStore>()(
                   body: {
                     payload: endpoint.body ?? null,
                     __meta_status: endpoint.status,
+                    __meta_transforms: endpoint.transforms ?? null,
                   },
                   refresh_interval: endpoint.refreshInterval,
                   created_at: now,
@@ -760,6 +813,7 @@ export const useDashboardStore = create<DashboardStore>()(
         const body = {
           payload: nextEndpoint.body ?? null,
           __meta_status: nextEndpoint.status,
+          __meta_transforms: nextEndpoint.transforms ?? null,
         }
 
         set({ isSyncing: true })
@@ -839,6 +893,7 @@ export const useDashboardStore = create<DashboardStore>()(
         const body = {
           payload: endpoint.body ?? null,
           __meta_status: endpoint.status,
+          __meta_transforms: endpoint.transforms ?? null,
         }
 
         set({ isSyncing: true })
@@ -875,6 +930,12 @@ export const useDashboardStore = create<DashboardStore>()(
       },
 
       // ── Widgets ──────────────────────────────────────────────
+      updateEndpointTransforms: (id, transforms) => {
+        get().updateEndpoint(id, {
+          transforms: transforms.length > 0 ? transforms : undefined,
+        })
+      },
+
       widgets: [],
 
 addWidget: (config) => {

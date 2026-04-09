@@ -761,7 +761,6 @@ export interface DataMapping {
   yAxis?: string
   yAxes?: YAxisConfig[]
   aliases?: Record<string, string>
-  transforms?: TransformOp[]
   sortBy?: string
   sortOrder?: TransformSortOrder
   limit?: number
@@ -788,6 +787,7 @@ export interface ExportEndpoint {
   authType?: string
   headers?: Record<string, string>
   body?:    string
+  transforms?: TransformOp[]
 }
 
 export interface ExportGroup {
@@ -986,7 +986,10 @@ export function useChartData(endpoint: ExportEndpoint | undefined, dataMapping: 
   const [error, setError] = useState<string | null>(null)
 
   const endpointHeadersKey = useMemo(() => JSON.stringify(endpoint?.headers ?? {}), [endpoint?.headers])
-  const transformsKey = useMemo(() => JSON.stringify(dataMapping.transforms ?? []), [dataMapping.transforms])
+  const endpointTransformsKey = useMemo(
+    () => JSON.stringify(endpoint?.transforms ?? []),
+    [endpoint?.transforms],
+  )
 
   useEffect(() => {
     if (!endpoint) {
@@ -1008,7 +1011,7 @@ export function useChartData(endpoint: ExportEndpoint | undefined, dataMapping: 
     request
       .then((res) => {
         const rawRows = normalizeRows(res.data)
-        const transformed = applyTransforms(rawRows, dataMapping.transforms ?? [])
+        const transformed = applyTransforms(rawRows, endpoint?.transforms ?? [])
         const finalized = applySortAndLimit(transformed, dataMapping)
         setData(finalized)
       })
@@ -1023,7 +1026,7 @@ export function useChartData(endpoint: ExportEndpoint | undefined, dataMapping: 
     endpoint?.method,
     endpoint?.body,
     endpointHeadersKey,
-    transformsKey,
+    endpointTransformsKey,
     dataMapping.sortBy,
     dataMapping.sortOrder,
     dataMapping.limit,

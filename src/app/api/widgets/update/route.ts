@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 interface WidgetPositionPayload {
   x: number
@@ -42,8 +43,8 @@ async function getAuthedSupabase(): Promise<{
 } | null> {
   const cookieStore = await cookies()
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    getSupabaseAnonKey(),
     {
       cookies: {
         getAll() {
@@ -78,8 +79,8 @@ async function getBearerAuthedSupabase(req: NextRequest): Promise<{
   if (!token) return null
 
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    getSupabaseAnonKey(),
     {
       global: {
         headers: {

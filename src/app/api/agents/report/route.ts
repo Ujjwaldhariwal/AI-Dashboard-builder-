@@ -5,6 +5,7 @@ import { generateObject } from 'ai'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { ReportInsightSchema } from '@/lib/ai/agent-schemas'
+import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const ReportAgentRequestSchema = z.object({
   dashboardTitle: z.string().min(1, 'dashboardTitle is required'),
@@ -14,8 +15,8 @@ const ReportAgentRequestSchema = z.object({
 async function hasValidSession() {
   const cookieStore = await cookies()
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    getSupabaseAnonKey(),
     {
       cookies: {
         getAll() {
@@ -97,4 +98,3 @@ Analyze this dashboard and produce executive summary, anomalies, and per-widget 
     )
   }
 }
-

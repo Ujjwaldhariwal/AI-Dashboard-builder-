@@ -23,6 +23,7 @@ interface EndpointShape {
   authType?: string
   headers?: Record<string, string>
   body?: unknown
+  transforms?: TransformOp[]
 }
 
 export interface ExportWidget {
@@ -35,7 +36,6 @@ export interface ExportWidget {
     yAxis?: string
     yAxes?: YAxisConfig[]
     aliases?: Record<string, string>
-    transforms?: TransformOp[]
     sortBy?: string
     sortOrder?: TransformSortOrder
     limit?: number
@@ -56,6 +56,7 @@ export interface ExportEndpoint {
   authType?: string
   headers?: Record<string, string>
   body?: string
+  transforms?: TransformOp[]
 }
 
 export interface ExportGroup {
@@ -119,6 +120,7 @@ export function buildDashboardConfig(
         authType: e.authType,
         headers:  e.headers,
         body:     stringifyEndpointBody(e.body),
+        transforms: e.transforms,
       })),
     widgets: dashboardWidgets.map(w => ({
       id:          w.id,
@@ -130,7 +132,6 @@ export function buildDashboardConfig(
         yAxis:      w.dataMapping.yAxis,
         yAxes:      w.dataMapping.yAxes,
         aliases:    w.dataMapping.aliases,
-        transforms: w.dataMapping.transforms,
         sortBy:     w.dataMapping.sortBy,
         sortOrder:  w.dataMapping.sortOrder,
         limit:      w.dataMapping.limit,

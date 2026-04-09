@@ -6,6 +6,7 @@ import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { ENTERPRISE_COLORS } from '@/lib/echarts/theme'
 import { WidgetStyleSchema } from '@/lib/ai/agent-schemas'
+import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const UiAgentRequestSchema = z.object({
   prompt: z.string().min(1, 'prompt is required'),
@@ -15,8 +16,8 @@ const UiAgentRequestSchema = z.object({
 async function hasValidSession() {
   const cookieStore = await cookies()
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    getSupabaseAnonKey(),
     {
       cookies: {
         getAll() {

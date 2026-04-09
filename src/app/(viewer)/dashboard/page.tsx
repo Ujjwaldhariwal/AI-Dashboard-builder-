@@ -187,6 +187,7 @@ export default function ViewerPage() {
               ? ep.headers
               : undefined,
           body: ep.body === undefined ? undefined : ep.body,
+          transforms: ep.transforms,
         });
       }
 

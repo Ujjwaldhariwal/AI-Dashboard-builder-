@@ -1,6 +1,12 @@
 // src/lib/share-utils.ts
 
-import type { WidgetStyle, YAxisConfig } from '@/types/widget'
+import type {
+  TransformFilterOperator,
+  TransformMathOperator,
+  TransformOp,
+  WidgetStyle,
+  YAxisConfig,
+} from '@/types/widget'
 
 export type ShareEndpointMethod = 'GET' | 'POST'
 
@@ -10,6 +16,7 @@ export interface ShareEndpointConfig {
   method: ShareEndpointMethod
   headers?: Record<string, string>
   body?: unknown
+  transforms?: TransformOp[]
 }
 
 export interface ShareWidgetConfig {
@@ -51,6 +58,54 @@ function normalizeHeaders(value: unknown): Record<string, string> | undefined {
 
   if (entries.length === 0) return undefined
   return Object.fromEntries(entries)
+}
+
+const isMathOperator = (value: unknown): value is TransformMathOperator =>
+  value === '+' || value === '-' || value === '*' || value === '/'
+
+const isFilterOperator = (value: unknown): value is TransformFilterOperator =>
+  value === '>' || value === '<' || value === '=' || value === '!=' || value === '>=' || value === '<='
+
+const isSortOrder = (value: unknown): value is 'asc' | 'desc' =>
+  value === 'asc' || value === 'desc'
+
+function isTransformOp(value: unknown): value is TransformOp {
+  const record = asRecord(value)
+  if (!record || typeof record.type !== 'string') return false
+
+  switch (record.type) {
+    case 'parse_number':
+      return typeof record.field === 'string'
+    case 'concat':
+      return Array.isArray(record.fields)
+        && record.fields.every(field => typeof field === 'string')
+        && typeof record.separator === 'string'
+        && typeof record.outputField === 'string'
+    case 'rename':
+      return typeof record.from === 'string' && typeof record.to === 'string'
+    case 'math':
+      return typeof record.field === 'string'
+        && isMathOperator(record.operator)
+        && typeof record.value === 'number'
+        && Number.isFinite(record.value)
+        && typeof record.outputField === 'string'
+    case 'percent_of_total':
+      return typeof record.field === 'string' && typeof record.outputField === 'string'
+    case 'filter_rows':
+      return typeof record.field === 'string' && isFilterOperator(record.operator)
+    case 'sort':
+      return typeof record.field === 'string' && isSortOrder(record.order)
+    case 'limit':
+      return typeof record.count === 'number' && Number.isFinite(record.count)
+    default:
+      return false
+  }
+}
+
+function normalizeTransforms(value: unknown): TransformOp[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const parsed = value.filter(isTransformOp)
+  return parsed.length > 0 ? parsed : undefined
 }
 
 function normalizeAliases(value: unknown): Record<string, string> | undefined {
@@ -160,6 +215,7 @@ function normalizePayload(parsed: unknown): SharePayload | null {
       method: normalizeMethod(endpointRecord.method),
       headers: normalizeHeaders(endpointRecord.headers),
       body: endpointRecord.body,
+      transforms: normalizeTransforms(endpointRecord.transforms),
     })
   })
 
