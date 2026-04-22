@@ -739,6 +739,15 @@ function generateTypes(): string {
 export type TransformMathOperator = '+' | '-' | '*' | '/'
 export type TransformFilterOperator = '>' | '<' | '=' | '!=' | '>=' | '<='
 export type TransformSortOrder = 'asc' | 'desc'
+export type TransformAggregateReducer = 'sum' | 'avg' | 'min' | 'max' | 'count'
+export type TransformDateFormat =
+  | 'iso-date'
+  | 'iso-datetime'
+  | 'locale-date'
+  | 'locale-datetime'
+  | 'month-day'
+  | 'month-short'
+  | 'year-month'
 
 export type TransformOp =
   | { type: 'parse_number'; field: string }
@@ -749,6 +758,33 @@ export type TransformOp =
   | { type: 'filter_rows'; field: string; operator: TransformFilterOperator; value: unknown }
   | { type: 'sort'; field: string; order: TransformSortOrder }
   | { type: 'limit'; count: number }
+  | {
+      type: 'fields_to_rows'
+      fields: string[]
+      keyField: string
+      valueField: string
+      keyLabels?: Record<string, string>
+      keepOtherFields?: boolean
+    }
+  | {
+      type: 'group_aggregate'
+      groupBy: string[]
+      valueField: string
+      reducer: TransformAggregateReducer
+      outputField: string
+    }
+  | {
+      type: 'map_values'
+      field: string
+      mappings: Record<string, string>
+      defaultValue?: string
+    }
+  | {
+      type: 'date_format'
+      field: string
+      outputField: string
+      format: TransformDateFormat
+    }
 
 export interface YAxisConfig {
   key: string
@@ -1255,20 +1291,147 @@ export function WidgetChart({ widget, endpoints }: Props) {
   )
 }
 
+const ORDER_GROUPS = [
+  ['since yesterday', 'yesterday', 'today', 'between 2 to 7 days', 'between 2 and 7 days', '2-7 days', 'between 7 and 15 days', '7-15 days', 'between 15 and 30 days', '15-30 days', 'more than 30 days', '>30 days'],
+  ['less than 5 days', '<5 days', '5-9 days', '5-10 days', '10-20 days', '20-30 days', '21-30 days', 'more than 1 month'],
+  ['less than 0.5', 'between 0.5 and 0.7', 'between 0.7 and 0.9', 'greater than 0.9', 'greated than 0.9'],
+]
+
+const MONTHS = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4, jun: 5, june: 5,
+  jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+} as const
+
+function normalizeLabel(raw: string): string {
+  return String(raw ?? '').toLowerCase().replace(/[\\u2013\\u2014]/g, '-').replace(/\\s+/g, ' ').trim()
+}
+
+function parseYear(raw: string): number {
+  const y = Number(raw)
+  if (!Number.isFinite(y)) return y
+  if (raw.length === 2) return y >= 70 ? 1900 + y : 2000 + y
+  return y
+}
+
+function parseTemporalValue(raw: string): number | null {
+  const label = normalizeLabel(raw)
+  if (!label) return null
+
+  if (label.includes('since yesterday') || label === 'yesterday' || label === 'today') return 0
+
+  const less = label.match(/^(?:less than|<)\\s*(\\d+(?:\\.\\d+)?)\\b/)
+  if (less) return Number(less[1]) - 0.1
+  const between = label.match(/^between\\s*(\\d+(?:\\.\\d+)?)\\s*(?:to|and|-)\\s*(\\d+(?:\\.\\d+)?)/)
+  if (between) return Number(between[1])
+  const range = label.match(/^(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)/)
+  if (range) return Number(range[1])
+  const more = label.match(/^(?:more than|>)\\s*(\\d+(?:\\.\\d+)?)\\b/)
+  if (more) return Number(more[1]) + 0.1
+
+  const quarter = label.match(/^q([1-4])\\s*(\\d{2,4})$/)
+  if (quarter) return Date.UTC(parseYear(quarter[2]), (Number(quarter[1]) - 1) * 3, 1)
+
+  const monthYear = label.match(/^(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[\\s\\-/]+(\\d{2,4})$/)
+  if (monthYear) return Date.UTC(parseYear(monthYear[2]), MONTHS[monthYear[1] as keyof typeof MONTHS], 1)
+
+  const ymd = label.match(/^(\\d{4})[\\-/](\\d{1,2})(?:[\\-/](\\d{1,2}))?$/)
+  if (ymd) {
+    const month = Number(ymd[2]) - 1
+    const day = Number(ymd[3] ?? '1')
+    if (month >= 0 && month <= 11 && day >= 1 && day <= 31) return Date.UTC(Number(ymd[1]), month, day)
+  }
+
+  const dmy = label.match(/^(\\d{1,2})[\\-/](\\d{1,2})[\\-/](\\d{2,4})$/)
+  if (dmy) {
+    const month = Number(dmy[2]) - 1
+    const day = Number(dmy[1])
+    if (month >= 0 && month <= 11 && day >= 1 && day <= 31) return Date.UTC(parseYear(dmy[3]), month, day)
+  }
+
+  const parsed = Date.parse(raw)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function detectLabelComparator(labels: string[]): ((a: string, b: string) => number) | null {
+  if (!labels.length) return null
+  const normalized = labels.map(normalizeLabel)
+
+  for (const group of ORDER_GROUPS) {
+    const map = new Map(group.map((label, idx) => [label, idx] as const))
+    const hits = normalized.filter(label => map.has(label)).length
+    if (hits >= 2) {
+      return (a, b) => {
+        const ai = map.get(normalizeLabel(a)) ?? Number.MAX_SAFE_INTEGER
+        const bi = map.get(normalizeLabel(b)) ?? Number.MAX_SAFE_INTEGER
+        if (ai !== bi) return ai - bi
+        return a.localeCompare(b, undefined, { numeric: true })
+      }
+    }
+  }
+
+  const temporalHits = labels.map(parseTemporalValue).filter(v => v !== null).length
+  if (temporalHits >= Math.max(2, Math.ceil(labels.length * 0.6))) {
+    return (a, b) => {
+      const ai = parseTemporalValue(a)
+      const bi = parseTemporalValue(b)
+      if (ai !== null && bi !== null && ai !== bi) return ai - bi
+      if (ai !== null && bi === null) return -1
+      if (ai === null && bi !== null) return 1
+      return a.localeCompare(b, undefined, { numeric: true })
+    }
+  }
+
+  return null
+}
+
+function sortRowsByField(data: Record<string, unknown>[], field: string): Record<string, unknown>[] {
+  if (!data.length || !field) return data
+  const comparator = detectLabelComparator(data.map(row => String(row[field] ?? '')))
+  if (!comparator) return data
+  return data
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const cmp = comparator(String(a.row[field] ?? ''), String(b.row[field] ?? ''))
+      if (cmp !== 0) return cmp
+      return a.index - b.index
+    })
+    .map(item => item.row)
+}
+
+const ISO_DATE_PATTERN = /^\\d{4}[-/]\\d{2}[-/]\\d{2}(?:[T\\s].*)?$/
+
+function compactDateLabel(raw: string): string {
+  if (!ISO_DATE_PATTERN.test(raw)) return raw
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(parsed)
+}
+
+function normalizeCategoryLabel(value: unknown, fallback: string): string {
+  const text = String(value ?? fallback).trim().replace(/\\s+/g, ' ')
+  if (!text) return fallback
+  return compactDateLabel(text)
+}
+
 function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[]) {
   const colors  = widget.colors
   const xAxisKey = widget.dataMapping.xAxis
   const yAxisKey = widget.dataMapping.yAxis ?? widget.dataMapping.yAxes?.[0]?.key ?? ''
   const isNum   = data.length > 0 && !isNaN(Number(data[0]?.[yAxisKey]))
-  const prepared = isNum
+  let prepared = isNum
     ? data.slice(0, 30).map((r, i) => ({
-        name:  String(r[xAxisKey] ?? i).slice(0, 20),
+        name:  normalizeCategoryLabel(r[xAxisKey], String(i)).slice(0, 20),
         value: parseFloat(String(r[yAxisKey])) || 0,
       }))
     : (() => {
         const counts: Record<string, number> = {}
         data.forEach(r => {
-          const k = String(r[xAxisKey] ?? 'Unknown')
+          const k = normalizeCategoryLabel(r[xAxisKey], 'Unknown')
           counts[k] = (counts[k] ?? 0) + 1
         })
         return Object.entries(counts)
@@ -1276,6 +1439,10 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
           .slice(0, 20)
           .map(([name, value]) => ({ name, value }))
       })()
+  const labelComparator = detectLabelComparator(prepared.map(item => item.name))
+  if (labelComparator) {
+    prepared = [...prepared].sort((a, b) => labelComparator(a.name, b.name))
+  }
 
   const xData   = prepared.map(d => d.name)
   const yData   = prepared.map(d => d.value)
@@ -1326,16 +1493,140 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
     }
 
     case 'pie':
-    case 'donut': return {
-      color: colors,
-      tooltip: { trigger: 'item' },
-      legend: widget.showLegend ? { orient: 'vertical', right: 0 } : { show: false },
-      series: [{
-        type: 'pie',
-        radius: widget.type === 'donut' ? ['40%', '70%'] : '70%',
-        data: prepared, label: { fontSize: 11 }, name: widget.title,
-        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' } },
-      }],
+    case 'donut': {
+      const compactLabel = (value: string) =>
+        value
+          .trim()
+          .replace(/\\s+/g, ' ')
+          .replace(/^Between\\s+(\\d+)\\s+(?:to|and)\\s+(\\d+)\\s+Days?$/i, '$1-$2 Days')
+          .replace(/^More than\\s+(\\d+)\\s+days?$/i, '>$1 Days')
+          .replace(/^Less than\\s+(\\d+)\\s+days?$/i, '<$1 Days')
+
+      const truncate = (value: string, max: number) =>
+        value.length > max ? value.slice(0, max - 1) + '...' : value
+
+      const wrapLabel = (value: string, maxCharsPerLine: number, maxLines = 2) => {
+        const source = value.trim().replace(/\\s+/g, ' ')
+        if (!source) return ''
+
+        const words = source.split(' ')
+        const lines: string[] = []
+        let current = ''
+
+        const pushCurrent = () => {
+          if (!current) return
+          lines.push(current)
+          current = ''
+        }
+
+        words.forEach(word => {
+          const candidate = current ? current + ' ' + word : word
+          if (candidate.length <= maxCharsPerLine) {
+            current = candidate
+            return
+          }
+          if (current) pushCurrent()
+
+          if (word.length <= maxCharsPerLine) {
+            current = word
+            return
+          }
+
+          let remaining = word
+          while (remaining.length > maxCharsPerLine) {
+            lines.push(remaining.slice(0, maxCharsPerLine - 1) + '-')
+            remaining = remaining.slice(maxCharsPerLine - 1)
+            if (lines.length >= maxLines) break
+          }
+          current = remaining
+        })
+
+        pushCurrent()
+        if (lines.length <= maxLines) return lines.join('\\n')
+        const visible = lines.slice(0, maxLines)
+        visible[maxLines - 1] = truncate(visible[maxLines - 1], Math.max(6, maxCharsPerLine - 1))
+        return visible.join('\\n')
+      }
+
+      const total = prepared.reduce((sum, item) => sum + item.value, 0)
+      const pieData = prepared.map(item => ({
+        ...item,
+        actualValue: item.value,
+        actualPercent: total > 0 ? (item.value / total) * 100 : 0,
+      }))
+      const legendScrollable = pieData.length > 8
+      const compactedNames = pieData.map(item => compactLabel(item.name))
+      const crowdedByCount = pieData.length >= 7
+      const crowdedByLength = compactedNames.some(name => name.length > 22)
+      const needsCompactRadius = widget.showLegend && (crowdedByCount || crowdedByLength)
+      const pieRadius = widget.type === 'donut'
+        ? (needsCompactRadius ? ['38%', '66%'] : ['42%', '72%'])
+        : (needsCompactRadius ? '62%' : '72%')
+      const centerY = widget.showLegend
+        ? (needsCompactRadius ? '45%' : '47%')
+        : '50%'
+      const seriesBottom = widget.showLegend
+        ? (needsCompactRadius ? 36 : 40)
+        : 10
+
+      return {
+        color: colors,
+        tooltip: {
+          trigger: 'item',
+          formatter: (params: any) => {
+            const rawValue = params?.data?.actualValue ?? params?.value ?? 0
+            const percent = Number(params?.data?.actualPercent ?? 0).toFixed(1)
+            return '<b>' + String(params?.name ?? 'Unknown') + '</b><br/>Value: <strong>' + Number(rawValue).toLocaleString() + '</strong><br/>' + percent + '%'
+          },
+        },
+        legend: widget.showLegend
+          ? {
+              type: legendScrollable ? 'scroll' : 'plain',
+              orient: 'horizontal',
+              left: 'center',
+              right: 'center',
+              bottom: 0,
+              width: '94%',
+              itemWidth: 10,
+              itemHeight: 10,
+              itemGap: 12,
+              textStyle: { fontSize: 10 },
+              formatter: (name: string) => {
+                const item = pieData.find(entry => entry.name === name)
+                const percent = item ? ' ' + item.actualPercent.toFixed(1) + '%' : ''
+                return truncate(compactLabel(name), 20) + percent
+              },
+            }
+          : { show: false },
+        series: [{
+          type: 'pie',
+          left: '4%',
+          right: '4%',
+          top: 10,
+          bottom: seriesBottom,
+          center: ['50%', centerY],
+          radius: pieRadius,
+          minAngle: 1.2,
+          avoidLabelOverlap: false,
+          data: pieData,
+          label: {
+            show: true,
+            position: 'outside',
+            alignTo: 'labelLine',
+            fontSize: 10,
+            lineHeight: 13,
+            formatter: (params: any) => {
+              const percent = Number(params?.data?.actualPercent ?? 0)
+              const formatted = percent.toFixed(percent >= 10 ? 0 : 1) + '%'
+              const wrapped = wrapLabel(compactLabel(String(params?.name ?? '')), 16, 2)
+              return wrapped.includes('\\n') ? wrapped + '\\n' + formatted : wrapped + ' ' + formatted
+            },
+          },
+          labelLayout: { hideOverlap: false, moveOverlap: 'shiftY' },
+          labelLine: { show: true, length: 10, length2: 10, minTurnAngle: 30 },
+          emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' } },
+        }],
+      }
     }
 
     case 'gauge': return {
@@ -1418,6 +1709,8 @@ function buildEChartsOption(widget: ExportWidget, data: Record<string, unknown>[
 function DataTable({ data, xAxis }: { data: Record<string, unknown>[]; xAxis: string }) {
   if (!data.length) return <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>No data</p>
   const cols = Object.keys(data[0])
+  const orderKey = xAxis && cols.includes(xAxis) ? xAxis : (cols[0] ?? '')
+  const orderedData = orderKey ? sortRowsByField(data, orderKey) : data
   return (
     <div style={{ overflowX: 'auto', maxHeight: 280, overflowY: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
@@ -1431,7 +1724,7 @@ function DataTable({ data, xAxis }: { data: Record<string, unknown>[]; xAxis: st
           </tr>
         </thead>
         <tbody>
-          {data.slice(0, 100).map((row, i) => (
+          {orderedData.slice(0, 100).map((row, i) => (
             <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
               {cols.map((c, j) => (
                 <td key={j} style={{ padding: '6px 10px', color: '#374151', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1583,7 +1876,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 }
 
 function generateDataTransformer(): string {
-  return `import type { TransformFilterOperator, TransformOp } from '@/lib/types'
+  return `import type {
+  TransformDateFormat,
+  TransformFilterOperator,
+  TransformOp,
+} from '@/lib/types'
 
 type DataRow = Record<string, unknown>
 
@@ -1612,6 +1909,47 @@ const parseComparableNumber = (value: unknown): number | null => {
 }
 
 const roundTo2 = (value: number) => Math.round(value * 100) / 100
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+const toDate = (value: unknown): Date | null => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const fromNumber = new Date(value)
+    return Number.isNaN(fromNumber.getTime()) ? null : fromNumber
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const fromString = new Date(value)
+    return Number.isNaN(fromString.getTime()) ? null : fromString
+  }
+  return null
+}
+
+const formatDateValue = (date: Date, format: TransformDateFormat): string => {
+  switch (format) {
+    case 'iso-date':
+      return date.toISOString().slice(0, 10)
+    case 'iso-datetime':
+      return date.toISOString()
+    case 'locale-date':
+      return date.toLocaleDateString('en-IN')
+    case 'locale-datetime':
+      return date.toLocaleString('en-IN')
+    case 'month-day':
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    case 'month-short':
+      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    case 'year-month': {
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+      return \`\${date.getUTCFullYear()}-\${month}\`
+    }
+    default:
+      return date.toISOString()
+  }
+}
 
 const compareFilterValues = (
   left: unknown,
@@ -1770,6 +2108,140 @@ const applyLimit = (rows: DataRow[], op: Extract<TransformOp, { type: 'limit' }>
   return rows.slice(0, count)
 }
 
+const applyFieldsToRows = (
+  rows: DataRow[],
+  op: Extract<TransformOp, { type: 'fields_to_rows' }>,
+) => {
+  const fields = Array.from(new Set(op.fields.map(field => field.trim()).filter(Boolean)))
+  if (fields.length === 0 || !op.keyField.trim() || !op.valueField.trim()) return rows
+
+  return rows.flatMap(row => {
+    const keyLabels = asRecord(op.keyLabels) ?? {}
+    const baseRow: DataRow = op.keepOtherFields
+      ? Object.fromEntries(
+          Object.entries(row).filter(([field]) => !fields.includes(field)),
+        )
+      : {}
+
+    const mappedRows = fields.flatMap(field => {
+      if (!hasOwn(row, field)) return []
+      const mappedLabel = keyLabels[field]
+      return [{
+        ...baseRow,
+        [op.keyField]: typeof mappedLabel === 'string' && mappedLabel.trim()
+          ? mappedLabel.trim()
+          : field,
+        [op.valueField]: row[field],
+      }]
+    })
+
+    return mappedRows.length > 0 ? mappedRows : [row]
+  })
+}
+
+const applyGroupAggregate = (
+  rows: DataRow[],
+  op: Extract<TransformOp, { type: 'group_aggregate' }>,
+) => {
+  const groupBy = Array.from(new Set(op.groupBy.map(field => field.trim()).filter(Boolean)))
+  if (groupBy.length === 0 || !op.outputField.trim()) return rows
+
+  const grouped = new Map<string, {
+    group: DataRow
+    rowsCount: number
+    valueCount: number
+    sum: number
+    min: number
+    max: number
+  }>()
+
+  rows.forEach(row => {
+    const key = groupBy.map(field => String(row[field] ?? '')).join('\\u0001')
+    const existing = grouped.get(key) ?? {
+      group: Object.fromEntries(groupBy.map(field => [field, row[field] ?? null])),
+      rowsCount: 0,
+      valueCount: 0,
+      sum: 0,
+      min: Number.POSITIVE_INFINITY,
+      max: Number.NEGATIVE_INFINITY,
+    }
+
+    existing.rowsCount += 1
+
+    const parsed = parseSanitizedNumber(row[op.valueField])
+    if (parsed !== null) {
+      existing.valueCount += 1
+      existing.sum += parsed
+      existing.min = Math.min(existing.min, parsed)
+      existing.max = Math.max(existing.max, parsed)
+    }
+
+    grouped.set(key, existing)
+  })
+
+  return Array.from(grouped.values()).map(group => {
+    let aggregateValue = 0
+    switch (op.reducer) {
+      case 'sum':
+        aggregateValue = group.sum
+        break
+      case 'avg':
+        aggregateValue = group.valueCount > 0 ? roundTo2(group.sum / group.valueCount) : 0
+        break
+      case 'min':
+        aggregateValue = group.valueCount > 0 ? group.min : 0
+        break
+      case 'max':
+        aggregateValue = group.valueCount > 0 ? group.max : 0
+        break
+      case 'count':
+        aggregateValue = group.rowsCount
+        break
+    }
+
+    return {
+      ...group.group,
+      [op.outputField]: aggregateValue,
+    }
+  })
+}
+
+const applyMapValues = (
+  rows: DataRow[],
+  op: Extract<TransformOp, { type: 'map_values' }>,
+) => {
+  if (!op.field.trim()) return rows
+
+  return rows.map(row => {
+    if (!hasOwn(row, op.field)) return row
+    const sourceValue = String(row[op.field] ?? '')
+    const mappedValue = op.mappings[sourceValue]
+    const nextValue = typeof mappedValue === 'string'
+      ? mappedValue
+      : op.defaultValue ?? sourceValue
+
+    return {
+      ...row,
+      [op.field]: nextValue,
+    }
+  })
+}
+
+const applyDateFormat = (
+  rows: DataRow[],
+  op: Extract<TransformOp, { type: 'date_format' }>,
+) =>
+  rows.map(row => {
+    if (!hasOwn(row, op.field)) return row
+    const parsedDate = toDate(row[op.field])
+    if (!parsedDate) return row
+
+    return {
+      ...row,
+      [op.outputField]: formatDateValue(parsedDate, op.format),
+    }
+  })
+
 const applyTransformOp = (rows: DataRow[], op: TransformOp): DataRow[] => {
   switch (op.type) {
     case 'parse_number':
@@ -1788,6 +2260,14 @@ const applyTransformOp = (rows: DataRow[], op: TransformOp): DataRow[] => {
       return applySort(rows, op)
     case 'limit':
       return applyLimit(rows, op)
+    case 'fields_to_rows':
+      return applyFieldsToRows(rows, op)
+    case 'group_aggregate':
+      return applyGroupAggregate(rows, op)
+    case 'map_values':
+      return applyMapValues(rows, op)
+    case 'date_format':
+      return applyDateFormat(rows, op)
     default:
       return rows
   }

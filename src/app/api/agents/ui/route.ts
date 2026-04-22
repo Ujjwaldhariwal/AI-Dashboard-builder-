@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { generateObject } from 'ai'
-import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { ENTERPRISE_COLORS } from '@/lib/echarts/theme'
 import { WidgetStyleSchema } from '@/lib/ai/agent-schemas'
+import { getGoogleModel } from '@/lib/ai/google-model'
 import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const UiAgentRequestSchema = z.object({
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const currentStylePreview = JSON.stringify(currentStyle ?? {}, null, 2)
 
     const result = await generateObject({
-      model: google('gemini-2.5-flash'),
+      model: getGoogleModel('gemini-2.5-flash'),
       schema: WidgetStyleSchema,
       system: `You are an expert enterprise chart UI designer.
 

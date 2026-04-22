@@ -28,6 +28,12 @@ import { DEFAULT_STYLE } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { saveEndpointMappingFeedback } from '@/lib/training/profile-client'
+import {
+  getWidgetSizeFromPreset,
+  getWidgetSizePreset,
+  WIDGET_SIZE_LABEL,
+  type WidgetSizePreset,
+} from '@/lib/builder/widget-size'
 import { toast } from 'sonner'
 import {
   AlignLeft,
@@ -91,6 +97,7 @@ const FORMAT_OPTIONS: Array<{ value: 'number' | LabelFormat; label: string }> = 
   { value: 'currency', label: 'Currency' },
   { value: 'percent', label: 'Percent' },
 ]
+const SIZE_PRESETS: WidgetSizePreset[] = ['small', 'medium', 'large', 'full']
 
 function normalizeColors(colors: string[] | undefined): string[] {
   const fallback = DEFAULT_STYLE.colors
@@ -115,6 +122,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
   const [showGrid, setShowGrid] = useState(widget.style.showGrid ?? true)
   const [barRadius, setBarRadius] = useState(widget.style.barRadius ?? 5)
   const [colors, setColors] = useState<string[]>(normalizeColors(widget.style.colors))
+  const [sizePreset, setSizePreset] = useState<WidgetSizePreset>(getWidgetSizePreset(widget.position))
   const [labelFormat, setLabelFormat] = useState<'number' | LabelFormat>(
     widget.style.labelFormat ?? 'number',
   )
@@ -164,6 +172,7 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
     setShowGrid(widget.style.showGrid ?? true)
     setBarRadius(widget.style.barRadius ?? 5)
     setColors(normalizeColors(widget.style.colors))
+    setSizePreset(getWidgetSizePreset(widget.position))
     setLabelFormat(widget.style.labelFormat ?? 'number')
     void fetchFields()
   }, [open, widget.id])
@@ -201,12 +210,19 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
       yAxis: yAxis.trim() || undefined,
       transforms: undefined,
     }
+    const nextSize = getWidgetSizeFromPreset(sizePreset)
+    const currentPosition = widget.position ?? { x: 0, y: 0, w: 6, h: 5 }
 
     updateWidget(widget.id, {
       title: title.trim(),
       type,
       dataMapping: nextDataMapping,
       style: resolvedStyle,
+      position: {
+        ...currentPosition,
+        w: nextSize.w,
+        h: nextSize.h,
+      },
     })
 
     void saveEndpointMappingFeedback({
@@ -366,6 +382,25 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
                 />
               )}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Widget Size</Label>
+            <Select
+              value={sizePreset}
+              onValueChange={(value) => setSizePreset(value as WidgetSizePreset)}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SIZE_PRESETS.map((preset) => (
+                  <SelectItem key={preset} value={preset}>
+                    {WIDGET_SIZE_LABEL[preset]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-3 rounded-lg border bg-muted/30 p-3">

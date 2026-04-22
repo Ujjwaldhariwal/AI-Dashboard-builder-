@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { generateObject } from 'ai'
-import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { ReportInsightSchema } from '@/lib/ai/agent-schemas'
+import { getGoogleModel } from '@/lib/ai/google-model'
 import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const ReportAgentRequestSchema = z.object({
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const widgetsPreview = JSON.stringify(widgetsData.slice(0, 40), null, 2)
 
     const result = await generateObject({
-      model: google('gemini-2.5-flash'),
+      model: getGoogleModel('gemini-2.5-flash'),
       schema: ReportInsightSchema,
       system: `You are a Senior Data Analyst preparing a professional dashboard report.
 

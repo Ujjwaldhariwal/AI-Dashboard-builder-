@@ -40,7 +40,13 @@ import { askDataTransformer } from '@/lib/ai/agent-client'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { applyTransforms } from '@/lib/builder/data-transformer'
 import { saveTransformBlueprint } from '@/lib/training/transform-blueprint-client'
-import type { TransformFilterOperator, TransformMathOperator, TransformOp } from '@/types/widget'
+import type {
+  TransformAggregateReducer,
+  TransformDateFormat,
+  TransformFilterOperator,
+  TransformMathOperator,
+  TransformOp,
+} from '@/types/widget'
 import { toast } from 'sonner'
 
 interface DataPrepModalProps {
@@ -60,6 +66,10 @@ const TRANSFORM_TYPE_LABELS: Record<TransformType, string> = {
   filter_rows: 'Filter Rows',
   sort: 'Sort',
   limit: 'Limit',
+  fields_to_rows: 'Fields to Rows',
+  group_aggregate: 'Group Aggregate',
+  map_values: 'Map Values',
+  date_format: 'Date Format',
 }
 
 const TRANSFORM_TYPE_ORDER: TransformType[] = [
@@ -71,6 +81,10 @@ const TRANSFORM_TYPE_ORDER: TransformType[] = [
   'filter_rows',
   'sort',
   'limit',
+  'fields_to_rows',
+  'group_aggregate',
+  'map_values',
+  'date_format',
 ]
 
 const FILTER_OPERATORS: TransformFilterOperator[] = ['>', '<', '=', '!=', '>=', '<=']
@@ -78,6 +92,22 @@ const MATH_OPERATORS: TransformMathOperator[] = ['+', '-', '*', '/']
 const SORT_ORDERS: Array<{ value: 'asc' | 'desc'; label: string }> = [
   { value: 'asc', label: 'Ascending' },
   { value: 'desc', label: 'Descending' },
+]
+const AGGREGATE_REDUCERS: Array<{ value: TransformAggregateReducer; label: string }> = [
+  { value: 'sum', label: 'Sum' },
+  { value: 'avg', label: 'Average' },
+  { value: 'min', label: 'Minimum' },
+  { value: 'max', label: 'Maximum' },
+  { value: 'count', label: 'Count' },
+]
+const DATE_FORMAT_OPTIONS: Array<{ value: TransformDateFormat; label: string }> = [
+  { value: 'iso-date', label: 'ISO Date (YYYY-MM-DD)' },
+  { value: 'iso-datetime', label: 'ISO DateTime' },
+  { value: 'locale-date', label: 'Locale Date' },
+  { value: 'locale-datetime', label: 'Locale DateTime' },
+  { value: 'month-day', label: 'Month-Day (Apr 4)' },
+  { value: 'month-short', label: 'Month Short (Jan 2026)' },
+  { value: 'year-month', label: 'Year-Month (YYYY-MM)' },
 ]
 
 function createDefaultTransform(type: TransformType): TransformOp {
@@ -98,6 +128,32 @@ function createDefaultTransform(type: TransformType): TransformOp {
       return { type: 'sort', field: '', order: 'asc' }
     case 'limit':
       return { type: 'limit', count: 10 }
+    case 'fields_to_rows':
+      return {
+        type: 'fields_to_rows',
+        fields: [],
+        keyField: 'name',
+        valueField: 'value',
+        keyLabels: {},
+        keepOtherFields: false,
+      }
+    case 'group_aggregate':
+      return {
+        type: 'group_aggregate',
+        groupBy: [],
+        valueField: '',
+        reducer: 'sum',
+        outputField: 'value',
+      }
+    case 'map_values':
+      return { type: 'map_values', field: '', mappings: {}, defaultValue: '' }
+    case 'date_format':
+      return {
+        type: 'date_format',
+        field: '',
+        outputField: '',
+        format: 'iso-date',
+      }
     default:
       return { type: 'parse_number', field: '' }
   }
@@ -116,6 +172,24 @@ const isFilterOperator = (value: unknown): value is TransformFilterOperator =>
 
 const isSortOrder = (value: unknown): value is 'asc' | 'desc' =>
   value === 'asc' || value === 'desc'
+
+const isAggregateReducer = (value: unknown): value is TransformAggregateReducer =>
+  value === 'sum' || value === 'avg' || value === 'min' || value === 'max' || value === 'count'
+
+const isDateFormat = (value: unknown): value is TransformDateFormat =>
+  value === 'iso-date'
+  || value === 'iso-datetime'
+  || value === 'locale-date'
+  || value === 'locale-datetime'
+  || value === 'month-day'
+  || value === 'month-short'
+  || value === 'year-month'
+
+const isStringRecord = (value: unknown): value is Record<string, string> => {
+  const record = asRecord(value)
+  if (!record) return false
+  return Object.values(record).every(item => typeof item === 'string')
+}
 
 const isTransformOp = (value: unknown): value is TransformOp => {
   const record = asRecord(value)
@@ -145,6 +219,27 @@ const isTransformOp = (value: unknown): value is TransformOp => {
       return typeof record.field === 'string' && isSortOrder(record.order)
     case 'limit':
       return typeof record.count === 'number' && Number.isFinite(record.count)
+    case 'fields_to_rows':
+      return Array.isArray(record.fields)
+        && record.fields.every(field => typeof field === 'string')
+        && typeof record.keyField === 'string'
+        && typeof record.valueField === 'string'
+        && (record.keyLabels === undefined || isStringRecord(record.keyLabels))
+        && (record.keepOtherFields === undefined || typeof record.keepOtherFields === 'boolean')
+    case 'group_aggregate':
+      return Array.isArray(record.groupBy)
+        && record.groupBy.every(field => typeof field === 'string')
+        && typeof record.valueField === 'string'
+        && isAggregateReducer(record.reducer)
+        && typeof record.outputField === 'string'
+    case 'map_values':
+      return typeof record.field === 'string'
+        && isStringRecord(record.mappings)
+        && (record.defaultValue === undefined || typeof record.defaultValue === 'string')
+    case 'date_format':
+      return typeof record.field === 'string'
+        && typeof record.outputField === 'string'
+        && isDateFormat(record.format)
     default:
       return false
   }
@@ -178,6 +273,29 @@ function parseTransformOpsFromPrompt(prompt: string): TransformOp[] | null {
   } catch {
     return null
   }
+}
+
+function stringifyMappings(mappings: Record<string, string>): string {
+  return Object.entries(mappings)
+    .map(([from, to]) => `${from}=${to}`)
+    .join('\n')
+}
+
+function parseMappingsText(value: string): Record<string, string> {
+  return Object.fromEntries(
+    value
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => {
+        const separatorIndex = line.indexOf('=')
+        if (separatorIndex < 0) return [line, line]
+        const from = line.slice(0, separatorIndex).trim()
+        const to = line.slice(separatorIndex + 1).trim()
+        return [from, to]
+      })
+      .filter(([from, to]) => from.length > 0 && to.length > 0),
+  )
 }
 
 function PreviewTable({
@@ -260,6 +378,25 @@ function TransformStepEditor({
   moveTransform,
   removeTransform,
 }: TransformStepEditorProps) {
+  const [mapValuesText, setMapValuesText] = useState('')
+  const [keyLabelsText, setKeyLabelsText] = useState('')
+
+  useEffect(() => {
+    if (transform.type === 'map_values') {
+      setMapValuesText(stringifyMappings(transform.mappings))
+      return
+    }
+    setMapValuesText('')
+  }, [transform])
+
+  useEffect(() => {
+    if (transform.type === 'fields_to_rows') {
+      setKeyLabelsText(stringifyMappings(transform.keyLabels ?? {}))
+      return
+    }
+    setKeyLabelsText('')
+  }, [transform])
+
   return (
     <motion.div
       layout
@@ -632,6 +769,258 @@ function TransformStepEditor({
               ))
             }}
           />
+        </div>
+      )}
+
+      {transform.type === 'fields_to_rows' && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Fields (comma separated)</Label>
+            <Input
+              className="h-8 text-xs"
+              value={transform.fields.join(', ')}
+              onChange={event => {
+                const fields = event.target.value
+                  .split(',')
+                  .map(field => field.trim())
+                  .filter(Boolean)
+                updateTransform(index, op => (
+                  op.type === 'fields_to_rows' ? { ...op, fields } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Key field</Label>
+            <Input
+              className="h-8 text-xs"
+              value={transform.keyField}
+              onChange={event => {
+                const keyField = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'fields_to_rows' ? { ...op, keyField } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Value field</Label>
+            <Input
+              className="h-8 text-xs"
+              value={transform.valueField}
+              onChange={event => {
+                const valueField = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'fields_to_rows' ? { ...op, valueField } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Key labels (one per line, format: source=label)</Label>
+            <Textarea
+              className="min-h-[84px] text-xs"
+              value={keyLabelsText}
+              onChange={event => {
+                setKeyLabelsText(event.target.value)
+              }}
+              onBlur={() => {
+                const keyLabels = parseMappingsText(keyLabelsText)
+                updateTransform(index, op => (
+                  op.type === 'fields_to_rows' ? { ...op, keyLabels } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={transform.keepOtherFields === true}
+                onChange={event => {
+                  const keepOtherFields = event.target.checked
+                  updateTransform(index, op => (
+                    op.type === 'fields_to_rows' ? { ...op, keepOtherFields } : op
+                  ))
+                }}
+              />
+              Keep non-selected fields in output rows
+            </label>
+          </div>
+        </div>
+      )}
+
+      {transform.type === 'group_aggregate' && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Group by fields (comma separated)</Label>
+            <Input
+              className="h-8 text-xs"
+              value={transform.groupBy.join(', ')}
+              onChange={event => {
+                const groupBy = event.target.value
+                  .split(',')
+                  .map(field => field.trim())
+                  .filter(Boolean)
+                updateTransform(index, op => (
+                  op.type === 'group_aggregate' ? { ...op, groupBy } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Value field</Label>
+            <Input
+              className="h-8 text-xs"
+              list="data-prep-fields"
+              value={transform.valueField}
+              onChange={event => {
+                const valueField = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'group_aggregate' ? { ...op, valueField } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Reducer</Label>
+            <Select
+              value={transform.reducer}
+              onValueChange={(reducer: TransformAggregateReducer) => {
+                updateTransform(index, op => (
+                  op.type === 'group_aggregate' ? { ...op, reducer } : op
+                ))
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AGGREGATE_REDUCERS.map(reducer => (
+                  <SelectItem key={reducer.value} value={reducer.value}>
+                    {reducer.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Output field</Label>
+            <Input
+              className="h-8 text-xs"
+              value={transform.outputField}
+              onChange={event => {
+                const outputField = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'group_aggregate' ? { ...op, outputField } : op
+                ))
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {transform.type === 'map_values' && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Field</Label>
+            <Input
+              className="h-8 text-xs"
+              list="data-prep-fields"
+              value={transform.field}
+              onChange={event => {
+                const field = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'map_values' ? { ...op, field } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Mappings (one per line, format: source=target)</Label>
+            <Textarea
+              className="min-h-[84px] text-xs"
+              value={mapValuesText}
+              onChange={event => {
+                setMapValuesText(event.target.value)
+              }}
+              onBlur={() => {
+                const mappings = parseMappingsText(mapValuesText)
+                updateTransform(index, op => (
+                  op.type === 'map_values' ? { ...op, mappings } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Default value (optional)</Label>
+            <Input
+              className="h-8 text-xs"
+              value={transform.defaultValue ?? ''}
+              onChange={event => {
+                const defaultValue = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'map_values'
+                    ? { ...op, defaultValue: defaultValue.trim().length > 0 ? defaultValue : undefined }
+                    : op
+                ))
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {transform.type === 'date_format' && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-[11px]">Input field</Label>
+            <Input
+              className="h-8 text-xs"
+              list="data-prep-fields"
+              value={transform.field}
+              onChange={event => {
+                const field = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'date_format' ? { ...op, field } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Output field</Label>
+            <Input
+              className="h-8 text-xs"
+              value={transform.outputField}
+              onChange={event => {
+                const outputField = event.target.value
+                updateTransform(index, op => (
+                  op.type === 'date_format' ? { ...op, outputField } : op
+                ))
+              }}
+            />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-[11px]">Format</Label>
+            <Select
+              value={transform.format}
+              onValueChange={(format: TransformDateFormat) => {
+                updateTransform(index, op => (
+                  op.type === 'date_format' ? { ...op, format } : op
+                ))
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DATE_FORMAT_OPTIONS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       )}
     </motion.div>

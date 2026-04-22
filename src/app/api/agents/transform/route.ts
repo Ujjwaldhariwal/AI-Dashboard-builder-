@@ -3,9 +3,9 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateObject } from 'ai'
-import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { TransformOpSchema } from '@/lib/ai/agent-schemas'
+import { getGoogleModel } from '@/lib/ai/google-model'
 import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const MAX_BLUEPRINT_FETCH_ROWS = 12
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
       : 'Reusable blueprint memory: none'
 
     const result = await generateObject({
-      model: google('gemini-2.5-flash'),
+      model: getGoogleModel('gemini-2.5-flash'),
       schema: TransformAgentResponseSchema,
       system: `You are a data transformation planner for dashboard charts.
 
@@ -234,7 +234,7 @@ Return only valid JSON matching the provided schema.
 Rules:
 - Output an ordered "operations" array of TransformOp objects.
 - Use only these operation types:
-  parse_number, concat, rename, math, percent_of_total, filter_rows, sort, limit.
+  parse_number, concat, rename, math, percent_of_total, filter_rows, sort, limit, fields_to_rows, group_aggregate, map_values, date_format.
 - Use exact field names from sample data when possible.
 - Keep operations minimal and deterministic.
 - Never include extra keys outside the schema.

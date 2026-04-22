@@ -129,6 +129,8 @@ export default function BuilderPage() {
     addWidget,
     getProjectConfig,
     getGroupsByDashboard,
+    chartNavSelections,
+    setChartNavSelection,
   } = useDashboardStore();
 
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
@@ -144,8 +146,6 @@ export default function BuilderPage() {
     autoAdding: false,
     refreshing: false,
   });
-
-  const [navSelection, setNavSelection] = useState<NavSelection>(DEFAULT_NAV_SELECTION);
 
   const [scanSummary, setScanSummary] = useState<DashboardEndpointProbeSummary | null>(null);
   const [sessionScope, setSessionScope] = useState(() => getEndpointSessionScope());
@@ -189,6 +189,10 @@ export default function BuilderPage() {
   );
 
   const useTaxonomyFallback = collections.length === 0;
+  const navSelection = useMemo<NavSelection>(() => {
+    if (!currentDashboardId) return DEFAULT_NAV_SELECTION;
+    return chartNavSelections[currentDashboardId] ?? DEFAULT_NAV_SELECTION;
+  }, [chartNavSelections, currentDashboardId]);
 
   const sectionCount = useMemo(() => {
     const names = new Set<string>();
@@ -254,7 +258,6 @@ export default function BuilderPage() {
   }, [currentDashboardId, dashboards, setCurrentDashboard]);
 
   useEffect(() => {
-    setNavSelection(DEFAULT_NAV_SELECTION);
     setSelectedWidgetId(null);
   }, [currentDashboardId]);
 
@@ -266,10 +269,17 @@ export default function BuilderPage() {
 
   useEffect(() => {
     const normalized = strictNavSelection;
+    if (!currentDashboardId) return;
     if (normalized.groupId !== navSelection.groupId || normalized.subgroupId !== navSelection.subgroupId) {
-      setNavSelection(normalized);
+      setChartNavSelection(currentDashboardId, normalized);
     }
-  }, [strictNavSelection, navSelection.groupId, navSelection.subgroupId]);
+  }, [
+    currentDashboardId,
+    navSelection.groupId,
+    navSelection.subgroupId,
+    setChartNavSelection,
+    strictNavSelection,
+  ]);
 
   useEffect(() => {
     if (selectedWidgetId && !visibleWidgets.some((widget) => widget.id === selectedWidgetId)) {
@@ -457,7 +467,10 @@ export default function BuilderPage() {
     }
   }, [dashboards, allWidgets, allEndpoints]);
 
-  const handleNavChange = useCallback((selection: NavSelection) => { setNavSelection(selection); }, []);
+  const handleNavChange = useCallback((selection: NavSelection) => {
+    if (!currentDashboardId) return;
+    setChartNavSelection(currentDashboardId, selection);
+  }, [currentDashboardId, setChartNavSelection]);
 
   const openAi = useCallback(() => { setAiPanel({ open: true, minimized: false }); }, []);
   const closeAi = useCallback(() => { setAiPanel({ open: false, minimized: false }); }, []);

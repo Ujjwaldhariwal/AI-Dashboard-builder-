@@ -28,6 +28,7 @@ import { DEFAULT_STYLE } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { applyTransforms } from '@/lib/builder/data-transformer'
+import { sortRowsByField } from '@/lib/charts/domain-order'
 
 interface SharedWidgetData {
   id: string
@@ -231,6 +232,8 @@ export function SharedDashboardViewer({ payload }: Props) {
         return <ModernStatusCard data={chartData} yField={yField} label={wd.title} style={s} />
       case 'table': {
         const cols = Object.keys(chartData[0] ?? {}).slice(0, 5)
+        const orderingField = xField && cols.includes(xField) ? xField : (cols[0] ?? '')
+        const orderedRows = orderingField ? sortRowsByField(chartData, orderingField) : chartData
         return (
           <div className="overflow-auto max-h-[220px] rounded border">
             <table className="w-full text-xs">
@@ -244,7 +247,7 @@ export function SharedDashboardViewer({ payload }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {chartData.slice(0, 30).map((row, i) => (
+                {orderedRows.slice(0, 30).map((row, i) => (
                   <tr key={i} className="border-b hover:bg-muted/30">
                     {cols.map(c => (
                       <td key={c} className="p-2 max-w-[120px] truncate">

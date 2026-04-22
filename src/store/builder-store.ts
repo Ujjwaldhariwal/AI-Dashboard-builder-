@@ -89,6 +89,28 @@ const isSortOrder = (
 ): value is Extract<TransformOp, { type: 'sort' }>['order'] =>
   value === 'asc' || value === 'desc'
 
+const isAggregateReducer = (
+  value: unknown,
+): value is Extract<TransformOp, { type: 'group_aggregate' }>['reducer'] =>
+  value === 'sum' || value === 'avg' || value === 'min' || value === 'max' || value === 'count'
+
+const isDateFormat = (
+  value: unknown,
+): value is Extract<TransformOp, { type: 'date_format' }>['format'] =>
+  value === 'iso-date'
+  || value === 'iso-datetime'
+  || value === 'locale-date'
+  || value === 'locale-datetime'
+  || value === 'month-day'
+  || value === 'month-short'
+  || value === 'year-month'
+
+const isStringRecord = (value: unknown): value is Record<string, string> => {
+  const record = asRecord(value)
+  if (!record) return false
+  return Object.values(record).every(item => typeof item === 'string')
+}
+
 const isTransformOp = (value: unknown): value is TransformOp => {
   const record = asRecord(value)
   if (!record || typeof record.type !== 'string') return false
@@ -117,6 +139,27 @@ const isTransformOp = (value: unknown): value is TransformOp => {
       return typeof record.field === 'string' && isSortOrder(record.order)
     case 'limit':
       return typeof record.count === 'number' && Number.isFinite(record.count)
+    case 'fields_to_rows':
+      return Array.isArray(record.fields)
+        && record.fields.every(field => typeof field === 'string')
+        && typeof record.keyField === 'string'
+        && typeof record.valueField === 'string'
+        && (record.keyLabels === undefined || isStringRecord(record.keyLabels))
+        && (record.keepOtherFields === undefined || typeof record.keepOtherFields === 'boolean')
+    case 'group_aggregate':
+      return Array.isArray(record.groupBy)
+        && record.groupBy.every(field => typeof field === 'string')
+        && typeof record.valueField === 'string'
+        && isAggregateReducer(record.reducer)
+        && typeof record.outputField === 'string'
+    case 'map_values':
+      return typeof record.field === 'string'
+        && isStringRecord(record.mappings)
+        && (record.defaultValue === undefined || typeof record.defaultValue === 'string')
+    case 'date_format':
+      return typeof record.field === 'string'
+        && typeof record.outputField === 'string'
+        && isDateFormat(record.format)
     default:
       return false
   }
@@ -196,6 +239,7 @@ interface DashboardStore {
   dashboards:            Dashboard[]
   currentDashboardId:    string | null
   selectedDashboardId:   string | null
+  chartNavSelections:    Record<string, { groupId: string; subgroupId: string }>
   activeWidgetId:        string | null
   dragState:             DragState
   isHydrating:           boolean
@@ -205,6 +249,10 @@ interface DashboardStore {
   initializeFromSupabase: () => Promise<void>
   syncFromSupabase:      () => Promise<void>
   setActiveWidgetId:     (id: string | null) => void
+  setChartNavSelection:  (
+    dashboardId: string,
+    selection: { groupId: string; subgroupId: string },
+  ) => void
   setDragState:          (patch: Partial<DragState>) => void
   addDashboard:          (d: Omit<Dashboard, 'id' | 'createdAt'>) => string
   removeDashboard:       (id: string) => void
@@ -273,6 +321,7 @@ export const useDashboardStore = create<DashboardStore>()(
       dashboards:         [],
       currentDashboardId: null,
       selectedDashboardId: null,
+      chartNavSelections: {},
       activeWidgetId: null,
       dragState: { ...DEFAULT_DRAG_STATE },
       isHydrating: false,
@@ -296,6 +345,7 @@ export const useDashboardStore = create<DashboardStore>()(
             chartSubgroups: [],
             currentDashboardId: null,
             selectedDashboardId: null,
+            chartNavSelections: {},
             hasLoadedRemote: true,
             isHydrating: false,
           })
@@ -455,6 +505,19 @@ export const useDashboardStore = create<DashboardStore>()(
 
       setActiveWidgetId: (id) => set({ activeWidgetId: id }),
 
+      setChartNavSelection: (dashboardId, selection) => {
+        if (!dashboardId) return
+        set(s => ({
+          chartNavSelections: {
+            ...s.chartNavSelections,
+            [dashboardId]: {
+              groupId: selection.groupId,
+              subgroupId: selection.subgroupId,
+            },
+          },
+        }))
+      },
+
       setDragState: (patch) => set((s) => ({
         dragState: { ...s.dragState, ...patch },
       })),
@@ -517,6 +580,9 @@ export const useDashboardStore = create<DashboardStore>()(
             endpoints:          s.endpoints.filter(e => e.dashboardId !== id),
             chartGroups:        s.chartGroups.filter(g => g.dashboardId !== id),
             chartSubgroups:     s.chartSubgroups.filter(subgroup => subgroup.dashboardId !== id),
+            chartNavSelections: Object.fromEntries(
+                                  Object.entries(s.chartNavSelections).filter(([k]) => k !== id)
+                                ),
             projectConfigs:     Object.fromEntries(
                                   Object.entries(s.projectConfigs).filter(([k]) => k !== id)
                                 ),
@@ -1814,15 +1880,30 @@ addWidget: (config) => {
       partialize: (state) => ({
         currentDashboardId: state.currentDashboardId,
         selectedDashboardId: state.selectedDashboardId,
+        chartNavSelections: state.chartNavSelections,
         activeWidgetId: state.activeWidgetId,
         dragState: state.dragState,
       }),
       migrate: (persistedState: any, fromVersion: number) => {
         const safe = persistedState ?? {}
+        const nextChartNavSelections = asRecord(safe.chartNavSelections)
+          ? Object.fromEntries(
+              Object.entries(safe.chartNavSelections as Record<string, unknown>)
+                .filter(([, value]) => {
+                  const entry = asRecord(value)
+                  return typeof entry?.groupId === 'string' && typeof entry?.subgroupId === 'string'
+                })
+                .map(([dashboardId, value]) => {
+                  const entry = asRecord(value)!
+                  return [dashboardId, { groupId: String(entry.groupId), subgroupId: String(entry.subgroupId) }]
+                }),
+            )
+          : {}
         if (fromVersion < STORE_VERSION) {
           return {
             currentDashboardId: safe.currentDashboardId ?? safe.selectedDashboardId ?? null,
             selectedDashboardId: safe.selectedDashboardId ?? safe.currentDashboardId ?? null,
+            chartNavSelections: nextChartNavSelections,
             activeWidgetId: safe.activeWidgetId ?? null,
             dragState: safe.dragState ?? { ...DEFAULT_DRAG_STATE },
           }
@@ -1830,12 +1911,26 @@ addWidget: (config) => {
         return {
           currentDashboardId: safe.currentDashboardId ?? safe.selectedDashboardId ?? null,
           selectedDashboardId: safe.selectedDashboardId ?? safe.currentDashboardId ?? null,
+          chartNavSelections: nextChartNavSelections,
           activeWidgetId: safe.activeWidgetId ?? null,
           dragState: safe.dragState ?? { ...DEFAULT_DRAG_STATE },
         }
       },
       merge: (persistedState, currentState) => {
         const safe = (persistedState ?? {}) as Record<string, unknown>
+        const persistedChartNavSelections = asRecord(safe.chartNavSelections)
+          ? Object.fromEntries(
+              Object.entries(safe.chartNavSelections as Record<string, unknown>)
+                .filter(([, value]) => {
+                  const entry = asRecord(value)
+                  return typeof entry?.groupId === 'string' && typeof entry?.subgroupId === 'string'
+                })
+                .map(([dashboardId, value]) => {
+                  const entry = asRecord(value)!
+                  return [dashboardId, { groupId: String(entry.groupId), subgroupId: String(entry.subgroupId) }]
+                }),
+            )
+          : currentState.chartNavSelections
         return {
           ...currentState,
           currentDashboardId:
@@ -1846,6 +1941,7 @@ addWidget: (config) => {
             typeof safe.selectedDashboardId === 'string' || safe.selectedDashboardId === null
               ? (safe.selectedDashboardId as string | null)
               : currentState.selectedDashboardId,
+          chartNavSelections: persistedChartNavSelections,
           activeWidgetId:
             typeof safe.activeWidgetId === 'string' || safe.activeWidgetId === null
               ? (safe.activeWidgetId as string | null)
@@ -1893,6 +1989,7 @@ const initializeAuthSync = () => {
         chartSubgroups: [],
         currentDashboardId: null,
         selectedDashboardId: null,
+        chartNavSelections: {},
         activeWidgetId: null,
         dragState: { ...DEFAULT_DRAG_STATE },
         hasLoadedRemote: true,

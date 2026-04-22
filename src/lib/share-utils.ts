@@ -69,6 +69,28 @@ const isFilterOperator = (value: unknown): value is TransformFilterOperator =>
 const isSortOrder = (value: unknown): value is 'asc' | 'desc' =>
   value === 'asc' || value === 'desc'
 
+const isAggregateReducer = (
+  value: unknown,
+): value is Extract<TransformOp, { type: 'group_aggregate' }>['reducer'] =>
+  value === 'sum' || value === 'avg' || value === 'min' || value === 'max' || value === 'count'
+
+const isDateFormat = (
+  value: unknown,
+): value is Extract<TransformOp, { type: 'date_format' }>['format'] =>
+  value === 'iso-date'
+  || value === 'iso-datetime'
+  || value === 'locale-date'
+  || value === 'locale-datetime'
+  || value === 'month-day'
+  || value === 'month-short'
+  || value === 'year-month'
+
+const isStringRecord = (value: unknown): value is Record<string, string> => {
+  const record = asRecord(value)
+  if (!record) return false
+  return Object.values(record).every(item => typeof item === 'string')
+}
+
 function isTransformOp(value: unknown): value is TransformOp {
   const record = asRecord(value)
   if (!record || typeof record.type !== 'string') return false
@@ -97,6 +119,27 @@ function isTransformOp(value: unknown): value is TransformOp {
       return typeof record.field === 'string' && isSortOrder(record.order)
     case 'limit':
       return typeof record.count === 'number' && Number.isFinite(record.count)
+    case 'fields_to_rows':
+      return Array.isArray(record.fields)
+        && record.fields.every(field => typeof field === 'string')
+        && typeof record.keyField === 'string'
+        && typeof record.valueField === 'string'
+        && (record.keyLabels === undefined || isStringRecord(record.keyLabels))
+        && (record.keepOtherFields === undefined || typeof record.keepOtherFields === 'boolean')
+    case 'group_aggregate':
+      return Array.isArray(record.groupBy)
+        && record.groupBy.every(field => typeof field === 'string')
+        && typeof record.valueField === 'string'
+        && isAggregateReducer(record.reducer)
+        && typeof record.outputField === 'string'
+    case 'map_values':
+      return typeof record.field === 'string'
+        && isStringRecord(record.mappings)
+        && (record.defaultValue === undefined || typeof record.defaultValue === 'string')
+    case 'date_format':
+      return typeof record.field === 'string'
+        && typeof record.outputField === 'string'
+        && isDateFormat(record.format)
     default:
       return false
   }
