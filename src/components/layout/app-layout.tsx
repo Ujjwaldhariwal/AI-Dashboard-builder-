@@ -10,7 +10,7 @@ import {
   Activity, ChevronRight, FolderKanban,
   Shield, BadgeCheck, X, GitBranch,
   Menu, PanelLeftClose, PanelLeftOpen,
-  Zap, CircleDot, ArrowRight,
+  Zap, CircleDot, ArrowRight, Network,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -67,6 +67,53 @@ function getSidebarHealthBucket(
 }
 
 // ── Sidebar nav item with tooltip for collapsed mode ──────────────────────
+function SidebarStatCard({
+  label,
+  value,
+  accent,
+}: {
+  label: string
+  value: number
+  accent?: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg hover:bg-muted/50 transition-colors">
+      <span className="text-[11px] text-muted-foreground whitespace-nowrap truncate">{label}</span>
+      <span className={`text-xs font-bold tabular-nums flex-shrink-0 ${accent ?? ''}`}>{value}</span>
+    </div>
+  )
+}
+
+function SidebarHealthToggle({
+  active,
+  count,
+  label,
+  colorActive,
+  colorInactive,
+  onClick,
+}: {
+  active: boolean
+  count: number
+  label: string
+  colorActive: string
+  colorInactive: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        rounded-xl border px-2.5 py-2 text-left transition-all duration-200
+        ${active ? colorActive : colorInactive}
+        hover:scale-[1.02] active:scale-[0.98]
+      `}
+    >
+      <p className="text-sm font-bold leading-tight tabular-nums">{count}</p>
+      <p className="text-[10px] leading-tight mt-0.5 opacity-80">{label}</p>
+    </button>
+  )
+}
+
 function SidebarNavItem({
   item,
   isActive,
@@ -193,6 +240,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   // ── Navigation ────────────────────────────────────────────────────────
   const navigation = useMemo(() => [
+    { name: 'DashboardOS', href: '/admin', icon: Network, show: true, iconColor: 'text-cyan-500', activeBg: 'from-cyan-600/10 to-blue-400/5 dark:from-cyan-500/15 dark:to-blue-400/5', pillColor: 'from-cyan-500 to-blue-600' },
     { name: 'Dashboards', href: '/workspaces', icon: LayoutDashboard, show: true,                  iconColor: 'text-blue-500',   activeBg: 'from-blue-600/10 to-blue-400/5 dark:from-blue-500/15 dark:to-blue-400/5',     pillColor: 'from-blue-500 to-blue-600' },
     { name: 'Builder',    href: '/builder',    icon: FolderTree,      show: !!currentDashboardId,  iconColor: 'text-violet-500', activeBg: 'from-violet-600/10 to-violet-400/5 dark:from-violet-500/15 dark:to-violet-400/5', pillColor: 'from-violet-500 to-violet-600' },
     { name: 'API Config', href: '/api-config', icon: Database,        show: !!currentDashboardId,  iconColor: 'text-emerald-500', activeBg: 'from-emerald-600/10 to-emerald-400/5 dark:from-emerald-500/15 dark:to-emerald-400/5', pillColor: 'from-emerald-500 to-emerald-600' },
@@ -260,6 +308,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     const pageResults: SearchResult[] = (
       [
         { id: 'p-ws',  label: 'Dashboards', sub: 'All dashboards',   href: '/workspaces', type: 'page' as const },
+        { id: 'p-os',  label: 'DashboardOS', sub: 'DB-to-dashboard platform', href: '/admin', type: 'page' as const },
         { id: 'p-api', label: 'API Config', sub: 'Manage endpoints', href: '/api-config', type: 'page' as const },
         { id: 'p-mon', label: 'Monitoring', sub: 'Logs & health',    href: '/monitoring', type: 'page' as const },
         { id: 'p-set', label: 'Settings',   sub: 'App settings',     href: '/settings',   type: 'page' as const },
@@ -376,43 +425,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
     : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 
-  // ── Stat card for quick stats (compact & clean) ─────────────────────────
-  const StatCard = ({ label, value, accent }: { label: string; value: number; accent?: string }) => (
-    <div className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg hover:bg-muted/50 transition-colors">
-      <span className="text-[11px] text-muted-foreground whitespace-nowrap truncate">{label}</span>
-      <span className={`text-xs font-bold tabular-nums flex-shrink-0 ${accent ?? ''}`}>{value}</span>
-    </div>
-  )
-
-  // ── Health filter toggle ──────────────────────────────────────────────
-  const HealthToggle = ({
-    active,
-    count,
-    label,
-    colorActive,
-    colorInactive,
-    onClick,
-  }: {
-    active: boolean
-    count: number
-    label: string
-    colorActive: string
-    colorInactive: string
-    onClick: () => void
-  }) => (
-    <button
-      onClick={onClick}
-      className={`
-        rounded-xl border px-2.5 py-2 text-left transition-all duration-200
-        ${active ? colorActive : colorInactive}
-        hover:scale-[1.02] active:scale-[0.98]
-      `}
-    >
-      <p className="text-sm font-bold leading-tight tabular-nums">{count}</p>
-      <p className="text-[10px] leading-tight mt-0.5 opacity-80">{label}</p>
-    </button>
-  )
-
   // ── Sidebar content ───────────────────────────────────────────────────
   const sidebarContent = (
     <>
@@ -452,12 +464,12 @@ export function AppLayout({ children }: AppLayoutProps) {
               <CircleDot className="w-3 h-3 text-green-500 animate-pulse flex-shrink-0" />
             </div>
             <div className="px-1 pb-2">
-              <StatCard label="Active APIs" value={endpoints.length} />
-              <StatCard label="Dashboards"  value={dashboards.length} />
-              <StatCard label="Widgets"     value={activeWidgetCount} />
-              <StatCard label="Log entries" value={recentLogCount} />
+              <SidebarStatCard label="Active APIs" value={endpoints.length} />
+              <SidebarStatCard label="Dashboards" value={dashboards.length} />
+              <SidebarStatCard label="Widgets" value={activeWidgetCount} />
+              <SidebarStatCard label="Log entries" value={recentLogCount} />
               {errorCount > 0 && (
-                <StatCard label="Errors" value={errorCount} accent="text-red-500" />
+                <SidebarStatCard label="Errors" value={errorCount} accent="text-red-500" />
               )}
             </div>
 
@@ -527,7 +539,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
 
             <div className="grid grid-cols-2 gap-1.5 px-2.5 pb-2.5">
-              <HealthToggle
+              <SidebarHealthToggle
                 active={builderHealthFilters.healthy}
                 count={builderHealthSummary.healthy}
                 label="Healthy"
@@ -535,7 +547,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 colorInactive="border-emerald-200 text-emerald-700 bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:bg-emerald-950/30"
                 onClick={() => setBuilderHealthFilters(c => ({ ...c, healthy: !c.healthy }))}
               />
-              <HealthToggle
+              <SidebarHealthToggle
                 active={builderHealthFilters.unauthorized}
                 count={builderHealthSummary.unauthorized}
                 label="Auth"
@@ -543,7 +555,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 colorInactive="border-amber-200 text-amber-700 bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:bg-amber-950/30"
                 onClick={() => setBuilderHealthFilters(c => ({ ...c, unauthorized: !c.unauthorized }))}
               />
-              <HealthToggle
+              <SidebarHealthToggle
                 active={builderHealthFilters.empty}
                 count={builderHealthSummary.empty}
                 label="Empty"
@@ -551,7 +563,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 colorInactive="border-slate-200 text-slate-700 bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:bg-slate-900/30"
                 onClick={() => setBuilderHealthFilters(c => ({ ...c, empty: !c.empty }))}
               />
-              <HealthToggle
+              <SidebarHealthToggle
                 active={builderHealthFilters.failed}
                 count={builderHealthSummary.failed}
                 label="Failed"
@@ -661,12 +673,12 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Button>
 
           {/* Logo */}
-          <Link href="/workspaces" className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-600/20">
+          <Link href="/admin" className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-md shadow-cyan-600/20">
               <Zap className="w-4 h-4 text-white" strokeWidth={2.4} />
             </div>
             <span className="font-bold text-base hidden sm:block tracking-tight">
-              Analytics<span className="text-blue-600 dark:text-blue-400">.ai</span>
+              Dashboard<span className="text-cyan-600 dark:text-cyan-400">OS</span>
             </span>
           </Link>
 
@@ -858,9 +870,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                     <FolderKanban className="w-3.5 h-3.5" /> My Dashboards
                   </DropdownMenuItem>
                   {user?.role === 'admin' && (
-                    <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push('/settings')}>
+                    <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push('/admin')}>
                       <Shield className="w-3.5 h-3.5 text-purple-500" />
-                      <span className="text-purple-600 dark:text-purple-400">Admin Panel</span>
+                      <span className="text-purple-600 dark:text-purple-400">DashboardOS Admin</span>
                     </DropdownMenuItem>
                   )}
                 </div>

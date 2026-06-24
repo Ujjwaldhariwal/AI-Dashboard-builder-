@@ -12,61 +12,61 @@ import { Badge } from '@/components/ui/badge'
 import {
   Sparkles, Database, Download,
   ArrowRight, CheckCircle2, Zap, Shield,
-  LayoutDashboard, TrendingUp, Code2,
-  GitBranch, Wand2,
+  LayoutDashboard, TrendingUp,
+  Wand2,
   // ── Fix #5 — removed unused BarChart3, RefreshCw ──────────
 } from 'lucide-react'
 
 const FEATURES = [
   {
-    icon: Sparkles,
-    color: 'from-blue-600 to-purple-600',
-    title: 'AI-Powered Generation',
-    desc: 'Describe your data or paste a JSON response. AI instantly generates the most relevant charts with correct field mappings.',
+    icon: Database,
+    color: 'from-cyan-600 to-blue-600',
+    title: 'Database to Dashboard',
+    desc: 'Connect a client database, introspect schema, and turn approved tables into dashboard-ready datasets.',
   },
   {
     icon: Database,
-    color: 'from-purple-600 to-pink-600',
-    title: 'Live API Integration',
-    desc: 'Connect any REST API with Bearer, API Key, or Basic auth. Charts auto-refresh on configurable intervals — no ETL needed.',
+    color: 'from-indigo-600 to-violet-600',
+    title: 'Semantic Business Layer',
+    desc: 'Map raw columns into business entities, dimensions, metrics, relationships, and reusable chart datasets.',
   },
   {
     icon: Download,
     color: 'from-teal-600 to-cyan-600',
-    title: 'Export & Deploy',
-    desc: 'Download a complete React + TypeScript project ZIP with all charts, data hooks, and routing — ready to deploy instantly.',
+    title: 'Custom PDF Reports',
+    desc: 'Give clients read-only dashboards and controlled report generation without exposing builder controls.',
   },
   {
-    icon: GitBranch,
+    icon: LayoutDashboard,
     color: 'from-amber-600 to-orange-600',
-    title: 'Visual Auth Flow',
-    desc: 'Design JWT validation and role-based access flows with a drag-and-drop node editor. Compiles to middleware config JSON.',
+    title: 'Tenant Admin Studio',
+    desc: 'Manage tenants, projects, data sources, semantic models, datasets, chart plans, and approval status in one place.',
   },
   {
     icon: Shield,
     color: 'from-green-600 to-emerald-600',
-    title: '3-Layer Security Schema',
-    desc: 'AI can only modify visual styles — never data mappings or chart types. Your data wiring is always protected.',
+    title: 'Strong Isolation',
+    desc: 'Each client sees only their own dashboard domain and credentials. Engineers only work inside assigned projects.',
   },
   {
-    icon: Code2,
+    icon: Sparkles,
     color: 'from-rose-600 to-red-600',
-    title: 'Enterprise Grade',
-    desc: 'Built for legacy enterprise teams. Deep blues, gradient charts, and polished UI that passes executive reviews on day one.',
+    title: 'AI-Assisted Build Flow',
+    desc: 'Use AI where it helps: chart suggestions, dataset planning, mappings, and safe dashboard generation.',
   },
 ]
 
 const STEPS = [
-  { n: '01', title: 'Connect Your API',  desc: 'Paste any REST endpoint URL and set auth. Live preview shows detected fields instantly.' },
-  { n: '02', title: 'AI Builds Charts',  desc: 'Type "show revenue by month as a bar chart" — AI creates the widget with correct axes in seconds.' },
-  { n: '03', title: 'Export & Ship',     desc: 'Download a production-ready React ZIP. Your team deploys it. No vendor lock-in, ever.' },
+  { n: '01', title: 'Attach Client DB', desc: 'Create a tenant project, connect Postgres, and capture schema metadata for approved tables.' },
+  { n: '02', title: 'Model Business Data', desc: 'Define entities, fields, metrics, joins, filters, and dataset plans for the charts needed.' },
+  { n: '03', title: 'Publish Client View', desc: 'Ship a fast read-only dashboard with branded access and PDF reporting controls.' },
 ]
 
 const STATS = [
-  { value: '9+',  label: 'Chart Types' },
-  { value: 'AI',  label: 'Gemini 2.5 Flash' },
-  { value: '∞',   label: 'API Sources' },
-  { value: 'ZIP', label: 'Export Format' },
+  { value: '1', label: 'Multi-tenant app' },
+  { value: 'DB', label: 'Source first' },
+  { value: 'RLS', label: 'Tenant boundary' },
+  { value: 'PDF', label: 'Client reports' },
 ]
 
 function DashboardMockup() {
@@ -191,7 +191,7 @@ function LandingPage() {
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
               <LayoutDashboard className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-base">Analytics AI</span>
+            <span className="font-bold text-base">DashboardOS</span>
             <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400 ml-1">
               Beta
             </Badge>
@@ -227,16 +227,14 @@ function LandingPage() {
               <Zap className="w-3 h-3 mr-1" /> Powered by Gemini 2.5 Flash
             </Badge>
             <h1 className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight mb-6 leading-[1.1]">
-              Build Enterprise{' '}
+              Build Client{' '}
               <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Dashboards
+                Dashboards From Databases
               </span>
-              {' '}with AI
+              {' '}Securely
             </h1>
             <p className="text-lg text-white/60 max-w-2xl mx-auto mb-8 leading-relaxed">
-              Connect any REST API. Describe what you want.{' '}
-              AI generates production-ready charts with the correct field mappings —
-              then exports a deployable React project in one click.
+              Connect each client database once, model the business layer, and publish fast read-only dashboards with secure PDF reports.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8">
               <Link href="/login">
@@ -245,7 +243,7 @@ function LandingPage() {
                   className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 px-8 h-12 text-base font-semibold shadow-lg shadow-blue-900/30"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Start Building Free
+                  Open DashboardOS
                 </Button>
               </Link>
               <Link href="/login">
@@ -254,12 +252,12 @@ function LandingPage() {
                   variant="ghost"
                   className="border-white/20 bg-transparent text-white/80 hover:bg-white/8 hover:text-white hover:border-white/40 px-8 h-12 text-base"
                 >
-                  View Live Demo <ArrowRight className="w-4 h-4 ml-2" />
+                  Sign in to Admin <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-white/40">
-              {['No code required', 'AI-powered chart generation', 'Export complete React app', 'Enterprise-ready UI'].map(t => (
+              {['Multi-tenant by design', 'Semantic model layer', 'Read-only client dashboards', 'Custom PDF reports'].map(t => (
                 <div key={t} className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
                   {t}
@@ -297,11 +295,11 @@ function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-bold mb-3">
-              Everything your team needs
+              Everything your dashboard team needs
             </h2>
             <p className="text-white/50 max-w-xl mx-auto">
               Built specifically for legacy enterprise organizations who need production-grade
-              visual analytics without a data engineering team.
+              client analytics without rebuilding every project from scratch.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -330,8 +328,8 @@ function LandingPage() {
       <section className="py-24 px-6 border-t border-white/5 bg-white/2">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-14">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3">From API to dashboard in minutes</h2>
-            <p className="text-white/50">No data pipelines. No BI tools. Just your API and AI.</p>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3">From database to dashboard control plane</h2>
+            <p className="text-white/50">One platform for tenant setup, schema mapping, semantic datasets, and client reporting.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
             <div className="hidden md:block absolute top-8 left-1/3 right-1/3 h-px bg-gradient-to-r from-blue-600/50 to-purple-600/50" />
@@ -366,8 +364,8 @@ function LandingPage() {
                 Ready to transform your data?
               </h2>
               <p className="text-white/60 mb-8 max-w-xl mx-auto">
-                Join enterprise teams using Analytics AI to build, deploy, and maintain
-                production dashboards in hours — not months.
+                Join enterprise teams using DashboardOS to build, deploy, and maintain
+                secure client dashboards in hours, not months.
               </p>
               <Link href="/login">
                 <Button
@@ -375,7 +373,7 @@ function LandingPage() {
                   className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 px-10 h-12 text-base font-semibold shadow-xl shadow-blue-900/40"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Start Building Free
+                  Open DashboardOS
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>
@@ -390,7 +388,7 @@ function LandingPage() {
           <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
             <LayoutDashboard className="w-3 h-3 text-white" />
           </div>
-          <span className="font-semibold text-sm">Analytics AI</span>
+          <span className="font-semibold text-sm">DashboardOS</span>
         </div>
         <p className="text-xs text-white/30">
           Built by Ujjwal Dhariwal · Infinite Computer Solutions
