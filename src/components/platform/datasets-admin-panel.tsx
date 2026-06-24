@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Plus, ShieldCheck } from 'lucide-react'
+import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Play, Plus, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -47,8 +47,24 @@ interface DatasetPlan {
     dialect: string
     select: Array<{ id: string; label: string; role: string }>
     joins: Array<{ id: string; type: string }>
-    executableSql: null
+    executableSql: string | null
+    warnings?: string[]
   }
+  warnings?: string[]
+  dataSourceId?: string
+}
+
+interface DatasetRunResult {
+  dataset: {
+    id: string
+    name: string
+    status: string
+  }
+  rowCount: number
+  elapsedMs: number
+  fields: Array<{ name: string; dataTypeId: number }>
+  rows: Array<Record<string, unknown>>
+  warnings?: string[]
 }
 
 function errorToText(value: unknown) {
@@ -77,7 +93,9 @@ export function DatasetsAdminPanel() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [previewingId, setPreviewingId] = useState<string | null>(null)
+  const [runningId, setRunningId] = useState<string | null>(null)
   const [plan, setPlan] = useState<DatasetPlan | null>(null)
+  const [runResult, setRunResult] = useState<DatasetRunResult | null>(null)
 
   const selectedProject = projects.find(project => project.id === projectId)
   const approvedModels = models.filter(model => model.status === 'approved')
@@ -221,11 +239,27 @@ export function DatasetsAdminPanel() {
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
       setPlan(payload?.plan ?? null)
+      setRunResult(null)
       toast.success('Dataset plan ready')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setPreviewingId(null)
+    }
+  }
+
+  const handleRun = async (datasetId: string) => {
+    setRunningId(datasetId)
+    try {
+      const response = await fetch(`/api/admin/datasets/${datasetId}/run`, { method: 'POST' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      setRunResult(payload?.result ?? null)
+      toast.success('Dataset preview executed')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRunningId(null)
     }
   }
 
@@ -368,6 +402,9 @@ export function DatasetsAdminPanel() {
                     <Button size="icon" variant="outline" title="Preview plan" onClick={() => void handlePreview(dataset.id)} disabled={previewingId === dataset.id}>
                       {previewingId === dataset.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
                     </Button>
+                    <Button size="icon" variant="outline" title="Run preview" onClick={() => void handleRun(dataset.id)} disabled={runningId === dataset.id}>
+                      {runningId === dataset.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                    </Button>
                     <Button size="icon" variant="outline" title="Publish dataset" onClick={() => void handleStatus(dataset.id, 'published')} disabled={saving || dataset.status === 'published'}>
                       <CheckCircle2 className="h-4 w-4" />
                     </Button>
@@ -389,13 +426,52 @@ export function DatasetsAdminPanel() {
                 </div>
                 {plan.queryPlan ? (
                   <div className="mt-3 rounded-md bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
-                    {plan.queryPlan.dialect} plan · {plan.queryPlan.select.length} select items · SQL not generated
+                    {plan.queryPlan.dialect} plan / {plan.queryPlan.select.length} select items / {plan.queryPlan.executableSql ? 'SQL ready' : 'SQL blocked'}
                   </div>
+                ) : null}
+                {(plan.warnings?.length ?? 0) > 0 ? (
+                  <div className="mt-3 space-y-1 rounded-md border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100">
+                    {plan.warnings?.map(warning => <p key={warning}>{warning}</p>)}
+                  </div>
+                ) : null}
+                {plan.queryPlan?.executableSql ? (
+                  <pre className="mt-3 max-h-44 overflow-auto rounded-md bg-slate-950/70 p-3 text-xs text-cyan-100">
+                    {plan.queryPlan.executableSql}
+                  </pre>
                 ) : null}
                 <div className="mt-3 grid gap-2">
                   {[...plan.fields.map(field => `${field.name} (${field.role})`), ...plan.metrics.map(metric => `${metric.name} (${metric.aggregation})`)].slice(0, 6).map(item => (
                     <div key={item} className="rounded-md bg-slate-950/50 px-3 py-2 text-xs text-slate-300">{item}</div>
                   ))}
+                </div>
+              </div>
+            ) : null}
+            {runResult ? (
+              <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 p-4">
+                <h3 className="text-sm font-semibold text-emerald-100">
+                  Run: {runResult.dataset.name} / {runResult.rowCount} rows / {runResult.elapsedMs}ms
+                </h3>
+                <div className="mt-3 max-h-64 overflow-auto rounded-md border border-white/10 bg-slate-950/60">
+                  <table className="min-w-full text-left text-xs text-slate-300">
+                    <thead className="sticky top-0 bg-slate-950 text-slate-400">
+                      <tr>
+                        {runResult.fields.map(field => (
+                          <th key={field.name} className="px-3 py-2 font-medium">{field.name}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {runResult.rows.slice(0, 25).map((row, index) => (
+                        <tr key={index} className="border-t border-white/5">
+                          {runResult.fields.map(field => (
+                            <td key={field.name} className="max-w-52 truncate px-3 py-2">
+                              {String(row[field.name] ?? '')}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : null}

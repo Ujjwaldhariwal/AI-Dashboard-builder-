@@ -43,5 +43,6 @@ export interface CompiledDatasetQueryPlan {
     rowLimit: number
     timeoutMs: number
   }
-  executableSql: null
+  executableSql: string | null
+  warnings?: string[]
 }

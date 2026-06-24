@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 
+import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { getAuthedSupabase } from '@/lib/supabase/server'
-import type { CompiledDatasetQueryPlan, SemanticDataset } from '@/types/semantic-dataset'
+import type { SemanticDataset } from '@/types/semantic-dataset'
 
 function toStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter(item => typeof item === 'string') as string[] : []
@@ -29,56 +30,6 @@ function mapDataset(row: Record<string, unknown>): SemanticDataset {
       : { ttlSeconds: 300 },
     createdAt: String(row.created_at ?? new Date().toISOString()),
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
-  }
-}
-
-function compileQueryPlan(
-  fields: Record<string, unknown>[],
-  metrics: Record<string, unknown>[],
-  relationships: Record<string, unknown>[],
-): CompiledDatasetQueryPlan {
-  const selectedFields = fields.map(row => ({
-    id: String(row.id),
-    label: String(row.name ?? ''),
-    expression: {
-      type: 'source_column',
-      sourceColumn: row.source_column ?? null,
-    },
-    role: 'field' as const,
-  }))
-  const selectedMetrics = metrics.map(row => ({
-    id: String(row.id),
-    label: String(row.name ?? ''),
-    expression: {
-      type: 'aggregation',
-      aggregation: row.aggregation,
-      metricExpression: row.expression ?? {},
-    },
-    role: 'metric' as const,
-  }))
-
-  return {
-    dialect: 'postgres',
-    select: [...selectedFields, ...selectedMetrics],
-    joins: relationships.map(row => {
-      const joinConfig = row.join_config && typeof row.join_config === 'object'
-        ? row.join_config as Record<string, unknown>
-        : {}
-      return {
-        id: String(row.id),
-        type: String(row.type ?? 'many_to_one'),
-        leftFieldId: typeof joinConfig.leftFieldId === 'string' ? joinConfig.leftFieldId : undefined,
-        rightFieldId: typeof joinConfig.rightFieldId === 'string' ? joinConfig.rightFieldId : undefined,
-        operator: '=' as const,
-      }
-    }),
-    groupByFieldIds: fields.map(row => String(row.id)),
-    filters: [],
-    limits: {
-      rowLimit: 500,
-      timeoutMs: 12_000,
-    },
-    executableSql: null,
   }
 }
 
@@ -120,7 +71,27 @@ export async function GET(
     const fields = (fieldsResult.data ?? []) as Record<string, unknown>[]
     const metrics = (metricsResult.data ?? []) as Record<string, unknown>[]
     const relationships = (relationshipsResult.data ?? []) as Record<string, unknown>[]
-    const queryPlan = compileQueryPlan(fields, metrics, relationships)
+    const metricSourceFieldIds = Array.from(new Set(metrics.map(metric => {
+      const expression = metric.expression && typeof metric.expression === 'object'
+        ? metric.expression as Record<string, unknown>
+        : {}
+      return typeof expression.fieldId === 'string' ? expression.fieldId : null
+    }).filter(Boolean))) as string[]
+    const missingMetricSourceFieldIds = metricSourceFieldIds.filter(fieldId => !fields.some(field => field.id === fieldId))
+    const { data: metricSourceFields, error: metricSourceFieldsError } = missingMetricSourceFieldIds.length > 0
+      ? await auth.supabase.from('business_fields').select('*').in('id', missingMetricSourceFieldIds)
+      : { data: [], error: null }
+
+    if (metricSourceFieldsError) {
+      return NextResponse.json({ plan: null, error: metricSourceFieldsError.message }, { status: 500 })
+    }
+
+    const { queryPlan, warnings, dataSourceId } = compileDatasetQueryPlan({
+      fields,
+      metrics,
+      relationships,
+      metricSourceFields: (metricSourceFields ?? []) as Record<string, unknown>[],
+    })
 
     return NextResponse.json({
       plan: {
@@ -153,6 +124,8 @@ export async function GET(
           joinConfig: row.join_config,
         })),
         limits: queryPlan.limits,
+        dataSourceId,
+        warnings,
         queryPlan,
       },
     })

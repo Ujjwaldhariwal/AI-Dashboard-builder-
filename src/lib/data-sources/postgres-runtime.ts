@@ -146,3 +146,43 @@ export async function introspectPostgresSchema(ciphertext: string): Promise<Post
     await client.end().catch(() => undefined)
   }
 }
+
+export async function executePostgresReadOnlyQuery(
+  ciphertext: string,
+  sql: string,
+  options: PostgresRuntimeOptions = {},
+) {
+  const normalized = sql.trim().toLowerCase()
+  if (!normalized.startsWith('select ')) {
+    throw new Error('Only SELECT statements can be executed through dataset previews')
+  }
+  if (/;\s*\S/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|call|do)\b/i.test(sql)) {
+    throw new Error('Dataset query failed read-only validation')
+  }
+
+  const credential = decryptPostgresCredential(ciphertext)
+  const client = createPostgresClient(credential, { queryTimeoutMs: options.queryTimeoutMs ?? 12_000 })
+  const startedAt = Date.now()
+
+  try {
+    await client.connect()
+    await client.query('begin read only')
+    await client.query('select set_config($1, $2, true)', [
+      'statement_timeout',
+      String(options.queryTimeoutMs ?? 12_000),
+    ])
+    const result = await client.query<Record<string, unknown>>(sql)
+    await client.query('commit')
+    return {
+      rows: result.rows,
+      rowCount: result.rowCount ?? result.rows.length,
+      fields: result.fields.map(field => ({ name: field.name, dataTypeId: field.dataTypeID })),
+      elapsedMs: Math.max(0, Date.now() - startedAt),
+    }
+  } catch (error) {
+    await client.query('rollback').catch(() => undefined)
+    throw error
+  } finally {
+    await client.end().catch(() => undefined)
+  }
+}
