@@ -21,3 +21,27 @@ export interface SemanticDataset {
   createdAt: string
   updatedAt: string
 }
+
+export interface CompiledDatasetQueryPlan {
+  dialect: 'postgres'
+  select: Array<{
+    id: string
+    label: string
+    expression: Record<string, unknown>
+    role: 'field' | 'metric'
+  }>
+  joins: Array<{
+    id: string
+    type: string
+    leftFieldId?: string
+    rightFieldId?: string
+    operator: '='
+  }>
+  groupByFieldIds: string[]
+  filters: unknown[]
+  limits: {
+    rowLimit: number
+    timeoutMs: number
+  }
+  executableSql: null
+}

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { getAuthedSupabase } from '@/lib/supabase/server'
-import type { SemanticDataset } from '@/types/semantic-dataset'
+import type { CompiledDatasetQueryPlan, SemanticDataset } from '@/types/semantic-dataset'
 
 function toStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter(item => typeof item === 'string') as string[] : []
@@ -29,6 +29,56 @@ function mapDataset(row: Record<string, unknown>): SemanticDataset {
       : { ttlSeconds: 300 },
     createdAt: String(row.created_at ?? new Date().toISOString()),
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
+  }
+}
+
+function compileQueryPlan(
+  fields: Record<string, unknown>[],
+  metrics: Record<string, unknown>[],
+  relationships: Record<string, unknown>[],
+): CompiledDatasetQueryPlan {
+  const selectedFields = fields.map(row => ({
+    id: String(row.id),
+    label: String(row.name ?? ''),
+    expression: {
+      type: 'source_column',
+      sourceColumn: row.source_column ?? null,
+    },
+    role: 'field' as const,
+  }))
+  const selectedMetrics = metrics.map(row => ({
+    id: String(row.id),
+    label: String(row.name ?? ''),
+    expression: {
+      type: 'aggregation',
+      aggregation: row.aggregation,
+      metricExpression: row.expression ?? {},
+    },
+    role: 'metric' as const,
+  }))
+
+  return {
+    dialect: 'postgres',
+    select: [...selectedFields, ...selectedMetrics],
+    joins: relationships.map(row => {
+      const joinConfig = row.join_config && typeof row.join_config === 'object'
+        ? row.join_config as Record<string, unknown>
+        : {}
+      return {
+        id: String(row.id),
+        type: String(row.type ?? 'many_to_one'),
+        leftFieldId: typeof joinConfig.leftFieldId === 'string' ? joinConfig.leftFieldId : undefined,
+        rightFieldId: typeof joinConfig.rightFieldId === 'string' ? joinConfig.rightFieldId : undefined,
+        operator: '=' as const,
+      }
+    }),
+    groupByFieldIds: fields.map(row => String(row.id)),
+    filters: [],
+    limits: {
+      rowLimit: 500,
+      timeoutMs: 12_000,
+    },
+    executableSql: null,
   }
 }
 
@@ -67,6 +117,11 @@ export async function GET(
     if (metricsResult.error) return NextResponse.json({ plan: null, error: metricsResult.error.message }, { status: 500 })
     if (relationshipsResult.error) return NextResponse.json({ plan: null, error: relationshipsResult.error.message }, { status: 500 })
 
+    const fields = (fieldsResult.data ?? []) as Record<string, unknown>[]
+    const metrics = (metricsResult.data ?? []) as Record<string, unknown>[]
+    const relationships = (relationshipsResult.data ?? []) as Record<string, unknown>[]
+    const queryPlan = compileQueryPlan(fields, metrics, relationships)
+
     return NextResponse.json({
       plan: {
         dataset: {
@@ -75,7 +130,7 @@ export async function GET(
           status: dataset.status,
           cachePolicy: dataset.cachePolicy,
         },
-        fields: (fieldsResult.data ?? []).map(row => ({
+        fields: fields.map(row => ({
           id: row.id,
           name: row.name,
           role: row.role,
@@ -83,24 +138,22 @@ export async function GET(
           filterable: row.is_filterable,
           tooltip: row.is_tooltip_field,
         })),
-        metrics: (metricsResult.data ?? []).map(row => ({
+        metrics: metrics.map(row => ({
           id: row.id,
           name: row.name,
           aggregation: row.aggregation,
           expression: row.expression,
           format: row.display_format,
         })),
-        relationships: (relationshipsResult.data ?? []).map(row => ({
+        relationships: relationships.map(row => ({
           id: row.id,
           type: row.type,
           fromEntityId: row.from_entity_id,
           toEntityId: row.to_entity_id,
           joinConfig: row.join_config,
         })),
-        limits: {
-          rowLimit: 500,
-          timeoutMs: 12_000,
-        },
+        limits: queryPlan.limits,
+        queryPlan,
       },
     })
   } catch (error) {

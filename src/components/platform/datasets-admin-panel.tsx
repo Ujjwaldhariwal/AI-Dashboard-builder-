@@ -43,6 +43,12 @@ interface DatasetPlan {
     rowLimit: number
     timeoutMs: number
   }
+  queryPlan?: {
+    dialect: string
+    select: Array<{ id: string; label: string; role: string }>
+    joins: Array<{ id: string; type: string }>
+    executableSql: null
+  }
 }
 
 function errorToText(value: unknown) {
@@ -381,6 +387,11 @@ export function DatasetsAdminPanel() {
                   <div>{plan.relationships.length} joins</div>
                   <div>{plan.limits.rowLimit} rows / {plan.limits.timeoutMs}ms</div>
                 </div>
+                {plan.queryPlan ? (
+                  <div className="mt-3 rounded-md bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
+                    {plan.queryPlan.dialect} plan · {plan.queryPlan.select.length} select items · SQL not generated
+                  </div>
+                ) : null}
                 <div className="mt-3 grid gap-2">
                   {[...plan.fields.map(field => `${field.name} (${field.role})`), ...plan.metrics.map(metric => `${metric.name} (${metric.aggregation})`)].slice(0, 6).map(item => (
                     <div key={item} className="rounded-md bg-slate-950/50 px-3 py-2 text-xs text-slate-300">{item}</div>
