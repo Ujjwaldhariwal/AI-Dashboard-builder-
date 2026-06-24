@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Archive, BarChart3, CheckCircle2, Loader2, Plus, ShieldCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Archive, BarChart3, CheckCircle2, GitBranch, Loader2, Plus, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { BusinessModel } from '@/types/semantic-model'
+import type { BusinessFieldRole, BusinessMetric, BusinessModel, BusinessRelationship } from '@/types/semantic-model'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
 interface ProjectOption {
@@ -18,6 +18,16 @@ interface ProjectOption {
   tenantId: string
   name: string
   tenantName?: string | null
+}
+
+interface EntityWithFields {
+  id: string
+  name: string
+  fields: Array<{
+    id: string
+    name: string
+    role: BusinessFieldRole
+  }>
 }
 
 function errorToText(value: unknown) {
@@ -34,14 +44,25 @@ export function DatasetsAdminPanel() {
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [models, setModels] = useState<BusinessModel[]>([])
   const [datasets, setDatasets] = useState<SemanticDataset[]>([])
+  const [entities, setEntities] = useState<EntityWithFields[]>([])
+  const [metrics, setMetrics] = useState<BusinessMetric[]>([])
+  const [relationships, setRelationships] = useState<BusinessRelationship[]>([])
   const [projectId, setProjectId] = useState('')
   const [modelId, setModelId] = useState('')
   const [name, setName] = useState('')
+  const [fieldIds, setFieldIds] = useState<string[]>([])
+  const [metricIds, setMetricIds] = useState<string[]>([])
+  const [relationshipIds, setRelationshipIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   const selectedProject = projects.find(project => project.id === projectId)
   const approvedModels = models.filter(model => model.status === 'approved')
+  const fieldOptions = useMemo(() => entities.flatMap(entity => (
+    entity.fields
+      .filter(field => field.role !== 'hidden')
+      .map(field => ({ ...field, entityName: entity.name }))
+  )), [entities])
 
   const fetchProjects = useCallback(async () => {
     const response = await fetch('/api/admin/projects', { cache: 'no-store' })
@@ -68,6 +89,32 @@ export function DatasetsAdminPanel() {
     setModelId(current => nextModels.some(model => model.id === current && model.status === 'approved') ? current : nextModels.find(model => model.status === 'approved')?.id ?? '')
   }
 
+  const fetchModelAssets = async (nextModelId: string) => {
+    if (!nextModelId) {
+      setEntities([])
+      setMetrics([])
+      setRelationships([])
+      return
+    }
+    const [fieldsResponse, metricsResponse, relationshipsResponse] = await Promise.all([
+      fetch(`/api/admin/semantic-models/${nextModelId}/field-mappings`, { cache: 'no-store' }),
+      fetch(`/api/admin/semantic-models/${nextModelId}/metrics`, { cache: 'no-store' }),
+      fetch(`/api/admin/semantic-models/${nextModelId}/relationships`, { cache: 'no-store' }),
+    ])
+    const fieldsPayload = await fieldsResponse.json().catch(() => null)
+    const metricsPayload = await metricsResponse.json().catch(() => null)
+    const relationshipsPayload = await relationshipsResponse.json().catch(() => null)
+    if (!fieldsResponse.ok) throw new Error(errorToText(fieldsPayload))
+    if (!metricsResponse.ok) throw new Error(errorToText(metricsPayload))
+    if (!relationshipsResponse.ok) throw new Error(errorToText(relationshipsPayload))
+    setEntities(Array.isArray(fieldsPayload?.entities) ? fieldsPayload.entities : [])
+    setMetrics(Array.isArray(metricsPayload?.metrics) ? metricsPayload.metrics : [])
+    setRelationships(Array.isArray(relationshipsPayload?.relationships) ? relationshipsPayload.relationships : [])
+    setFieldIds([])
+    setMetricIds([])
+    setRelationshipIds([])
+  }
+
   useEffect(() => {
     setLoading(true)
     fetchProjects()
@@ -78,6 +125,14 @@ export function DatasetsAdminPanel() {
   useEffect(() => {
     void fetchProjectData(projectId).catch(error => toast.error(error instanceof Error ? error.message : String(error)))
   }, [projectId])
+
+  useEffect(() => {
+    void fetchModelAssets(modelId).catch(error => toast.error(error instanceof Error ? error.message : String(error)))
+  }, [modelId])
+
+  const toggle = (value: string, values: string[], setValues: (next: string[]) => void) => {
+    setValues(values.includes(value) ? values.filter(item => item !== value) : [...values, value])
+  }
 
   const handleCreate = async () => {
     if (!selectedProject || !modelId || !name.trim()) {
@@ -94,15 +149,18 @@ export function DatasetsAdminPanel() {
           projectId: selectedProject.id,
           modelId,
           name,
-          fieldIds: [],
-          metricIds: [],
-          relationshipIds: [],
+          fieldIds,
+          metricIds,
+          relationshipIds,
         }),
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
       if (payload?.dataset) setDatasets(current => [payload.dataset as SemanticDataset, ...current])
       setName('')
+      setFieldIds([])
+      setMetricIds([])
+      setRelationshipIds([])
       toast.success('Dataset created')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
@@ -175,7 +233,68 @@ export function DatasetsAdminPanel() {
               <Label>Name</Label>
               <Input value={name} onChange={event => setName(event.target.value)} placeholder="Executive Revenue Dataset" />
             </div>
-            <Button onClick={handleCreate} disabled={saving || !modelId || !name.trim()}>
+            <div className="space-y-2">
+              <Label>Fields</Label>
+              <div className="grid max-h-40 gap-2 overflow-auto rounded-md border border-white/10 bg-slate-950/50 p-2">
+                {fieldOptions.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-slate-500">Map fields in the semantic model first.</p>
+                ) : fieldOptions.map(field => (
+                  <button
+                    key={field.id}
+                    type="button"
+                    className={[
+                      'rounded-md px-3 py-2 text-left text-xs transition-colors',
+                      fieldIds.includes(field.id) ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]',
+                    ].join(' ')}
+                    onClick={() => toggle(field.id, fieldIds, setFieldIds)}
+                  >
+                    {field.entityName} / {field.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Metrics</Label>
+              <div className="grid max-h-36 gap-2 overflow-auto rounded-md border border-white/10 bg-slate-950/50 p-2">
+                {metrics.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-slate-500">Create metrics in the semantic model first.</p>
+                ) : metrics.map(metric => (
+                  <button
+                    key={metric.id}
+                    type="button"
+                    className={[
+                      'rounded-md px-3 py-2 text-left text-xs transition-colors',
+                      metricIds.includes(metric.id) ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]',
+                    ].join(' ')}
+                    onClick={() => toggle(metric.id, metricIds, setMetricIds)}
+                  >
+                    {metric.name} · {metric.aggregation}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Relationships</Label>
+              <div className="grid max-h-32 gap-2 overflow-auto rounded-md border border-white/10 bg-slate-950/50 p-2">
+                {relationships.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-slate-500">Relationships are optional for single-entity datasets.</p>
+                ) : relationships.map(relationship => (
+                  <button
+                    key={relationship.id}
+                    type="button"
+                    className={[
+                      'rounded-md px-3 py-2 text-left text-xs transition-colors',
+                      relationshipIds.includes(relationship.id) ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]',
+                    ].join(' ')}
+                    onClick={() => toggle(relationship.id, relationshipIds, setRelationshipIds)}
+                  >
+                    <GitBranch className="mr-2 inline h-3.5 w-3.5" />
+                    {relationship.type}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button onClick={handleCreate} disabled={saving || !modelId || !name.trim() || (fieldIds.length === 0 && metricIds.length === 0)}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
               Create dataset
             </Button>

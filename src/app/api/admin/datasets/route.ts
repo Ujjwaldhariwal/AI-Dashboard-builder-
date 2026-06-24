@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null)
     const parsed = DatasetSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ dataset: null, error: parsed.error.flatten() }, { status: 400 })
+    if (parsed.data.fieldIds.length === 0 && parsed.data.metricIds.length === 0) {
+      return NextResponse.json({ dataset: null, error: 'Select at least one field or metric' }, { status: 400 })
+    }
 
     const { data: model, error: modelError } = await auth.supabase
       .from('business_models')
