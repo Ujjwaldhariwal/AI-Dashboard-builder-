@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, BarChart3, CheckCircle2, GitBranch, Loader2, Plus, ShieldCheck } from 'lucide-react'
+import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Plus, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +30,21 @@ interface EntityWithFields {
   }>
 }
 
+interface DatasetPlan {
+  dataset: {
+    id: string
+    name: string
+    status: string
+  }
+  fields: Array<{ id: string; name: string; role: string }>
+  metrics: Array<{ id: string; name: string; aggregation: string }>
+  relationships: Array<{ id: string; type: string }>
+  limits: {
+    rowLimit: number
+    timeoutMs: number
+  }
+}
+
 function errorToText(value: unknown) {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object') {
@@ -55,6 +70,8 @@ export function DatasetsAdminPanel() {
   const [relationshipIds, setRelationshipIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [previewingId, setPreviewingId] = useState<string | null>(null)
+  const [plan, setPlan] = useState<DatasetPlan | null>(null)
 
   const selectedProject = projects.find(project => project.id === projectId)
   const approvedModels = models.filter(model => model.status === 'approved')
@@ -188,6 +205,21 @@ export function DatasetsAdminPanel() {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handlePreview = async (datasetId: string) => {
+    setPreviewingId(datasetId)
+    try {
+      const response = await fetch(`/api/admin/datasets/${datasetId}/plan`, { cache: 'no-store' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      setPlan(payload?.plan ?? null)
+      toast.success('Dataset plan ready')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPreviewingId(null)
     }
   }
 
@@ -327,6 +359,9 @@ export function DatasetsAdminPanel() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="border-white/15 text-slate-300">{dataset.status}</Badge>
+                    <Button size="icon" variant="outline" title="Preview plan" onClick={() => void handlePreview(dataset.id)} disabled={previewingId === dataset.id}>
+                      {previewingId === dataset.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                    </Button>
                     <Button size="icon" variant="outline" title="Publish dataset" onClick={() => void handleStatus(dataset.id, 'published')} disabled={saving || dataset.status === 'published'}>
                       <CheckCircle2 className="h-4 w-4" />
                     </Button>
@@ -337,6 +372,22 @@ export function DatasetsAdminPanel() {
                 </div>
               </div>
             ))}
+            {plan ? (
+              <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
+                <h3 className="text-sm font-semibold text-cyan-100">Preview: {plan.dataset.name}</h3>
+                <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-4">
+                  <div>{plan.fields.length} fields</div>
+                  <div>{plan.metrics.length} metrics</div>
+                  <div>{plan.relationships.length} joins</div>
+                  <div>{plan.limits.rowLimit} rows / {plan.limits.timeoutMs}ms</div>
+                </div>
+                <div className="mt-3 grid gap-2">
+                  {[...plan.fields.map(field => `${field.name} (${field.role})`), ...plan.metrics.map(metric => `${metric.name} (${metric.aggregation})`)].slice(0, 6).map(item => (
+                    <div key={item} className="rounded-md bg-slate-950/50 px-3 py-2 text-xs text-slate-300">{item}</div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </section>
