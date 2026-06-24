@@ -38,3 +38,13 @@ next-env.d.ts
 llm-context.txt
 # supabase local cli temp
 /supabase/.temp/
+
+# local agent/tool state
+.playwright-mcp/
+.graphify/cache/
+.graphify/branch.json
+.graphify/worktree.json
+.graphify/needs_update
+.graphify/.graphify_runtime.json
+.graphify/.graphify_*
+.graphify/manifest.json

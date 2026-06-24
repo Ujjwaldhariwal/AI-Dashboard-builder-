@@ -8,8 +8,8 @@ import { ErrorBoundary } from '@/components/error-boundary'
 import { AuthInitializer } from '@/components/auth-initializer'
 
 export const metadata: Metadata = {
-  title: 'Analytics AI Dashboard Builder',
-  description: 'Internal AI-powered dashboard builder',
+  title: 'DashboardOS',
+  description: 'Multi-tenant managed dashboard platform',
 }
 
 export default function RootLayout({

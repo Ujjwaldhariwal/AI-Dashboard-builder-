@@ -1,4 +1,8 @@
 import type { TransformOp } from '@/types/widget'
+export type * from '@/types/tenancy'
+export type * from '@/types/semantic-model'
+export type * from '@/types/data-source'
+export type * from '@/types/semantic-dataset'
 
 // Module: Index
 //index.ts
