@@ -120,3 +120,105 @@
 .data-table tr:hover {
   @apply bg-muted/30;
 }
+
+@layer components {
+  .dashboardos-admin {
+    background:
+      radial-gradient(circle at 18% 8%, rgba(249, 38, 114, 0.10), transparent 30rem),
+      radial-gradient(circle at 88% 18%, rgba(166, 226, 46, 0.08), transparent 28rem),
+      linear-gradient(135deg, #1f1f1c 0%, #272822 52%, #191915 100%);
+    color: #f8f8f2;
+  }
+
+  .dashboardos-admin .bg-slate-950,
+  .dashboardos-admin .bg-slate-950\/95,
+  .dashboardos-admin .bg-slate-950\/85,
+  .dashboardos-admin .bg-slate-950\/70,
+  .dashboardos-admin .bg-slate-950\/60,
+  .dashboardos-admin .bg-slate-950\/50 {
+    background-color: rgba(31, 31, 28, 0.88) !important;
+  }
+
+  .dashboardos-admin .bg-white\/\[0\.03\],
+  .dashboardos-admin .bg-white\/5 {
+    background-color: rgba(62, 61, 50, 0.54) !important;
+  }
+
+  .dashboardos-admin .bg-white\/8,
+  .dashboardos-admin .hover\:bg-white\/8:hover,
+  .dashboardos-admin .hover\:bg-white\/10:hover {
+    background-color: rgba(117, 113, 94, 0.18) !important;
+  }
+
+  .dashboardos-admin .border-white\/10,
+  .dashboardos-admin .border-white\/15 {
+    border-color: rgba(248, 248, 242, 0.13) !important;
+  }
+
+  .dashboardos-admin .text-slate-100,
+  .dashboardos-admin .text-slate-200 {
+    color: #f8f8f2 !important;
+  }
+
+  .dashboardos-admin .text-slate-300 {
+    color: #e6dbb8 !important;
+  }
+
+  .dashboardos-admin .text-slate-400,
+  .dashboardos-admin .text-slate-500 {
+    color: #a59f85 !important;
+  }
+
+  .dashboardos-admin .bg-cyan-400,
+  .dashboardos-admin .bg-cyan-500 {
+    background-color: #a6e22e !important;
+  }
+
+  .dashboardos-admin .bg-cyan-300\/10,
+  .dashboardos-admin .bg-cyan-400\/10,
+  .dashboardos-admin .bg-cyan-500\/10 {
+    background-color: rgba(166, 226, 46, 0.10) !important;
+  }
+
+  .dashboardos-admin .border-cyan-300\/20,
+  .dashboardos-admin .border-cyan-400\/20 {
+    border-color: rgba(166, 226, 46, 0.24) !important;
+  }
+
+  .dashboardos-admin .text-cyan-100,
+  .dashboardos-admin .text-cyan-200,
+  .dashboardos-admin .text-cyan-300 {
+    color: #a6e22e !important;
+  }
+
+  .dashboardos-admin .text-slate-950 {
+    color: #1f1f1c !important;
+  }
+
+  .dashboardos-admin .bg-emerald-300\/10 {
+    background-color: rgba(166, 226, 46, 0.12) !important;
+  }
+
+  .dashboardos-admin .border-emerald-300\/20 {
+    border-color: rgba(166, 226, 46, 0.24) !important;
+  }
+
+  .dashboardos-admin .text-emerald-100,
+  .dashboardos-admin .text-emerald-300 {
+    color: #a6e22e !important;
+  }
+
+  .dashboardos-admin .bg-amber-300\/10,
+  .dashboardos-admin .bg-amber-400\/10 {
+    background-color: rgba(253, 151, 31, 0.12) !important;
+  }
+
+  .dashboardos-admin .border-amber-300\/20,
+  .dashboardos-admin .border-amber-400\/20 {
+    border-color: rgba(253, 151, 31, 0.28) !important;
+  }
+
+  .dashboardos-admin .text-amber-100 {
+    color: #ffd866 !important;
+  }
+}
