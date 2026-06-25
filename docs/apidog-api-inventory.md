@@ -20,6 +20,29 @@ Auth model:
 
 ## Admin / Tenancy
 
+### `GET /api/admin/api-docs/inventory`
+
+Purpose: return the internal API inventory as structured JSON for Apidog sync tooling.
+
+Auth: authenticated admin workspace user.
+
+Response:
+
+```json
+{
+  "inventory": {
+    "endpoints": [],
+    "folders": [],
+    "counts": {
+      "endpoints": 0,
+      "admin": 0,
+      "client": 0,
+      "folders": 0
+    }
+  }
+}
+```
+
 ### `GET /api/admin/tenants`
 
 Purpose: list tenants for platform administration.

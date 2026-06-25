@@ -1,32 +1,7 @@
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
-
 import { BookOpen, CheckCircle2, FolderTree, LockKeyhole } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-
-interface ApiDocEndpoint {
-  method: string
-  path: string
-  body: string
-}
-
-function parseApiInventory(markdown: string) {
-  const endpoints: ApiDocEndpoint[] = []
-  const endpointRegex = /^### `([A-Z]+) ([^`]+)`\n([\s\S]*?)(?=^### `|^## Apidog Sprint Notes|(?![\s\S]))/gm
-  let match: RegExpExecArray | null
-
-  while ((match = endpointRegex.exec(markdown)) !== null) {
-    endpoints.push({
-      method: match[1],
-      path: match[2],
-      body: match[3].trim(),
-    })
-  }
-
-  const folders = Array.from(markdown.matchAll(/^- `([^`]+)`$/gm)).map(folder => folder[1])
-  return { endpoints, folders }
-}
+import { readApiInventory } from '@/lib/api-docs/inventory'
 
 function methodClass(method: string) {
   if (method === 'GET') return 'border-[#66d9ef]/30 bg-[#66d9ef]/10 text-[#9beaff]'
@@ -35,15 +10,8 @@ function methodClass(method: string) {
   return 'border-white/15 bg-white/5 text-slate-300'
 }
 
-function extractLine(body: string, label: string) {
-  const line = body.split('\n').find(item => item.startsWith(`${label}:`))
-  return line?.replace(`${label}:`, '').trim() || 'Not specified'
-}
-
 export default async function AdminApiDocsPage() {
-  const docPath = path.join(process.cwd(), 'docs', 'apidog-api-inventory.md')
-  const markdown = await readFile(docPath, 'utf8')
-  const { endpoints, folders } = parseApiInventory(markdown)
+  const { endpoints, folders } = await readApiInventory()
   const adminCount = endpoints.filter(endpoint => endpoint.path.startsWith('/api/admin')).length
   const clientCount = endpoints.filter(endpoint => endpoint.path.startsWith('/api/client')).length
 
@@ -125,8 +93,8 @@ export default async function AdminApiDocsPage() {
                     </Badge>
                     <code className="rounded bg-slate-950/70 px-2 py-1 text-xs text-slate-200">{endpoint.path}</code>
                   </div>
-                  <p className="mt-3 text-sm text-slate-300">{extractLine(endpoint.body, 'Purpose')}</p>
-                  <p className="mt-1 text-xs text-slate-500">Auth: {extractLine(endpoint.body, 'Auth')}</p>
+                  <p className="mt-3 text-sm text-slate-300">{endpoint.purpose}</p>
+                  <p className="mt-1 text-xs text-slate-500">Auth: {endpoint.auth}</p>
                 </div>
               </div>
             </article>
