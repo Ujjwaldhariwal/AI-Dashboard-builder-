@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { BusinessMetric, BusinessMetricAggregation } from '@/types/semantic-model'
 
@@ -42,6 +43,25 @@ export async function GET(
   const auth = await getAuthedSupabase()
   if (!auth) return NextResponse.json({ metrics: [], error: 'Unauthorized' }, { status: 401 })
 
+  const { data: model, error: modelError } = await auth.supabase
+    .from('business_models')
+    .select('tenant_id, project_id')
+    .eq('id', id)
+    .single()
+
+  if (modelError || !model) {
+    return NextResponse.json({ metrics: [], error: modelError?.message ?? 'Business model not found' }, { status: 404 })
+  }
+
+  const access = await requireProjectAccess({
+    ...accessContext(auth),
+    tenantId: String(model.tenant_id),
+    projectId: String(model.project_id),
+  })
+  if (!access.ok) {
+    return NextResponse.json({ metrics: [], error: access.error }, { status: access.status })
+  }
+
   const { data, error } = await auth.supabase
     .from('business_metrics')
     .select('*')
@@ -75,6 +95,16 @@ export async function POST(
       .single()
 
     if (modelError) return NextResponse.json({ metric: null, error: modelError.message }, { status: 404 })
+
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: String(model.tenant_id),
+      projectId: String(model.project_id),
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ metric: null, error: access.error }, { status: access.status })
+    }
 
     const nowIso = new Date().toISOString()
     const expression = { type: 'field_aggregation', fieldId: parsed.data.fieldId }

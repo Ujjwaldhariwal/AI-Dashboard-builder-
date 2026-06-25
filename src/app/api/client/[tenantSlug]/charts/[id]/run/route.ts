@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 
 import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import { accessContext, requireTenantAccess } from '@/lib/security/project-access'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
+import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
 
@@ -99,6 +101,14 @@ export async function POST(
       return NextResponse.json({ result: null, error: 'Tenant not found' }, { status: 404 })
     }
 
+    const tenantAccess = await requireTenantAccess({
+      ...accessContext(auth),
+      tenantId: String(tenant.id),
+    })
+    if (!tenantAccess.ok) {
+      return NextResponse.json({ result: null, error: tenantAccess.error }, { status: tenantAccess.status })
+    }
+
     const { data: chartRow, error: chartError } = await auth.supabase
       .from('dashboard_chart_configs')
       .select('*')
@@ -154,6 +164,18 @@ export async function POST(
     })
 
     if (validation.state !== 'valid') {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: chart.tenantId,
+        projectId: chart.projectId,
+        datasetId: chart.datasetId,
+        chartId: chart.id,
+        actorUserId: auth.userId,
+        surface: 'client_chart',
+        status: 'error',
+        errorMessage: 'Published chart config is no longer valid',
+        warnings: validation.issues.map(issue => issue.message),
+      })
       return NextResponse.json({
         result: null,
         error: 'Published chart config is no longer valid',
@@ -178,6 +200,19 @@ export async function POST(
     })
 
     if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: chart.tenantId,
+        projectId: chart.projectId,
+        datasetId: chart.datasetId,
+        chartId: chart.id,
+        actorUserId: auth.userId,
+        surface: 'client_chart',
+        status: 'error',
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: 'Published chart dataset is not executable yet',
+        warnings: compileResult.warnings,
+      })
       return NextResponse.json({
         result: null,
         error: 'Published chart dataset is not executable yet',
@@ -190,18 +225,72 @@ export async function POST(
       .select('id, credential_ciphertext, status')
       .eq('id', compileResult.dataSourceId)
       .eq('tenant_id', tenant.id)
+      .eq('project_id', chart.projectId)
       .single()
 
     if (sourceError) return NextResponse.json({ result: null, error: sourceError.message }, { status: 404 })
     if (sourceRow.status !== 'active') {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: chart.tenantId,
+        projectId: chart.projectId,
+        datasetId: chart.datasetId,
+        chartId: chart.id,
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'client_chart',
+        status: 'error',
+        sql: compileResult.queryPlan.executableSql,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: 'Data source is not active',
+        warnings: compileResult.warnings,
+      })
       return NextResponse.json({ result: null, error: 'Data source is not active' }, { status: 409 })
     }
 
-    const execution = await executePostgresReadOnlyQuery(
-      String(sourceRow.credential_ciphertext),
-      compileResult.queryPlan.executableSql,
-      { queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs },
-    )
+    let execution: Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>
+    try {
+      execution = await executePostgresReadOnlyQuery(
+        String(sourceRow.credential_ciphertext),
+        compileResult.queryPlan.executableSql,
+        { queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs },
+      )
+    } catch (queryError) {
+      const message = queryError instanceof Error ? queryError.message : String(queryError)
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: chart.tenantId,
+        projectId: chart.projectId,
+        datasetId: chart.datasetId,
+        chartId: chart.id,
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'client_chart',
+        status: 'error',
+        sql: compileResult.queryPlan.executableSql,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: message,
+        warnings: compileResult.warnings,
+      })
+      throw queryError
+    }
+
+    await recordSemanticQueryRun({
+      supabase: auth.supabase,
+      tenantId: chart.tenantId,
+      projectId: chart.projectId,
+      datasetId: chart.datasetId,
+      chartId: chart.id,
+      dataSourceId: compileResult.dataSourceId,
+      actorUserId: auth.userId,
+      surface: 'client_chart',
+      status: 'success',
+      sql: compileResult.queryPlan.executableSql,
+      rowCount: execution.rowCount,
+      elapsedMs: execution.elapsedMs,
+      timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+      warnings: compileResult.warnings,
+    })
 
     return NextResponse.json({
       result: {

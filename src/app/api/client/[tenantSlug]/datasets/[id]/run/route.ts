@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 
 import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import { accessContext, requireTenantAccess } from '@/lib/security/project-access'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
+import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
 function toStringArray(value: unknown) {
@@ -48,6 +50,14 @@ export async function POST(
 
     if (tenantError || !tenant) {
       return NextResponse.json({ result: null, error: 'Tenant not found' }, { status: 404 })
+    }
+
+    const tenantAccess = await requireTenantAccess({
+      ...accessContext(auth),
+      tenantId: String(tenant.id),
+    })
+    if (!tenantAccess.ok) {
+      return NextResponse.json({ result: null, error: tenantAccess.error }, { status: tenantAccess.status })
     }
 
     const { data: datasetRow, error: datasetError } = await auth.supabase
@@ -100,6 +110,18 @@ export async function POST(
     })
 
     if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: String(tenant.id),
+        projectId: String(dataset.project_id),
+        datasetId: String(dataset.id),
+        actorUserId: auth.userId,
+        surface: 'client_dataset',
+        status: 'error',
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: 'Published dataset is not executable yet',
+        warnings: compileResult.warnings,
+      })
       return NextResponse.json({
         result: null,
         error: 'Published dataset is not executable yet',
@@ -112,18 +134,69 @@ export async function POST(
       .select('id, credential_ciphertext, status')
       .eq('id', compileResult.dataSourceId)
       .eq('tenant_id', tenant.id)
+      .eq('project_id', dataset.project_id)
       .single()
 
     if (sourceError) return NextResponse.json({ result: null, error: sourceError.message }, { status: 404 })
     if (sourceRow.status !== 'active') {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: String(tenant.id),
+        projectId: String(dataset.project_id),
+        datasetId: String(dataset.id),
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'client_dataset',
+        status: 'error',
+        sql: compileResult.queryPlan.executableSql,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: 'Data source is not active',
+        warnings: compileResult.warnings,
+      })
       return NextResponse.json({ result: null, error: 'Data source is not active' }, { status: 409 })
     }
 
-    const result = await executePostgresReadOnlyQuery(
-      String(sourceRow.credential_ciphertext),
-      compileResult.queryPlan.executableSql,
-      { queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs },
-    )
+    let result: Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>
+    try {
+      result = await executePostgresReadOnlyQuery(
+        String(sourceRow.credential_ciphertext),
+        compileResult.queryPlan.executableSql,
+        { queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs },
+      )
+    } catch (queryError) {
+      const message = queryError instanceof Error ? queryError.message : String(queryError)
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: String(tenant.id),
+        projectId: String(dataset.project_id),
+        datasetId: String(dataset.id),
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'client_dataset',
+        status: 'error',
+        sql: compileResult.queryPlan.executableSql,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: message,
+        warnings: compileResult.warnings,
+      })
+      throw queryError
+    }
+
+    await recordSemanticQueryRun({
+      supabase: auth.supabase,
+      tenantId: String(tenant.id),
+      projectId: String(dataset.project_id),
+      datasetId: String(dataset.id),
+      dataSourceId: compileResult.dataSourceId,
+      actorUserId: auth.userId,
+      surface: 'client_dataset',
+      status: 'success',
+      sql: compileResult.queryPlan.executableSql,
+      rowCount: result.rowCount,
+      elapsedMs: result.elapsedMs,
+      timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+      warnings: compileResult.warnings,
+    })
 
     return NextResponse.json({
       result: {

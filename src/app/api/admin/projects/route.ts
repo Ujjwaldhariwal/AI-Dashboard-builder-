@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireTenantAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardProject, TenantStatus } from '@/types/tenancy'
 
@@ -45,6 +46,12 @@ export async function GET(req: NextRequest) {
     }
 
     const tenantId = req.nextUrl.searchParams.get('tenantId')
+    if (tenantId) {
+      const access = await requireTenantAccess({ ...accessContext(auth), tenantId })
+      if (!access.ok) {
+        return NextResponse.json({ projects: [], error: access.error }, { status: access.status })
+      }
+    }
 
     let query = auth.supabase
       .from('dashboard_projects')
@@ -79,6 +86,15 @@ export async function POST(req: NextRequest) {
     const parsed = ProjectCreateSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ project: null, error: parsed.error.flatten() }, { status: 400 })
+    }
+
+    const access = await requireTenantAccess({
+      ...accessContext(auth),
+      tenantId: parsed.data.tenantId,
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ project: null, error: access.error }, { status: access.status })
     }
 
     const nowIso = new Date().toISOString()

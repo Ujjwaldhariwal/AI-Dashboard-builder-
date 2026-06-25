@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { SemanticDataset, SemanticDatasetStatus } from '@/types/semantic-dataset'
 
@@ -43,6 +44,27 @@ export async function PATCH(
     if (!parsed.success) return NextResponse.json({ dataset: null, error: parsed.error.flatten() }, { status: 400 })
 
     const nowIso = new Date().toISOString()
+    const { data: existing, error: existingError } = await auth.supabase
+      .from('semantic_datasets')
+      .select('tenant_id, project_id')
+      .eq('id', id)
+      .single()
+
+    if (existingError || !existing) {
+      return NextResponse.json({ dataset: null, error: existingError?.message ?? 'Dataset not found' }, { status: 404 })
+    }
+
+    const existingRow = existing as Record<string, unknown>
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: String(existingRow.tenant_id),
+      projectId: String(existingRow.project_id),
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ dataset: null, error: access.error }, { status: access.status })
+    }
+
     const { data, error } = await auth.supabase
       .from('semantic_datasets')
       .update({ status: parsed.data.status, updated_at: nowIso })

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
 function mapColumn(row: Record<string, unknown>) {
@@ -34,6 +35,32 @@ export async function GET(req: NextRequest) {
     const projectId = req.nextUrl.searchParams.get('projectId')
     const dataSourceId = req.nextUrl.searchParams.get('dataSourceId')
     const search = req.nextUrl.searchParams.get('search')?.trim()
+
+    if (projectId) {
+      const access = await requireProjectAccess({ ...accessContext(auth), projectId })
+      if (!access.ok) {
+        return NextResponse.json({ columns: [], error: access.error }, { status: access.status })
+      }
+    } else if (dataSourceId) {
+      const { data: source, error: sourceError } = await auth.supabase
+        .from('data_sources')
+        .select('tenant_id, project_id')
+        .eq('id', dataSourceId)
+        .single()
+
+      if (sourceError || !source) {
+        return NextResponse.json({ columns: [], error: sourceError?.message ?? 'Data source not found' }, { status: 404 })
+      }
+
+      const access = await requireProjectAccess({
+        ...accessContext(auth),
+        tenantId: String(source.tenant_id),
+        projectId: String(source.project_id),
+      })
+      if (!access.ok) {
+        return NextResponse.json({ columns: [], error: access.error }, { status: access.status })
+      }
+    }
 
     let query = auth.supabase
       .from('data_source_columns')

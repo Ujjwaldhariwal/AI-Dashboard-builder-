@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
 
     const { data: datasetRow, error: datasetError } = await auth.supabase
       .from('semantic_datasets')
-      .select('id, selection')
+      .select('id, tenant_id, project_id, selection')
       .eq('id', datasetId)
       .single()
 
@@ -66,7 +67,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ validation: null, error: datasetError?.message ?? 'Dataset not found' }, { status: 404 })
     }
 
-    const selection = selectionFromDataset(datasetRow as Record<string, unknown>)
+    const dataset = datasetRow as Record<string, unknown>
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: String(dataset.tenant_id),
+      projectId: String(dataset.project_id),
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ validation: null, error: access.error }, { status: access.status })
+    }
+
+    const selection = selectionFromDataset(dataset)
     const [fieldsResult, metricsResult] = await Promise.all([
       selection.fieldIds.length > 0
         ? auth.supabase.from('business_fields').select('*').in('id', selection.fieldIds)

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -79,6 +80,16 @@ export async function PATCH(
     }
 
     const chart = mapChart(chartRow as Record<string, unknown>)
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: chart.tenantId,
+      projectId: chart.projectId,
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ chart: null, validation: null, error: access.error }, { status: access.status })
+    }
+
     const { data: datasetRow, error: datasetError } = await auth.supabase
       .from('semantic_datasets')
       .select('id, tenant_id, project_id, status, selection')

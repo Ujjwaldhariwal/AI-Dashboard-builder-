@@ -102,7 +102,7 @@ Response: `{ "projects": [...] }`
 
 Purpose: create a dashboard project under a tenant.
 
-Auth: authenticated tenant/project access.
+Auth: authenticated tenant editor.
 
 Body:
 
@@ -435,7 +435,7 @@ Response:
 
 Purpose: validate a chart config without saving it.
 
-Auth: authenticated project access.
+Auth: authenticated project editor.
 
 Body:
 
@@ -534,8 +534,9 @@ Security:
 - chart validation state must be `valid`
 - chart config is revalidated against current semantic fields and metrics at runtime
 - dataset must be published
-- source data source must belong to the same tenant
+- source data source must belong to the same tenant and project
 - query must pass read-only validation
+- execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
 
 Response:
 
@@ -575,8 +576,9 @@ Security:
 - tenant slug must resolve to an active tenant
 - dataset must belong to that tenant
 - dataset status must be `published`
-- source data source must belong to the same tenant
+- source data source must belong to the same tenant and project
 - query must pass read-only validation
+- execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
 
 Response:
 

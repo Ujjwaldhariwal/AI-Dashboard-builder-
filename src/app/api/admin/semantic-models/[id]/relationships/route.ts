@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { BusinessRelationship, BusinessRelationshipType } from '@/types/semantic-model'
 
@@ -35,6 +36,25 @@ export async function GET(
   const auth = await getAuthedSupabase()
   if (!auth) return NextResponse.json({ relationships: [], error: 'Unauthorized' }, { status: 401 })
 
+  const { data: model, error: modelError } = await auth.supabase
+    .from('business_models')
+    .select('tenant_id, project_id')
+    .eq('id', id)
+    .single()
+
+  if (modelError || !model) {
+    return NextResponse.json({ relationships: [], error: modelError?.message ?? 'Business model not found' }, { status: 404 })
+  }
+
+  const access = await requireProjectAccess({
+    ...accessContext(auth),
+    tenantId: String(model.tenant_id),
+    projectId: String(model.project_id),
+  })
+  if (!access.ok) {
+    return NextResponse.json({ relationships: [], error: access.error }, { status: access.status })
+  }
+
   const { data, error } = await auth.supabase
     .from('business_relationships')
     .select('*')
@@ -68,6 +88,16 @@ export async function POST(
       .single()
 
     if (modelError) return NextResponse.json({ relationship: null, error: modelError.message }, { status: 404 })
+
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: String(model.tenant_id),
+      projectId: String(model.project_id),
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ relationship: null, error: access.error }, { status: access.status })
+    }
 
     const nowIso = new Date().toISOString()
     const joinConfig = {

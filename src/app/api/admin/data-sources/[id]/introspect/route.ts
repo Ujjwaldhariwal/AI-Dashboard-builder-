@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { introspectPostgresSchema, testPostgresConnection } from '@/lib/data-sources/postgres-runtime'
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
 export async function POST(
@@ -27,6 +28,16 @@ export async function POST(
     }
 
     const row = source as Record<string, unknown>
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: String(row.tenant_id),
+      projectId: String(row.project_id),
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ tables: [], columnCount: 0, error: access.error }, { status: access.status })
+    }
+
     const ciphertext = typeof row.credential_ciphertext === 'string' ? row.credential_ciphertext : ''
     if (!ciphertext) {
       return NextResponse.json({ tables: [], columnCount: 0, error: 'Missing encrypted credentials' }, { status: 409 })

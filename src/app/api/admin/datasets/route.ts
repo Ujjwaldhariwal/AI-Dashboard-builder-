@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { SemanticDataset, SemanticDatasetStatus } from '@/types/semantic-dataset'
 
@@ -43,6 +44,13 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ datasets: [], error: 'Unauthorized' }, { status: 401 })
 
   const projectId = req.nextUrl.searchParams.get('projectId')
+  if (projectId) {
+    const access = await requireProjectAccess({ ...accessContext(auth), projectId })
+    if (!access.ok) {
+      return NextResponse.json({ datasets: [], error: access.error }, { status: access.status })
+    }
+  }
+
   let query = auth.supabase.from('semantic_datasets').select('*').order('updated_at', { ascending: false })
   if (projectId) query = query.eq('project_id', projectId)
 
@@ -63,10 +71,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ dataset: null, error: 'Select at least one field or metric' }, { status: 400 })
     }
 
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: parsed.data.tenantId,
+      projectId: parsed.data.projectId,
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ dataset: null, error: access.error }, { status: access.status })
+    }
+
     const { data: model, error: modelError } = await auth.supabase
       .from('business_models')
-      .select('id, status')
+      .select('id, tenant_id, project_id, status')
       .eq('id', parsed.data.modelId)
+      .eq('tenant_id', parsed.data.tenantId)
+      .eq('project_id', parsed.data.projectId)
       .single()
 
     if (modelError) return NextResponse.json({ dataset: null, error: modelError.message }, { status: 404 })

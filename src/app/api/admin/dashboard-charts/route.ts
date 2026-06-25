@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -101,6 +102,13 @@ export async function GET(req: NextRequest) {
   if (!auth) return NextResponse.json({ charts: [], error: 'Unauthorized' }, { status: 401 })
 
   const projectId = req.nextUrl.searchParams.get('projectId')
+  if (projectId) {
+    const access = await requireProjectAccess({ ...accessContext(auth), projectId })
+    if (!access.ok) {
+      return NextResponse.json({ charts: [], error: access.error }, { status: access.status })
+    }
+  }
+
   let query = auth.supabase.from('dashboard_chart_configs').select('*').order('updated_at', { ascending: false })
   if (projectId) query = query.eq('project_id', projectId)
 
@@ -118,6 +126,16 @@ export async function POST(req: NextRequest) {
     const parsed = ChartSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ chart: null, validation: null, error: parsed.error.flatten() }, { status: 400 })
+    }
+
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: parsed.data.tenantId,
+      projectId: parsed.data.projectId,
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ chart: null, validation: null, error: access.error }, { status: access.status })
     }
 
     const { data: datasetRow, error: datasetError } = await auth.supabase

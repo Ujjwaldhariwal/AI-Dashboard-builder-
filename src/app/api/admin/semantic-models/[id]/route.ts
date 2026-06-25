@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { BusinessModel, BusinessModelStatus } from '@/types/semantic-model'
 
@@ -42,6 +43,27 @@ export async function PATCH(
     }
 
     const nowIso = new Date().toISOString()
+    const { data: existing, error: existingError } = await auth.supabase
+      .from('business_models')
+      .select('tenant_id, project_id')
+      .eq('id', id)
+      .single()
+
+    if (existingError || !existing) {
+      return NextResponse.json({ model: null, error: existingError?.message ?? 'Business model not found' }, { status: 404 })
+    }
+
+    const existingRow = existing as Record<string, unknown>
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: String(existingRow.tenant_id),
+      projectId: String(existingRow.project_id),
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ model: null, error: access.error }, { status: access.status })
+    }
+
     const { data, error } = await auth.supabase
       .from('business_models')
       .update({

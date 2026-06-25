@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { accessContext, requireProjectAccess, requireTenantAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { BusinessModel, BusinessModelStatus } from '@/types/semantic-model'
 
@@ -39,6 +40,19 @@ export async function GET(req: NextRequest) {
 
     const tenantId = req.nextUrl.searchParams.get('tenantId')
     const projectId = req.nextUrl.searchParams.get('projectId')
+    const access = accessContext(auth)
+
+    if (projectId) {
+      const projectAccess = await requireProjectAccess({ ...access, projectId, tenantId: tenantId ?? undefined })
+      if (!projectAccess.ok) {
+        return NextResponse.json({ models: [], error: projectAccess.error }, { status: projectAccess.status })
+      }
+    } else if (tenantId) {
+      const tenantAccess = await requireTenantAccess({ ...access, tenantId })
+      if (!tenantAccess.ok) {
+        return NextResponse.json({ models: [], error: tenantAccess.error }, { status: tenantAccess.status })
+      }
+    }
 
     let query = auth.supabase
       .from('business_models')
@@ -74,6 +88,16 @@ export async function POST(req: NextRequest) {
     const parsed = BusinessModelCreateSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ model: null, error: parsed.error.flatten() }, { status: 400 })
+    }
+
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: parsed.data.tenantId,
+      projectId: parsed.data.projectId,
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ model: null, error: access.error }, { status: access.status })
     }
 
     const nowIso = new Date().toISOString()

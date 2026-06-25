@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { analyzeDatasetChartOptions } from '@/lib/semantic/dataset-shape-analyzer'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -52,6 +53,14 @@ export async function GET(
 
     if (datasetError) return NextResponse.json({ plan: null, error: datasetError.message }, { status: 404 })
     const dataset = mapDataset(datasetRow as Record<string, unknown>)
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: dataset.tenantId,
+      projectId: dataset.projectId,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ plan: null, error: access.error }, { status: access.status })
+    }
 
     const [fieldsResult, metricsResult, relationshipsResult] = await Promise.all([
       dataset.selection.fieldIds.length > 0

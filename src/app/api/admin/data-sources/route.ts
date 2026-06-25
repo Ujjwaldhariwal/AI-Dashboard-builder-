@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { encryptJsonSecret, hasDataSourceEncryptionKey } from '@/lib/security/credential-vault'
+import { accessContext, requireProjectAccess, requireTenantAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DataSource, DataSourceSslMode, DataSourceStatus } from '@/types/data-source'
 
@@ -60,6 +61,19 @@ export async function GET(req: NextRequest) {
 
     const tenantId = req.nextUrl.searchParams.get('tenantId')
     const projectId = req.nextUrl.searchParams.get('projectId')
+    const access = accessContext(auth)
+
+    if (projectId) {
+      const projectAccess = await requireProjectAccess({ ...access, projectId, tenantId: tenantId ?? undefined })
+      if (!projectAccess.ok) {
+        return NextResponse.json({ dataSources: [], error: projectAccess.error }, { status: projectAccess.status })
+      }
+    } else if (tenantId) {
+      const tenantAccess = await requireTenantAccess({ ...access, tenantId })
+      if (!tenantAccess.ok) {
+        return NextResponse.json({ dataSources: [], error: tenantAccess.error }, { status: tenantAccess.status })
+      }
+    }
 
     let query = auth.supabase
       .from('data_sources')
@@ -102,6 +116,16 @@ export async function POST(req: NextRequest) {
     const parsed = DataSourceCreateSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ dataSource: null, error: parsed.error.flatten() }, { status: 400 })
+    }
+
+    const access = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: parsed.data.tenantId,
+      projectId: parsed.data.projectId,
+      editor: true,
+    })
+    if (!access.ok) {
+      return NextResponse.json({ dataSource: null, error: access.error }, { status: access.status })
     }
 
     const safeConfig = {
