@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -145,6 +146,21 @@ export async function POST(
     const fields = (fieldsResult.data ?? []) as Record<string, unknown>[]
     const metrics = (metricsResult.data ?? []) as Record<string, unknown>[]
     const relationships = (relationshipsResult.data ?? []) as Record<string, unknown>[]
+    const validation = validateDashboardChartConfig({
+      templateId: chart.templateId,
+      encoding: chart.encoding,
+      fields,
+      metrics,
+    })
+
+    if (validation.state !== 'valid') {
+      return NextResponse.json({
+        result: null,
+        error: 'Published chart config is no longer valid',
+        validation,
+      }, { status: 422 })
+    }
+
     const missingMetricSourceFieldIds = metricSourceFieldIds(metrics, fields)
     const { data: metricSourceFields, error: metricSourceFieldsError } = missingMetricSourceFieldIds.length > 0
       ? await auth.supabase.from('business_fields').select('*').in('id', missingMetricSourceFieldIds)

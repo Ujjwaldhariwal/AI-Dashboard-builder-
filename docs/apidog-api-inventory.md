@@ -485,6 +485,7 @@ Security:
 - chart must belong to that tenant
 - chart status must be `published`
 - chart validation state must be `valid`
+- chart config is revalidated against current semantic fields and metrics at runtime
 - dataset must be published
 - source data source must belong to the same tenant
 - query must pass read-only validation
