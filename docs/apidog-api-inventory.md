@@ -16,6 +16,7 @@ Auth model:
 - `Admin / Semantic Model`
 - `Admin / Semantic Datasets`
 - `Admin / Dashboard Charts`
+- `Admin / Observability`
 - `Client / Runtime`
 
 ## Admin / Tenancy
@@ -516,6 +517,47 @@ Body:
 ```
 
 Response: `{ "chart": { ... }, "validation": { ... } }`
+
+## Admin / Observability
+
+### `GET /api/admin/query-runs`
+
+Purpose: list recent semantic query runtime executions for troubleshooting latency, failures, and workload patterns.
+
+Auth: authenticated tenant/project access.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `datasetId`: optional UUID
+- `chartId`: optional UUID
+- `status`: optional `success` or `error`
+- `surface`: optional runtime surface, for example `admin_preview`, `client_dataset`, or `client_chart`
+- `limit`: optional number, default `50`, max `200`
+
+Response:
+
+```json
+{
+  "runs": [
+    {
+      "id": "uuid",
+      "tenantId": "uuid",
+      "projectId": "uuid",
+      "datasetId": "uuid",
+      "chartId": "uuid",
+      "surface": "client_chart",
+      "status": "success",
+      "queryHash": "sha256",
+      "rowCount": 25,
+      "elapsedMs": 120,
+      "timeoutMs": 12000,
+      "warnings": [],
+      "createdAt": "2026-06-25T00:00:00.000Z"
+    }
+  ]
+}
+```
 
 ## Client / Runtime
 
