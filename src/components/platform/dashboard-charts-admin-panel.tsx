@@ -10,8 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { DashboardChartAudit, DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
 import type { ChartCompatibilityResult, ChartTemplateId, DatasetShape } from '@/types/chart-template'
-import type { DashboardChartConfig, DashboardChartEncoding, DashboardChartValidationResult } from '@/types/dashboard-chart'
+import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
 interface ProjectOption {
@@ -35,35 +36,6 @@ interface DatasetPlan {
   }
 }
 
-interface ChartAuditItem {
-  chart: {
-    id: string
-    name: string
-    status: string
-    templateId: string
-    validationState: string
-    updatedAt?: string
-    publishedAt?: string | null
-  }
-  dataset: {
-    id: string
-    status: string
-  }
-  healthState: 'healthy' | 'stale' | 'blocked'
-  validation: DashboardChartValidationResult
-}
-
-interface ChartAudit {
-  checkedAt: string
-  summary: {
-    total: number
-    healthy: number
-    stale: number
-    blocked: number
-  }
-  items: ChartAuditItem[]
-}
-
 function errorToText(value: unknown) {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object') {
@@ -74,7 +46,7 @@ function errorToText(value: unknown) {
   return 'Request failed'
 }
 
-function healthClassName(state?: ChartAuditItem['healthState']) {
+function healthClassName(state?: DashboardChartAuditItem['healthState']) {
   if (state === 'healthy') return 'border-[#a6e22e]/30 bg-[#a6e22e]/10 text-[#d7ff8f]'
   if (state === 'stale') return 'border-[#fd971f]/30 bg-[#fd971f]/10 text-[#ffd866]'
   if (state === 'blocked') return 'border-[#f92672]/30 bg-[#f92672]/10 text-[#ff8db9]'
@@ -117,7 +89,7 @@ export function DashboardChartsAdminPanel() {
   const [loading, setLoading] = useState(true)
   const [planLoading, setPlanLoading] = useState(false)
   const [auditLoading, setAuditLoading] = useState(false)
-  const [chartAudit, setChartAudit] = useState<ChartAudit | null>(null)
+  const [chartAudit, setChartAudit] = useState<DashboardChartAudit | null>(null)
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedDataset = datasets.find(dataset => dataset.id === datasetId)
@@ -148,7 +120,7 @@ export function DashboardChartsAdminPanel() {
       const response = await fetch(`/api/admin/dashboard-charts/audit?projectId=${nextProjectId}`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
-      setChartAudit(payload?.audit as ChartAudit)
+      setChartAudit(payload?.audit as DashboardChartAudit)
     } catch (error) {
       toast.error(errorToText(error))
     } finally {
