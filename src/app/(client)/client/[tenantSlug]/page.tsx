@@ -1,11 +1,13 @@
 import { Calendar, Download, Filter, LayoutDashboard, LockKeyhole, RefreshCw, Table2 } from 'lucide-react'
 import { notFound } from 'next/navigation'
 
+import { PublishedChartsGrid } from '@/components/client/published-charts-grid'
 import { PublishedDatasetPreview } from '@/components/client/published-dataset-preview'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { getAuthedSupabase } from '@/lib/supabase/server'
+import type { DashboardChartConfig } from '@/types/dashboard-chart'
 
 interface TenantRecord {
   id: string
@@ -37,6 +39,35 @@ interface DatasetRecord {
     ttlSeconds?: number
   } | null
   updated_at?: string | null
+}
+
+function mapChart(row: Record<string, unknown>): DashboardChartConfig {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    projectId: String(row.project_id),
+    datasetId: String(row.dataset_id),
+    name: String(row.name ?? ''),
+    description: typeof row.description === 'string' ? row.description : null,
+    status: 'published',
+    templateId: String(row.template_id) as DashboardChartConfig['templateId'],
+    encoding: row.encoding && typeof row.encoding === 'object'
+      ? row.encoding as DashboardChartConfig['encoding']
+      : { yMetricIds: [], tooltipFieldIds: [], labelById: {}, colorById: {} },
+    presentation: row.presentation && typeof row.presentation === 'object'
+      ? row.presentation as DashboardChartConfig['presentation']
+      : { size: 'standard', showLegend: true, showLabels: false, valueFormat: null },
+    interactions: row.interactions && typeof row.interactions === 'object'
+      ? row.interactions as DashboardChartConfig['interactions']
+      : {},
+    layout: row.layout && typeof row.layout === 'object'
+      ? row.layout as DashboardChartConfig['layout']
+      : { order: 0, gridSpan: 1 },
+    validationState: 'valid',
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    updatedAt: String(row.updated_at ?? new Date().toISOString()),
+    publishedAt: typeof row.published_at === 'string' ? row.published_at : null,
+  }
 }
 
 function formatUpdatedAt(value?: string | null) {
@@ -73,7 +104,11 @@ export default async function TenantClientPage({
   if (tenantError || !tenant) notFound()
   const activeTenant = tenant as TenantRecord
 
-  const [{ data: projects, error: projectsError }, { data: datasets, error: datasetsError }] = await Promise.all([
+  const [
+    { data: projects, error: projectsError },
+    { data: datasets, error: datasetsError },
+    { data: charts, error: chartsError },
+  ] = await Promise.all([
     auth.supabase
       .from('dashboard_projects')
       .select('id, name, description, status')
@@ -86,14 +121,24 @@ export default async function TenantClientPage({
       .eq('tenant_id', activeTenant.id)
       .eq('status', 'published')
       .order('updated_at', { ascending: false }),
+    auth.supabase
+      .from('dashboard_chart_configs')
+      .select('*')
+      .eq('tenant_id', activeTenant.id)
+      .eq('status', 'published')
+      .eq('validation_state', 'valid')
+      .order('updated_at', { ascending: false }),
   ])
 
-  if (projectsError || datasetsError) {
-    throw new Error(projectsError?.message ?? datasetsError?.message ?? 'Failed to load client dashboard')
+  if (projectsError || datasetsError || chartsError) {
+    throw new Error(projectsError?.message ?? datasetsError?.message ?? chartsError?.message ?? 'Failed to load client dashboard')
   }
 
   const projectList = (projects ?? []) as ProjectRecord[]
   const datasetList = (datasets ?? []) as DatasetRecord[]
+  const chartList = (charts ?? [])
+    .map(row => mapChart(row as Record<string, unknown>))
+    .sort((left, right) => left.layout.order - right.layout.order)
   const datasetsByProject = new Map<string, DatasetRecord[]>()
   for (const dataset of datasetList) {
     datasetsByProject.set(dataset.project_id, [...(datasetsByProject.get(dataset.project_id) ?? []), dataset])
@@ -165,11 +210,13 @@ export default async function TenantClientPage({
           </Card>
           <Card className="border-[#272822]/10 bg-white">
             <CardContent className="p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-[#75715e]">Access mode</p>
-              <p className="mt-2 text-2xl font-semibold">Read only</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-[#75715e]">Published charts</p>
+              <p className="mt-2 text-2xl font-semibold">{chartList.length}</p>
             </CardContent>
           </Card>
         </section>
+
+        <PublishedChartsGrid tenantSlug={activeTenant.slug} charts={chartList} />
 
         {projectList.length === 0 ? (
           <section className="rounded-lg border border-dashed border-[#272822]/15 bg-white p-10 text-center">
