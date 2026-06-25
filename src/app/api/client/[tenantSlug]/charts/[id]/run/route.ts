@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
 import { accessContext, requireTenantAccess } from '@/lib/security/project-access'
+import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
@@ -89,6 +90,18 @@ export async function POST(
   try {
     const auth = await getAuthedSupabase()
     if (!auth) return NextResponse.json({ result: null, error: 'Unauthorized' }, { status: 401 })
+
+    const rateLimit = checkRuntimeRateLimit({
+      key: `client-chart:${tenantSlug}:${id}:${auth.userId}`,
+      maxRequests: 60,
+      windowMs: 60_000,
+    })
+    if (!rateLimit.ok) {
+      return NextResponse.json(
+        { result: null, error: 'Too many chart runtime requests. Please retry shortly.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+      )
+    }
 
     const { data: tenant, error: tenantError } = await auth.supabase
       .from('tenants')

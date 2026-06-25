@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
+import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -40,6 +41,18 @@ export async function POST(
   try {
     const auth = await getAuthedSupabase()
     if (!auth) return NextResponse.json({ result: null, error: 'Unauthorized' }, { status: 401 })
+
+    const rateLimit = checkRuntimeRateLimit({
+      key: `admin-preview:${auth.userId}`,
+      maxRequests: 30,
+      windowMs: 60_000,
+    })
+    if (!rateLimit.ok) {
+      return NextResponse.json(
+        { result: null, error: 'Too many dataset preview requests. Please retry shortly.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) } },
+      )
+    }
 
     const { data: datasetRow, error: datasetError } = await auth.supabase
       .from('semantic_datasets')

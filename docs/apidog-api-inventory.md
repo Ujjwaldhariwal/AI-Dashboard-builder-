@@ -537,6 +537,7 @@ Security:
 - source data source must belong to the same tenant and project
 - query must pass read-only validation
 - execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
+- runtime calls are rate-limited and return `429` with `Retry-After` when exceeded
 
 Response:
 
@@ -579,6 +580,7 @@ Security:
 - source data source must belong to the same tenant and project
 - query must pass read-only validation
 - execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
+- runtime calls are rate-limited and return `429` with `Retry-After` when exceeded
 
 Response:
 
