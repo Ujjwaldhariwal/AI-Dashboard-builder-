@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LockKeyhole,
   Network,
+  SlidersHorizontal,
   ShieldCheck,
   Users,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/admin/data-sources', label: 'Data Sources', icon: Database },
   { href: '/admin/semantic-model', label: 'Semantic Model', icon: Network },
   { href: '/admin/datasets', label: 'Datasets', icon: BarChart3 },
+  { href: '/admin/charts', label: 'Charts', icon: SlidersHorizontal },
   { href: '/admin/reports', label: 'Reports', icon: FileText },
   { href: '/admin/security', label: 'Security', icon: ShieldCheck },
 ]
