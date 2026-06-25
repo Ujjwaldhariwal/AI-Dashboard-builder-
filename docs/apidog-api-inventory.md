@@ -472,6 +472,49 @@ Response: `{ "chart": { ... }, "validation": { ... } }`
 
 ## Client / Runtime
 
+### `POST /api/client/{tenantSlug}/charts/{id}/run`
+
+Purpose: execute a published, valid chart config through the read-only runtime and return server-resolved chart field names.
+
+Auth: authenticated tenant user.
+
+Body: `{}`
+
+Security:
+- tenant slug must resolve to an active tenant
+- chart must belong to that tenant
+- chart status must be `published`
+- chart validation state must be `valid`
+- dataset must be published
+- source data source must belong to the same tenant
+- query must pass read-only validation
+
+Response:
+
+```json
+{
+  "result": {
+    "chart": {
+      "id": "uuid",
+      "name": "Recharge by zone",
+      "templateId": "grouped-bar",
+      "resolved": {
+        "xField": "Zone",
+        "yFields": ["Revenue"],
+        "tooltipFields": ["Zone", "Revenue"],
+        "sortField": "Revenue"
+      }
+    },
+    "dataset": { "id": "uuid", "name": "Revenue", "status": "published" },
+    "warnings": [],
+    "rows": [],
+    "fields": [],
+    "rowCount": 0,
+    "elapsedMs": 0
+  }
+}
+```
+
 ### `POST /api/client/{tenantSlug}/datasets/{id}/run`
 
 Purpose: execute a published client dataset through the read-only runtime.

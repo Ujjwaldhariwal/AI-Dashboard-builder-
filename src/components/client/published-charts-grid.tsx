@@ -18,21 +18,35 @@ interface PublishedChartsGridProps {
   charts: DashboardChartConfig[]
 }
 
-interface DatasetRunPayload {
+interface ChartRunPayload {
   result?: {
     rows?: Record<string, unknown>[]
     fields?: Array<string | { name?: string }>
     rowCount?: number
     elapsedMs?: number
     warnings?: string[]
+    chart?: {
+      resolved?: {
+        xField?: string
+        yFields?: string[]
+        tooltipFields?: string[]
+        sortField?: string
+      }
+    }
   } | null
   error?: string
 }
 
-interface DatasetRunState {
+interface ChartRunState {
   status: 'idle' | 'loading' | 'ready' | 'error'
   rows: Record<string, unknown>[]
   fieldNames: string[]
+  resolved: {
+    xField: string
+    yFields: string[]
+    tooltipFields: string[]
+    sortField: string
+  }
   rowCount: number
   elapsedMs: number
   error?: string
@@ -40,10 +54,16 @@ interface DatasetRunState {
 
 type DatasetRunField = string | { name?: string }
 
-const EMPTY_STATE: DatasetRunState = {
+const EMPTY_STATE: ChartRunState = {
   status: 'idle',
   rows: [],
   fieldNames: [],
+  resolved: {
+    xField: '',
+    yFields: [],
+    tooltipFields: [],
+    sortField: '',
+  },
   rowCount: 0,
   elapsedMs: 0,
 }
@@ -68,11 +88,11 @@ function toNumber(value: unknown) {
   return 0
 }
 
-function applyChartLimit(rows: Record<string, unknown>[], chart: DashboardChartConfig) {
+function applyChartLimit(rows: Record<string, unknown>[], chart: DashboardChartConfig, state: ChartRunState) {
   const limit = chart.encoding.limit ?? 25
   const sorted = [...rows]
-  if (chart.encoding.sort?.byId) {
-    const sortField = fieldNameFromId(chart, chart.encoding.sort.byId)
+  if (chart.encoding.sort?.byId && state.resolved.sortField) {
+    const sortField = state.resolved.sortField
     const direction = chart.encoding.sort.direction === 'asc' ? 1 : -1
     sorted.sort((left, right) => (toNumber(left[sortField]) - toNumber(right[sortField])) * direction)
   }
@@ -144,16 +164,18 @@ function DataTable({
 function KpiView({
   chart,
   rows,
+  labels,
 }: {
   chart: DashboardChartConfig
   rows: Record<string, unknown>[]
+  labels: string[]
 }) {
   const metrics = chart.encoding.yMetricIds.slice(0, chart.templateId === 'kpi-card' ? 1 : 6)
   const firstRow = rows[0] ?? {}
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {metrics.map(metricId => {
-        const label = fieldNameFromId(chart, metricId)
+      {metrics.map((metricId, index) => {
+        const label = labels[index] || fieldNameFromId(chart, metricId)
         return (
           <div key={metricId} className="rounded-md border border-[#272822]/10 bg-white p-4">
             <p className="text-xs font-medium text-[#75715e]">{label}</p>
@@ -172,7 +194,7 @@ function ChartBody({
   state,
 }: {
   chart: DashboardChartConfig
-  state: DatasetRunState
+  state: ChartRunState
 }) {
   if (state.status === 'loading') {
     return (
@@ -192,9 +214,11 @@ function ChartBody({
     )
   }
 
-  const rows = applyChartLimit(state.rows, chart)
-  const xField = fieldNameFromId(chart, chart.encoding.xAxisFieldId) || state.fieldNames[0] || 'name'
-  const yFields = chart.encoding.yMetricIds.map(metricId => fieldNameFromId(chart, metricId)).filter(Boolean)
+  const rows = applyChartLimit(state.rows, chart, state)
+  const xField = state.resolved.xField || state.fieldNames[0] || 'name'
+  const yFields = state.resolved.yFields.length > 0
+    ? state.resolved.yFields
+    : chart.encoding.yMetricIds.map(metricId => fieldNameFromId(chart, metricId)).filter(Boolean)
   const primaryMetric = yFields[0] ?? state.fieldNames.find(field => field !== xField) ?? 'value'
   const style = chartStyle(chart)
   const height = chartHeight(chart)
@@ -204,7 +228,7 @@ function ChartBody({
   }
 
   if (isChartTemplate(chart.templateId, ['kpi-card', 'kpi-grid'])) {
-    return <KpiView chart={chart} rows={rows} />
+    return <KpiView chart={chart} rows={rows} labels={yFields} />
   }
 
   if (chart.templateId === 'bar') {
@@ -235,49 +259,55 @@ function ChartBody({
 }
 
 export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridProps) {
-  const [datasets, setDatasets] = useState<Record<string, DatasetRunState>>({})
-  const datasetIds = useMemo(() => Array.from(new Set(charts.map(chart => chart.datasetId))), [charts])
+  const [chartRuns, setChartRuns] = useState<Record<string, ChartRunState>>({})
+  const chartIds = useMemo(() => charts.map(chart => chart.id), [charts])
 
-  const datasetKey = useMemo(() => datasetIds.join('|'), [datasetIds])
+  const chartKey = useMemo(() => chartIds.join('|'), [chartIds])
 
   useEffect(() => {
     const controller = new AbortController()
-    const ids = datasetKey ? datasetKey.split('|') : []
+    const ids = chartKey ? chartKey.split('|') : []
 
-    async function loadDatasets() {
-      setDatasets(Object.fromEntries(ids.map(id => [id, { ...EMPTY_STATE, status: 'loading' as const }])))
-      const entries = await Promise.all(ids.map(async datasetId => {
+    async function loadCharts() {
+      setChartRuns(Object.fromEntries(ids.map(id => [id, { ...EMPTY_STATE, status: 'loading' as const }])))
+      const entries = await Promise.all(ids.map(async chartId => {
         try {
-          const response = await fetch(`/api/client/${encodeURIComponent(tenantSlug)}/datasets/${encodeURIComponent(datasetId)}/run`, {
+          const response = await fetch(`/api/client/${encodeURIComponent(tenantSlug)}/charts/${encodeURIComponent(chartId)}/run`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
             signal: controller.signal,
           })
-          const payload = await response.json() as DatasetRunPayload
-          if (!response.ok) throw new Error(payload.error || 'Dataset query failed')
-          return [datasetId, {
+          const payload = await response.json() as ChartRunPayload
+          if (!response.ok) throw new Error(payload.error || 'Chart query failed')
+          return [chartId, {
             status: 'ready' as const,
             rows: payload.result?.rows ?? [],
             fieldNames: fieldNamesFromResult(payload.result?.fields),
+            resolved: {
+              xField: payload.result?.chart?.resolved?.xField ?? '',
+              yFields: payload.result?.chart?.resolved?.yFields ?? [],
+              tooltipFields: payload.result?.chart?.resolved?.tooltipFields ?? [],
+              sortField: payload.result?.chart?.resolved?.sortField ?? '',
+            },
             rowCount: payload.result?.rowCount ?? payload.result?.rows?.length ?? 0,
             elapsedMs: payload.result?.elapsedMs ?? 0,
           }] as const
         } catch (error) {
-          if (controller.signal.aborted) return [datasetId, { ...EMPTY_STATE }] as const
-          return [datasetId, {
+          if (controller.signal.aborted) return [chartId, { ...EMPTY_STATE }] as const
+          return [chartId, {
             ...EMPTY_STATE,
             status: 'error' as const,
             error: error instanceof Error ? error.message : String(error),
           }] as const
         }
       }))
-      if (!controller.signal.aborted) setDatasets(Object.fromEntries(entries))
+      if (!controller.signal.aborted) setChartRuns(Object.fromEntries(entries))
     }
 
-    if (ids.length > 0) void loadDatasets()
+    if (ids.length > 0) void loadCharts()
     return () => controller.abort()
-  }, [datasetKey, tenantSlug])
+  }, [chartKey, tenantSlug])
 
   if (charts.length === 0) return null
 
@@ -294,7 +324,7 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         {charts.map(chart => {
-          const state = datasets[chart.datasetId] ?? EMPTY_STATE
+          const state = chartRuns[chart.id] ?? EMPTY_STATE
           return (
             <article key={chart.id} className={`${sizeClass(chart)} rounded-lg border border-[#272822]/10 bg-[#f8f8f2] p-4 shadow-sm`}>
               <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
