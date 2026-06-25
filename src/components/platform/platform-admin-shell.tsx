@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BarChart3,
+  BookOpen,
   Database,
   FileText,
   LayoutDashboard,
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: '/admin/semantic-model', label: 'Semantic Model', icon: Network },
   { href: '/admin/datasets', label: 'Datasets', icon: BarChart3 },
   { href: '/admin/charts', label: 'Charts', icon: SlidersHorizontal },
+  { href: '/admin/api-docs', label: 'API Docs', icon: BookOpen },
   { href: '/admin/reports', label: 'Reports', icon: FileText },
   { href: '/admin/security', label: 'Security', icon: ShieldCheck },
 ]
