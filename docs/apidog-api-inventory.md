@@ -504,6 +504,37 @@ Response:
 }
 ```
 
+### `POST /api/admin/dashboard-charts/audit`
+
+Purpose: run the chart health audit and persist a `chart_health_runs` snapshot for degraded dashboard reporting.
+
+Auth: authenticated project access.
+
+Query:
+- `projectId`: optional UUID
+- `tenantId`: optional UUID
+- `status`: optional chart status filter, defaults to `published`; use `all` for all statuses
+
+Response:
+
+```json
+{
+  "audit": {
+    "summary": {
+      "total": 0,
+      "healthy": 0,
+      "stale": 0,
+      "blocked": 0
+    },
+    "items": []
+  },
+  "run": {
+    "id": "uuid",
+    "degraded_chart_ids": []
+  }
+}
+```
+
 ### `PATCH /api/admin/dashboard-charts/{id}`
 
 Purpose: update chart status. Publishing revalidates current dataset/template/encoding and requires the dataset to be published.
