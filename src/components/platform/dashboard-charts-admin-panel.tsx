@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, CheckCircle2, Loader2, Palette, Plus, Send, ShieldCheck, SlidersHorizontal } from 'lucide-react'
+import { Activity, Archive, CheckCircle2, Loader2, Palette, Plus, RefreshCw, Send, ShieldCheck, SlidersHorizontal, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { ChartCompatibilityResult, ChartTemplateId, DatasetShape } from '@/types/chart-template'
-import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
+import type { DashboardChartConfig, DashboardChartEncoding, DashboardChartValidationResult } from '@/types/dashboard-chart'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
 interface ProjectOption {
@@ -35,6 +35,35 @@ interface DatasetPlan {
   }
 }
 
+interface ChartAuditItem {
+  chart: {
+    id: string
+    name: string
+    status: string
+    templateId: string
+    validationState: string
+    updatedAt?: string
+    publishedAt?: string | null
+  }
+  dataset: {
+    id: string
+    status: string
+  }
+  healthState: 'healthy' | 'stale' | 'blocked'
+  validation: DashboardChartValidationResult
+}
+
+interface ChartAudit {
+  checkedAt: string
+  summary: {
+    total: number
+    healthy: number
+    stale: number
+    blocked: number
+  }
+  items: ChartAuditItem[]
+}
+
 function errorToText(value: unknown) {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object') {
@@ -43,6 +72,13 @@ function errorToText(value: unknown) {
     if (typeof record.message === 'string') return record.message
   }
   return 'Request failed'
+}
+
+function healthClassName(state?: ChartAuditItem['healthState']) {
+  if (state === 'healthy') return 'border-[#a6e22e]/30 bg-[#a6e22e]/10 text-[#d7ff8f]'
+  if (state === 'stale') return 'border-[#fd971f]/30 bg-[#fd971f]/10 text-[#ffd866]'
+  if (state === 'blocked') return 'border-[#f92672]/30 bg-[#f92672]/10 text-[#ff8db9]'
+  return 'border-white/10 bg-slate-950/40 text-slate-400'
 }
 
 function toggleValue(values: string[], value: string) {
@@ -80,6 +116,8 @@ export function DashboardChartsAdminPanel() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [planLoading, setPlanLoading] = useState(false)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [chartAudit, setChartAudit] = useState<ChartAudit | null>(null)
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedDataset = datasets.find(dataset => dataset.id === datasetId)
@@ -87,6 +125,9 @@ export function DashboardChartsAdminPanel() {
     plan?.chartOptions?.compatibility.filter(option => option.status !== 'blocked') ?? []
   ), [plan])
   const recommendedOption = allowedOptions.find(option => option.status === 'recommended') ?? allowedOptions[0]
+  const auditByChartId = useMemo(() => new Map(
+    chartAudit?.items.map(item => [item.chart.id, item]) ?? [],
+  ), [chartAudit])
 
   const fetchProjects = useCallback(async () => {
     const response = await fetch('/api/admin/projects', { cache: 'no-store' })
@@ -95,6 +136,24 @@ export function DashboardChartsAdminPanel() {
     const nextProjects = Array.isArray(payload?.projects) ? payload.projects as ProjectOption[] : []
     setProjects(nextProjects)
     setProjectId(current => current || nextProjects[0]?.id || '')
+  }, [])
+
+  const fetchChartAudit = useCallback(async (nextProjectId: string) => {
+    if (!nextProjectId) {
+      setChartAudit(null)
+      return
+    }
+    setAuditLoading(true)
+    try {
+      const response = await fetch(`/api/admin/dashboard-charts/audit?projectId=${nextProjectId}`, { cache: 'no-store' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      setChartAudit(payload?.audit as ChartAudit)
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setAuditLoading(false)
+    }
   }, [])
 
   const fetchProjectAssets = useCallback(async (nextProjectId: string) => {
@@ -111,7 +170,8 @@ export function DashboardChartsAdminPanel() {
     setDatasets(nextDatasets)
     setCharts(Array.isArray(chartsPayload?.charts) ? chartsPayload.charts as DashboardChartConfig[] : [])
     setDatasetId(current => nextDatasets.some(dataset => dataset.id === current) ? current : nextDatasets[0]?.id ?? '')
-  }, [])
+    void fetchChartAudit(nextProjectId)
+  }, [fetchChartAudit])
 
   const fetchPlan = useCallback(async (nextDatasetId: string) => {
     if (!nextDatasetId) {
@@ -188,6 +248,7 @@ export function DashboardChartsAdminPanel() {
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
       setCharts(current => [payload.chart as DashboardChartConfig, ...current])
+      void fetchChartAudit(selectedProject.id)
       toast.success('Draft chart saved')
     } catch (error) {
       toast.error(errorToText(error))
@@ -207,6 +268,7 @@ export function DashboardChartsAdminPanel() {
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
       setCharts(current => current.map(chart => chart.id === chartId ? payload.chart as DashboardChartConfig : chart))
+      void fetchChartAudit(projectId)
       toast.success(status === 'published' ? 'Chart published' : 'Chart status updated')
     } catch (error) {
       toast.error(errorToText(error))
@@ -420,15 +482,46 @@ export function DashboardChartsAdminPanel() {
         <div className="space-y-4">
           <Card className="border-white/10 bg-slate-900/70">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base text-slate-100">
-                <ShieldCheck className="h-4 w-4 text-[#a6e22e]" />
-                Guardrails
-              </CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+                  <ShieldCheck className="h-4 w-4 text-[#a6e22e]" />
+                  Guardrails
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 border-white/10 bg-transparent px-2 text-slate-300 hover:bg-white/10"
+                  onClick={() => void fetchChartAudit(projectId)}
+                  disabled={auditLoading || !projectId}
+                >
+                  {auditLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-2 text-xs text-slate-400">
+            <CardContent className="space-y-3 text-xs text-slate-400">
               <p>Dataset fields and metrics are validated before save.</p>
               <p>Incompatible chart templates are blocked by the server.</p>
               <p>Validation history is stored for publish checks.</p>
+              <div className="grid grid-cols-3 gap-2 pt-2">
+                <div className="rounded-md border border-[#a6e22e]/20 bg-[#a6e22e]/10 p-2">
+                  <p className="text-[10px] uppercase text-[#d7ff8f]">Healthy</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-50">{chartAudit?.summary.healthy ?? 0}</p>
+                </div>
+                <div className="rounded-md border border-[#fd971f]/20 bg-[#fd971f]/10 p-2">
+                  <p className="text-[10px] uppercase text-[#ffd866]">Stale</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-50">{chartAudit?.summary.stale ?? 0}</p>
+                </div>
+                <div className="rounded-md border border-[#f92672]/20 bg-[#f92672]/10 p-2">
+                  <p className="text-[10px] uppercase text-[#ff8db9]">Blocked</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-50">{chartAudit?.summary.blocked ?? 0}</p>
+                </div>
+              </div>
+              {chartAudit?.checkedAt ? (
+                <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                  <Activity className="h-3 w-3" />
+                  Last audit {new Date(chartAudit.checkedAt).toLocaleTimeString()}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -444,18 +537,30 @@ export function DashboardChartsAdminPanel() {
                 <div className="rounded-md border border-dashed border-white/10 p-4 text-xs text-slate-500">
                   No chart configs saved for this project yet.
                 </div>
-              ) : charts.slice(0, 8).map(chart => (
+              ) : charts.slice(0, 8).map(chart => {
+                const auditItem = auditByChartId.get(chart.id)
+                return (
                 <div key={chart.id} className="rounded-md border border-white/10 bg-slate-950/50 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-medium text-slate-100">{chart.name}</p>
                       <p className="mt-1 text-[11px] text-slate-500">{chart.templateId} / {chart.status} / span {chart.layout.gridSpan}</p>
                     </div>
-                    <Badge variant="outline" className={chart.validationState === 'valid' ? 'border-[#a6e22e]/30 text-[#d7ff8f]' : 'border-[#fd971f]/30 text-[#ffd866]'}>
-                      {chart.validationState}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="outline" className={chart.validationState === 'valid' ? 'border-[#a6e22e]/30 text-[#d7ff8f]' : 'border-[#fd971f]/30 text-[#ffd866]'}>
+                        {chart.validationState}
+                      </Badge>
+                      <Badge variant="outline" className={healthClassName(auditItem?.healthState)}>
+                        {auditItem?.healthState ?? 'not audited'}
+                      </Badge>
+                    </div>
                   </div>
-                  {chart.validationState === 'valid' ? (
+                  {auditItem?.validation.issues.length ? (
+                    <div className="mt-2 flex items-start gap-1 text-[11px] text-[#ffd866]">
+                      <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>{auditItem.validation.issues[0]?.message}</span>
+                    </div>
+                  ) : chart.validationState === 'valid' ? (
                     <div className="mt-2 flex items-center gap-1 text-[11px] text-[#a6e22e]">
                       <CheckCircle2 className="h-3 w-3" />
                       Ready for publish validator
@@ -484,7 +589,8 @@ export function DashboardChartsAdminPanel() {
                     </Button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </CardContent>
           </Card>
         </div>
