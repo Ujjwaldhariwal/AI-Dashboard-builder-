@@ -1,6 +1,7 @@
 import { Calendar, Download, Filter, LayoutDashboard, LockKeyhole, RefreshCw, Table2 } from 'lucide-react'
 import { notFound } from 'next/navigation'
 
+import { PublishedDatasetPreview } from '@/components/client/published-dataset-preview'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -228,6 +229,7 @@ export default async function TenantClientPage({
                           <p className="mt-3 text-[11px] text-[#75715e]">
                             Updated {formatUpdatedAt(dataset.updated_at)} / cache {dataset.cache_policy?.ttlSeconds ?? 300}s
                           </p>
+                          <PublishedDatasetPreview tenantSlug={activeTenant.slug} datasetId={dataset.id} />
                         </CardContent>
                       </Card>
                     ))}
