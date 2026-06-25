@@ -456,6 +456,53 @@ Body:
 
 Response: `{ "validation": { "state": "valid|warning|invalid", "issues": [] } }`
 
+### `GET /api/admin/dashboard-charts/audit`
+
+Purpose: revalidate saved chart configs against current datasets, semantic fields, and metrics without mutating them.
+
+Auth: authenticated project access.
+
+Query:
+- `projectId`: optional UUID
+- `tenantId`: optional UUID
+- `status`: optional chart status, defaults to `published`; use `all` to include every status
+
+Response:
+
+```json
+{
+  "audit": {
+    "checkedAt": "iso",
+    "summary": {
+      "total": 1,
+      "healthy": 1,
+      "stale": 0,
+      "blocked": 0
+    },
+    "items": [
+      {
+        "chart": {
+          "id": "uuid",
+          "name": "Recharge by zone",
+          "status": "published",
+          "templateId": "grouped-bar",
+          "validationState": "valid"
+        },
+        "dataset": {
+          "id": "uuid",
+          "status": "published"
+        },
+        "healthState": "healthy",
+        "validation": {
+          "state": "valid",
+          "issues": []
+        }
+      }
+    ]
+  }
+}
+```
+
 ### `PATCH /api/admin/dashboard-charts/{id}`
 
 Purpose: update chart status. Publishing revalidates current dataset/template/encoding and requires the dataset to be published.
