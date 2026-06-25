@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
+import { analyzeDatasetChartOptions } from '@/lib/semantic/dataset-shape-analyzer'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
@@ -92,6 +93,7 @@ export async function GET(
       relationships,
       metricSourceFields: (metricSourceFields ?? []) as Record<string, unknown>[],
     })
+    const chartOptions = analyzeDatasetChartOptions({ fields, metrics })
 
     return NextResponse.json({
       plan: {
@@ -125,8 +127,9 @@ export async function GET(
         })),
         limits: queryPlan.limits,
         dataSourceId,
-        warnings,
+        warnings: [...warnings, ...chartOptions.shape.warnings],
         queryPlan,
+        chartOptions,
       },
     })
   } catch (error) {

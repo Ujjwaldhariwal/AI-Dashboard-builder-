@@ -3,6 +3,7 @@ export type * from '@/types/tenancy'
 export type * from '@/types/semantic-model'
 export type * from '@/types/data-source'
 export type * from '@/types/semantic-dataset'
+export type * from '@/types/chart-template'
 
 // Module: Index
 //index.ts

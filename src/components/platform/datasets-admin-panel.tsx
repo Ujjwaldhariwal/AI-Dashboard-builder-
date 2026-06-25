@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { ChartCompatibilityResult, DatasetShape } from '@/types/chart-template'
 import type { BusinessFieldRole, BusinessMetric, BusinessModel, BusinessRelationship } from '@/types/semantic-model'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
@@ -52,6 +53,10 @@ interface DatasetPlan {
   }
   warnings?: string[]
   dataSourceId?: string
+  chartOptions?: {
+    shape: DatasetShape
+    compatibility: ChartCompatibilityResult[]
+  }
 }
 
 interface DatasetRunResult {
@@ -427,6 +432,25 @@ export function DatasetsAdminPanel() {
                 {plan.queryPlan ? (
                   <div className="mt-3 rounded-md bg-slate-950/50 px-3 py-2 text-xs text-slate-300">
                     {plan.queryPlan.dialect} plan / {plan.queryPlan.select.length} select items / {plan.queryPlan.executableSql ? 'SQL ready' : 'SQL blocked'}
+                  </div>
+                ) : null}
+                {plan.chartOptions ? (
+                  <div className="mt-3 rounded-md border border-fuchsia-300/20 bg-fuchsia-300/10 p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-fuchsia-100">Shape: {plan.chartOptions.shape.kind}</span>
+                      {plan.chartOptions.compatibility.filter(option => option.status === 'recommended').slice(0, 1).map(option => (
+                        <Badge key={option.template.id} className="bg-[#a6e22e]/20 text-[#d7ff8f] hover:bg-[#a6e22e]/25">
+                          Recommended: {option.template.name}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {plan.chartOptions.compatibility.filter(option => option.status !== 'blocked').slice(0, 5).map(option => (
+                        <Badge key={option.template.id} variant="outline" className="border-white/15 text-slate-300">
+                          {option.template.name}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
                 {(plan.warnings?.length ?? 0) > 0 ? (
