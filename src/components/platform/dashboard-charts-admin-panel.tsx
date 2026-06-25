@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Loader2, Palette, Plus, ShieldCheck, SlidersHorizontal } from 'lucide-react'
+import { Archive, CheckCircle2, Loader2, Palette, Plus, Send, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -77,6 +77,7 @@ export function DashboardChartsAdminPanel() {
   const [encoding, setEncoding] = useState<DashboardChartEncoding>(defaultEncoding(null))
   const [gridSpan, setGridSpan] = useState('2')
   const [saving, setSaving] = useState(false)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [planLoading, setPlanLoading] = useState(false)
 
@@ -192,6 +193,25 @@ export function DashboardChartsAdminPanel() {
       toast.error(errorToText(error))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleStatus(chartId: string, status: 'draft' | 'published' | 'archived') {
+    setUpdatingId(chartId)
+    try {
+      const response = await fetch(`/api/admin/dashboard-charts/${chartId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      setCharts(current => current.map(chart => chart.id === chartId ? payload.chart as DashboardChartConfig : chart))
+      toast.success(status === 'published' ? 'Chart published' : 'Chart status updated')
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setUpdatingId(null)
     }
   }
 
@@ -429,7 +449,7 @@ export function DashboardChartsAdminPanel() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-medium text-slate-100">{chart.name}</p>
-                      <p className="mt-1 text-[11px] text-slate-500">{chart.templateId} / span {chart.layout.gridSpan}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">{chart.templateId} / {chart.status} / span {chart.layout.gridSpan}</p>
                     </div>
                     <Badge variant="outline" className={chart.validationState === 'valid' ? 'border-[#a6e22e]/30 text-[#d7ff8f]' : 'border-[#fd971f]/30 text-[#ffd866]'}>
                       {chart.validationState}
@@ -441,6 +461,28 @@ export function DashboardChartsAdminPanel() {
                       Ready for publish validator
                     </div>
                   ) : null}
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-[#a6e22e]/30 bg-transparent text-[#d7ff8f] hover:bg-[#a6e22e]/10"
+                      onClick={() => void handleStatus(chart.id, 'published')}
+                      disabled={updatingId === chart.id || chart.status === 'published'}
+                    >
+                      {updatingId === chart.id ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
+                      Publish
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-white/10 bg-transparent text-slate-300 hover:bg-white/10"
+                      onClick={() => void handleStatus(chart.id, 'archived')}
+                      disabled={updatingId === chart.id || chart.status === 'archived'}
+                    >
+                      <Archive className="mr-2 h-3.5 w-3.5" />
+                      Archive
+                    </Button>
+                  </div>
                 </div>
               ))}
             </CardContent>
