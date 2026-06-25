@@ -17,7 +17,7 @@ Current priority from the user: strongest possible foundation first, enterprise 
 
 ## Current Foundation Progress
 
-Estimated foundation completion: about 56%.
+Estimated foundation completion: about 58%.
 
 Completed or started:
 - Monokai-style admin shell and platform direction.
@@ -37,6 +37,8 @@ Completed or started:
 - Client runtime tenant/project isolation for published dataset and chart execution.
 - Query runtime telemetry via `semantic_query_runs` and `src/lib/semantic/query-runtime-telemetry.ts`.
 - Lightweight in-memory query runtime rate limiting via `src/lib/security/runtime-rate-limit.ts`.
+- Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
+- Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - Apidog API inventory is maintained at `docs/apidog-api-inventory.md`.
 - API inventory checker exists via `npm run api-docs:check`.
 - Graphify is installed and used for codebase context. Run `npx graphify hook-rebuild` after code changes.
@@ -87,23 +89,23 @@ Do not pop that stash into this DB-to-dashboard foundation branch unless intenti
 
 ## Next Sprint Recommendation
 
-Next foundation sprint should be scheduled chart health checks and degraded dashboard reporting.
+Next foundation sprint should be first-class dashboard publishing and legacy UI shell replacement.
 
 Why:
-- RBAC and runtime guardrails now have a solid first pass.
-- Chart health audit currently runs only on demand.
-- Enterprise clients need stale/broken dashboards detected before a viewer opens them.
+- The database foundation no longer keeps the old `dashboards` / `endpoints` / `widgets` tables.
+- The running builder UI still carries legacy endpoint/widget concepts in the local store and routes.
+- Enterprise clients need published dashboards built from governed chart configs, not the old widget canvas model.
 
 Suggested sprint:
-1. Add a `chart_health_runs` / scheduled health snapshot migration.
-2. Add a service that calls `auditDashboardCharts` per tenant/project and persists summary + failed chart ids.
-3. Add an admin endpoint for latest degraded dashboard state.
-4. Keep alerts as a later layer; first persist reliable health history.
-5. Update Apidog inventory security notes where needed.
+1. Add dashboard publishing tables: versions, pages, chart slots, publish events.
+2. Point client dashboard rendering at published chart configs.
+3. Replace old builder entry points with tenant/project admin flows.
+4. Disable or archive legacy API endpoint/widget training routes.
+5. Keep scheduled health checks immediately after publishing is first-class.
 
 ## Major Flaws To Plan
 
-1. RBAC and project membership enforcement still needs a final pass over legacy non-platform routes.
+1. Legacy UI/API routes still reference removed Supabase concepts and need replacement before demo.
 2. Semantic model is still too shallow for enterprise analytics:
    - no certified fields
    - no business glossary
@@ -115,15 +117,15 @@ Suggested sprint:
    - persistent/distributed rate limiting
    - caching
    - stronger query cost policies
-4. No scheduled health checks yet:
-   - chart audit is manual/API-driven only
-   - no alerts
-   - no degraded dashboard reporting
-5. Publishing model needs versioning:
+4. Publishing model needs versioning:
    - dashboard versions
    - rollback
    - draft vs published separation
    - release notes/audit trail
+5. No scheduled health checks yet:
+   - chart audit is manual/API-driven only
+   - no alerts
+   - no degraded dashboard reporting
 6. Client dashboard needs PDF/report architecture.
 7. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
 
