@@ -60,6 +60,7 @@ Completed or started:
 - Dashboard health jobs now open or refresh one `dashboard_blocked` alert per blocked dashboard and auto-resolve it once health recovers.
 - Query budget policies now exist through `query_budget_policies` and `GET/POST /api/admin/query-budgets`.
 - Admin preview and client dataset/chart runtime cache misses enforce tenant/project/source query budgets before opening source database queries.
+- Cache-warm jobs now execute through the worker for dataset, chart, and project targets, writing the same query-result cache used by client runtime.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -101,6 +102,7 @@ Remote:
 - `src/lib/jobs/platform-job-schedules.ts`
 - `src/lib/alerts/platform-alerts.ts`
 - `src/lib/semantic/query-budget-policy.ts`
+- `src/lib/semantic/query-cache-warmer.ts`
 - `src/lib/data-sources/schema-introspection-runner.ts`
 - `src/types/dashboard-chart.ts`
 - `src/types/dashboard-publishing.ts`
@@ -150,7 +152,7 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add export artifact worker and cache-warm executor.
+1. Add export artifact worker.
 2. Add external alert fan-out for email/webhooks.
 3. Add stronger row/elapsed-time budget hard stops after query execution patterns stabilize.
 

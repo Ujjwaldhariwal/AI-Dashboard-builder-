@@ -987,6 +987,7 @@ Behavior:
 - atomically claims queued jobs using `claim_platform_jobs`
 - executes `dashboard_health` by recording dashboard health runs
 - executes `schema_refresh` by introspecting the target data source and refreshing schema metadata
+- executes `cache_warm` by compiling published dataset/chart SQL, running read-only queries, and writing query-result cache entries
 - marks failed jobs back to `queued` with backoff until `maxAttempts`, then `failed`
 
 Response:

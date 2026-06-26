@@ -2,7 +2,7 @@ import crypto from 'crypto'
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export type SemanticQuerySurface = 'admin_preview' | 'client_dataset' | 'client_chart'
+export type SemanticQuerySurface = 'admin_preview' | 'client_dataset' | 'client_chart' | 'cache_warm'
 export type SemanticQueryStatus = 'success' | 'error'
 
 export interface SemanticQueryTelemetryInput {
@@ -12,7 +12,7 @@ export interface SemanticQueryTelemetryInput {
   datasetId?: string | null
   chartId?: string | null
   dataSourceId?: string | null
-  actorUserId: string
+  actorUserId?: string | null
   surface: SemanticQuerySurface
   status: SemanticQueryStatus
   sql?: string | null
@@ -35,7 +35,7 @@ export async function recordSemanticQueryRun({
   datasetId = null,
   chartId = null,
   dataSourceId = null,
-  actorUserId,
+  actorUserId = null,
   surface,
   status,
   sql,

@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { reconcileDashboardHealthAlerts } from '@/lib/alerts/platform-alerts'
 import { runDataSourceSchemaIntrospection } from '@/lib/data-sources/schema-introspection-runner'
 import { auditPublishedDashboards, recordDashboardHealthRuns } from '@/lib/publishing/dashboard-health-auditor'
+import { warmQueryResultCache } from '@/lib/semantic/query-cache-warmer'
 import type { PlatformJob } from '@/lib/jobs/platform-jobs'
 
 export interface PlatformJobRunResult {
@@ -65,11 +66,29 @@ async function runSchemaRefreshJob(supabase: SupabaseClient, job: PlatformJob): 
   }
 }
 
+async function runCacheWarmJob(supabase: SupabaseClient, job: PlatformJob): Promise<PlatformJobRunResult> {
+  const limit = typeof job.payload.limit === 'number' ? job.payload.limit : undefined
+  const result = await warmQueryResultCache({
+    supabase,
+    tenantId: job.tenantId,
+    projectId: job.projectId,
+    targetType: job.targetType,
+    targetId: job.targetId,
+    limit,
+  })
+
+  return {
+    ok: true,
+    result: { ...result },
+  }
+}
+
 export async function runPlatformJob(supabase: SupabaseClient, job: PlatformJob): Promise<PlatformJobRunResult> {
   if (job.jobType === 'dashboard_health') return runDashboardHealthJob(supabase, job)
   if (job.jobType === 'schema_refresh') return runSchemaRefreshJob(supabase, job)
-  if (job.jobType === 'export' || job.jobType === 'cache_warm') {
-    throw new Error(`${job.jobType} executor is not implemented yet`)
+  if (job.jobType === 'cache_warm') return runCacheWarmJob(supabase, job)
+  if (job.jobType === 'export') {
+    throw new Error('export executor is not implemented yet')
   }
 
   throw new Error(`Unsupported platform job type: ${job.jobType}`)
