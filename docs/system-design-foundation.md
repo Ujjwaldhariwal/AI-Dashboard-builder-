@@ -100,7 +100,7 @@ The missing scale pieces are:
 
 ### 6. Background Jobs
 
-Status: worker execution started.
+Status: recurring schedules and worker execution started.
 
 The platform now has `platform_jobs` as the shared queue contract for:
 
@@ -118,10 +118,12 @@ The platform now has `platform_jobs` as the shared queue contract for:
 
 Failed jobs return to `queued` with backoff until `max_attempts`, then become `failed`.
 
+`platform_job_schedules` and `POST /api/admin/jobs/scheduler` now provide recurring job seeding. The scheduler route is protected by the same worker secret, claims due schedules atomically through `claim_platform_job_schedules`, advances `next_run_at`, and enqueues deduped jobs for the worker route. `GET/POST /api/admin/jobs/schedules` lets authenticated operators inspect and manage schedules.
+
 Remaining job work:
 
-- add recurring schedules for dashboard health and cache warming
 - add PDF/export execution and artifact storage
+- add cache-warm execution
 - add alert fan-out for newly blocked dashboards
 
 ### 7. AI Filter Layer
@@ -140,7 +142,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Recurring schedules for dashboard health/schema refresh/cache warm jobs.
-2. Alert hooks for newly blocked dashboards.
-3. Query cost budgets by tenant/project/source.
+1. Alert hooks for newly blocked dashboards.
+2. Query cost budgets by tenant/project/source.
+3. Export artifact worker and cache-warm executor.
 4. AI filter policy after the above are stable.

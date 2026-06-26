@@ -809,6 +809,79 @@ Body:
 
 Response: `{ "job": { ... } }`
 
+### `GET /api/admin/jobs/schedules`
+
+Purpose: list recurring platform job schedules by tenant/project/type/enabled state.
+
+Auth: authenticated tenant/project access; platform admins may list globally.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `jobType`: optional `dashboard_health`, `schema_refresh`, `export`, or `cache_warm`
+- `enabled`: optional `true` or `false`
+- `limit`: optional number, default `50`, max `200`
+
+Response: `{ "schedules": [...] }`
+
+### `POST /api/admin/jobs/schedules`
+
+Purpose: create or update a recurring job schedule for a tenant/project target.
+
+Auth: authenticated tenant/project editor.
+
+Body:
+
+```json
+{
+  "tenantId": "uuid",
+  "projectId": "uuid",
+  "jobType": "dashboard_health",
+  "targetType": "project",
+  "targetId": "uuid",
+  "enabled": true,
+  "intervalMinutes": 60,
+  "priority": 10,
+  "maxAttempts": 3,
+  "nextRunAt": "2026-06-26T00:00:00.000Z",
+  "payload": {}
+}
+```
+
+Response: `{ "schedule": { ... } }`
+
+### `POST /api/admin/jobs/scheduler`
+
+Purpose: claim due recurring schedules and enqueue matching `platform_jobs`.
+
+Auth: worker secret only. Send `Authorization: Bearer <DASHBOARDOS_WORKER_SECRET>` or `x-dashboardos-worker-secret`.
+
+Query:
+- `limit`: optional number, default `25`, max `50`
+
+Behavior:
+- atomically claims due schedule rows using `claim_platform_job_schedules`
+- advances `next_run_at` before enqueueing so concurrent cron calls do not double-fire
+- writes `last_job_id` or `last_error` back to the schedule row
+
+Response:
+
+```json
+{
+  "schedulerId": "scheduler-id",
+  "claimed": 1,
+  "enqueued": [
+    {
+      "scheduleId": "uuid",
+      "jobId": "uuid",
+      "jobType": "dashboard_health",
+      "targetType": "project",
+      "targetId": "uuid"
+    }
+  ]
+}
+```
+
 ### `POST /api/admin/jobs/worker`
 
 Purpose: claim and execute ready `platform_jobs` rows from a trusted scheduler or cron runner.

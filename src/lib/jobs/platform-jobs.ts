@@ -45,7 +45,7 @@ interface EnqueuePlatformJobInput {
   maxAttempts?: number
   dedupeKey?: string | null
   payload?: Record<string, unknown>
-  createdBy: string
+  createdBy?: string | null
 }
 
 interface ListPlatformJobsInput {
@@ -119,7 +119,7 @@ export async function enqueuePlatformJob({
   maxAttempts = 3,
   dedupeKey = null,
   payload = {},
-  createdBy,
+  createdBy = null,
 }: EnqueuePlatformJobInput): Promise<PlatformJob> {
   const nowIso = new Date().toISOString()
   const insertPayload = {

@@ -55,6 +55,7 @@ Completed or started:
 - Manual schema refresh requests now enqueue a deduped `schema_refresh` job after marking the source `pending_refresh`.
 - Worker execution has started through `POST /api/admin/jobs/worker`, protected by `DASHBOARDOS_WORKER_SECRET` and backed by a service-role Supabase client.
 - The worker now executes `dashboard_health` jobs and `schema_refresh` jobs with retry/backoff state transitions.
+- Recurring schedules now exist through `platform_job_schedules`, `GET/POST /api/admin/jobs/schedules`, and secret-protected `POST /api/admin/jobs/scheduler`.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -93,6 +94,7 @@ Remote:
 - `src/lib/publishing/dashboard-health-auditor.ts`
 - `src/lib/jobs/platform-jobs.ts`
 - `src/lib/jobs/platform-job-runner.ts`
+- `src/lib/jobs/platform-job-schedules.ts`
 - `src/lib/data-sources/schema-introspection-runner.ts`
 - `src/types/dashboard-chart.ts`
 - `src/types/dashboard-publishing.ts`
@@ -106,6 +108,8 @@ Remote:
 - `src/app/api/admin/published-dashboards/[id]/publish/route.ts`
 - `src/app/api/admin/published-dashboards/health/route.ts`
 - `src/app/api/admin/jobs/route.ts`
+- `src/app/api/admin/jobs/schedules/route.ts`
+- `src/app/api/admin/jobs/scheduler/route.ts`
 - `src/app/api/admin/jobs/worker/route.ts`
 - `src/app/api/admin/dashboard-charts/route.ts`
 - `src/app/api/admin/dashboard-charts/[id]/route.ts`
@@ -137,9 +141,9 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add recurring schedule seeding for dashboard health, schema refresh, and cache warm jobs.
-2. Add alert/notification hooks for newly blocked dashboards.
-3. Add query cost budgets by tenant/project/source.
+1. Add alert/notification hooks for newly blocked dashboards.
+2. Add query cost budgets by tenant/project/source.
+3. Add export artifact worker and cache-warm executor.
 
 ## Major Flaws To Plan
 
@@ -158,9 +162,9 @@ Suggested sprint sequence:
    - dashboard versions
    - draft vs published separation
    - release notes/audit trail
-5. No recurring scheduler yet:
-   - durable queue and worker execution exist for health/schema jobs
-   - chart and dashboard audits are still manual/API/cron-driven until schedules are created
+5. No alert delivery yet:
+   - durable queue, recurring schedules, and worker execution exist for health/schema jobs
+   - chart and dashboard audits can be scheduled, but blocked-state notifications are not delivered yet
    - no alerts
 6. Client dashboard needs PDF/report architecture.
 7. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
