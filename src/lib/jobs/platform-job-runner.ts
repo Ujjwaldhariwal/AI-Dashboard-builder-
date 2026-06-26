@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { deliverPlatformAlert } from '@/lib/alerts/alert-delivery'
 import { reconcileDashboardHealthAlerts } from '@/lib/alerts/platform-alerts'
 import { runDataSourceSchemaIntrospection } from '@/lib/data-sources/schema-introspection-runner'
 import { createDashboardManifestExport } from '@/lib/publishing/dashboard-export-artifact'
@@ -114,11 +115,32 @@ async function runExportJob(supabase: SupabaseClient, job: PlatformJob): Promise
   }
 }
 
+async function runAlertDeliveryJob(supabase: SupabaseClient, job: PlatformJob): Promise<PlatformJobRunResult> {
+  const alertId = requireTargetId(job, 'alert')
+  const result = await deliverPlatformAlert({
+    supabase,
+    alertId,
+    jobId: job.id,
+  })
+
+  return {
+    ok: true,
+    result: {
+      alertId,
+      delivered: result.delivered,
+      failed: result.failed,
+      skipped: result.skipped,
+      attemptIds: result.attempts.map(attempt => attempt.id),
+    },
+  }
+}
+
 export async function runPlatformJob(supabase: SupabaseClient, job: PlatformJob): Promise<PlatformJobRunResult> {
   if (job.jobType === 'dashboard_health') return runDashboardHealthJob(supabase, job)
   if (job.jobType === 'schema_refresh') return runSchemaRefreshJob(supabase, job)
   if (job.jobType === 'cache_warm') return runCacheWarmJob(supabase, job)
   if (job.jobType === 'export') return runExportJob(supabase, job)
+  if (job.jobType === 'alert_delivery') return runAlertDeliveryJob(supabase, job)
 
   throw new Error(`Unsupported platform job type: ${job.jobType}`)
 }

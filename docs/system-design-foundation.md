@@ -118,17 +118,18 @@ The platform now has `platform_jobs` as the shared queue contract for:
 - `schema_refresh`: introspects the target data source and refreshes schema metadata
 - `cache_warm`: compiles published dataset/chart SQL, runs read-only queries, and writes query-result cache entries
 - `export`: generates a durable `manifest_json` artifact for a published dashboard or dashboard version
+- `alert_delivery`: sends newly opened platform alerts to configured webhook/email-gateway channels and records delivery attempts
 
 Failed jobs return to `queued` with backoff until `max_attempts`, then become `failed`.
 
 `platform_job_schedules` and `POST /api/admin/jobs/scheduler` now provide recurring job seeding. The scheduler route is protected by the same worker secret, claims due schedules atomically through `claim_platform_job_schedules`, advances `next_run_at`, and enqueues deduped jobs for the worker route. `GET/POST /api/admin/jobs/schedules` lets authenticated operators inspect and manage schedules.
 
-Alert hooks now create persistent `platform_alerts` when a scheduled or manual dashboard health run finds a dashboard in `blocked` state. Repeated blocked runs refresh the existing open alert instead of spamming duplicates, and later non-blocked health runs auto-resolve the alert. Operators can list alerts through `GET /api/admin/alerts` and acknowledge/resolve them through `PATCH /api/admin/alerts/{id}`.
+Alert hooks now create persistent `platform_alerts` when a scheduled or manual dashboard health run finds a dashboard in `blocked` state. Repeated blocked runs refresh the existing open alert instead of spamming duplicates, and later non-blocked health runs auto-resolve the alert. Newly opened alerts enqueue `alert_delivery` jobs. Operators can configure channels through `GET/POST /api/admin/alert-channels`, inspect attempts through `GET /api/admin/alert-deliveries`, list alerts through `GET /api/admin/alerts`, and acknowledge/resolve them through `PATCH /api/admin/alerts/{id}`.
 
 Remaining job work:
 
 - add PDF/ZIP rendering and external object storage for export artifacts
-- add external alert fan-out, such as email/webhooks, for newly blocked dashboards
+- add native email provider integration once delivery channel policy is stable
 
 ### 7. AI Filter Layer
 
@@ -146,7 +147,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Export artifact worker.
-2. External alert fan-out for email/webhooks.
-3. Stronger budget dimensions beyond query count, such as row and elapsed-time hard stops.
+1. PDF/ZIP export rendering and object storage.
+2. Stronger budget dimensions beyond query count, such as row and elapsed-time hard stops.
+3. Native email provider integration.
 4. AI filter policy after the above are stable.

@@ -32,6 +32,8 @@ These tables are the current foundation and should be protected:
 - `chart_health_runs`
 - `dashboard_health_runs`
 - `platform_alerts`
+- `platform_alert_channels`
+- `platform_alert_delivery_attempts`
 - `query_budget_policies`
 - `dashboard_export_artifacts`
 - `audit_logs`
@@ -84,9 +86,14 @@ Migration `20260626183000_dashboard_export_artifacts.sql` adds durable export re
 - The initial supported artifact type is `manifest_json`, a portable dashboard metadata bundle without source credentials or raw query results.
 - Export rows are readable by project/tenant access and insertable by project editors or trusted worker execution.
 
+Migration `20260626193000_alert_delivery_channels.sql` adds external alert delivery state:
+
+- `platform_alert_channels` stores tenant/project webhook and email-gateway channel configuration.
+- `platform_alert_delivery_attempts` records delivery outcomes, response metadata, and errors per alert/channel/job.
+- `platform_jobs` and `platform_job_schedules` now allow `alert_delivery` jobs with `alert` targets.
+
 ## Next Schema Work
 
 The next foundation migrations should add delivery integrations around the new operational tables:
 
-- external alert delivery attempts
 - external export object storage metadata for PDF/ZIP artifacts

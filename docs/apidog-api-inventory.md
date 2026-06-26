@@ -836,6 +836,60 @@ Body:
 
 Response: `{ "alert": { ... } }`
 
+### `GET /api/admin/alert-channels`
+
+Purpose: list configured external alert delivery channels.
+
+Auth: authenticated tenant/project access; platform admins may list globally.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `enabled`: optional `true` or `false`
+- `limit`: optional number, default `50`, max `200`
+
+Response: `{ "channels": [...] }`
+
+### `POST /api/admin/alert-channels`
+
+Purpose: create or update a tenant/project alert delivery channel.
+
+Auth: authenticated tenant/project editor.
+
+Body:
+
+```json
+{
+  "tenantId": "uuid",
+  "projectId": "uuid",
+  "name": "Operations webhook",
+  "channelType": "webhook",
+  "enabled": true,
+  "severityMin": "warning",
+  "config": {
+    "url": "https://example.com/alerts"
+  }
+}
+```
+
+Email channels use `channelType: "email"` and can provide `config.to` plus `config.webhookUrl` for an email gateway until a native mail provider is configured.
+
+Response: `{ "channel": { ... } }`
+
+### `GET /api/admin/alert-deliveries`
+
+Purpose: list external alert delivery attempts for troubleshooting fan-out results.
+
+Auth: authenticated tenant/project access; platform admins may list globally.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `alertId`: optional UUID
+- `limit`: optional number, default `50`, max `200`
+
+Response: `{ "deliveries": [...] }`
+
 ### `GET /api/admin/dashboard-exports`
 
 Purpose: list generated dashboard export artifacts for an operator or export history view.
@@ -880,7 +934,7 @@ Query:
 - `tenantId`: optional UUID
 - `projectId`: optional UUID
 - `status`: optional `queued`, `running`, `succeeded`, `failed`, or `cancelled`
-- `jobType`: optional `dashboard_health`, `schema_refresh`, `export`, or `cache_warm`
+- `jobType`: optional `dashboard_health`, `schema_refresh`, `export`, `cache_warm`, or `alert_delivery`
 - `limit`: optional number, default `50`, max `200`
 
 Response:
@@ -940,7 +994,7 @@ Auth: authenticated tenant/project access; platform admins may list globally.
 Query:
 - `tenantId`: optional UUID
 - `projectId`: optional UUID
-- `jobType`: optional `dashboard_health`, `schema_refresh`, `export`, or `cache_warm`
+- `jobType`: optional `dashboard_health`, `schema_refresh`, `export`, `cache_warm`, or `alert_delivery`
 - `enabled`: optional `true` or `false`
 - `limit`: optional number, default `50`, max `200`
 
@@ -1023,6 +1077,7 @@ Behavior:
 - executes `schema_refresh` by introspecting the target data source and refreshing schema metadata
 - executes `cache_warm` by compiling published dataset/chart SQL, running read-only queries, and writing query-result cache entries
 - executes `export` by generating a durable `manifest_json` artifact for a published dashboard or dashboard version
+- executes `alert_delivery` by fanning out newly opened platform alerts to configured webhook/email-gateway channels and recording delivery attempts
 - marks failed jobs back to `queued` with backoff until `maxAttempts`, then `failed`
 
 Response:

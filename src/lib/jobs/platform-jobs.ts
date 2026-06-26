@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-export const PLATFORM_JOB_TYPES = ['dashboard_health', 'schema_refresh', 'export', 'cache_warm'] as const
+export const PLATFORM_JOB_TYPES = ['dashboard_health', 'schema_refresh', 'export', 'cache_warm', 'alert_delivery'] as const
 export const PLATFORM_JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const
-export const PLATFORM_JOB_TARGET_TYPES = ['dashboard', 'dashboard_version', 'data_source', 'dataset', 'chart', 'project', 'tenant'] as const
+export const PLATFORM_JOB_TARGET_TYPES = ['dashboard', 'dashboard_version', 'data_source', 'dataset', 'chart', 'project', 'tenant', 'alert'] as const
 
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number]
 export type PlatformJobStatus = (typeof PLATFORM_JOB_STATUSES)[number]

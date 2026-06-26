@@ -51,13 +51,14 @@ Completed or started:
 - Query runtime now has an Upstash-compatible Redis REST interface for distributed rate limiting and client result caching, with safe in-memory fallback when Redis is not configured.
 - Read-only Postgres query execution now uses a bounded per-`data_source_id` pool manager for the hot runtime path instead of opening a fresh client for every chart/dataset request.
 - Schema introspection freshness now records source-level schema status, hash, table/column counts, next refresh time, refresh request metadata, and per-run history in `data_source_schema_runs`.
-- Background job queue contract now exists through `platform_jobs`, `src/lib/jobs/platform-jobs.ts`, and `GET/POST /api/admin/jobs` for dashboard health, schema refresh, export, and cache-warm work.
+- Background job queue contract now exists through `platform_jobs`, `src/lib/jobs/platform-jobs.ts`, and `GET/POST /api/admin/jobs` for dashboard health, schema refresh, export, cache-warm, and alert-delivery work.
 - Manual schema refresh requests now enqueue a deduped `schema_refresh` job after marking the source `pending_refresh`.
 - Worker execution has started through `POST /api/admin/jobs/worker`, protected by `DASHBOARDOS_WORKER_SECRET` and backed by a service-role Supabase client.
 - The worker now executes `dashboard_health` jobs and `schema_refresh` jobs with retry/backoff state transitions.
 - Recurring schedules now exist through `platform_job_schedules`, `GET/POST /api/admin/jobs/schedules`, and secret-protected `POST /api/admin/jobs/scheduler`.
 - Persistent platform alerts now exist through `platform_alerts`, `GET /api/admin/alerts`, and `PATCH /api/admin/alerts/{id}`.
 - Dashboard health jobs now open or refresh one `dashboard_blocked` alert per blocked dashboard and auto-resolve it once health recovers.
+- Alert fan-out now exists through `platform_alert_channels`, `platform_alert_delivery_attempts`, `GET/POST /api/admin/alert-channels`, `GET /api/admin/alert-deliveries`, and `alert_delivery` worker jobs for webhook/email-gateway channels.
 - Query budget policies now exist through `query_budget_policies` and `GET/POST /api/admin/query-budgets`.
 - Admin preview and client dataset/chart runtime cache misses enforce tenant/project/source query budgets before opening source database queries.
 - Cache-warm jobs now execute through the worker for dataset, chart, and project targets, writing the same query-result cache used by client runtime.
@@ -102,6 +103,7 @@ Remote:
 - `src/lib/jobs/platform-job-runner.ts`
 - `src/lib/jobs/platform-job-schedules.ts`
 - `src/lib/alerts/platform-alerts.ts`
+- `src/lib/alerts/alert-delivery.ts`
 - `src/lib/semantic/query-budget-policy.ts`
 - `src/lib/semantic/query-cache-warmer.ts`
 - `src/lib/publishing/dashboard-export-artifact.ts`
@@ -122,6 +124,8 @@ Remote:
 - `src/app/api/admin/jobs/scheduler/route.ts`
 - `src/app/api/admin/jobs/worker/route.ts`
 - `src/app/api/admin/dashboard-exports/route.ts`
+- `src/app/api/admin/alert-channels/route.ts`
+- `src/app/api/admin/alert-deliveries/route.ts`
 - `src/app/api/admin/alerts/route.ts`
 - `src/app/api/admin/alerts/[id]/route.ts`
 - `src/app/api/admin/query-budgets/route.ts`
@@ -155,9 +159,9 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add external alert fan-out for email/webhooks.
-2. Add PDF/ZIP export rendering and external object storage for export artifacts.
-3. Add stronger row/elapsed-time budget hard stops after query execution patterns stabilize.
+1. Add PDF/ZIP export rendering and external object storage for export artifacts.
+2. Add stronger row/elapsed-time budget hard stops after query execution patterns stabilize.
+3. Add native email provider integration after the alert channel contract stabilizes.
 
 ## Major Flaws To Plan
 

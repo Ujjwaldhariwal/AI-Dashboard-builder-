@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { enqueuePlatformJob } from '@/lib/jobs/platform-jobs'
 import type { DashboardHealthAudit } from '@/types/dashboard-publishing'
 
 export type PlatformAlertState = 'open' | 'acknowledged' | 'resolved'
@@ -131,7 +132,7 @@ export async function reconcileDashboardHealthAlerts({
   supabase: SupabaseClient
   audit: DashboardHealthAudit
 }) {
-  if (audit.dashboards.length === 0) return { opened: 0, refreshed: 0, resolved: 0 }
+  if (audit.dashboards.length === 0) return { opened: 0, refreshed: 0, resolved: 0, deliveryJobs: 0 }
 
   const dashboardIds = audit.dashboards.map(item => item.dashboard.id)
   const { data: dashboardRows, error: dashboardError } = await supabase
@@ -153,6 +154,7 @@ export async function reconcileDashboardHealthAlerts({
   let opened = 0
   let refreshed = 0
   let resolved = 0
+  let deliveryJobs = 0
   const nowIso = new Date().toISOString()
 
   for (const item of audit.dashboards) {
@@ -199,7 +201,7 @@ export async function reconcileDashboardHealthAlerts({
         if (error) throw new Error(error.message)
         refreshed += 1
       } else {
-        const { error } = await supabase
+        const { data: inserted, error } = await supabase
           .from('platform_alerts')
           .insert({
             tenant_id: owner.tenantId,
@@ -218,8 +220,29 @@ export async function reconcileDashboardHealthAlerts({
             created_at: nowIso,
             updated_at: nowIso,
           })
+          .select('id')
+          .single()
 
         if (error) throw new Error(error.message)
+        if (inserted?.id) {
+          await enqueuePlatformJob({
+            supabase,
+            tenantId: owner.tenantId,
+            projectId: owner.projectId,
+            jobType: 'alert_delivery',
+            targetType: 'alert',
+            targetId: String(inserted.id),
+            priority: 50,
+            maxAttempts: 5,
+            dedupeKey: `alert_delivery:${String(inserted.id)}:opened`,
+            payload: {
+              alertType: 'dashboard_blocked',
+              sourceType: 'dashboard',
+              sourceId: item.dashboard.id,
+            },
+          })
+          deliveryJobs += 1
+        }
         opened += 1
       }
       continue
@@ -248,5 +271,5 @@ export async function reconcileDashboardHealthAlerts({
     resolved += data?.length ?? 0
   }
 
-  return { opened, refreshed, resolved }
+  return { opened, refreshed, resolved, deliveryJobs }
 }
