@@ -43,6 +43,15 @@ function mapDataSource(row: Record<string, unknown>): DataSource {
     lastTestedAt: typeof row.last_tested_at === 'string' ? row.last_tested_at : null,
     lastTestStatus: typeof row.last_test_status === 'string' ? row.last_test_status : null,
     lastError: typeof row.last_error === 'string' ? row.last_error : null,
+    schemaLastIntrospectedAt: typeof row.schema_last_introspected_at === 'string' ? row.schema_last_introspected_at : null,
+    schemaLastStatus: typeof row.schema_last_status === 'string' ? row.schema_last_status as DataSource['schemaLastStatus'] : null,
+    schemaLastError: typeof row.schema_last_error === 'string' ? row.schema_last_error : null,
+    schemaHash: typeof row.schema_hash === 'string' ? row.schema_hash : null,
+    schemaTableCount: Number(row.schema_table_count ?? 0),
+    schemaColumnCount: Number(row.schema_column_count ?? 0),
+    schemaRefreshAfter: typeof row.schema_refresh_after === 'string' ? row.schema_refresh_after : null,
+    schemaRefreshRequestedAt: typeof row.schema_refresh_requested_at === 'string' ? row.schema_refresh_requested_at : null,
+    schemaRefreshReason: typeof row.schema_refresh_reason === 'string' ? row.schema_refresh_reason : null,
     createdAt: String(row.created_at ?? new Date().toISOString()),
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
   }
@@ -77,7 +86,7 @@ export async function GET(req: NextRequest) {
 
     let query = auth.supabase
       .from('data_sources')
-      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, created_at, updated_at')
+      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
       .order('updated_at', { ascending: false })
 
     if (tenantId) query = query.eq('tenant_id', tenantId)
@@ -153,10 +162,13 @@ export async function POST(req: NextRequest) {
         connection_config: safeConfig,
         credential_ciphertext: encrypted.ciphertext,
         credential_key_id: encrypted.keyId,
+        schema_last_status: 'pending_refresh',
+        schema_refresh_requested_at: nowIso,
+        schema_refresh_reason: 'new_source',
         created_at: nowIso,
         updated_at: nowIso,
       })
-      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, created_at, updated_at')
+      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
       .single()
 
     if (error) {

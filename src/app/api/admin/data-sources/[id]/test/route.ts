@@ -28,6 +28,15 @@ function mapDataSource(row: Record<string, unknown>): DataSource {
     lastTestedAt: typeof row.last_tested_at === 'string' ? row.last_tested_at : null,
     lastTestStatus: typeof row.last_test_status === 'string' ? row.last_test_status : null,
     lastError: typeof row.last_error === 'string' ? row.last_error : null,
+    schemaLastIntrospectedAt: typeof row.schema_last_introspected_at === 'string' ? row.schema_last_introspected_at : null,
+    schemaLastStatus: typeof row.schema_last_status === 'string' ? row.schema_last_status as DataSource['schemaLastStatus'] : null,
+    schemaLastError: typeof row.schema_last_error === 'string' ? row.schema_last_error : null,
+    schemaHash: typeof row.schema_hash === 'string' ? row.schema_hash : null,
+    schemaTableCount: Number(row.schema_table_count ?? 0),
+    schemaColumnCount: Number(row.schema_column_count ?? 0),
+    schemaRefreshAfter: typeof row.schema_refresh_after === 'string' ? row.schema_refresh_after : null,
+    schemaRefreshRequestedAt: typeof row.schema_refresh_requested_at === 'string' ? row.schema_refresh_requested_at : null,
+    schemaRefreshReason: typeof row.schema_refresh_reason === 'string' ? row.schema_refresh_reason : null,
     createdAt: String(row.created_at ?? new Date().toISOString()),
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
   }
@@ -48,7 +57,7 @@ export async function POST(
 
     const { data: source, error: sourceError } = await auth.supabase
       .from('data_sources')
-      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_ciphertext, credential_key_id, last_tested_at, last_test_status, last_error, created_at, updated_at')
+      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_ciphertext, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
       .eq('id', id)
       .single()
 
@@ -84,7 +93,7 @@ export async function POST(
           updated_at: nowIso,
         })
         .eq('id', id)
-        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, created_at, updated_at')
+        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
         .single()
 
       if (updateError) {
@@ -120,7 +129,7 @@ export async function POST(
           updated_at: nowIso,
         })
         .eq('id', id)
-        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, created_at, updated_at')
+        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
         .maybeSingle()
 
       await auth.supabase

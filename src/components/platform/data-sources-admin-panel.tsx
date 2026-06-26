@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertCircle, Database, FileSearch, KeyRound, Loader2, LockKeyhole, PlugZap, Plus, Server, ShieldCheck } from 'lucide-react'
+import { AlertCircle, Clock3, Database, FileSearch, KeyRound, Loader2, LockKeyhole, PlugZap, Plus, RotateCcw, Server, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -47,7 +47,7 @@ export function DataSourcesAdminPanel() {
   const [projectsLoading, setProjectsLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busySourceId, setBusySourceId] = useState<string | null>(null)
-  const [busyAction, setBusyAction] = useState<'test' | 'introspect' | null>(null)
+  const [busyAction, setBusyAction] = useState<'test' | 'introspect' | 'refresh' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -185,6 +185,39 @@ export function DataSourcesAdminPanel() {
     }
   }
 
+  const handleRequestRefresh = async (sourceId: string) => {
+    setBusySourceId(sourceId)
+    setBusyAction('refresh')
+    try {
+      const response = await fetch(`/api/admin/data-sources/${sourceId}/schema-refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'admin_requested' }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload) || `Refresh request failed (${response.status})`)
+      await fetchDataSources()
+      toast.success('Schema refresh requested')
+    } catch (refreshError) {
+      toast.error(refreshError instanceof Error ? refreshError.message : String(refreshError))
+    } finally {
+      setBusySourceId(null)
+      setBusyAction(null)
+    }
+  }
+
+  const schemaStatusLabel = (source: DataSource) => {
+    if (source.schemaLastStatus === 'ok') return 'schema fresh'
+    if (source.schemaLastStatus === 'error') return 'schema error'
+    if (source.schemaLastStatus === 'pending_refresh') return 'refresh pending'
+    return 'not scanned'
+  }
+
+  const schemaAgeLabel = (source: DataSource) => {
+    if (!source.schemaLastIntrospectedAt) return 'never scanned'
+    return new Date(source.schemaLastIntrospectedAt).toLocaleString()
+  }
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-3">
@@ -276,12 +309,47 @@ export function DataSourcesAdminPanel() {
                           ? <Loader2 className="h-4 w-4 animate-spin" />
                           : <FileSearch className="h-4 w-4" />}
                       </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]"
+                        onClick={() => void handleRequestRefresh(source.id)}
+                        disabled={busySourceId === source.id}
+                        title="Request schema refresh"
+                      >
+                        {busySourceId === source.id && busyAction === 'refresh'
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <RotateCcw className="h-4 w-4" />}
+                      </Button>
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
                     <span>last test: {source.lastTestStatus ?? 'not run'}</span>
                     {source.lastTestedAt ? <span>{new Date(source.lastTestedAt).toLocaleString()}</span> : null}
                     {source.lastError ? <span className="text-rose-300">{source.lastError}</span> : null}
+                  </div>
+                  <div className="mt-3 rounded-md border border-white/10 bg-slate-950/60 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <Clock3 className="h-3.5 w-3.5 text-cyan-300" />
+                        {schemaStatusLabel(source)}
+                      </div>
+                      <Badge variant="outline" className="border-white/15 text-slate-300">
+                        {source.schemaTableCount} tables / {source.schemaColumnCount} columns
+                      </Badge>
+                    </div>
+                    <div className="mt-2 grid gap-1 text-[11px] text-slate-500 sm:grid-cols-2">
+                      <span>last scan: {schemaAgeLabel(source)}</span>
+                      <span>next refresh: {source.schemaRefreshAfter ? new Date(source.schemaRefreshAfter).toLocaleString() : 'not scheduled'}</span>
+                      {source.schemaHash ? <span className="truncate sm:col-span-2">hash: {source.schemaHash}</span> : null}
+                      {source.schemaRefreshRequestedAt ? (
+                        <span className="sm:col-span-2">
+                          requested {new Date(source.schemaRefreshRequestedAt).toLocaleString()}
+                          {source.schemaRefreshReason ? ` (${source.schemaRefreshReason})` : ''}
+                        </span>
+                      ) : null}
+                      {source.schemaLastError ? <span className="text-rose-300 sm:col-span-2">{source.schemaLastError}</span> : null}
+                    </div>
                   </div>
                 </div>
               ))

@@ -174,7 +174,23 @@ Auth: authenticated project editor.
 
 Body: `{}`
 
-Response: introspected tables/columns and persisted metadata count.
+Response: introspected tables/columns, persisted metadata count, schema hash, and next refresh timestamp.
+
+### `POST /api/admin/data-sources/{id}/schema-refresh`
+
+Purpose: mark a saved data source schema cache as needing background refresh.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "reason": "admin_requested"
+}
+```
+
+Response: refreshed source schema status metadata.
 
 ### `GET /api/admin/schema-columns`
 

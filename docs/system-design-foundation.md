@@ -68,14 +68,18 @@ Production notes:
 
 ### 4. Schema Introspector + Cache
 
-Status: started.
+Status: freshness contract added.
 
-Schema introspection persists table/column metadata in `data_source_columns`. The next hardening step is freshness:
+Schema introspection persists current table/column metadata in `data_source_columns` and now records source-level freshness on `data_sources`:
 
-- record introspection run metadata
-- add schema cache age and hash
-- refresh in the background
-- avoid client/runtime requests triggering heavy introspection
+- last introspected timestamp
+- schema status: `ok`, `error`, or `pending_refresh`
+- deterministic schema hash
+- table and column counts
+- next refresh timestamp
+- refresh requested timestamp and reason
+
+Each scan also writes `data_source_schema_runs`, giving operators a run ledger with counts, hash, elapsed time, trigger source, and error messages. Manual refresh requests now mark a source as `pending_refresh`; the next scheduler/queue sprint can consume that metadata without client/runtime routes triggering heavy introspection.
 
 ### 5. Query Engine + Distributed Cache
 
@@ -118,7 +122,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Schema introspection freshness metadata.
-2. Redis cache/rate-limit interface.
-3. Queue contract for scheduled health and exports.
+1. Redis cache/rate-limit interface.
+2. Queue contract for scheduled health, schema refreshes, and exports.
+3. Alert hooks for newly blocked dashboards.
 4. AI filter policy after the above are stable.

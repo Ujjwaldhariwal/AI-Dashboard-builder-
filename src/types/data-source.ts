@@ -28,8 +28,31 @@ export interface DataSource {
   lastTestedAt?: string | null
   lastTestStatus?: string | null
   lastError?: string | null
+  schemaLastIntrospectedAt?: string | null
+  schemaLastStatus?: 'ok' | 'error' | 'pending_refresh' | null
+  schemaLastError?: string | null
+  schemaHash?: string | null
+  schemaTableCount: number
+  schemaColumnCount: number
+  schemaRefreshAfter?: string | null
+  schemaRefreshRequestedAt?: string | null
+  schemaRefreshReason?: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface DataSourceSchemaRun {
+  id: string
+  dataSourceId: string
+  status: 'ok' | 'error'
+  schemaHash?: string | null
+  tableCount: number
+  columnCount: number
+  startedAt: string
+  finishedAt: string
+  elapsedMs: number
+  errorMessage?: string | null
+  triggerSource: 'manual' | 'scheduled' | 'api'
 }
 
 export interface DataSourceColumnMetadata {

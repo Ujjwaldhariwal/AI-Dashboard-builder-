@@ -50,6 +50,7 @@ Completed or started:
 - Query runtime telemetry via `semantic_query_runs` and `src/lib/semantic/query-runtime-telemetry.ts`.
 - Lightweight in-memory query runtime rate limiting via `src/lib/security/runtime-rate-limit.ts`.
 - Read-only Postgres query execution now uses a bounded per-`data_source_id` pool manager for the hot runtime path instead of opening a fresh client for every chart/dataset request.
+- Schema introspection freshness now records source-level schema status, hash, table/column counts, next refresh time, refresh request metadata, and per-run history in `data_source_schema_runs`.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -127,10 +128,9 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add schema introspection freshness metadata and background refresh contract.
-2. Add Redis-backed query result cache and distributed rate-limit interface.
-3. Add an external scheduler or queue wrapper for dashboard health and exports.
-4. Add alert/notification hooks for newly blocked dashboards.
+1. Add Redis-backed query result cache and distributed rate-limit interface.
+2. Add an external scheduler or queue wrapper for dashboard health, schema refreshes, and exports.
+3. Add alert/notification hooks for newly blocked dashboards.
 
 ## Major Flaws To Plan
 
