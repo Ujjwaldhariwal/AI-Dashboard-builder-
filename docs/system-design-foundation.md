@@ -93,7 +93,7 @@ The semantic query compiler produces guarded read-only SQL and query telemetry i
 - per-instance in-memory rate-limit fallback for local/demo environments
 - cache keys scoped by tenant, project, dataset/chart, data source, SQL, semantic update timestamps, and schema hash
 
-The runtime now supports query budget policies through `query_budget_policies` and `GET/POST /api/admin/query-budgets`. Runtime cache misses check tenant/project/source policies before opening a Postgres query. Exhausted budgets return `429` with `Retry-After` and reset metadata, and budget denials are recorded in `semantic_query_runs`.
+The runtime now supports query budget policies through `query_budget_policies` and `GET/POST /api/admin/query-budgets`. Runtime cache misses check tenant/project/source policies before opening a Postgres query, then project the actual row count and elapsed time before caching or returning a result. Exhausted query, row, or elapsed-time budgets return `429` with `Retry-After` and reset metadata, and budget denials are recorded in `semantic_query_runs`.
 
 Completed scale pieces now include:
 

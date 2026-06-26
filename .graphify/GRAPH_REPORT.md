@@ -1,25 +1,25 @@
 # Graph Report - .  (2026-06-26)
 
 ## Corpus Check
-- 284 files · ~192,115 words
+- 285 files · ~193,119 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2214 nodes · 6210 edges · 101 communities detected
+- 2217 nodes · 6216 edges · 101 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
-- Edge kinds: contains: 1673 · imports: 1275 · MODIFIES: 1118 · imports_from: 779 · calls: 525 · ON_BRANCH: 398 · PARENT_OF: 257 · references: 133 · method: 45 · inherits: 5 · re_exports: 2
+- Edge kinds: contains: 1674 · imports: 1275 · MODIFIES: 1121 · imports_from: 779 · calls: 525 · ON_BRANCH: 399 · PARENT_OF: 258 · references: 133 · method: 45 · inherits: 5 · re_exports: 2
 
 
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
-- Included files: 284 · Candidates: 305
-- Excluded: 1 untracked · 88796 ignored · 2 sensitive · 0 missing committed
+- Included files: 285 · Candidates: 306
+- Excluded: 0 untracked · 88922 ignored · 2 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `09c4244`
+- Built from Git commit: `994942f`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Button` - 49 edges
@@ -252,16 +252,16 @@ Cohesion: 0.15
 Nodes (16): buildDashboardConfig(), DashboardShape, EndpointShape, ExportEndpoint, ExportGroup, ExportWidget, joinOriginAndPath(), resolveBaseUrl() (+8 more)
 
 ### Community 51 - "Community 51"
+Cohesion: 0.16
+Nodes (15): clampLimit(), GET(), POST(), QueryBudgetSchema, requireBudgetAccess(), checkQueryBudget(), listQueryBudgetPolicies(), mapQueryBudgetPolicy() (+7 more)
+
+### Community 52 - "Community 52"
 Cohesion: 0.13
 Nodes (6): INITIAL_EDGES, INITIAL_NODES, NODE_LABELS, NODE_PALETTE, AuthNodeData, NODE_TYPES
 
-### Community 52 - "Community 52"
+### Community 53 - "Community 53"
 Cohesion: 0.14
 Nodes (10): LabelParam, ModernPieChart(), ModernPieChartProps, PieSlice, TooltipParam, truncate(), useEnterpriseTheme(), wrapLabel() (+2 more)
-
-### Community 53 - "Community 53"
-Cohesion: 0.18
-Nodes (14): clampLimit(), GET(), POST(), QueryBudgetSchema, requireBudgetAccess(), checkQueryBudget(), listQueryBudgetPolicies(), mapQueryBudgetPolicy() (+6 more)
 
 ### Community 54 - "Community 54"
 Cohesion: 0.16
@@ -276,20 +276,20 @@ Cohesion: 0.14
 Nodes (11): BASE_PROMPTS, ConfigChatbot(), ConfigChatbotProps, Message, STYLE_PROMPTS, StyleAction, WidgetAction, Message (+3 more)
 
 ### Community 57 - "Community 57"
+Cohesion: 0.23
+Nodes (12): 09c4244 feat: add alert delivery fanout, 26a8f15 feat: execute cache warm jobs, 994942f feat: add export artifact storage metadata, f655b1e feat: add dashboard export artifacts, PlatformJobRunResult, requireTargetId(), runAlertDeliveryJob(), runCacheWarmJob() (+4 more)
+
+### Community 58 - "Community 58"
 Cohesion: 0.20
 Nodes (12): 0b3c27f feat: enforce query budget policies, bfd42b6 feat: add recurring platform job schedules, c272893 feat: add dashboard health alerts, auth.users, dashboard_projects, platform_job_schedules, platform_jobs, tenants (+4 more)
 
-### Community 58 - "Community 58"
+### Community 59 - "Community 59"
 Cohesion: 0.15
 Nodes (10): CATEGORY_BY_ID, collectEndpointCandidates(), ENDPOINT_TAXONOMY_LINKS, EndpointTaxonomyLink, LINK_BY_ENDPOINT_KEY, resolveUppclTaxonomy(), UPPCL_TAXONOMY, UppclTaxonomyCategory (+2 more)
 
-### Community 59 - "Community 59"
+### Community 60 - "Community 60"
 Cohesion: 0.18
 Nodes (7): ModernBarChart(), ModernBarChartProps, normalizeLabel(), toCompactDateLabel(), TooltipParam, useEnterpriseTheme(), XAxisLayout
-
-### Community 60 - "Community 60"
-Cohesion: 0.27
-Nodes (11): 09c4244 feat: add alert delivery fanout, 26a8f15 feat: execute cache warm jobs, f655b1e feat: add dashboard export artifacts, PlatformJobRunResult, requireTargetId(), runAlertDeliveryJob(), runCacheWarmJob(), runDashboardHealthJob() (+3 more)
 
 ### Community 61 - "Community 61"
 Cohesion: 0.23
@@ -452,7 +452,7 @@ Cohesion: 0.83
 Nodes (3): dashboard_projects, data_sources, tenants
 
 ## Knowledge Gaps
-- **521 isolated node(s):** `nextConfig`, `config`, `root`, `apiRoots`, `inventoryPath` (+516 more)
+- **522 isolated node(s):** `nextConfig`, `config`, `root`, `apiRoots`, `inventoryPath` (+517 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **Thin community `Community 68`** (1 nodes): `AIInsightsEngine`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -470,14 +470,14 @@ Nodes (3): dashboard_projects, data_sources, tenants
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Button` connect `Community 3` to `Community 4`, `Community 23`, `Community 56`, `Community 17`, `Community 44`, `Community 51`, `Community 47`, `Community 14`, `Community 48`, `Community 24`, `Community 9`, `Community 1`, `Community 20`, `Community 15`, `Community 13`, `Community 36`, `Community 27`, `Community 22`, `Community 10`, `Community 29`, `Community 85`, `Community 21`, `Community 28`, `Community 16`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
-- **Why does `Badge()` connect `Community 3` to `Community 4`, `Community 23`, `Community 56`, `Community 25`, `Community 17`, `Community 44`, `Community 51`, `Community 47`, `Community 14`, `Community 30`, `Community 20`, `Community 15`, `Community 13`, `Community 10`, `Community 29`, `Community 85`, `Community 1`, `Community 21`, `Community 6`, `Community 16`?**
+- **Why does `Button` connect `Community 3` to `Community 4`, `Community 23`, `Community 56`, `Community 17`, `Community 44`, `Community 52`, `Community 47`, `Community 14`, `Community 48`, `Community 24`, `Community 9`, `Community 1`, `Community 20`, `Community 15`, `Community 13`, `Community 36`, `Community 27`, `Community 22`, `Community 10`, `Community 29`, `Community 85`, `Community 21`, `Community 28`, `Community 16`?**
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Why does `Badge()` connect `Community 3` to `Community 4`, `Community 23`, `Community 56`, `Community 25`, `Community 17`, `Community 44`, `Community 52`, `Community 47`, `Community 14`, `Community 30`, `Community 20`, `Community 15`, `Community 13`, `Community 10`, `Community 29`, `Community 85`, `Community 1`, `Community 21`, `Community 6`, `Community 16`?**
   _High betweenness centrality (0.019) - this node is a cross-community bridge._
-- **Why does `getAuthedSupabase()` connect `Community 0` to `Community 74`, `Community 10`, `Community 75`, `Community 29`, `Community 19`, `Community 25`, `Community 31`, `Community 1`, `Community 53`, `Community 43`, `Community 82`?**
+- **Why does `getAuthedSupabase()` connect `Community 0` to `Community 74`, `Community 10`, `Community 75`, `Community 29`, `Community 19`, `Community 25`, `Community 31`, `Community 1`, `Community 51`, `Community 43`, `Community 82`?**
   _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **What connects `nextConfig`, `config`, `root` to the rest of the system?**
-  _521 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _522 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.04994400895856663 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**

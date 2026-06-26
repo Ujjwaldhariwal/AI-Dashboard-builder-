@@ -60,7 +60,8 @@ Completed or started:
 - Dashboard health jobs now open or refresh one `dashboard_blocked` alert per blocked dashboard and auto-resolve it once health recovers.
 - Alert fan-out now exists through `platform_alert_channels`, `platform_alert_delivery_attempts`, `GET/POST /api/admin/alert-channels`, `GET /api/admin/alert-deliveries`, and `alert_delivery` worker jobs for webhook/email-gateway channels.
 - Query budget policies now exist through `query_budget_policies` and `GET/POST /api/admin/query-budgets`.
-- Admin preview and client dataset/chart runtime cache misses enforce tenant/project/source query budgets before opening source database queries.
+- Admin preview, client dataset/chart runtime, and cache-warm jobs enforce tenant/project/source query budgets before opening source database queries.
+- Runtime cache misses now also enforce post-execution row and elapsed-time budget projections before caching or returning query results.
 - Cache-warm jobs now execute through the worker for dataset, chart, and project targets, writing the same query-result cache used by client runtime.
 - Export artifact jobs now execute through the worker for published dashboards and dashboard versions, generating durable `manifest_json` records in `dashboard_export_artifacts`.
 - Export artifacts now record storage bucket/path, byte size, SHA-256 checksum, and upload to `DASHBOARDOS_EXPORT_BUCKET`/`SUPABASE_EXPORT_BUCKET` when configured.
@@ -161,8 +162,8 @@ Why:
 
 Suggested sprint sequence:
 1. Add PDF/ZIP export rendering on top of the export artifact storage contract.
-2. Add stronger row/elapsed-time budget hard stops after query execution patterns stabilize.
-3. Add native email provider integration after the alert channel contract stabilizes.
+2. Add native email provider integration after the alert channel contract stabilizes.
+3. Replace the remaining legacy builder/viewer Supabase assumptions with tenant/project admin flows.
 
 ## Major Flaws To Plan
 

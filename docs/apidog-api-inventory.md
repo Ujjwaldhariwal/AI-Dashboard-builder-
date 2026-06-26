@@ -1164,7 +1164,9 @@ Security:
 - query must pass read-only validation
 - execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
 - runtime calls are rate-limited and return `429` with `Retry-After` when exceeded
-- cache misses check active query budget policies before hitting the source data source and return `429` with budget reset metadata when exhausted
+- cache misses check active query budget policies before hitting the source data source
+- post-execution row and elapsed-time budget projections must also pass before the result is cached or returned
+- exhausted budgets return `429` with budget reset metadata
 
 Response:
 
@@ -1208,7 +1210,9 @@ Security:
 - query must pass read-only validation
 - execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
 - runtime calls are rate-limited and return `429` with `Retry-After` when exceeded
-- cache misses check active query budget policies before hitting the source data source and return `429` with budget reset metadata when exhausted
+- cache misses check active query budget policies before hitting the source data source
+- post-execution row and elapsed-time budget projections must also pass before the result is cached or returned
+- exhausted budgets return `429` with budget reset metadata
 
 Response:
 

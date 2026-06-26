@@ -193,6 +193,45 @@ async function warmDataset({
     },
   )
 
+  const projectedBudget = await checkQueryBudget({
+    supabase,
+    tenantId,
+    projectId,
+    dataSourceId: compileResult.dataSourceId,
+    projection: {
+      queries: 1,
+      rows: result.rowCount,
+      elapsedMs: result.elapsedMs,
+    },
+  })
+  if (!projectedBudget.ok) {
+    await recordSemanticQueryRun({
+      supabase,
+      tenantId,
+      projectId,
+      datasetId,
+      chartId,
+      dataSourceId: compileResult.dataSourceId,
+      surface: 'cache_warm',
+      status: 'error',
+      sql: compileResult.queryPlan.executableSql,
+      rowCount: result.rowCount,
+      elapsedMs: result.elapsedMs,
+      timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+      errorMessage: projectedBudget.reason ?? 'Query budget exceeded',
+      warnings: [...compileResult.warnings, `budget_policy:${projectedBudget.policy?.id ?? 'unknown'}`, 'budget_projection:post_execution'],
+    })
+    return {
+      target: chartId ? 'chart' : 'dataset',
+      id: chartId ?? datasetId,
+      status: 'skipped',
+      reason: projectedBudget.reason ?? 'Query budget exceeded',
+      rowCount: result.rowCount,
+      elapsedMs: result.elapsedMs,
+      warnings: compileResult.warnings,
+    }
+  }
+
   const cacheKey = queryResultCacheKey({
     tenantId,
     projectId,

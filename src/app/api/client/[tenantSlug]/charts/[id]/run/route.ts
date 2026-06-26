@@ -385,6 +385,42 @@ export async function POST(
       throw queryError
     }
 
+    const projectedBudget = await checkQueryBudget({
+      supabase: auth.supabase,
+      tenantId: chart.tenantId,
+      projectId: chart.projectId,
+      dataSourceId: compileResult.dataSourceId,
+      projection: {
+        queries: 1,
+        rows: execution.rowCount,
+        elapsedMs: execution.elapsedMs,
+      },
+    })
+    if (!projectedBudget.ok) {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: chart.tenantId,
+        projectId: chart.projectId,
+        datasetId: chart.datasetId,
+        chartId: chart.id,
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'client_chart',
+        status: 'error',
+        sql: compileResult.queryPlan.executableSql,
+        rowCount: execution.rowCount,
+        elapsedMs: execution.elapsedMs,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: projectedBudget.reason ?? 'Query budget exceeded',
+        warnings: [...compileResult.warnings, `budget_policy:${projectedBudget.policy?.id ?? 'unknown'}`, 'budget_projection:post_execution'],
+      })
+      return NextResponse.json({
+        result: null,
+        error: projectedBudget.reason ?? 'Query budget exceeded',
+        budget: projectedBudget,
+      }, { status: 429, headers: { 'Retry-After': String(projectedBudget.retryAfterSeconds) } })
+    }
+
     await recordSemanticQueryRun({
       supabase: auth.supabase,
       tenantId: chart.tenantId,

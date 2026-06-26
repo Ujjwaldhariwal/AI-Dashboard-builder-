@@ -31,6 +31,12 @@ export interface QueryBudgetDecision {
   reason: string | null
 }
 
+interface QueryBudgetProjection {
+  queries?: number
+  rows?: number
+  elapsedMs?: number
+}
+
 function periodStart(period: QueryBudgetPeriod, now = new Date()) {
   if (period === 'monthly') {
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
@@ -155,11 +161,13 @@ export async function checkQueryBudget({
   tenantId,
   projectId,
   dataSourceId,
+  projection = { queries: 1 },
 }: {
   supabase: SupabaseClient
   tenantId: string
   projectId: string
   dataSourceId: string
+  projection?: QueryBudgetProjection
 }): Promise<QueryBudgetDecision> {
   const { data, error } = await supabase
     .from('query_budget_policies')
@@ -189,6 +197,11 @@ export async function checkQueryBudget({
     }
   }
 
+  let firstAllowed: QueryBudgetDecision | null = null
+  const projectedQueries = Math.max(0, Math.trunc(projection.queries ?? 0))
+  const projectedRows = Math.max(0, Math.trunc(projection.rows ?? 0))
+  const projectedElapsedMs = Math.max(0, Math.trunc(projection.elapsedMs ?? 0))
+
   for (const policy of policies) {
     const start = periodStart(policy.period)
     let query = supabase
@@ -214,8 +227,13 @@ export async function checkQueryBudget({
     }), { queries: 0, rows: 0, elapsedMs: 0 })
     const reset = periodReset(policy.period)
     const retryAfterSeconds = Math.max(1, Math.ceil((reset.getTime() - Date.now()) / 1000))
+    const projectedUsage = {
+      queries: usage.queries + projectedQueries,
+      rows: usage.rows + projectedRows,
+      elapsedMs: usage.elapsedMs + projectedElapsedMs,
+    }
 
-    if (usage.queries >= policy.maxQueries) {
+    if (projectedUsage.queries > policy.maxQueries) {
       return {
         ok: false,
         policy,
@@ -225,9 +243,38 @@ export async function checkQueryBudget({
         reason: `Query budget exceeded for ${policy.name}`,
       }
     }
+    if (policy.maxRows !== null && projectedUsage.rows > policy.maxRows) {
+      return {
+        ok: false,
+        policy,
+        usage,
+        resetAt: reset.toISOString(),
+        retryAfterSeconds,
+        reason: `Row budget exceeded for ${policy.name}`,
+      }
+    }
+    if (policy.maxElapsedMs !== null && projectedUsage.elapsedMs > policy.maxElapsedMs) {
+      return {
+        ok: false,
+        policy,
+        usage,
+        resetAt: reset.toISOString(),
+        retryAfterSeconds,
+        reason: `Elapsed-time budget exceeded for ${policy.name}`,
+      }
+    }
+
+    firstAllowed ??= {
+      ok: true,
+      policy,
+      usage,
+      resetAt: reset.toISOString(),
+      retryAfterSeconds: 0,
+      reason: null,
+    }
   }
 
-  return {
+  return firstAllowed ?? {
     ok: true,
     policy: policies[0],
     usage: { queries: 0, rows: 0, elapsedMs: 0 },
