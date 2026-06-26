@@ -748,6 +748,55 @@ Response: `{ "audit": { ... }, "runs": [...] }`
 
 ## Admin / Observability
 
+### `GET /api/admin/alerts`
+
+Purpose: list persistent platform alerts for operator triage.
+
+Auth: authenticated tenant/project access; platform admins may list globally.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `state`: optional `open`, `acknowledged`, or `resolved`
+- `limit`: optional number, default `50`, max `200`
+
+Response:
+
+```json
+{
+  "alerts": [
+    {
+      "id": "uuid",
+      "tenantId": "uuid",
+      "projectId": "uuid",
+      "alertType": "dashboard_blocked",
+      "severity": "critical",
+      "state": "open",
+      "title": "Dashboard blocked: Executive Revenue",
+      "sourceType": "dashboard",
+      "sourceId": "uuid",
+      "lastSeenAt": "iso"
+    }
+  ]
+}
+```
+
+### `PATCH /api/admin/alerts/{id}`
+
+Purpose: acknowledge or resolve a platform alert.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "state": "acknowledged"
+}
+```
+
+Response: `{ "alert": { ... } }`
+
 ### `GET /api/admin/jobs`
 
 Purpose: list scheduled or queued platform background work for operators and scheduler dashboards.

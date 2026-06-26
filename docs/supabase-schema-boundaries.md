@@ -31,6 +31,7 @@ These tables are the current foundation and should be protected:
 - `semantic_query_runs`
 - `chart_health_runs`
 - `dashboard_health_runs`
+- `platform_alerts`
 - `audit_logs`
 
 ## Removed Legacy Tables

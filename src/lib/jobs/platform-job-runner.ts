@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { reconcileDashboardHealthAlerts } from '@/lib/alerts/platform-alerts'
 import { runDataSourceSchemaIntrospection } from '@/lib/data-sources/schema-introspection-runner'
 import { auditPublishedDashboards, recordDashboardHealthRuns } from '@/lib/publishing/dashboard-health-auditor'
 import type { PlatformJob } from '@/lib/jobs/platform-jobs'
@@ -29,6 +30,7 @@ async function runDashboardHealthJob(supabase: SupabaseClient, job: PlatformJob)
     audit,
     checkedBy: null,
   })
+  const alerts = await reconcileDashboardHealthAlerts({ supabase, audit })
 
   return {
     ok: true,
@@ -36,6 +38,7 @@ async function runDashboardHealthJob(supabase: SupabaseClient, job: PlatformJob)
       checkedAt: audit.checkedAt,
       summary: audit.summary,
       runCount: runs.length,
+      alerts,
     },
   }
 }

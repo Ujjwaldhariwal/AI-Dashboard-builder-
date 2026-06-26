@@ -120,11 +120,13 @@ Failed jobs return to `queued` with backoff until `max_attempts`, then become `f
 
 `platform_job_schedules` and `POST /api/admin/jobs/scheduler` now provide recurring job seeding. The scheduler route is protected by the same worker secret, claims due schedules atomically through `claim_platform_job_schedules`, advances `next_run_at`, and enqueues deduped jobs for the worker route. `GET/POST /api/admin/jobs/schedules` lets authenticated operators inspect and manage schedules.
 
+Alert hooks now create persistent `platform_alerts` when a scheduled or manual dashboard health run finds a dashboard in `blocked` state. Repeated blocked runs refresh the existing open alert instead of spamming duplicates, and later non-blocked health runs auto-resolve the alert. Operators can list alerts through `GET /api/admin/alerts` and acknowledge/resolve them through `PATCH /api/admin/alerts/{id}`.
+
 Remaining job work:
 
 - add PDF/export execution and artifact storage
 - add cache-warm execution
-- add alert fan-out for newly blocked dashboards
+- add external alert fan-out, such as email/webhooks, for newly blocked dashboards
 
 ### 7. AI Filter Layer
 
@@ -142,7 +144,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Alert hooks for newly blocked dashboards.
-2. Query cost budgets by tenant/project/source.
-3. Export artifact worker and cache-warm executor.
+1. Query cost budgets by tenant/project/source.
+2. Export artifact worker and cache-warm executor.
+3. External alert fan-out for email/webhooks.
 4. AI filter policy after the above are stable.
