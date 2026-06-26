@@ -4,6 +4,7 @@ import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtim
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
+import { checkQueryBudget } from '@/lib/semantic/query-budget-policy'
 import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
@@ -154,6 +155,34 @@ export async function POST(
         warnings: compileResult.warnings,
       })
       return NextResponse.json({ result: null, error: 'Data source must be active before dataset execution' }, { status: 409 })
+    }
+
+    const budget = await checkQueryBudget({
+      supabase: auth.supabase,
+      tenantId: String(dataset.tenant_id),
+      projectId: String(dataset.project_id),
+      dataSourceId: compileResult.dataSourceId,
+    })
+    if (!budget.ok) {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: String(dataset.tenant_id),
+        projectId: String(dataset.project_id),
+        datasetId: String(dataset.id),
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'admin_preview',
+        status: 'error',
+        sql: compileResult.queryPlan.executableSql,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: budget.reason ?? 'Query budget exceeded',
+        warnings: [...compileResult.warnings, `budget_policy:${budget.policy?.id ?? 'unknown'}`],
+      })
+      return NextResponse.json({
+        result: null,
+        error: budget.reason ?? 'Query budget exceeded',
+        budget,
+      }, { status: 429, headers: { 'Retry-After': String(budget.retryAfterSeconds) } })
     }
 
     let result: Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>

@@ -1,32 +1,32 @@
 # Graph Report - .  (2026-06-26)
 
 ## Corpus Check
-- 268 files · ~181,835 words
+- 272 files · ~183,891 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2071 nodes · 5886 edges · 97 communities detected
+- 2092 nodes · 5930 edges · 93 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
-- Edge kinds: contains: 1550 · imports: 1224 · MODIFIES: 1094 · imports_from: 746 · calls: 463 · ON_BRANCH: 393 · PARENT_OF: 252 · references: 112 · method: 45 · inherits: 5 · re_exports: 2
+- Edge kinds: contains: 1567 · imports: 1232 · MODIFIES: 1099 · imports_from: 752 · calls: 466 · ON_BRANCH: 394 · PARENT_OF: 253 · references: 115 · method: 45 · inherits: 5 · re_exports: 2
 
 
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
-- Included files: 268 · Candidates: 289
-- Excluded: 4 untracked · 87994 ignored · 2 sensitive · 0 missing committed
+- Included files: 272 · Candidates: 293
+- Excluded: 3 untracked · 88138 ignored · 2 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `bfd42b6`
+- Built from Git commit: `c272893`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Button` - 49 edges
 2. `Badge()` - 43 edges
-3. `requireProjectAccess()` - 29 edges
-4. `getAuthedSupabase()` - 29 edges
-5. `AccessContext` - 28 edges
+3. `requireProjectAccess()` - 30 edges
+4. `getAuthedSupabase()` - 30 edges
+5. `AccessContext` - 29 edges
 6. `Card` - 25 edges
 7. `CardContent` - 25 edges
 8. `useDashboardStore` - 25 edges
@@ -52,68 +52,68 @@ Cohesion: 0.07
 Nodes (80): feature/db-dashboard-foundation, feature/phase2-sidebar-nav, 0b7de3e fix: lazy-init OpenAI client to prevent build-time crash, 0c2ff86 feat: widget polish - loading skeleton, fullscreen, duplicate, 0d7f519 chore: add jszip for client-side dashboard export, 0fa25a1 feat(export): dynamic ai feature bundling and byok env injection, 0fd0172 chore: widget-config-dialog accepts optional prefill props from suggestions, 10e4c1f fix: align Widget type, builder-store DB mapping, workspaces async handlers (+72 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.07
-Nodes (48): MagicPasteModalProps, CHART_TYPE_ROWS, chartIcons, chartTypeLabel, WidgetConfigDialogProps, CHART_TYPE_ROWS, chartIcons, chartTypeLabel (+40 more)
+Cohesion: 0.06
+Nodes (59): AlertStateSchema, clampLimit(), GET(), GET(), POST(), requireAuditAccess(), 00aea45 feat: harden platform access and query telemetry, GET() (+51 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.07
-Nodes (44): METRICS, PRINCIPLES, SPRINTS, AUTH_HINTS, AuthType, BOSCH_UPPCL_PRESET, CHART_TYPE_OPTIONS, DEFAULT_FORM (+36 more)
+Nodes (48): MagicPasteModalProps, CHART_TYPE_ROWS, chartIcons, chartTypeLabel, WidgetConfigDialogProps, CHART_TYPE_ROWS, chartIcons, chartTypeLabel (+40 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.07
-Nodes (45): GET(), POST(), requireHealthAccess(), POST(), schemaHashForTables(), DashboardProject, GET(), isMissingProjectSchema() (+37 more)
+Nodes (44): METRICS, PRINCIPLES, SPRINTS, AUTH_HINTS, AuthType, BOSCH_UPPCL_PRESET, CHART_TYPE_OPTIONS, DEFAULT_FORM (+36 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.07
-Nodes (38): b98f9a0 chore: pre-demo cleanup snapshot, ProjectOption, PublishedDashboardsAdminPanel(), statusClassName(), VersionHistory, PublishSchema, auditDashboardVersion(), AuditDashboardVersionInput (+30 more)
+Cohesion: 0.05
+Nodes (55): 2c0ba68 feat: add platform job queue contract, 8f1c410 feat: execute platform jobs with worker route, asRecord(), claimPlatformJobSchedules(), ClaimPlatformJobSchedulesInput, enqueueJobFromSchedule(), listPlatformJobSchedules(), ListPlatformJobSchedulesInput (+47 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.06
-Nodes (42): applyConcat(), applyDateFormat(), applyFieldsToRows(), applyFilterRows(), applyGroupAggregate(), applyLimit(), applyMapValues(), applyMath() (+34 more)
+Nodes (40): b98f9a0 chore: pre-demo cleanup snapshot, ProjectOption, PublishedDashboardsAdminPanel(), statusClassName(), VersionHistory, PublishSchema, DashboardCreateSchema, auditDashboardVersion() (+32 more)
 
 ### Community 6 - "Community 6"
+Cohesion: 0.06
+Nodes (42): applyConcat(), applyDateFormat(), applyFieldsToRows(), applyFilterRows(), applyGroupAggregate(), applyLimit(), applyMapValues(), applyMath() (+34 more)
+
+### Community 7 - "Community 7"
 Cohesion: 0.07
 Nodes (27): Alert, CorrelationResult, DataPoint, Insight, metadata, 0fb12d8 Merge pull request #1 from Ujjwaldhariwal/feature/widget-canvas, 2a76277 feat(auth): add auth layout, login page, builder layout, 4227041 feat: render widgets as live chart cards on builder page (+19 more)
 
-### Community 7 - "Community 7"
+### Community 8 - "Community 8"
 Cohesion: 0.06
 Nodes (43): 10d4599 feat: add chart compatibility engine, dc7edfe feat: add dashboard chart config schema, addIssue(), SemanticFieldRow, SemanticMetricRow, validateDashboardChartConfig(), CHART_TEMPLATE_REGISTRY, getChartTemplate() (+35 more)
 
-### Community 8 - "Community 8"
+### Community 9 - "Community 9"
 Cohesion: 0.08
 Nodes (37): TransformOpSchema, getGoogleApiKey(), getGoogleModel(), GOOGLE_API_KEY_ENV_CANDIDATES, 87e0fac fix(builder-ui): polish data prep modal and correct chart nav sticky layering, b3128ec feat: stabilize auth session flow and ship data prep studio updates, b6bcb11 feat(builder): checkpoint data prep, chart UX, and auth stability updates, hasValidSession() (+29 more)
 
-### Community 9 - "Community 9"
+### Community 10 - "Community 10"
 Cohesion: 0.14
 Nodes (32): WidgetSizePreset, COMPACT_CHART_MARGIN, DEFAULT_CHART_MARGIN, getCategoryTickInterval(), getChartMargin(), getLegendVisibility(), normalizeSizePreset(), showValueLabels() (+24 more)
 
-### Community 10 - "Community 10"
-Cohesion: 0.08
-Nodes (28): GET(), POST(), requireAuditAccess(), 03090c8 docs: refresh db dashboard handoff context, 3c6e599 feat: add admin chart composer, 564cdeb feat: gate chart publishing with validation, 5caf9c9 feat: expose query runtime history, a977d05 refactor: extract chart health auditor (+20 more)
-
 ### Community 11 - "Community 11"
+Cohesion: 0.07
+Nodes (30): 3c6e599 feat: add admin chart composer, 564cdeb feat: gate chart publishing with validation, 63029fc feat: revalidate client chart runtime, a977d05 refactor: extract chart health auditor, ec0739b feat: show chart audit health in admin, f22b8bd feat: add chart health audit endpoint, f3cd521 feat: add client chart runtime endpoint, ChartSchema (+22 more)
+
+### Community 12 - "Community 12"
 Cohesion: 0.09
 Nodes (34): consumeSessionExpiredSignalCookie(), hasSessionExpiredSignalCookie(), hasSupabaseAuthCookieFootprint(), parseCookie(), getPlatformHostnames(), getTenantRootDomains(), HostnameKind, HostnamePolicy (+26 more)
 
-### Community 12 - "Community 12"
+### Community 13 - "Community 13"
 Cohesion: 0.08
 Nodes (29): levelBg, levelIcon, MonitoringPanel(), MonitoringPanelProps, InsightItem, InsightSeverity, levelBadge, SortColumn (+21 more)
 
-### Community 13 - "Community 13"
+### Community 14 - "Community 14"
 Cohesion: 0.09
 Nodes (26): ChartSuggester(), CACHE, CachedResponse, clearEndpointResponseCache(), EndpointCacheEntry, fetchWithEndpointCache(), clearEndpointFailureCache(), clearEndpointProbeCache() (+18 more)
 
-### Community 14 - "Community 14"
+### Community 15 - "Community 15"
 Cohesion: 0.10
 Nodes (24): 042fba1 feat: select semantic dataset assets, 208f284 feat: compile semantic dataset query plans, 48be0f0 style: add Monokai admin theme, 8bc4aa2 feat: add DashboardOS platform foundation, ce49a9b feat: execute semantic dataset previews, ef90211 feat: preview semantic dataset plans, DatasetSchema, mapDataset() (+16 more)
 
-### Community 15 - "Community 15"
+### Community 16 - "Community 16"
 Cohesion: 0.10
 Nodes (27): applyTransforms(), getWidgetCardHeightClass(), getWidgetGridSpanClass(), getWidgetSizePreset(), PRESET_POSITION, ModernGaugeChart(), ModernGaugeChartFromData(), ModernGaugeChartProps (+19 more)
-
-### Community 16 - "Community 16"
-Cohesion: 0.09
-Nodes (27): FieldMappingSchema, GET(), mapEntity(), mapField(), POST(), semanticKey(), mapMetric(), MetricSchema (+19 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.08
@@ -152,24 +152,24 @@ Cohesion: 0.10
 Nodes (25): asRecord(), AUTH_STATUS_CODES, buildEndpointCacheKey(), buildProbeErrorResult(), CachedFailureEntry, countPayloadRows(), decodeBase64Url(), deriveFailureReason() (+17 more)
 
 ### Community 26 - "Community 26"
+Cohesion: 0.11
+Nodes (25): asRecord(), listPlatformAlerts(), mapPlatformAlert(), PlatformAlert, PlatformAlertSeverity, PlatformAlertState, PlatformAlertType, reconcileDashboardHealthAlerts() (+17 more)
+
+### Community 27 - "Community 27"
 Cohesion: 0.10
 Nodes (20): CHART_COLORS, ChartWrapper(), ChartWrapperProps, DEFAULT_CHART_MARGIN, 42e3e18 feat: complete ECharts migration + sprint bug fixes, 85e718d merge: sprint-3 ECharts migration + UX fixes, e6c9268 fix: sprint 1-4 comprehensive bug fixes, BOSCH_COLORS (+12 more)
 
-### Community 27 - "Community 27"
+### Community 28 - "Community 28"
 Cohesion: 0.14
 Nodes (25): BoschProxyDefaults, buildClientSafeExportConfig(), deriveBoschProxyDefaults(), extractAbsoluteBaseFromUrl(), generateApiClient(), generateAuthGuard(), generateBoschProxyRoute(), generateDashboardLayout() (+17 more)
 
-### Community 28 - "Community 28"
+### Community 29 - "Community 29"
 Cohesion: 0.09
 Nodes (18): ModernGroupedBarChart(), useEnterpriseTheme(), ModernHorizontalBarChart(), useEnterpriseTheme(), ModernHorizontalStackedBarChart(), useEnterpriseTheme(), ModernLineChart(), useEnterpriseTheme() (+10 more)
 
-### Community 29 - "Community 29"
+### Community 30 - "Community 30"
 Cohesion: 0.13
 Nodes (22): 2360297 feat: add distributed runtime cache interface, hasRedisRuntime(), redisCommand(), RedisCommandResult, redisConfig(), redisPipeline(), buckets, checkInMemoryRuntimeRateLimit() (+14 more)
-
-### Community 30 - "Community 30"
-Cohesion: 0.12
-Nodes (23): asRecord(), ClaimPlatformJobsInput, completePlatformJob(), CompletePlatformJobInput, enqueuePlatformJob(), EnqueuePlatformJobInput, failPlatformJob(), FailPlatformJobInput (+15 more)
 
 ### Community 31 - "Community 31"
 Cohesion: 0.15
@@ -204,44 +204,44 @@ Cohesion: 0.16
 Nodes (18): c644fdc Merge branch 'codex/chart-fixes-next', fba53e5 feat: add Bosch API training pipeline with mapping feedback and loader UI, FeedbackRequest, getAuthedSupabase(), POST(), AISuggestResponse, profileDashboardEndpoints(), TrainingFeedbackPayload (+10 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.16
-Nodes (18): 00aea45 feat: harden platform access and query telemetry, 5eccbb3 feat: track schema introspection freshness, DataSourceCreateSchema, GET(), isMissingDataSourceSchema(), mapDataSource(), POST(), SslModeSchema (+10 more)
+Cohesion: 0.13
+Nodes (18): FieldMappingSchema, GET(), mapEntity(), mapField(), POST(), semanticKey(), mapRelationship(), POST() (+10 more)
 
 ### Community 40 - "Community 40"
+Cohesion: 0.15
+Nodes (18): 03090c8 docs: refresh db dashboard handoff context, 5caf9c9 feat: expose query runtime history, c2be49d feat: rate limit query runtime calls, e929a78 feat: persist chart health snapshots, f3635b1 chore: remove legacy builder schema, asEncoding(), asRecord(), labelForId() (+10 more)
+
+### Community 41 - "Community 41"
 Cohesion: 0.19
 Nodes (19): cleanupIdlePostgresPools(), createPostgresClient(), decryptPostgresCredential(), evictOldestIdlePool(), executePostgresReadOnlyQuery(), getPostgresPool(), globalForPostgresPools, introspectPostgresSchema() (+11 more)
 
-### Community 41 - "Community 41"
+### Community 42 - "Community 42"
 Cohesion: 0.20
 Nodes (20): addTable(), aggregationSql(), asRecord(), asSourceColumn(), columnSql(), compileDatasetQueryPlan(), CompiledSelect, compileRelationshipJoin() (+12 more)
 
-### Community 42 - "Community 42"
+### Community 43 - "Community 43"
 Cohesion: 0.14
 Nodes (17): AIFallbackInput, buildDeterministicCandidate(), computeFieldStats(), computeShapeSignature(), hashString(), MappingEngineInput, MappingEngineOptions, mapRowsToAICandidate() (+9 more)
 
-### Community 43 - "Community 43"
-Cohesion: 0.15
-Nodes (18): asRecord(), claimPlatformJobSchedules(), ClaimPlatformJobSchedulesInput, enqueueJobFromSchedule(), listPlatformJobSchedules(), ListPlatformJobSchedulesInput, mapPlatformJobSchedule(), markScheduleEnqueued() (+10 more)
-
 ### Community 44 - "Community 44"
+Cohesion: 0.17
+Nodes (17): 5eccbb3 feat: track schema introspection freshness, DataSourceCreateSchema, GET(), isMissingDataSourceSchema(), mapDataSource(), POST(), SslModeSchema, mapDataSource() (+9 more)
+
+### Community 45 - "Community 45"
 Cohesion: 0.11
 Nodes (13): FEATURES, STATS, STEPS, 0071301 Initial commit from Create Next App, 3b1c824 feat(auth-flow): visual node editor with 6 node types, compile to JSON, download config, 50b2bc4 feat(nav): add Auth Flow link to sidebar navigation, 60ab2fb feat(landing): full product showcase page with mockup, features, steps, CTA, 8bca7ed feat: surface DashboardOS UI entrypoints (+5 more)
 
-### Community 45 - "Community 45"
+### Community 46 - "Community 46"
 Cohesion: 0.16
 Nodes (12): asRecord(), asToken(), AuthFlowPage(), DemoLoginResult, extractByPath(), formatRemainingTime(), getApiMessage(), isLogicalFailure() (+4 more)
 
-### Community 46 - "Community 46"
+### Community 47 - "Community 47"
 Cohesion: 0.14
 Nodes (16): BOSCH_UPPCL_BLUEPRINT, BOSCH_UPPCL_BLUEPRINT_STATS, BOSCH_UPPCL_CHART_INVENTORY, BOSCH_UPPCL_DEFAULT_PROJECT, BOSCH_UPPCL_ENDPOINTS, BOSCH_UPPCL_EXTRA_ENDPOINTS, BoschChartBlueprint, BoschChartInventoryRow (+8 more)
 
-### Community 47 - "Community 47"
+### Community 48 - "Community 48"
 Cohesion: 0.18
 Nodes (17): buildOrderMap(), detectLabelComparator(), detectOrderMap(), LabelComparator, MONTHS, NamedValue, normalize(), ORDER_GROUPS (+9 more)
-
-### Community 48 - "Community 48"
-Cohesion: 0.20
-Nodes (16): 63029fc feat: revalidate client chart runtime, f22b8bd feat: add chart health audit endpoint, f3cd521 feat: add client chart runtime endpoint, asEncoding(), asRecord(), labelForId(), mapChart(), metricSourceFieldIds() (+8 more)
 
 ### Community 49 - "Community 49"
 Cohesion: 0.13
@@ -276,195 +276,179 @@ Cohesion: 0.18
 Nodes (7): ModernBarChart(), ModernBarChartProps, normalizeLabel(), toCompactDateLabel(), TooltipParam, useEnterpriseTheme(), XAxisLayout
 
 ### Community 57 - "Community 57"
-Cohesion: 0.23
-Nodes (9): 8f1c410 feat: execute platform jobs with worker route, bfd42b6 feat: add recurring platform job schedules, claimPlatformJobs(), getSupabaseServiceRoleKey(), getServiceSupabase(), batchSize(), isAuthorized(), POST() (+1 more)
-
-### Community 58 - "Community 58"
 Cohesion: 0.21
 Nodes (5): dispatchBrowserEvent(), dispatchSupabaseAuthExpired(), dispatchSupabaseAuthNetworkError(), createSupabaseRetryableFetch(), lastWarningAt
 
-### Community 59 - "Community 59"
+### Community 58 - "Community 58"
 Cohesion: 0.29
 Nodes (11): BuilderDemoAuthSession, BuilderDemoAuthTokenMeta, clearBuilderDemoAuthSession(), decodeBase64Url(), getBuilderDemoAuthHeaders(), getBuilderDemoAuthSession(), getBuilderDemoAuthTokenExpiryMs(), getBuilderDemoAuthTokenMeta() (+3 more)
 
-### Community 60 - "Community 60"
+### Community 59 - "Community 59"
 Cohesion: 0.21
 Nodes (8): DragDropCanvasProps, 1019d7d Overhaul builder caching, manual refresh flow, sizing, and premium health UI, 1083e5c Merge branch 'codex/builder-prefetch-cache-ui-overhaul', 5aa6cce Integrate frozen chart nav and PDF token selector across builder/viewer, 887fead Polish frozen nav UI and map Builder groups from UPPCL API taxonomy, 8cc9f6c fix(builder): restore widget spans and make insights on-demand, b610bec Merge branch 'codex/builder-card-layout-insights-toggle', config
 
-### Community 61 - "Community 61"
+### Community 60 - "Community 60"
 Cohesion: 0.26
 Nodes (12): 023e3fb merge: sprint5-monitoring-ui → dev, 172d5f6 Merge branch 'main' of https://github.com/Ujjwaldhariwal/AI-Dashboard-builder- into dev, 1f4e14d feat(nav): redesign chart navigator to clean scrollable tab bar, 21ee7b8 merge(dev→main): enhanced token session timer chip, 2354c5d merge(dev): Sprint 3 — macOS double-decker group navigator, 2389a85 merge(dev→main): cleanup stash conflicts, stale branches, codex-skills, remove old docs, 49a12e6 feat(data): add safe declarative data transform layer with edit UI, 8a0b538 merge(dev): Sprint 4 — safe data transform layer with edit UI (+4 more)
 
-### Community 62 - "Community 62"
+### Community 61 - "Community 61"
 Cohesion: 0.30
 Nodes (10): legacyRouteGone(), LegacyRouteResponseInput, asRecord(), GET(), getAuthedSupabase(), mapDbProfile(), parseHeaders(), parseMappingCandidate() (+2 more)
 
-### Community 63 - "Community 63"
+### Community 62 - "Community 62"
 Cohesion: 0.30
 Nodes (7): audit_logs, auth.users, dashboard_projects, project_assignments, tenant_domains, tenant_memberships, tenants
 
-### Community 64 - "Community 64"
+### Community 63 - "Community 63"
 Cohesion: 0.25
 Nodes (11): 01cc804 feat: merge viewer page, 0c908fa feat: add dynamic notification bell with contextual alerts, 2158669 feat: merge dashboard stats, 45fe3d1 feat: add widget edit dialog + improved chart tooltips and styling, 531a0e2 feat: add standalone viewer page for public dashboard viewing, 77dc457 feat: merge chart improvements, 7d60153 chore: refine settings page layout and behaviour, 7ddb0c2 feat: add settings page with profile, preferences, stats and danger zone (+3 more)
 
-### Community 65 - "Community 65"
+### Community 64 - "Community 64"
 Cohesion: 0.38
 Nodes (1): AIInsightsEngine
 
-### Community 66 - "Community 66"
+### Community 65 - "Community 65"
 Cohesion: 0.29
 Nodes (8): applyAutoLayout(), AUTO_CHART_TYPES, AutoWidgetBuildResult, AutoWidgetDraft, buildAutoWidgetDraftFromPayload(), buildAutoWidgetsFromEndpoints(), getNextWidgetStartY(), isChartType()
 
-### Community 67 - "Community 67"
+### Community 66 - "Community 66"
 Cohesion: 0.33
 Nodes (9): buildCreatePrompt(), buildGeminiHistory(), buildStylePrompt(), POST(), 1caf797 feat: add selectedWidgetId + onSelectWidget to canvas for AI style scoping, 38303d8 fix: Gemini history fix + complete route with style/create prompts, 49dd6dd feat: AI chat route — style-only mode with Layer 3 enforcement, 71282d3 fix: complete Gemini route with buildStylePrompt + buildCreatePrompt (+1 more)
 
-### Community 68 - "Community 68"
+### Community 67 - "Community 67"
 Cohesion: 0.29
 Nodes (9): DashboardExportConfig, buildValidationConfig(), ensureCleanDir(), EXTRACT_DIR, extractZip(), main(), OUTPUT_ROOT, writeZip() (+1 more)
 
-### Community 69 - "Community 69"
+### Community 68 - "Community 68"
 Cohesion: 0.69
 Nodes (9): auth.users, dashboard_chart_configs, dashboard_chart_slots, dashboard_pages, dashboard_projects, dashboard_publish_events, dashboard_versions, published_dashboards (+1 more)
 
-### Community 70 - "Community 70"
+### Community 69 - "Community 69"
 Cohesion: 0.31
 Nodes (1): SchemaDetector
 
-### Community 71 - "Community 71"
+### Community 70 - "Community 70"
 Cohesion: 0.20
 Nodes (8): DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSubContent, DropdownMenuSubTrigger
 
-### Community 72 - "Community 72"
-Cohesion: 0.31
-Nodes (7): ChartSchema, EncodingSchema, mapChart(), POST(), selectionFromDataset(), toStringArray(), DashboardChartEncoding
-
-### Community 73 - "Community 73"
-Cohesion: 0.36
-Nodes (8): DashboardUpdateSchema, mapBusinessModel(), mapChart(), mapDataset(), PATCH(), selectionFromDataset(), StatusSchema, toStringArray()
-
-### Community 74 - "Community 74"
+### Community 71 - "Community 71"
 Cohesion: 0.25
 Nodes (6): 27b5d6e feat(sprint-4): add bosch demo polish and export validation, d6291d8 chore(next16): migrate to proxy and flat eslint config; add store migrations, AppNotification, NotificationStore, NotifType, useNotificationStore
 
-### Community 75 - "Community 75"
+### Community 72 - "Community 72"
 Cohesion: 0.61
 Nodes (7): auth.users, dashboards, endpoint_mapping_feedback, endpoint_profile_runs, endpoint_profiles, endpoints, widgets
 
-### Community 76 - "Community 76"
+### Community 73 - "Community 73"
 Cohesion: 0.54
 Nodes (7): business_entities, business_fields, business_metrics, business_models, business_relationships, dashboard_projects, tenants
 
-### Community 77 - "Community 77"
+### Community 74 - "Community 74"
 Cohesion: 0.46
 Nodes (7): auth.users, dashboard_chart_configs, dashboard_projects, data_sources, semantic_datasets, semantic_query_runs, tenants
 
-### Community 78 - "Community 78"
+### Community 75 - "Community 75"
 Cohesion: 0.57
 Nodes (7): dashboard_chart_configs, dashboard_chart_slots, dashboard_health_runs, dashboard_pages, dashboard_publish_events, dashboard_versions, published_dashboards
 
-### Community 79 - "Community 79"
-Cohesion: 0.43
-Nodes (6): PlatformJobRunResult, requireTargetId(), runDashboardHealthJob(), runPlatformJob(), runSchemaRefreshJob(), PlatformJob
-
-### Community 80 - "Community 80"
+### Community 76 - "Community 76"
 Cohesion: 0.62
 Nodes (6): auth.users, dashboard_chart_configs, dashboard_chart_validation_results, dashboard_projects, semantic_datasets, tenants
 
-### Community 81 - "Community 81"
+### Community 77 - "Community 77"
 Cohesion: 0.52
 Nodes (6): auth.users, dashboard_health_runs, dashboard_projects, dashboard_versions, published_dashboards, tenants
 
-### Community 82 - "Community 82"
+### Community 78 - "Community 78"
 Cohesion: 0.48
 Nodes (5): auth.users, dashboard_projects, platform_job_schedules, platform_jobs, tenants
 
-### Community 83 - "Community 83"
+### Community 79 - "Community 79"
 Cohesion: 0.60
 Nodes (1): AlertEngine
 
-### Community 84 - "Community 84"
+### Community 80 - "Community 80"
 Cohesion: 0.67
 Nodes (1): DataAnalyzer
 
-### Community 85 - "Community 85"
-Cohesion: 0.53
-Nodes (5): 2c0ba68 feat: add platform job queue contract, auth.users, dashboard_projects, platform_jobs, tenants
-
-### Community 86 - "Community 86"
+### Community 81 - "Community 81"
 Cohesion: 0.53
 Nodes (1): PDFExporter
 
-### Community 87 - "Community 87"
+### Community 82 - "Community 82"
 Cohesion: 0.47
 Nodes (5): AILoader(), AILoaderProps, getPhase(), pad(), PHASES
 
-### Community 88 - "Community 88"
+### Community 83 - "Community 83"
 Cohesion: 0.60
 Nodes (5): auth.users, dashboard_projects, data_source_schema_runs, data_sources, tenants
 
-### Community 89 - "Community 89"
+### Community 84 - "Community 84"
 Cohesion: 0.70
 Nodes (1): CorrelationEngine
 
-### Community 90 - "Community 90"
+### Community 85 - "Community 85"
 Cohesion: 1.00
 Nodes (4): auth.users, dashboards, endpoints, widgets
 
-### Community 91 - "Community 91"
+### Community 86 - "Community 86"
 Cohesion: 0.90
 Nodes (4): auth.users, chart_groups, chart_subgroups, dashboards
 
-### Community 92 - "Community 92"
+### Community 87 - "Community 87"
 Cohesion: 0.70
 Nodes (4): auth.users, dashboards, endpoints, transform_blueprints
 
-### Community 93 - "Community 93"
+### Community 88 - "Community 88"
 Cohesion: 0.70
 Nodes (4): dashboard_projects, data_source_columns, data_sources, tenants
 
-### Community 94 - "Community 94"
+### Community 89 - "Community 89"
 Cohesion: 0.70
 Nodes (4): business_models, dashboard_projects, semantic_datasets, tenants
 
-### Community 95 - "Community 95"
+### Community 90 - "Community 90"
 Cohesion: 0.70
 Nodes (4): auth.users, chart_health_runs, dashboard_projects, tenants
 
-### Community 96 - "Community 96"
+### Community 91 - "Community 91"
+Cohesion: 0.70
+Nodes (4): auth.users, dashboard_projects, platform_alerts, tenants
+
+### Community 92 - "Community 92"
 Cohesion: 0.83
 Nodes (3): dashboard_projects, data_sources, tenants
 
 ## Knowledge Gaps
-- **492 isolated node(s):** `nextConfig`, `config`, `root`, `apiRoots`, `inventoryPath` (+487 more)
+- **498 isolated node(s):** `nextConfig`, `config`, `root`, `apiRoots`, `inventoryPath` (+493 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **Thin community `Community 65`** (1 nodes): `AIInsightsEngine`
+- **Thin community `Community 64`** (1 nodes): `AIInsightsEngine`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 70`** (1 nodes): `SchemaDetector`
+- **Thin community `Community 69`** (1 nodes): `SchemaDetector`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 83`** (1 nodes): `AlertEngine`
+- **Thin community `Community 79`** (1 nodes): `AlertEngine`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 84`** (1 nodes): `DataAnalyzer`
+- **Thin community `Community 80`** (1 nodes): `DataAnalyzer`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 86`** (1 nodes): `PDFExporter`
+- **Thin community `Community 81`** (1 nodes): `PDFExporter`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
-- **Thin community `Community 89`** (1 nodes): `CorrelationEngine`
+- **Thin community `Community 84`** (1 nodes): `CorrelationEngine`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Button` connect `Community 1` to `Community 2`, `Community 19`, `Community 53`, `Community 17`, `Community 44`, `Community 49`, `Community 45`, `Community 13`, `Community 60`, `Community 23`, `Community 9`, `Community 33`, `Community 21`, `Community 32`, `Community 12`, `Community 37`, `Community 20`, `Community 22`, `Community 10`, `Community 14`, `Community 4`, `Community 36`, `Community 26`, `Community 15`?**
-  _High betweenness centrality (0.026) - this node is a cross-community bridge._
-- **Why does `Badge()` connect `Community 1` to `Community 2`, `Community 19`, `Community 53`, `Community 24`, `Community 17`, `Community 44`, `Community 49`, `Community 45`, `Community 13`, `Community 28`, `Community 21`, `Community 32`, `Community 12`, `Community 10`, `Community 14`, `Community 4`, `Community 36`, `Community 33`, `Community 6`, `Community 15`?**
+- **Why does `Button` connect `Community 2` to `Community 3`, `Community 19`, `Community 53`, `Community 17`, `Community 45`, `Community 49`, `Community 46`, `Community 14`, `Community 59`, `Community 23`, `Community 10`, `Community 33`, `Community 21`, `Community 32`, `Community 13`, `Community 37`, `Community 20`, `Community 22`, `Community 11`, `Community 15`, `Community 5`, `Community 36`, `Community 27`, `Community 16`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+- **Why does `Badge()` connect `Community 2` to `Community 3`, `Community 19`, `Community 53`, `Community 24`, `Community 17`, `Community 45`, `Community 49`, `Community 46`, `Community 14`, `Community 29`, `Community 21`, `Community 32`, `Community 13`, `Community 11`, `Community 15`, `Community 5`, `Community 36`, `Community 33`, `Community 7`, `Community 16`?**
   _High betweenness centrality (0.020) - this node is a cross-community bridge._
-- **Why does `SchemaDetector` connect `Community 70` to `Community 6`?**
+- **Why does `SchemaDetector` connect `Community 69` to `Community 7`?**
   _High betweenness centrality (0.009) - this node is a cross-community bridge._
 - **What connects `nextConfig`, `config`, `root` to the rest of the system?**
-  _492 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _498 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.07151898734177216 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.06649616368286446 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05809979494190021 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.06716417910447761 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06649616368286446 - nodes in this community are weakly interconnected._

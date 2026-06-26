@@ -5,6 +5,7 @@ import { accessContext, requireTenantAccess } from '@/lib/security/project-acces
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
+import { checkQueryBudget } from '@/lib/semantic/query-budget-policy'
 import { getQueryResultCache, queryResultCacheKey, setQueryResultCache } from '@/lib/semantic/query-result-cache'
 import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -323,6 +324,35 @@ export async function POST(
           ...cached.value,
         },
       })
+    }
+
+    const budget = await checkQueryBudget({
+      supabase: auth.supabase,
+      tenantId: chart.tenantId,
+      projectId: chart.projectId,
+      dataSourceId: compileResult.dataSourceId,
+    })
+    if (!budget.ok) {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: chart.tenantId,
+        projectId: chart.projectId,
+        datasetId: chart.datasetId,
+        chartId: chart.id,
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'client_chart',
+        status: 'error',
+        sql: compileResult.queryPlan.executableSql,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        errorMessage: budget.reason ?? 'Query budget exceeded',
+        warnings: [...compileResult.warnings, `budget_policy:${budget.policy?.id ?? 'unknown'}`],
+      })
+      return NextResponse.json({
+        result: null,
+        error: budget.reason ?? 'Query budget exceeded',
+        budget,
+      }, { status: 429, headers: { 'Retry-After': String(budget.retryAfterSeconds) } })
     }
 
     let execution: Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>

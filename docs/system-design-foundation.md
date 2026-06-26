@@ -93,9 +93,10 @@ The semantic query compiler produces guarded read-only SQL and query telemetry i
 - per-instance in-memory rate-limit fallback for local/demo environments
 - cache keys scoped by tenant, project, dataset/chart, data source, SQL, semantic update timestamps, and schema hash
 
-The missing scale pieces are:
+The runtime now supports query budget policies through `query_budget_policies` and `GET/POST /api/admin/query-budgets`. Runtime cache misses check tenant/project/source policies before opening a Postgres query. Exhausted budgets return `429` with `Retry-After` and reset metadata, and budget denials are recorded in `semantic_query_runs`.
 
-- query cost budget by tenant/project/source
+The missing scale piece is:
+
 - proactive cache warming through scheduled jobs
 
 ### 6. Background Jobs
@@ -144,7 +145,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Query cost budgets by tenant/project/source.
-2. Export artifact worker and cache-warm executor.
-3. External alert fan-out for email/webhooks.
+1. Export artifact worker and cache-warm executor.
+2. External alert fan-out for email/webhooks.
+3. Stronger budget dimensions beyond query count, such as row and elapsed-time hard stops.
 4. AI filter policy after the above are stable.

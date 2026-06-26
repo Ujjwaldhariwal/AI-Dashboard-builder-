@@ -32,6 +32,7 @@ These tables are the current foundation and should be protected:
 - `chart_health_runs`
 - `dashboard_health_runs`
 - `platform_alerts`
+- `query_budget_policies`
 - `audit_logs`
 
 ## Removed Legacy Tables

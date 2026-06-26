@@ -748,6 +748,45 @@ Response: `{ "audit": { ... }, "runs": [...] }`
 
 ## Admin / Observability
 
+### `GET /api/admin/query-budgets`
+
+Purpose: list active or inactive query budget policies by tenant/project/data source.
+
+Auth: authenticated tenant/project access; platform admins may list globally.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `dataSourceId`: optional UUID
+- `enabled`: optional `true` or `false`
+- `limit`: optional number, default `50`, max `200`
+
+Response: `{ "policies": [...] }`
+
+### `POST /api/admin/query-budgets`
+
+Purpose: create a query budget policy for a tenant, project, or data source.
+
+Auth: authenticated tenant/project editor.
+
+Body:
+
+```json
+{
+  "tenantId": "uuid",
+  "projectId": "uuid",
+  "dataSourceId": "uuid",
+  "name": "Daily production replica budget",
+  "enabled": true,
+  "period": "daily",
+  "maxQueries": 5000,
+  "maxRows": 2500000,
+  "maxElapsedMs": 600000
+}
+```
+
+Response: `{ "policy": { ... } }`
+
 ### `GET /api/admin/alerts`
 
 Purpose: list persistent platform alerts for operator triage.
@@ -1027,6 +1066,7 @@ Security:
 - query must pass read-only validation
 - execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
 - runtime calls are rate-limited and return `429` with `Retry-After` when exceeded
+- cache misses check active query budget policies before hitting the source data source and return `429` with budget reset metadata when exhausted
 
 Response:
 
@@ -1070,6 +1110,7 @@ Security:
 - query must pass read-only validation
 - execution is logged to `semantic_query_runs` with query hash, row count, latency, timeout, warnings, and status
 - runtime calls are rate-limited and return `429` with `Retry-After` when exceeded
+- cache misses check active query budget policies before hitting the source data source and return `429` with budget reset metadata when exhausted
 
 Response:
 

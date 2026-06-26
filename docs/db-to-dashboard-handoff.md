@@ -58,6 +58,8 @@ Completed or started:
 - Recurring schedules now exist through `platform_job_schedules`, `GET/POST /api/admin/jobs/schedules`, and secret-protected `POST /api/admin/jobs/scheduler`.
 - Persistent platform alerts now exist through `platform_alerts`, `GET /api/admin/alerts`, and `PATCH /api/admin/alerts/{id}`.
 - Dashboard health jobs now open or refresh one `dashboard_blocked` alert per blocked dashboard and auto-resolve it once health recovers.
+- Query budget policies now exist through `query_budget_policies` and `GET/POST /api/admin/query-budgets`.
+- Admin preview and client dataset/chart runtime cache misses enforce tenant/project/source query budgets before opening source database queries.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -98,6 +100,7 @@ Remote:
 - `src/lib/jobs/platform-job-runner.ts`
 - `src/lib/jobs/platform-job-schedules.ts`
 - `src/lib/alerts/platform-alerts.ts`
+- `src/lib/semantic/query-budget-policy.ts`
 - `src/lib/data-sources/schema-introspection-runner.ts`
 - `src/types/dashboard-chart.ts`
 - `src/types/dashboard-publishing.ts`
@@ -116,6 +119,7 @@ Remote:
 - `src/app/api/admin/jobs/worker/route.ts`
 - `src/app/api/admin/alerts/route.ts`
 - `src/app/api/admin/alerts/[id]/route.ts`
+- `src/app/api/admin/query-budgets/route.ts`
 - `src/app/api/admin/dashboard-charts/route.ts`
 - `src/app/api/admin/dashboard-charts/[id]/route.ts`
 - `src/app/api/admin/dashboard-charts/validate/route.ts`
@@ -146,9 +150,9 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add query cost budgets by tenant/project/source.
-2. Add export artifact worker and cache-warm executor.
-3. Add external alert fan-out for email/webhooks.
+1. Add export artifact worker and cache-warm executor.
+2. Add external alert fan-out for email/webhooks.
+3. Add stronger row/elapsed-time budget hard stops after query execution patterns stabilize.
 
 ## Major Flaws To Plan
 
@@ -170,6 +174,7 @@ Suggested sprint sequence:
 5. No external alert delivery yet:
    - durable queue, recurring schedules, worker execution, and persistent alerts exist
    - blocked dashboard alerts are queryable in-app/API but not sent to email/webhooks yet
+6. Query budgets are count-enforced before execution; row and elapsed totals are tracked for policy visibility but not yet hard-stopped mid-query.
 6. Client dashboard needs PDF/report architecture.
 7. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
 
