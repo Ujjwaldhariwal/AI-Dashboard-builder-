@@ -748,6 +748,67 @@ Response: `{ "audit": { ... }, "runs": [...] }`
 
 ## Admin / Observability
 
+### `GET /api/admin/jobs`
+
+Purpose: list scheduled or queued platform background work for operators and scheduler dashboards.
+
+Auth: authenticated tenant/project access; platform admins may list globally.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `status`: optional `queued`, `running`, `succeeded`, `failed`, or `cancelled`
+- `jobType`: optional `dashboard_health`, `schema_refresh`, `export`, or `cache_warm`
+- `limit`: optional number, default `50`, max `200`
+
+Response:
+
+```json
+{
+  "jobs": [
+    {
+      "id": "uuid",
+      "tenantId": "uuid",
+      "projectId": "uuid",
+      "jobType": "schema_refresh",
+      "status": "queued",
+      "targetType": "data_source",
+      "targetId": "uuid",
+      "priority": 25,
+      "runAfter": "iso",
+      "attempts": 0,
+      "maxAttempts": 3,
+      "payload": {}
+    }
+  ]
+}
+```
+
+### `POST /api/admin/jobs`
+
+Purpose: enqueue durable platform work for external schedulers and future worker processes.
+
+Auth: authenticated tenant/project editor.
+
+Body:
+
+```json
+{
+  "tenantId": "uuid",
+  "projectId": "uuid",
+  "jobType": "dashboard_health",
+  "targetType": "project",
+  "targetId": "uuid",
+  "priority": 0,
+  "runAfter": "2026-06-26T00:00:00.000Z",
+  "maxAttempts": 3,
+  "dedupeKey": "dashboard_health:project:uuid",
+  "payload": {}
+}
+```
+
+Response: `{ "job": { ... } }`
+
 ### `GET /api/admin/query-runs`
 
 Purpose: list recent semantic query runtime executions for troubleshooting latency, failures, and workload patterns.

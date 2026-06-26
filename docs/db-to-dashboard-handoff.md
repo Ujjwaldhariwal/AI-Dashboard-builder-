@@ -51,6 +51,8 @@ Completed or started:
 - Query runtime now has an Upstash-compatible Redis REST interface for distributed rate limiting and client result caching, with safe in-memory fallback when Redis is not configured.
 - Read-only Postgres query execution now uses a bounded per-`data_source_id` pool manager for the hot runtime path instead of opening a fresh client for every chart/dataset request.
 - Schema introspection freshness now records source-level schema status, hash, table/column counts, next refresh time, refresh request metadata, and per-run history in `data_source_schema_runs`.
+- Background job queue contract now exists through `platform_jobs`, `src/lib/jobs/platform-jobs.ts`, and `GET/POST /api/admin/jobs` for dashboard health, schema refresh, export, and cache-warm work.
+- Manual schema refresh requests now enqueue a deduped `schema_refresh` job after marking the source `pending_refresh`.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -87,6 +89,7 @@ Remote:
 - `src/lib/data-sources/postgres-runtime.ts`
 - `src/lib/legacy/legacy-route-response.ts`
 - `src/lib/publishing/dashboard-health-auditor.ts`
+- `src/lib/jobs/platform-jobs.ts`
 - `src/types/dashboard-chart.ts`
 - `src/types/dashboard-publishing.ts`
 - `src/lib/publishing/dashboard-publishing.ts`
@@ -98,6 +101,7 @@ Remote:
 - `src/app/api/admin/published-dashboards/[id]/versions/route.ts`
 - `src/app/api/admin/published-dashboards/[id]/publish/route.ts`
 - `src/app/api/admin/published-dashboards/health/route.ts`
+- `src/app/api/admin/jobs/route.ts`
 - `src/app/api/admin/dashboard-charts/route.ts`
 - `src/app/api/admin/dashboard-charts/[id]/route.ts`
 - `src/app/api/admin/dashboard-charts/validate/route.ts`
@@ -128,7 +132,7 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add an external scheduler or queue wrapper for dashboard health, schema refreshes, exports, and cache warming.
+1. Add the service-role worker/claim loop for queued jobs.
 2. Add alert/notification hooks for newly blocked dashboards.
 3. Add query cost budgets by tenant/project/source.
 
@@ -149,10 +153,10 @@ Suggested sprint sequence:
    - dashboard versions
    - draft vs published separation
    - release notes/audit trail
-5. No scheduled health checks yet:
-   - chart audit is manual/API-driven only
+5. No scheduled worker execution yet:
+   - durable queue contract exists, but no worker claims/runs jobs yet
+   - chart and dashboard audits are still manual/API-driven until schedules are created
    - no alerts
-   - no degraded dashboard reporting
 6. Client dashboard needs PDF/report architecture.
 7. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
 

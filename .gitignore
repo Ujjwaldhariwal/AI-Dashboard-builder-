@@ -45,6 +45,7 @@ llm-context.txt
 .graphify/branch.json
 .graphify/worktree.json
 .graphify/needs_update
+.graphify/memory/
 .graphify/.graphify_runtime.json
 .graphify/.graphify_*
 .graphify/manifest.json

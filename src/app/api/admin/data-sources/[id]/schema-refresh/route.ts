@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { enqueuePlatformJob } from '@/lib/jobs/platform-jobs'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
@@ -78,9 +79,22 @@ export async function POST(
         created_at: nowIso,
       })
 
-    return NextResponse.json({ dataSource: data })
+    const job = await enqueuePlatformJob({
+      supabase: auth.supabase,
+      tenantId: String(row.tenant_id),
+      projectId: String(row.project_id),
+      jobType: 'schema_refresh',
+      targetType: 'data_source',
+      targetId: id,
+      priority: 25,
+      dedupeKey: `schema_refresh:${id}`,
+      payload: { reason },
+      createdBy: auth.userId,
+    })
+
+    return NextResponse.json({ dataSource: data, job })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return NextResponse.json({ dataSource: null, error: message }, { status: 500 })
+    return NextResponse.json({ dataSource: null, job: null, error: message }, { status: 500 })
   }
 }

@@ -100,17 +100,23 @@ The missing scale pieces are:
 
 ### 6. Background Jobs
 
-Status: not started.
+Status: durable queue contract added; worker execution is next.
 
-Use BullMQ or a compatible queue for:
+The platform now has `platform_jobs` as the shared queue contract for:
 
 - dashboard health schedules
 - PDF/export generation
 - schema refreshes
 - cache warming
-- alert fan-out
 
-Runtime routes should enqueue expensive work instead of blocking client requests.
+`GET /api/admin/jobs` lists jobs by tenant/project/type/status for operators, while `POST /api/admin/jobs` lets trusted admin flows or external schedulers enqueue work with priority, run time, retry, payload, and dedupe metadata. Manual schema refresh requests now mark the data source `pending_refresh` and enqueue a deduped `schema_refresh` job for a future worker.
+
+Remaining job work:
+
+- add the worker/claim loop that runs queued jobs with a service role
+- add recurring schedules for dashboard health and cache warming
+- add PDF/export execution and artifact storage
+- add alert fan-out for newly blocked dashboards
 
 ### 7. AI Filter Layer
 
@@ -128,7 +134,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Queue contract for scheduled health, schema refreshes, exports, and cache warming.
+1. Worker/claim loop for queued jobs.
 2. Alert hooks for newly blocked dashboards.
 3. Query cost budgets by tenant/project/source.
 4. AI filter policy after the above are stable.
