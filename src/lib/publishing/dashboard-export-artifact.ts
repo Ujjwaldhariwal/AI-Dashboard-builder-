@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createHash } from 'crypto'
 
 import {
   mapDashboardChartSlot,
@@ -9,6 +10,7 @@ import {
 
 export type DashboardExportType = 'manifest_json'
 export type DashboardExportStatus = 'succeeded' | 'failed'
+export type DashboardExportStorageStatus = 'inline' | 'uploaded' | 'failed' | 'skipped'
 
 export interface DashboardExportArtifact {
   id: string
@@ -24,6 +26,12 @@ export interface DashboardExportArtifact {
   contentType: string
   artifact: Record<string, unknown>
   metadata: Record<string, unknown>
+  storageBucket: string | null
+  storagePath: string | null
+  storageStatus: DashboardExportStorageStatus
+  storageError: string | null
+  byteSize: number | null
+  checksumSha256: string | null
   errorMessage: string | null
   createdAt: string
 }
@@ -57,6 +65,41 @@ function makeArtifactName(slug: string, versionNumber: number) {
   return `${safeSlug}-v${versionNumber}-manifest.json`
 }
 
+function exportStorageBucket() {
+  return process.env.DASHBOARDOS_EXPORT_BUCKET?.trim() || process.env.SUPABASE_EXPORT_BUCKET?.trim() || ''
+}
+
+function exportStoragePath({
+  tenantId,
+  projectId,
+  dashboardId,
+  versionId,
+  artifactName,
+}: {
+  tenantId: string
+  projectId: string
+  dashboardId: string
+  versionId: string
+  artifactName: string
+}) {
+  return [
+    tenantId,
+    projectId,
+    dashboardId,
+    versionId,
+    artifactName,
+  ].join('/')
+}
+
+function serializeArtifact(value: Record<string, unknown>) {
+  const body = JSON.stringify(value, null, 2)
+  return {
+    body,
+    byteSize: Buffer.byteLength(body, 'utf8'),
+    checksumSha256: createHash('sha256').update(body).digest('hex'),
+  }
+}
+
 export function mapDashboardExportArtifact(row: Record<string, unknown>): DashboardExportArtifact {
   return {
     id: String(row.id),
@@ -72,9 +115,85 @@ export function mapDashboardExportArtifact(row: Record<string, unknown>): Dashbo
     contentType: String(row.content_type ?? 'application/json'),
     artifact: toArtifactRecord(row.artifact),
     metadata: toArtifactRecord(row.metadata),
+    storageBucket: typeof row.storage_bucket === 'string' ? row.storage_bucket : null,
+    storagePath: typeof row.storage_path === 'string' ? row.storage_path : null,
+    storageStatus: String(row.storage_status ?? 'inline') as DashboardExportStorageStatus,
+    storageError: typeof row.storage_error === 'string' ? row.storage_error : null,
+    byteSize: typeof row.byte_size === 'number' ? row.byte_size : null,
+    checksumSha256: typeof row.checksum_sha256 === 'string' ? row.checksum_sha256 : null,
     errorMessage: typeof row.error_message === 'string' ? row.error_message : null,
     createdAt: String(row.created_at ?? new Date().toISOString()),
   }
+}
+
+async function persistArtifactToStorage({
+  supabase,
+  artifact,
+  artifactRecord,
+}: {
+  supabase: SupabaseClient
+  artifact: Record<string, unknown>
+  artifactRecord: DashboardExportArtifact
+}) {
+  const serialized = serializeArtifact(artifact)
+  const bucket = exportStorageBucket()
+  const storagePath = exportStoragePath({
+    tenantId: artifactRecord.tenantId,
+    projectId: artifactRecord.projectId,
+    dashboardId: artifactRecord.dashboardId,
+    versionId: artifactRecord.versionId ?? 'current',
+    artifactName: artifactRecord.artifactName,
+  })
+
+  if (!bucket) {
+    const { data, error } = await supabase
+      .from('dashboard_export_artifacts')
+      .update({
+        storage_status: 'inline',
+        storage_error: null,
+        byte_size: serialized.byteSize,
+        checksum_sha256: serialized.checksumSha256,
+      })
+      .eq('id', artifactRecord.id)
+      .select('*')
+      .single()
+
+    if (error || !data) throw new Error(error?.message ?? 'Unable to update export storage metadata')
+    return mapDashboardExportArtifact(data as Record<string, unknown>)
+  }
+
+  const upload = await supabase.storage.from(bucket).upload(storagePath, serialized.body, {
+    contentType: artifactRecord.contentType,
+    upsert: true,
+  })
+
+  const updatePayload = upload.error
+    ? {
+      storage_bucket: bucket,
+      storage_path: storagePath,
+      storage_status: 'failed',
+      storage_error: upload.error.message,
+      byte_size: serialized.byteSize,
+      checksum_sha256: serialized.checksumSha256,
+    }
+    : {
+      storage_bucket: bucket,
+      storage_path: storagePath,
+      storage_status: 'uploaded',
+      storage_error: null,
+      byte_size: serialized.byteSize,
+      checksum_sha256: serialized.checksumSha256,
+    }
+
+  const { data, error } = await supabase
+    .from('dashboard_export_artifacts')
+    .update(updatePayload)
+    .eq('id', artifactRecord.id)
+    .select('*')
+    .single()
+
+  if (error || !data) throw new Error(error?.message ?? 'Unable to update export storage metadata')
+  return mapDashboardExportArtifact(data as Record<string, unknown>)
 }
 
 async function loadExportTarget({
@@ -278,7 +397,8 @@ export async function createDashboardManifestExport({
     .single()
 
   if (error || !data) throw new Error(error?.message ?? 'Unable to create dashboard export artifact')
-  return mapDashboardExportArtifact(data as Record<string, unknown>)
+  const artifactRecord = mapDashboardExportArtifact(data as Record<string, unknown>)
+  return persistArtifactToStorage({ supabase, artifact, artifactRecord })
 }
 
 export async function listDashboardExportArtifacts({

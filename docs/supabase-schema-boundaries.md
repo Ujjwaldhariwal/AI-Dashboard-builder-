@@ -86,6 +86,12 @@ Migration `20260626183000_dashboard_export_artifacts.sql` adds durable export re
 - The initial supported artifact type is `manifest_json`, a portable dashboard metadata bundle without source credentials or raw query results.
 - Export rows are readable by project/tenant access and insertable by project editors or trusted worker execution.
 
+Migration `20260626203000_dashboard_export_storage_metadata.sql` adds object-storage metadata to export artifacts:
+
+- Export artifacts now record storage bucket/path, storage status, byte size, and SHA-256 checksum.
+- When `DASHBOARDOS_EXPORT_BUCKET` or `SUPABASE_EXPORT_BUCKET` is configured, worker-generated manifest JSON uploads to that Supabase Storage bucket.
+- When no bucket is configured, the artifact remains inline in Postgres with checksum and byte-size metadata for local/demo use.
+
 Migration `20260626193000_alert_delivery_channels.sql` adds external alert delivery state:
 
 - `platform_alert_channels` stores tenant/project webhook and email-gateway channel configuration.

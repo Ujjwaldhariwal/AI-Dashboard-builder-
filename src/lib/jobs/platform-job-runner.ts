@@ -110,6 +110,11 @@ async function runExportJob(supabase: SupabaseClient, job: PlatformJob): Promise
       exportType: artifact.exportType,
       dashboardId: artifact.dashboardId,
       versionId: artifact.versionId,
+      storageBucket: artifact.storageBucket,
+      storagePath: artifact.storagePath,
+      storageStatus: artifact.storageStatus,
+      byteSize: artifact.byteSize,
+      checksumSha256: artifact.checksumSha256,
       metadata: artifact.metadata,
     },
   }

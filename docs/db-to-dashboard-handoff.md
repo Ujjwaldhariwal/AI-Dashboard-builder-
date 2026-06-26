@@ -63,6 +63,7 @@ Completed or started:
 - Admin preview and client dataset/chart runtime cache misses enforce tenant/project/source query budgets before opening source database queries.
 - Cache-warm jobs now execute through the worker for dataset, chart, and project targets, writing the same query-result cache used by client runtime.
 - Export artifact jobs now execute through the worker for published dashboards and dashboard versions, generating durable `manifest_json` records in `dashboard_export_artifacts`.
+- Export artifacts now record storage bucket/path, byte size, SHA-256 checksum, and upload to `DASHBOARDOS_EXPORT_BUCKET`/`SUPABASE_EXPORT_BUCKET` when configured.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -159,7 +160,7 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add PDF/ZIP export rendering and external object storage for export artifacts.
+1. Add PDF/ZIP export rendering on top of the export artifact storage contract.
 2. Add stronger row/elapsed-time budget hard stops after query execution patterns stabilize.
 3. Add native email provider integration after the alert channel contract stabilizes.
 

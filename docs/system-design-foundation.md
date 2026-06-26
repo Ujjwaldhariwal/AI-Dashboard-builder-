@@ -117,7 +117,7 @@ The platform now has `platform_jobs` as the shared queue contract for:
 - `dashboard_health`: audits published dashboards and records `dashboard_health_runs`
 - `schema_refresh`: introspects the target data source and refreshes schema metadata
 - `cache_warm`: compiles published dataset/chart SQL, runs read-only queries, and writes query-result cache entries
-- `export`: generates a durable `manifest_json` artifact for a published dashboard or dashboard version
+- `export`: generates a durable `manifest_json` artifact for a published dashboard or dashboard version, computes byte/checksum metadata, and uploads to the configured export bucket when available
 - `alert_delivery`: sends newly opened platform alerts to configured webhook/email-gateway channels and records delivery attempts
 
 Failed jobs return to `queued` with backoff until `max_attempts`, then become `failed`.
@@ -128,7 +128,7 @@ Alert hooks now create persistent `platform_alerts` when a scheduled or manual d
 
 Remaining job work:
 
-- add PDF/ZIP rendering and external object storage for export artifacts
+- add PDF/ZIP rendering on top of the export artifact storage contract
 - add native email provider integration once delivery channel policy is stable
 
 ### 7. AI Filter Layer
