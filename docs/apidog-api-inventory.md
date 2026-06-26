@@ -16,6 +16,7 @@ Auth model:
 - `Admin / Semantic Model`
 - `Admin / Semantic Datasets`
 - `Admin / Dashboard Charts`
+- `Admin / Published Dashboards`
 - `Admin / Observability`
 - `Client / Runtime`
 
@@ -548,6 +549,186 @@ Body:
 ```
 
 Response: `{ "chart": { ... }, "validation": { ... } }`
+
+## Admin / Published Dashboards
+
+### `GET /api/admin/published-dashboards`
+
+Purpose: list governed dashboard shells, optionally by project.
+
+Auth: authenticated project access.
+
+Query:
+- `projectId`: optional UUID
+
+Response: `{ "dashboards": [...] }`
+
+### `POST /api/admin/published-dashboards`
+
+Purpose: create a draft published-dashboard shell under a tenant/project.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "tenantId": "uuid",
+  "projectId": "uuid",
+  "name": "Executive Revenue",
+  "slug": "executive-revenue",
+  "description": "Read-only dashboard for client leaders"
+}
+```
+
+Response: `{ "dashboard": { ... } }`
+
+### `PATCH /api/admin/published-dashboards/{id}`
+
+Purpose: update dashboard metadata or archive a dashboard shell.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "name": "Executive Revenue",
+  "slug": "executive-revenue",
+  "description": "Updated description",
+  "status": "draft"
+}
+```
+
+Response: `{ "dashboard": { ... } }`
+
+### `POST /api/admin/published-dashboards/{id}/versions`
+
+Purpose: create a draft dashboard version with pages and chart slots.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "title": "Q2 Executive Release",
+  "notes": "Initial governed publish candidate",
+  "layout": {},
+  "pages": [
+    {
+      "title": "Overview",
+      "slug": "overview",
+      "sortOrder": 0,
+      "layout": {},
+      "slots": [
+        {
+          "chartConfigId": "uuid",
+          "slotKey": "revenue-by-region",
+          "rowIndex": 0,
+          "columnIndex": 0,
+          "width": 6,
+          "height": 4,
+          "settings": {}
+        }
+      ]
+    }
+  ]
+}
+```
+
+Security:
+- all slot chart configs must belong to the same tenant/project
+- slot chart configs must be published
+- slot chart configs must have `valid` or `warning` validation state
+
+Response: `{ "version": { ... }, "pages": [...], "slots": [...] }`
+
+### `GET /api/admin/published-dashboards/{id}/versions`
+
+Purpose: list dashboard versions with their pages and chart slots for publish history and rollback planning.
+
+Auth: authenticated project access.
+
+Response: `{ "versions": [...], "pages": [...], "slots": [...] }`
+
+### `POST /api/admin/published-dashboards/{id}/publish`
+
+Purpose: promote a draft dashboard version to the client-visible published version after a publish-time health gate.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "versionId": "uuid",
+  "notes": "Approved for client release"
+}
+```
+
+Security:
+- dashboard must not be archived
+- version must belong to the dashboard tenant/project
+- version must contain at least one page
+- version must contain at least one chart slot
+
+Response: `{ "dashboard": { ... }, "version": { ... }, "healthAudit": { ... } }`
+
+Failure:
+- `422` when the version has no pages, has no chart slots, or health audit state is `blocked`
+- blocked health responses include `healthAudit` so the admin UI can show which slots/charts failed
+
+### `POST /api/admin/published-dashboards/{id}/rollback`
+
+Purpose: roll the client-visible dashboard back to a previous non-draft version after the same dashboard health gate used by publish.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "versionId": "uuid",
+  "notes": "Rollback to the last stable executive release"
+}
+```
+
+Behavior:
+- archived dashboards cannot be rolled back
+- rollback requires an active current version
+- the target version must belong to the same dashboard, tenant, and project
+- draft versions must use the publish endpoint instead
+- rollback is blocked with `422` when the target version health audit is `blocked`
+- successful rollback retires the previously published version, promotes the selected version, writes a `rolled_back` publish event, writes an audit log, and records a dashboard health snapshot
+
+Response: `{ "dashboard": { ... }, "version": { ... }, "healthAudit": { ... } }`
+
+### `GET /api/admin/published-dashboards/health`
+
+Purpose: calculate dashboard-level health from published dashboard versions, pages, chart slots, and chart validation health without persisting a run.
+
+Auth: authenticated tenant/project access.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `dashboardId`: optional UUID
+
+Response: `{ "audit": { "summary": {}, "dashboards": [] } }`
+
+### `POST /api/admin/published-dashboards/health`
+
+Purpose: run and persist dashboard health checks for scheduled monitoring and client-visible degradation state.
+
+Auth: authenticated tenant/project access.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `dashboardId`: optional UUID
+
+Response: `{ "audit": { ... }, "runs": [...] }`
 
 ## Admin / Observability
 

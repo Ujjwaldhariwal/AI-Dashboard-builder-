@@ -1,18 +1,21 @@
 'use client'
 
-// src/components/layout/onboarding-wizard.tsx
-
-import { useState, useEffect } from 'react'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { motion, AnimatePresence } from 'framer-motion'
-import {
-  LayoutDashboard, Database, BarChart3,
-  ChevronRight, X, CheckCircle2, Sparkles,
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { DialogTitle } from '@/components/ui/dialog'
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
+import { AnimatePresence, motion } from 'framer-motion'
+import {
+  BarChart3,
+  CheckCircle2,
+  ChevronRight,
+  Database,
+  LayoutDashboard,
+  Sparkles,
+  X,
+} from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 const STORAGE_KEY = 'analytics-ai-onboarded'
 
@@ -20,33 +23,33 @@ const STEPS = [
   {
     icon: LayoutDashboard,
     color: 'from-blue-600 to-purple-600',
-    title: 'Welcome to Analytics AI',
-    desc: 'Build stunning, data-driven dashboards from any API in minutes — no code needed.',
+    title: 'Welcome to DashboardOS',
+    desc: 'Start from the governed DB-to-dashboard admin flow. The older widget builder is now a legacy fallback.',
     cta: 'Get Started',
     tip: null,
   },
   {
     icon: Database,
     color: 'from-purple-600 to-pink-600',
-    title: 'Step 1 — Connect an API',
-    desc: "Go to API Config and paste any REST endpoint URL. We'll detect the schema automatically.",
-    cta: 'Go to API Config →',
-    tip: 'Try: jsonplaceholder.typicode.com/users',
+    title: 'Step 1 - Connect a database',
+    desc: 'Create a tenant project, connect a Postgres data source, and introspect schema metadata.',
+    cta: 'Open Data Sources',
+    tip: 'Use project-scoped read-only credentials.',
   },
   {
     icon: BarChart3,
     color: 'from-green-600 to-teal-600',
-    title: 'Step 2 — Add Widgets',
-    desc: 'Click "Add Widget" in the Builder or use Magic Auto-Build to generate charts from your data instantly.',
-    cta: 'Open Builder →',
-    tip: 'Magic Auto-Build generates 4–6 charts in one click.',
+    title: 'Step 2 - Publish dashboards',
+    desc: 'Compose governed chart configs into versioned read-only client dashboard releases.',
+    cta: 'Open Publishing',
+    tip: 'Published versions power the client runtime.',
   },
   {
     icon: Sparkles,
     color: 'from-amber-500 to-orange-600',
     title: "You're all set!",
-    desc: 'Your dashboards auto-refresh, can be shared via link, or exported as a full React project.',
-    cta: 'Start Building',
+    desc: 'Use the admin command center for tenants, data sources, semantic datasets, charts, and publishing.',
+    cta: 'Open DashboardOS',
     tip: null,
   },
 ]
@@ -68,44 +71,45 @@ export function OnboardingWizard() {
 
   const handleCTA = () => {
     if (step < STEPS.length - 1) {
-      setStep(s => s + 1)
-    } else {
-      dismiss()
-      router.push('/workspaces')
+      setStep(current => current + 1)
+      return
     }
+
+    dismiss()
+    router.push('/admin')
   }
 
-  // ✅ FIXED: was using two separate `if` statements causing
-  // idx===1 to also hit the `else` branch and double-fire
   const handleStepCTA = (idx: number) => {
     if (idx === 1) {
       dismiss()
-      router.push('/api-config')
-    } else if (idx === 2) {
-      dismiss()
-      router.push('/builder')
-    } else {
-      handleCTA()
+      router.push('/admin/data-sources')
+      return
     }
+
+    if (idx === 2) {
+      dismiss()
+      router.push('/admin/publishing')
+      return
+    }
+
+    handleCTA()
   }
 
   const current = STEPS[step]
-  const Icon    = current.icon
+  const Icon = current.icon
 
   return (
-    <Dialog open={open} onOpenChange={v => !v && dismiss()}>
-      <DialogContent className="max-w-md p-0 overflow-hidden gap-0">
-
+    <Dialog open={open} onOpenChange={value => !value && dismiss()}>
+      <DialogContent className="max-w-md overflow-hidden p-0 gap-0">
         <VisuallyHidden.Root>
-          <DialogTitle>Onboarding — {current.title}</DialogTitle>
+          <DialogTitle>Onboarding - {current.title}</DialogTitle>
         </VisuallyHidden.Root>
 
-        {/* Close button — sits above gradient so must be z-20 */}
         <button
           onClick={dismiss}
-          className="absolute right-3 top-3 z-20 p-1.5 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+          className="absolute right-3 top-3 z-20 rounded-full p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
         >
-          <X className="w-4 h-4" />
+          <X className="h-4 w-4" />
         </button>
 
         <AnimatePresence mode="wait">
@@ -116,60 +120,43 @@ export function OnboardingWizard() {
             exit={{ opacity: 0, x: -24 }}
             transition={{ duration: 0.2 }}
           >
-            {/* ── Hero gradient section ────────────────────────── */}
-            <div className={`bg-gradient-to-br ${current.color} p-8 text-white text-center`}>
-              {/* ✅ FIXED: ring + solid bg ensures icon is always visible */}
-              <div className="w-16 h-16 rounded-2xl bg-white/25 ring-1 ring-white/30 backdrop-blur-sm flex items-center justify-center mx-auto mb-4 shadow-lg">
-                <Icon className="w-8 h-8 text-white drop-shadow-lg" />
+            <div className={`bg-gradient-to-br ${current.color} p-8 text-center text-white`}>
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/25 shadow-lg ring-1 ring-white/30 backdrop-blur-sm">
+                <Icon className="h-8 w-8 text-white drop-shadow-lg" />
               </div>
-              <h2 className="text-xl font-bold mb-2">{current.title}</h2>
-              <p className="text-sm text-white/85 leading-relaxed">{current.desc}</p>
-              {current.tip && (
-                <div className="mt-3 px-3 py-1.5 bg-white/15 rounded-lg text-xs font-mono text-white/95 border border-white/10">
-                  💡 {current.tip}
+              <h2 className="mb-2 text-xl font-bold">{current.title}</h2>
+              <p className="text-sm leading-relaxed text-white/85">{current.desc}</p>
+              {current.tip ? (
+                <div className="mt-3 rounded-lg border border-white/10 bg-white/15 px-3 py-1.5 font-mono text-xs text-white/95">
+                  {current.tip}
                 </div>
-              )}
+              ) : null}
             </div>
 
-            {/* ── Footer ──────────────────────────────────────── */}
-            <div className="p-5 bg-card">
-              {/* Step dots */}
-              <div className="flex items-center justify-center gap-1.5 mb-4">
-                {STEPS.map((_, i) => (
+            <div className="bg-card p-5">
+              <div className="mb-4 flex items-center justify-center gap-1.5">
+                {STEPS.map((item, index) => (
                   <button
-                    key={i}
-                    onClick={() => setStep(i)}
-                    className={`h-1.5 rounded-full transition-all duration-200 ${
-                      i === step
-                        ? 'w-4 bg-primary'
-                        : 'w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/50'
+                    key={item.title}
+                    onClick={() => setStep(index)}
+                    className={`h-1.5 rounded-full transition-all ${
+                      index === step ? 'w-6 bg-primary' : 'w-1.5 bg-muted'
                     }`}
+                    aria-label={`Go to step ${index + 1}`}
                   />
                 ))}
               </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={dismiss}
-                >
+              <div className="flex gap-3">
+                <Button variant="ghost" onClick={dismiss} className="flex-1">
                   Skip
                 </Button>
-                <Button
-                  className="flex-1 gap-2"
-                  onClick={() => handleStepCTA(step)}
-                >
-                  {step === STEPS.length - 1 ? (
-                    <><CheckCircle2 className="w-4 h-4" />{current.cta}</>
-                  ) : (
-                    <>{current.cta}<ChevronRight className="w-4 h-4" /></>
-                  )}
+                <Button onClick={() => handleStepCTA(step)} className="flex-1 gap-2">
+                  {current.cta}
+                  {step < STEPS.length - 1 ? <ChevronRight className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
-
           </motion.div>
         </AnimatePresence>
       </DialogContent>

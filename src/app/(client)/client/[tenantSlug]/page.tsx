@@ -1,13 +1,14 @@
-import { Calendar, Download, Filter, LayoutDashboard, LockKeyhole, RefreshCw, Table2 } from 'lucide-react'
+import { LayoutDashboard, LockKeyhole, Table2 } from 'lucide-react'
 import { notFound } from 'next/navigation'
 
 import { PublishedChartsGrid } from '@/components/client/published-charts-grid'
 import { PublishedDatasetPreview } from '@/components/client/published-dataset-preview'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
+import type { DashboardChartSlot, DashboardPage, DashboardVersion, PublishedDashboard } from '@/types/dashboard-publishing'
 
 interface TenantRecord {
   id: string
@@ -39,6 +40,23 @@ interface DatasetRecord {
     ttlSeconds?: number
   } | null
   updated_at?: string | null
+}
+
+interface RuntimeDashboard {
+  dashboard: PublishedDashboard
+  version: DashboardVersion
+  pages: DashboardPage[]
+  slots: DashboardChartSlot[]
+  health: DashboardHealthRunRecord | null
+}
+
+interface DashboardHealthRunRecord {
+  health_state: 'healthy' | 'stale' | 'blocked'
+  total_slots: number
+  healthy_slots: number
+  stale_slots: number
+  blocked_slots: number
+  checked_at: string
 }
 
 function mapChart(row: Record<string, unknown>): DashboardChartConfig {
@@ -85,6 +103,38 @@ function selectionCount(dataset: DatasetRecord, key: 'fieldIds' | 'metricIds' | 
   return Array.isArray(value) ? value.length : 0
 }
 
+function gridSpanFromSlot(slot: DashboardChartSlot) {
+  if (slot.width >= 10) return 4
+  if (slot.width >= 7) return 3
+  if (slot.width >= 4) return 2
+  return 1
+}
+
+function chartWithSlotLayout(chart: DashboardChartConfig, slot: DashboardChartSlot): DashboardChartConfig {
+  return {
+    ...chart,
+    name: slot.title || chart.name,
+    layout: {
+      order: slot.rowIndex * 12 + slot.columnIndex,
+      gridSpan: gridSpanFromSlot(slot),
+    },
+  }
+}
+
+function healthBadgeClassName(state?: DashboardHealthRunRecord['health_state']) {
+  if (state === 'healthy') return 'border-[#a6e22e]/40 bg-[#a6e22e]/15 text-[#3d520d]'
+  if (state === 'stale') return 'border-[#fd971f]/40 bg-[#fd971f]/15 text-[#8a4b00]'
+  if (state === 'blocked') return 'border-[#f92672]/40 bg-[#f92672]/15 text-[#8a0030]'
+  return 'border-[#272822]/15 bg-white text-[#75715e]'
+}
+
+function healthLabel(state?: DashboardHealthRunRecord['health_state']) {
+  if (state === 'healthy') return 'Healthy'
+  if (state === 'stale') return 'Needs review'
+  if (state === 'blocked') return 'Degraded'
+  return 'Health pending'
+}
+
 export default async function TenantClientPage({
   params,
 }: {
@@ -107,7 +157,7 @@ export default async function TenantClientPage({
   const [
     { data: projects, error: projectsError },
     { data: datasets, error: datasetsError },
-    { data: charts, error: chartsError },
+    { data: dashboards, error: dashboardsError },
   ] = await Promise.all([
     auth.supabase
       .from('dashboard_projects')
@@ -122,23 +172,109 @@ export default async function TenantClientPage({
       .eq('status', 'published')
       .order('updated_at', { ascending: false }),
     auth.supabase
+      .from('published_dashboards')
+      .select('*')
+      .eq('tenant_id', activeTenant.id)
+      .eq('status', 'published')
+      .not('current_version_id', 'is', null)
+      .order('published_at', { ascending: false })
+      .limit(1),
+  ])
+
+  if (projectsError || datasetsError || dashboardsError) {
+    throw new Error(projectsError?.message ?? datasetsError?.message ?? dashboardsError?.message ?? 'Failed to load client dashboard')
+  }
+
+  const projectList = (projects ?? []) as ProjectRecord[]
+  const datasetList = (datasets ?? []) as DatasetRecord[]
+  let runtimeDashboard: RuntimeDashboard | null = null
+  let chartList: DashboardChartConfig[] = []
+  const dashboardRow = dashboards?.[0] as Record<string, unknown> | undefined
+  if (dashboardRow?.current_version_id) {
+    const dashboard = mapPublishedDashboard(dashboardRow)
+    const [
+      { data: versionRow, error: versionError },
+      { data: pages, error: pagesError },
+      { data: slots, error: slotsError },
+      { data: healthRows, error: healthError },
+    ] = await Promise.all([
+      auth.supabase
+        .from('dashboard_versions')
+        .select('*')
+        .eq('id', dashboard.currentVersionId)
+        .eq('dashboard_id', dashboard.id)
+        .eq('status', 'published')
+        .single(),
+      auth.supabase
+        .from('dashboard_pages')
+        .select('*')
+        .eq('version_id', dashboard.currentVersionId)
+        .order('sort_order', { ascending: true }),
+      auth.supabase
+        .from('dashboard_chart_slots')
+        .select('*')
+        .eq('version_id', dashboard.currentVersionId)
+        .order('row_index', { ascending: true })
+        .order('column_index', { ascending: true }),
+      auth.supabase
+        .from('dashboard_health_runs')
+        .select('health_state, total_slots, healthy_slots, stale_slots, blocked_slots, checked_at')
+        .eq('dashboard_id', dashboard.id)
+        .order('checked_at', { ascending: false })
+        .limit(1),
+    ])
+
+    if (versionError || pagesError || slotsError || healthError) {
+      throw new Error(versionError?.message ?? pagesError?.message ?? slotsError?.message ?? healthError?.message ?? 'Failed to load published dashboard')
+    }
+
+    const version = mapDashboardVersion(versionRow as Record<string, unknown>)
+    const pageList = (pages ?? []).map(row => mapDashboardPage(row as Record<string, unknown>))
+    const slotList = (slots ?? []).map(row => mapDashboardChartSlot(row as Record<string, unknown>))
+    const chartIds = [...new Set(slotList.map(slot => slot.chartConfigId))]
+    const { data: charts, error: chartsError } = chartIds.length > 0
+      ? await auth.supabase
+        .from('dashboard_chart_configs')
+        .select('*')
+        .eq('tenant_id', activeTenant.id)
+        .eq('status', 'published')
+        .eq('validation_state', 'valid')
+        .in('id', chartIds)
+      : { data: [], error: null }
+
+    if (chartsError) throw new Error(chartsError.message)
+    const chartsById = new Map((charts ?? []).map(row => {
+      const chart = mapChart(row as Record<string, unknown>)
+      return [chart.id, chart]
+    }))
+    chartList = slotList
+      .map(slot => {
+        const chart = chartsById.get(slot.chartConfigId)
+        return chart ? chartWithSlotLayout(chart, slot) : null
+      })
+      .filter((chart): chart is DashboardChartConfig => chart !== null)
+      .sort((left, right) => left.layout.order - right.layout.order)
+    runtimeDashboard = {
+      dashboard,
+      version,
+      pages: pageList,
+      slots: slotList,
+      health: (healthRows?.[0] as DashboardHealthRunRecord | undefined) ?? null,
+    }
+  } else {
+    const { data: charts, error: chartsError } = await auth.supabase
       .from('dashboard_chart_configs')
       .select('*')
       .eq('tenant_id', activeTenant.id)
       .eq('status', 'published')
       .eq('validation_state', 'valid')
-      .order('updated_at', { ascending: false }),
-  ])
+      .order('updated_at', { ascending: false })
 
-  if (projectsError || datasetsError || chartsError) {
-    throw new Error(projectsError?.message ?? datasetsError?.message ?? chartsError?.message ?? 'Failed to load client dashboard')
+    if (chartsError) throw new Error(chartsError.message)
+    chartList = (charts ?? [])
+      .map(row => mapChart(row as Record<string, unknown>))
+      .sort((left, right) => left.layout.order - right.layout.order)
   }
-
-  const projectList = (projects ?? []) as ProjectRecord[]
-  const datasetList = (datasets ?? []) as DatasetRecord[]
-  const chartList = (charts ?? [])
-    .map(row => mapChart(row as Record<string, unknown>))
-    .sort((left, right) => left.layout.order - right.layout.order)
   const datasetsByProject = new Map<string, DatasetRecord[]>()
   for (const dataset of datasetList) {
     datasetsByProject.set(dataset.project_id, [...(datasetsByProject.get(dataset.project_id) ?? []), dataset])
@@ -154,21 +290,16 @@ export default async function TenantClientPage({
             </div>
             <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-wide text-[#75715e]">{activeTenant.name}</p>
-              <h1 className="truncate text-lg font-semibold">Published Dashboard</h1>
+              <h1 className="truncate text-lg font-semibold">{runtimeDashboard?.dashboard.name ?? 'Published Dashboard'}</h1>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="hidden border-[#a6e22e]/40 bg-[#a6e22e]/15 text-[#3d520d] sm:inline-flex">
               Read-only
             </Badge>
-            <Button variant="outline" size="sm">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
-            <Button size="sm" className="bg-[#272822] text-[#f8f8f2] hover:bg-[#3e3d32]" disabled={datasetList.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              PDF Report
-            </Button>
+            <Badge variant="outline" className={healthBadgeClassName(runtimeDashboard?.health?.health_state)}>
+              {healthLabel(runtimeDashboard?.health?.health_state)}
+            </Badge>
           </div>
         </div>
       </header>
@@ -181,16 +312,6 @@ export default async function TenantClientPage({
               <p className="mt-1 text-xs text-[#75715e]">
                 Published datasets only. Builder controls, source credentials, and semantic draft assets stay hidden from this view.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm">
-                <Calendar className="mr-2 h-4 w-4" />
-                Date Range
-              </Button>
-              <Button variant="outline" size="sm">
-                <Filter className="mr-2 h-4 w-4" />
-                Filters
-              </Button>
             </div>
           </div>
         </section>
@@ -215,6 +336,29 @@ export default async function TenantClientPage({
             </CardContent>
           </Card>
         </section>
+
+        {runtimeDashboard ? (
+          <section className="rounded-lg border border-[#272822]/10 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">{runtimeDashboard.version.title}</h2>
+                <p className="mt-1 text-xs text-[#75715e]">
+                  {runtimeDashboard.pages.length} pages, {runtimeDashboard.slots.length} governed chart slots. Published {formatUpdatedAt(runtimeDashboard.version.publishedAt)}.
+                </p>
+                {runtimeDashboard.health ? (
+                  <p className="mt-1 text-xs text-[#75715e]">
+                    Last health check {formatUpdatedAt(runtimeDashboard.health.checked_at)}: {runtimeDashboard.health.healthy_slots}/{runtimeDashboard.health.total_slots} slots healthy.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-[#75715e]">No dashboard health check has been recorded yet.</p>
+                )}
+              </div>
+              <Badge variant="outline" className="border-[#66d9ef]/30 bg-[#66d9ef]/10 text-[#0d5966]">
+                Version {runtimeDashboard.version.versionNumber}
+              </Badge>
+            </div>
+          </section>
+        ) : null}
 
         <PublishedChartsGrid tenantSlug={activeTenant.slug} charts={chartList} />
 

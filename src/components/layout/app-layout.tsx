@@ -241,10 +241,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   // ── Navigation ────────────────────────────────────────────────────────
   const navigation = useMemo(() => [
     { name: 'DashboardOS', href: '/admin', icon: Network, show: true, iconColor: 'text-cyan-500', activeBg: 'from-cyan-600/10 to-blue-400/5 dark:from-cyan-500/15 dark:to-blue-400/5', pillColor: 'from-cyan-500 to-blue-600' },
-    { name: 'Dashboards', href: '/workspaces', icon: LayoutDashboard, show: true,                  iconColor: 'text-blue-500',   activeBg: 'from-blue-600/10 to-blue-400/5 dark:from-blue-500/15 dark:to-blue-400/5',     pillColor: 'from-blue-500 to-blue-600' },
-    { name: 'Builder',    href: '/builder',    icon: FolderTree,      show: !!currentDashboardId,  iconColor: 'text-violet-500', activeBg: 'from-violet-600/10 to-violet-400/5 dark:from-violet-500/15 dark:to-violet-400/5', pillColor: 'from-violet-500 to-violet-600' },
-    { name: 'API Config', href: '/api-config', icon: Database,        show: !!currentDashboardId,  iconColor: 'text-emerald-500', activeBg: 'from-emerald-600/10 to-emerald-400/5 dark:from-emerald-500/15 dark:to-emerald-400/5', pillColor: 'from-emerald-500 to-emerald-600' },
-    { name: 'Auth Flow',  href: '/auth-flow',  icon: GitBranch,       show: !!currentDashboardId,  iconColor: 'text-amber-500',  activeBg: 'from-amber-600/10 to-amber-400/5 dark:from-amber-500/15 dark:to-amber-400/5',   pillColor: 'from-amber-500 to-amber-600' },
+    { name: 'Publishing', href: '/admin/publishing', icon: LayoutDashboard, show: true, iconColor: 'text-blue-500', activeBg: 'from-blue-600/10 to-blue-400/5 dark:from-blue-500/15 dark:to-blue-400/5', pillColor: 'from-blue-500 to-blue-600' },
+    { name: 'Legacy Workspaces', href: '/workspaces', icon: FolderKanban, show: true, iconColor: 'text-slate-400', activeBg: 'from-slate-600/10 to-slate-400/5 dark:from-slate-500/15 dark:to-slate-400/5', pillColor: 'from-slate-400 to-slate-500' },
+    { name: 'Legacy Builder', href: '/builder', icon: FolderTree, show: !!currentDashboardId, iconColor: 'text-violet-500', activeBg: 'from-violet-600/10 to-violet-400/5 dark:from-violet-500/15 dark:to-violet-400/5', pillColor: 'from-violet-500 to-violet-600' },
+    { name: 'Legacy API Config', href: '/api-config', icon: Database, show: !!currentDashboardId, iconColor: 'text-emerald-500', activeBg: 'from-emerald-600/10 to-emerald-400/5 dark:from-emerald-500/15 dark:to-emerald-400/5', pillColor: 'from-emerald-500 to-emerald-600' },
+    { name: 'Legacy Auth Flow', href: '/auth-flow', icon: GitBranch, show: !!currentDashboardId, iconColor: 'text-amber-500', activeBg: 'from-amber-600/10 to-amber-400/5 dark:from-amber-500/15 dark:to-amber-400/5', pillColor: 'from-amber-500 to-amber-600' },
     { name: 'Monitoring', href: '/monitoring',  icon: Activity,        show: !!currentDashboardId,  iconColor: 'text-rose-500',   activeBg: 'from-rose-600/10 to-rose-400/5 dark:from-rose-500/15 dark:to-rose-400/5',       pillColor: 'from-rose-500 to-rose-600' },
     { name: 'Settings',   href: '/settings',    icon: Settings,        show: true,                  iconColor: 'text-slate-400',  activeBg: 'from-slate-600/10 to-slate-400/5 dark:from-slate-500/15 dark:to-slate-400/5',   pillColor: 'from-slate-400 to-slate-500' },
   ], [currentDashboardId])
@@ -307,9 +308,10 @@ export function AppLayout({ children }: AppLayoutProps) {
 
     const pageResults: SearchResult[] = (
       [
-        { id: 'p-ws',  label: 'Dashboards', sub: 'All dashboards',   href: '/workspaces', type: 'page' as const },
         { id: 'p-os',  label: 'DashboardOS', sub: 'DB-to-dashboard platform', href: '/admin', type: 'page' as const },
-        { id: 'p-api', label: 'API Config', sub: 'Manage endpoints', href: '/api-config', type: 'page' as const },
+        { id: 'p-pub', label: 'Publishing', sub: 'Versioned dashboard releases', href: '/admin/publishing', type: 'page' as const },
+        { id: 'p-ws',  label: 'Legacy Workspaces', sub: 'Old local dashboard builder', href: '/workspaces', type: 'page' as const },
+        { id: 'p-api', label: 'Legacy API Config', sub: 'Old endpoint widget setup', href: '/api-config', type: 'page' as const },
         { id: 'p-mon', label: 'Monitoring', sub: 'Logs & health',    href: '/monitoring', type: 'page' as const },
         { id: 'p-set', label: 'Settings',   sub: 'App settings',     href: '/settings',   type: 'page' as const },
       ] satisfies SearchResult[]

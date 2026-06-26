@@ -23,8 +23,14 @@ These tables are the current foundation and should be protected:
 - `semantic_datasets`
 - `dashboard_chart_configs`
 - `dashboard_chart_validation_results`
+- `published_dashboards`
+- `dashboard_versions`
+- `dashboard_pages`
+- `dashboard_chart_slots`
+- `dashboard_publish_events`
 - `semantic_query_runs`
 - `chart_health_runs`
+- `dashboard_health_runs`
 - `audit_logs`
 
 ## Removed Legacy Tables
@@ -50,9 +56,9 @@ Some UI and API code still references the removed legacy concepts through the lo
 
 Do not add new Supabase dependencies on the removed tables. New work should use the core product tables above.
 
-## Next Schema Work
+## Publishing Schema
 
-The next foundation migration should add first-class dashboard publishing instead of reviving the removed `dashboards`/`widgets` model. Recommended tables:
+Migration `20260625200000_dashboard_publishing.sql` adds first-class dashboard publishing instead of reviving the removed `dashboards`/`widgets` model:
 
 - `published_dashboards`
 - `dashboard_versions`
@@ -61,3 +67,17 @@ The next foundation migration should add first-class dashboard publishing instea
 - `dashboard_publish_events`
 
 The publish model should reference `dashboard_chart_configs`, not legacy `widgets`.
+
+Migration `20260625213000_dashboard_publishing_integrity.sql` hardens the publishing foundation with composite database constraints:
+
+- Versions, pages, slots, publish events, and dashboard health runs must stay inside the same `tenant_id` and `project_id` as their parent dashboard.
+- Chart slots can only reference chart configs from the same tenant/project scope.
+- Published dashboard `current_version_id` must point to a version owned by that dashboard.
+- New dashboard health rows must include tenant, project, and dashboard scope.
+
+## Next Schema Work
+
+The next foundation migrations should add scheduled health automation around the new publishing tables:
+
+- scheduled dashboard health checks
+- client-visible dashboard degradation state

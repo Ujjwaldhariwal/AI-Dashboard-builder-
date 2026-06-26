@@ -86,7 +86,7 @@ export default function LoginPage() {
 
     // ✅ redirectTo — honor middleware redirect param
     const params     = new URLSearchParams(window.location.search)
-    const redirectTo = params.get('redirectTo') ?? params.get('returnTo') ?? '/workspaces'
+    const redirectTo = params.get('redirectTo') ?? params.get('returnTo') ?? '/admin'
     const email      = `${empId.trim().toLowerCase()}@${emailDomain}`
 
     // ✅ Fix #2 — local flag tracks field errors set DURING this call
@@ -138,7 +138,7 @@ export default function LoginPage() {
       // ── ATTEMPT 2: Register new employee ──────────────────────
       toast.loading('First time login – setting up your account...', { id: 'auth' })
 
-      const { data: signUpData, error: signUpError } =
+      const { error: signUpError } =
         await supabase.auth.signUp({
           email,
           password,

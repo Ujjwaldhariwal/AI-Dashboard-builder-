@@ -5,6 +5,7 @@ export type * from '@/types/data-source'
 export type * from '@/types/semantic-dataset'
 export type * from '@/types/chart-template'
 export type * from '@/types/dashboard-chart'
+export type * from '@/types/dashboard-publishing'
 
 // Module: Index
 //index.ts

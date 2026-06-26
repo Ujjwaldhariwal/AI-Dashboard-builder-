@@ -1,16 +1,25 @@
-import { Client } from 'pg'
+import { Client, Pool, type PoolClient } from 'pg'
 
 import { decryptJsonSecret } from '@/lib/security/credential-vault'
 import type { DataSourceSslMode, PostgresCredentialInput } from '@/types/data-source'
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 8_000
 const DEFAULT_QUERY_TIMEOUT_MS = 12_000
+const DEFAULT_POOL_MAX = 3
+const DEFAULT_POOL_IDLE_MS = 5 * 60_000
+const DEFAULT_POOL_CONNECTION_IDLE_MS = 30_000
+const DEFAULT_MAX_ACTIVE_POOLS = 30
 const MAX_SCHEMA_TABLES = 500
 const MAX_SCHEMA_COLUMNS = 5_000
 
 interface PostgresRuntimeOptions {
   connectTimeoutMs?: number
   queryTimeoutMs?: number
+  poolKey?: string
+  poolMax?: number
+  poolIdleMs?: number
+  maxActivePools?: number
+  usePool?: boolean
 }
 
 export interface PostgresColumnMetadata {
@@ -30,6 +39,20 @@ export interface PostgresTableMetadata {
   tableType: string
   columns: PostgresColumnMetadata[]
 }
+
+interface ManagedPostgresPool {
+  pool: Pool
+  activeQueries: number
+  createdAt: number
+  lastUsedAt: number
+}
+
+const globalForPostgresPools = globalThis as typeof globalThis & {
+  __dashboardPostgresPools?: Map<string, ManagedPostgresPool>
+}
+
+const postgresPools = globalForPostgresPools.__dashboardPostgresPools ?? new Map<string, ManagedPostgresPool>()
+globalForPostgresPools.__dashboardPostgresPools = postgresPools
 
 function sslConfigForMode(mode: DataSourceSslMode) {
   if (mode === 'disable') return false
@@ -64,6 +87,108 @@ export function createPostgresClient(
   })
 }
 
+function postgresPoolKey(credential: PostgresCredentialInput, options: PostgresRuntimeOptions) {
+  return options.poolKey ?? [
+    credential.host,
+    credential.port,
+    credential.database,
+    credential.username,
+    credential.sslMode,
+  ].join(':')
+}
+
+function cleanupIdlePostgresPools(poolIdleMs: number, now = Date.now()) {
+  for (const [key, managed] of postgresPools.entries()) {
+    if (managed.activeQueries > 0) continue
+    if (now - managed.lastUsedAt < poolIdleMs) continue
+    postgresPools.delete(key)
+    managed.pool.end().catch(() => undefined)
+  }
+}
+
+function evictOldestIdlePool(maxActivePools: number) {
+  if (postgresPools.size < maxActivePools) return
+
+  const idlePools = Array.from(postgresPools.entries())
+    .filter(([, managed]) => managed.activeQueries === 0)
+    .sort(([, left], [, right]) => left.lastUsedAt - right.lastUsedAt)
+
+  const oldest = idlePools[0]
+  if (!oldest) {
+    throw new Error('All database pools are busy. Please retry shortly.')
+  }
+
+  postgresPools.delete(oldest[0])
+  oldest[1].pool.end().catch(() => undefined)
+}
+
+function getPostgresPool(
+  credential: PostgresCredentialInput,
+  options: PostgresRuntimeOptions = {},
+) {
+  const now = Date.now()
+  const key = postgresPoolKey(credential, options)
+  cleanupIdlePostgresPools(options.poolIdleMs ?? DEFAULT_POOL_IDLE_MS, now)
+
+  const existing = postgresPools.get(key)
+  if (existing) {
+    existing.lastUsedAt = now
+    return existing
+  }
+
+  evictOldestIdlePool(options.maxActivePools ?? DEFAULT_MAX_ACTIVE_POOLS)
+
+  const managed: ManagedPostgresPool = {
+    pool: new Pool({
+      host: credential.host,
+      port: credential.port,
+      database: credential.database,
+      user: credential.username,
+      password: credential.password,
+      ssl: sslConfigForMode(credential.sslMode),
+      max: options.poolMax ?? DEFAULT_POOL_MAX,
+      idleTimeoutMillis: DEFAULT_POOL_CONNECTION_IDLE_MS,
+      connectionTimeoutMillis: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+      query_timeout: options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
+      statement_timeout: options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
+    }),
+    activeQueries: 0,
+    createdAt: now,
+    lastUsedAt: now,
+  }
+  postgresPools.set(key, managed)
+  return managed
+}
+
+async function withPostgresClient<T>(
+  credential: PostgresCredentialInput,
+  options: PostgresRuntimeOptions,
+  operation: (client: Client | PoolClient) => Promise<T>,
+) {
+  if (options.usePool === false) {
+    const client = createPostgresClient(credential, options)
+    try {
+      await client.connect()
+      return await operation(client)
+    } finally {
+      await client.end().catch(() => undefined)
+    }
+  }
+
+  const managed = getPostgresPool(credential, options)
+  managed.activeQueries += 1
+  managed.lastUsedAt = Date.now()
+  const client = await managed.pool.connect()
+
+  try {
+    return await operation(client)
+  } finally {
+    client.release()
+    managed.activeQueries = Math.max(0, managed.activeQueries - 1)
+    managed.lastUsedAt = Date.now()
+  }
+}
+
 export async function testPostgresConnection(ciphertext: string) {
   const credential = decryptPostgresCredential(ciphertext)
   const client = createPostgresClient(credential)
@@ -89,10 +214,8 @@ export async function testPostgresConnection(ciphertext: string) {
 
 export async function introspectPostgresSchema(ciphertext: string): Promise<PostgresTableMetadata[]> {
   const credential = decryptPostgresCredential(ciphertext)
-  const client = createPostgresClient(credential, { queryTimeoutMs: 15_000 })
 
-  try {
-    await client.connect()
+  return withPostgresClient(credential, { queryTimeoutMs: 15_000, usePool: false }, async client => {
     const result = await client.query<PostgresColumnMetadata & { tableType: string }>(
       `
         select
@@ -142,9 +265,7 @@ export async function introspectPostgresSchema(ciphertext: string): Promise<Post
     }
 
     return Array.from(tableMap.values())
-  } finally {
-    await client.end().catch(() => undefined)
-  }
+  })
 }
 
 export async function executePostgresReadOnlyQuery(
@@ -161,28 +282,29 @@ export async function executePostgresReadOnlyQuery(
   }
 
   const credential = decryptPostgresCredential(ciphertext)
-  const client = createPostgresClient(credential, { queryTimeoutMs: options.queryTimeoutMs ?? 12_000 })
   const startedAt = Date.now()
 
-  try {
-    await client.connect()
-    await client.query('begin read only')
-    await client.query('select set_config($1, $2, true)', [
-      'statement_timeout',
-      String(options.queryTimeoutMs ?? 12_000),
-    ])
-    const result = await client.query<Record<string, unknown>>(sql)
-    await client.query('commit')
-    return {
-      rows: result.rows,
-      rowCount: result.rowCount ?? result.rows.length,
-      fields: result.fields.map(field => ({ name: field.name, dataTypeId: field.dataTypeID })),
-      elapsedMs: Math.max(0, Date.now() - startedAt),
+  return withPostgresClient(credential, {
+    ...options,
+    queryTimeoutMs: options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
+  }, async client => {
+    try {
+      await client.query('begin read only')
+      await client.query('select set_config($1, $2, true)', [
+        'statement_timeout',
+        String(options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS),
+      ])
+      const result = await client.query<Record<string, unknown>>(sql)
+      await client.query('commit')
+      return {
+        rows: result.rows,
+        rowCount: result.rowCount ?? result.rows.length,
+        fields: result.fields.map(field => ({ name: field.name, dataTypeId: field.dataTypeID })),
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+      }
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined)
+      throw error
     }
-  } catch (error) {
-    await client.query('rollback').catch(() => undefined)
-    throw error
-  } finally {
-    await client.end().catch(() => undefined)
-  }
+  })
 }

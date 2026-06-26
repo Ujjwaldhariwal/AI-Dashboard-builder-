@@ -6,12 +6,11 @@ import {
   BarChart3,
   BookOpen,
   Database,
-  FileText,
+  PanelsTopLeft,
   LayoutDashboard,
   LockKeyhole,
   Network,
   SlidersHorizontal,
-  ShieldCheck,
   Users,
 } from 'lucide-react'
 
@@ -25,9 +24,8 @@ const NAV_ITEMS = [
   { href: '/admin/semantic-model', label: 'Semantic Model', icon: Network },
   { href: '/admin/datasets', label: 'Datasets', icon: BarChart3 },
   { href: '/admin/charts', label: 'Charts', icon: SlidersHorizontal },
+  { href: '/admin/publishing', label: 'Publishing', icon: PanelsTopLeft },
   { href: '/admin/api-docs', label: 'API Docs', icon: BookOpen },
-  { href: '/admin/reports', label: 'Reports', icon: FileText },
-  { href: '/admin/security', label: 'Security', icon: ShieldCheck },
 ]
 
 export function PlatformAdminShell({ children }: { children: React.ReactNode }) {
@@ -80,7 +78,7 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
 
         <div className="absolute bottom-5 left-4 right-4">
           <Button asChild variant="outline" className="w-full border-[#fd971f]/30 bg-transparent text-[#f8f8f2] hover:bg-[#fd971f]/10 hover:text-[#ffd866]">
-            <Link href="/workspaces">Open Legacy Builder</Link>
+            <Link href="/admin/publishing">Publishing Control</Link>
           </Button>
         </div>
       </aside>

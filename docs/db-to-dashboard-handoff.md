@@ -17,7 +17,7 @@ Current priority from the user: strongest possible foundation first, enterprise 
 
 ## Current Foundation Progress
 
-Estimated foundation completion: about 58%.
+Estimated foundation completion: about 70%.
 
 Completed or started:
 - Monokai-style admin shell and platform direction.
@@ -32,13 +32,28 @@ Completed or started:
 - Admin chart health audit endpoint.
 - Shared chart health auditor service at `src/lib/semantic/chart-health-auditor.ts`.
 - Admin chart UI now shows health states: `healthy`, `stale`, `blocked`.
+- Admin published-dashboard APIs now exist for dashboard shells, version creation, and publish promotion.
+- Admin publishing panel now creates dashboard shells, composes draft versions from eligible chart configs, lists versions, and publishes a selected version.
+- Client dashboard rendering now prefers published dashboard versions, pages, and chart slots before falling back to legacy published chart listing.
+- Dashboard-level health checks now roll up chart health through published versions and slots, persist `dashboard_health_runs`, and show client-visible health state.
+- Publishing integrity is now enforced with composite database constraints so versions, pages, slots, health runs, publish events, and chart configs cannot silently cross tenant/project boundaries.
+- Publish promotion now runs a version-specific dashboard health audit, blocks `blocked` releases, and records the publish-time health snapshot on successful promotion.
+- Rollback promotion now exists as a governed endpoint: it rejects invalid rollback states, health-gates the target version, records a `rolled_back` event, writes audit metadata, and persists the rollback health snapshot.
+- Authenticated default entry points now land in DashboardOS admin instead of legacy workspaces.
+- Legacy widget persistence and endpoint-training APIs now return `410 Gone` with DashboardOS replacement pointers.
 - Shared tenant/project access guard at `src/lib/security/project-access.ts`.
 - RBAC/project access checks across high-risk admin data source, semantic model, dataset, chart, schema-column, and project routes.
 - Client runtime tenant/project isolation for published dataset and chart execution.
+- Authenticated custom-domain tenant routing has started in `src/proxy.ts`: verified `tenant_domains.hostname` entries rewrite root requests into the tenant client runtime and attach tenant headers.
+- Production hostname rules now classify hosts before routing: local dev hosts, explicit platform allowlist hosts, optional `{tenant}.root-domain` tenant subdomains, and exact verified custom tenant domains.
+- Tenant hostnames now serve the client runtime only; authenticated unknown tenant hosts return `404` instead of falling through to platform admin routes.
 - Query runtime telemetry via `semantic_query_runs` and `src/lib/semantic/query-runtime-telemetry.ts`.
 - Lightweight in-memory query runtime rate limiting via `src/lib/security/runtime-rate-limit.ts`.
+- Read-only Postgres query execution now uses a bounded per-`data_source_id` pool manager for the hot runtime path instead of opening a fresh client for every chart/dataset request.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
+- System design scaling order is documented in `docs/system-design-foundation.md`.
+- First-class dashboard publishing schema has started with dashboards, versions, pages, chart slots, and publish events.
 - Apidog API inventory is maintained at `docs/apidog-api-inventory.md`.
 - API inventory checker exists via `npm run api-docs:check`.
 - Graphify is installed and used for codebase context. Run `npx graphify hook-rebuild` after code changes.
@@ -68,14 +83,28 @@ Remote:
 - `src/lib/security/project-access.ts`
 - `src/lib/security/runtime-rate-limit.ts`
 - `src/lib/semantic/query-runtime-telemetry.ts`
+- `src/lib/data-sources/postgres-runtime.ts`
+- `src/lib/legacy/legacy-route-response.ts`
+- `src/lib/publishing/dashboard-health-auditor.ts`
 - `src/types/dashboard-chart.ts`
+- `src/types/dashboard-publishing.ts`
+- `src/lib/publishing/dashboard-publishing.ts`
 - `src/types/chart-template.ts`
+- `src/components/platform/published-dashboards-admin-panel.tsx`
+- `src/app/(admin)/admin/publishing/page.tsx`
+- `src/app/api/admin/published-dashboards/route.ts`
+- `src/app/api/admin/published-dashboards/[id]/route.ts`
+- `src/app/api/admin/published-dashboards/[id]/versions/route.ts`
+- `src/app/api/admin/published-dashboards/[id]/publish/route.ts`
+- `src/app/api/admin/published-dashboards/health/route.ts`
 - `src/app/api/admin/dashboard-charts/route.ts`
 - `src/app/api/admin/dashboard-charts/[id]/route.ts`
 - `src/app/api/admin/dashboard-charts/validate/route.ts`
 - `src/app/api/admin/dashboard-charts/audit/route.ts`
 - `src/app/api/client/[tenantSlug]/charts/[id]/run/route.ts`
 - `src/app/api/client/[tenantSlug]/datasets/[id]/run/route.ts`
+- `src/app/(client)/client/[tenantSlug]/page.tsx`
+- `src/proxy.ts`
 - `src/components/platform/dashboard-charts-admin-panel.tsx`
 - `src/components/client/published-charts-grid.tsx`
 - `docs/apidog-api-inventory.md`
@@ -89,19 +118,19 @@ Do not pop that stash into this DB-to-dashboard foundation branch unless intenti
 
 ## Next Sprint Recommendation
 
-Next foundation sprint should be first-class dashboard publishing and legacy UI shell replacement.
+Next foundation sprint is now underway: production routing and runtime scale hardening.
 
 Why:
-- The database foundation no longer keeps the old `dashboards` / `endpoints` / `widgets` tables.
-- The running builder UI still carries legacy endpoint/widget concepts in the local store and routes.
-- Enterprise clients need published dashboards built from governed chart configs, not the old widget canvas model.
+- The platform should fail closed when published dashboard data drifts across tenant/project scope.
+- Runtime health is now a release gate, so the next gap is operating it continuously.
+- Runtime execution must stay bounded when 10-30 client databases are active at the same time.
+- Enterprise clients need governed published dashboards before broader UI completion.
 
-Suggested sprint:
-1. Add dashboard publishing tables: versions, pages, chart slots, publish events.
-2. Point client dashboard rendering at published chart configs.
-3. Replace old builder entry points with tenant/project admin flows.
-4. Disable or archive legacy API endpoint/widget training routes.
-5. Keep scheduled health checks immediately after publishing is first-class.
+Suggested sprint sequence:
+1. Add schema introspection freshness metadata and background refresh contract.
+2. Add Redis-backed query result cache and distributed rate-limit interface.
+3. Add an external scheduler or queue wrapper for dashboard health and exports.
+4. Add alert/notification hooks for newly blocked dashboards.
 
 ## Major Flaws To Plan
 
@@ -115,11 +144,9 @@ Suggested sprint:
 3. Query runtime needs enterprise safeguards:
    - caching
    - persistent/distributed rate limiting
-   - caching
    - stronger query cost policies
 4. Publishing model needs versioning:
    - dashboard versions
-   - rollback
    - draft vs published separation
    - release notes/audit trail
 5. No scheduled health checks yet:

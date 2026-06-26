@@ -174,7 +174,10 @@ export async function POST(
       result = await executePostgresReadOnlyQuery(
         String(sourceRow.credential_ciphertext),
         compileResult.queryPlan.executableSql,
-        { queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs },
+        {
+          poolKey: `data-source:${String(sourceRow.id)}`,
+          queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        },
       )
     } catch (queryError) {
       const message = queryError instanceof Error ? queryError.message : String(queryError)

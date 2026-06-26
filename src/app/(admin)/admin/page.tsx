@@ -84,7 +84,7 @@ export default function AdminOverviewPage() {
               </Link>
             </Button>
             <Button asChild variant="outline" className="border-white/15 bg-transparent text-slate-200 hover:bg-white/10">
-              <Link href="/workspaces">Open current builder</Link>
+              <Link href="/admin/publishing">Open publishing control</Link>
             </Button>
           </div>
         </div>

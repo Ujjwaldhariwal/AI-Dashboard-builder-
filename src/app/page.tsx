@@ -90,7 +90,7 @@ function DashboardMockup() {
             <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
           </div>
           <div className="flex-1 mx-3 h-4 rounded-full bg-white/5 text-[9px] text-white/30 flex items-center px-3">
-            analytics-ai.app/builder
+            analytics-ai.app/admin/publishing
           </div>
           <div className="flex gap-1">
             <div className="h-4 w-10 rounded bg-blue-600/40 text-[8px] text-blue-300 flex items-center justify-center">APIs</div>
@@ -405,11 +405,11 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace('/workspaces')
+      router.replace('/admin')
     }
   }, [isAuthenticated, isLoading, router])
 
-  // Middleware already redirects authenticated users to /workspaces server-side.
+  // Middleware already redirects authenticated users to the DashboardOS admin server-side.
   // Only hide the page after loading confirms an active session (client-side fallback).
   if (!isLoading && isAuthenticated) return null
   return <LandingPage />
