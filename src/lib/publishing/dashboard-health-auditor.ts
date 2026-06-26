@@ -245,7 +245,7 @@ export async function recordDashboardHealthRuns({
 }: {
   supabase: SupabaseClient
   audit: DashboardHealthAudit
-  checkedBy: string
+  checkedBy: string | null
 }) {
   const rows = audit.dashboards.map(item => ({
     tenant_id: item.dashboard.id ? null : null,

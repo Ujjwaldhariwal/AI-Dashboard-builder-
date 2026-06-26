@@ -100,7 +100,7 @@ The missing scale pieces are:
 
 ### 6. Background Jobs
 
-Status: durable queue contract added; worker execution is next.
+Status: worker execution started.
 
 The platform now has `platform_jobs` as the shared queue contract for:
 
@@ -109,11 +109,17 @@ The platform now has `platform_jobs` as the shared queue contract for:
 - schema refreshes
 - cache warming
 
-`GET /api/admin/jobs` lists jobs by tenant/project/type/status for operators, while `POST /api/admin/jobs` lets trusted admin flows or external schedulers enqueue work with priority, run time, retry, payload, and dedupe metadata. Manual schema refresh requests now mark the data source `pending_refresh` and enqueue a deduped `schema_refresh` job for a future worker.
+`GET /api/admin/jobs` lists jobs by tenant/project/type/status for operators, while `POST /api/admin/jobs` lets trusted admin flows or external schedulers enqueue work with priority, run time, retry, payload, and dedupe metadata. Manual schema refresh requests now mark the data source `pending_refresh` and enqueue a deduped `schema_refresh` job.
+
+`POST /api/admin/jobs/worker` is the first worker surface. It is protected by `DASHBOARDOS_WORKER_SECRET`, uses `SUPABASE_SERVICE_ROLE_KEY`, atomically claims ready jobs through `claim_platform_jobs`, and currently executes:
+
+- `dashboard_health`: audits published dashboards and records `dashboard_health_runs`
+- `schema_refresh`: introspects the target data source and refreshes schema metadata
+
+Failed jobs return to `queued` with backoff until `max_attempts`, then become `failed`.
 
 Remaining job work:
 
-- add the worker/claim loop that runs queued jobs with a service role
 - add recurring schedules for dashboard health and cache warming
 - add PDF/export execution and artifact storage
 - add alert fan-out for newly blocked dashboards
@@ -134,7 +140,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Worker/claim loop for queued jobs.
+1. Recurring schedules for dashboard health/schema refresh/cache warm jobs.
 2. Alert hooks for newly blocked dashboards.
 3. Query cost budgets by tenant/project/source.
 4. AI filter policy after the above are stable.

@@ -809,6 +809,42 @@ Body:
 
 Response: `{ "job": { ... } }`
 
+### `POST /api/admin/jobs/worker`
+
+Purpose: claim and execute ready `platform_jobs` rows from a trusted scheduler or cron runner.
+
+Auth: worker secret only. Send `Authorization: Bearer <DASHBOARDOS_WORKER_SECRET>` or `x-dashboardos-worker-secret`.
+
+Environment:
+- `SUPABASE_SERVICE_ROLE_KEY`: required to claim and execute jobs server-side
+- `DASHBOARDOS_WORKER_SECRET`: required to authorize the worker route
+
+Query:
+- `limit`: optional number, default `5`, max `25`
+
+Behavior:
+- atomically claims queued jobs using `claim_platform_jobs`
+- executes `dashboard_health` by recording dashboard health runs
+- executes `schema_refresh` by introspecting the target data source and refreshing schema metadata
+- marks failed jobs back to `queued` with backoff until `maxAttempts`, then `failed`
+
+Response:
+
+```json
+{
+  "workerId": "worker-id",
+  "claimed": 1,
+  "processed": [
+    {
+      "id": "uuid",
+      "jobType": "schema_refresh",
+      "status": "succeeded",
+      "result": {}
+    }
+  ]
+}
+```
+
 ### `GET /api/admin/query-runs`
 
 Purpose: list recent semantic query runtime executions for troubleshooting latency, failures, and workload patterns.

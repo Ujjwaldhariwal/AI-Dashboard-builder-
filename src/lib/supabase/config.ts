@@ -7,3 +7,11 @@ export function getSupabaseAnonKey(): string {
   }
   return key
 }
+
+export function getSupabaseServiceRoleKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for background workers')
+  }
+  return key
+}

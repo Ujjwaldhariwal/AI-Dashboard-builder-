@@ -57,6 +57,25 @@ interface ListPlatformJobsInput {
   limit?: number
 }
 
+interface ClaimPlatformJobsInput {
+  supabase: SupabaseClient
+  workerId: string
+  batchSize?: number
+}
+
+interface CompletePlatformJobInput {
+  supabase: SupabaseClient
+  jobId: string
+  result?: Record<string, unknown>
+}
+
+interface FailPlatformJobInput {
+  supabase: SupabaseClient
+  job: PlatformJob
+  errorMessage: string
+  retryAfterSeconds?: number
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
@@ -168,4 +187,74 @@ export async function listPlatformJobs({
   if (error) throw new Error(error.message)
 
   return (data ?? []).map(row => mapPlatformJob(row as Record<string, unknown>))
+}
+
+export async function claimPlatformJobs({
+  supabase,
+  workerId,
+  batchSize = 5,
+}: ClaimPlatformJobsInput): Promise<PlatformJob[]> {
+  const clampedBatchSize = Math.min(25, Math.max(1, Math.trunc(batchSize)))
+  const { data, error } = await supabase.rpc('claim_platform_jobs', {
+    batch_size: clampedBatchSize,
+    worker_id: workerId,
+  })
+
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as Record<string, unknown>[]).map(row => mapPlatformJob(row))
+}
+
+export async function completePlatformJob({
+  supabase,
+  jobId,
+  result = {},
+}: CompletePlatformJobInput): Promise<PlatformJob> {
+  const nowIso = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('platform_jobs')
+    .update({
+      status: 'succeeded',
+      result,
+      error_message: null,
+      locked_by: null,
+      locked_at: null,
+      completed_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq('id', jobId)
+    .select('*')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return mapPlatformJob(data as Record<string, unknown>)
+}
+
+export async function failPlatformJob({
+  supabase,
+  job,
+  errorMessage,
+  retryAfterSeconds,
+}: FailPlatformJobInput): Promise<PlatformJob> {
+  const now = new Date()
+  const shouldRetry = job.attempts < job.maxAttempts
+  const retryDelaySeconds = retryAfterSeconds ?? Math.min(900, 30 * Math.max(1, job.attempts))
+  const nextRunAfter = new Date(now.getTime() + retryDelaySeconds * 1000).toISOString()
+  const status: PlatformJobStatus = shouldRetry ? 'queued' : 'failed'
+  const { data, error } = await supabase
+    .from('platform_jobs')
+    .update({
+      status,
+      error_message: errorMessage,
+      locked_by: null,
+      locked_at: null,
+      run_after: shouldRetry ? nextRunAfter : job.runAfter,
+      completed_at: shouldRetry ? null : now.toISOString(),
+      updated_at: now.toISOString(),
+    })
+    .eq('id', job.id)
+    .select('*')
+    .single()
+
+  if (error) throw new Error(error.message)
+  return mapPlatformJob(data as Record<string, unknown>)
 }

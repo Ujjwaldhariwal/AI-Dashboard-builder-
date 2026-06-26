@@ -53,6 +53,8 @@ Completed or started:
 - Schema introspection freshness now records source-level schema status, hash, table/column counts, next refresh time, refresh request metadata, and per-run history in `data_source_schema_runs`.
 - Background job queue contract now exists through `platform_jobs`, `src/lib/jobs/platform-jobs.ts`, and `GET/POST /api/admin/jobs` for dashboard health, schema refresh, export, and cache-warm work.
 - Manual schema refresh requests now enqueue a deduped `schema_refresh` job after marking the source `pending_refresh`.
+- Worker execution has started through `POST /api/admin/jobs/worker`, protected by `DASHBOARDOS_WORKER_SECRET` and backed by a service-role Supabase client.
+- The worker now executes `dashboard_health` jobs and `schema_refresh` jobs with retry/backoff state transitions.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -90,6 +92,8 @@ Remote:
 - `src/lib/legacy/legacy-route-response.ts`
 - `src/lib/publishing/dashboard-health-auditor.ts`
 - `src/lib/jobs/platform-jobs.ts`
+- `src/lib/jobs/platform-job-runner.ts`
+- `src/lib/data-sources/schema-introspection-runner.ts`
 - `src/types/dashboard-chart.ts`
 - `src/types/dashboard-publishing.ts`
 - `src/lib/publishing/dashboard-publishing.ts`
@@ -102,6 +106,7 @@ Remote:
 - `src/app/api/admin/published-dashboards/[id]/publish/route.ts`
 - `src/app/api/admin/published-dashboards/health/route.ts`
 - `src/app/api/admin/jobs/route.ts`
+- `src/app/api/admin/jobs/worker/route.ts`
 - `src/app/api/admin/dashboard-charts/route.ts`
 - `src/app/api/admin/dashboard-charts/[id]/route.ts`
 - `src/app/api/admin/dashboard-charts/validate/route.ts`
@@ -132,7 +137,7 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add the service-role worker/claim loop for queued jobs.
+1. Add recurring schedule seeding for dashboard health, schema refresh, and cache warm jobs.
 2. Add alert/notification hooks for newly blocked dashboards.
 3. Add query cost budgets by tenant/project/source.
 
@@ -153,9 +158,9 @@ Suggested sprint sequence:
    - dashboard versions
    - draft vs published separation
    - release notes/audit trail
-5. No scheduled worker execution yet:
-   - durable queue contract exists, but no worker claims/runs jobs yet
-   - chart and dashboard audits are still manual/API-driven until schedules are created
+5. No recurring scheduler yet:
+   - durable queue and worker execution exist for health/schema jobs
+   - chart and dashboard audits are still manual/API/cron-driven until schedules are created
    - no alerts
 6. Client dashboard needs PDF/report architecture.
 7. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
