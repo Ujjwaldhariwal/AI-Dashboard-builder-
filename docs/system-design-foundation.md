@@ -83,14 +83,20 @@ Each scan also writes `data_source_schema_runs`, giving operators a run ledger w
 
 ### 5. Query Engine + Distributed Cache
 
-Status: partially started.
+Status: Redis interface added with safe fallback.
 
-The semantic query compiler produces guarded read-only SQL and query telemetry is persisted to `semantic_query_runs`. The missing scale pieces are:
+The semantic query compiler produces guarded read-only SQL and query telemetry is persisted to `semantic_query_runs`. Runtime execution now has:
 
-- Redis-backed result cache
-- distributed rate limiting
+- Redis-backed result cache via Upstash-compatible REST env vars
+- per-instance in-memory result cache fallback when Redis is not configured
+- distributed rate limiting via the same Redis REST interface
+- per-instance in-memory rate-limit fallback for local/demo environments
+- cache keys scoped by tenant, project, dataset/chart, data source, SQL, semantic update timestamps, and schema hash
+
+The missing scale pieces are:
+
 - query cost budget by tenant/project/source
-- cache keys based on tenant, project, dataset/chart, query hash, and semantic version
+- proactive cache warming through scheduled jobs
 
 ### 6. Background Jobs
 
@@ -122,7 +128,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Redis cache/rate-limit interface.
-2. Queue contract for scheduled health, schema refreshes, and exports.
-3. Alert hooks for newly blocked dashboards.
+1. Queue contract for scheduled health, schema refreshes, exports, and cache warming.
+2. Alert hooks for newly blocked dashboards.
+3. Query cost budgets by tenant/project/source.
 4. AI filter policy after the above are stable.

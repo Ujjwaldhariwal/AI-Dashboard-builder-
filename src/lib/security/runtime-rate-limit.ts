@@ -1,3 +1,5 @@
+import { hasRedisRuntime, redisPipeline } from '@/lib/security/redis-runtime'
+
 export interface RuntimeRateLimitOptions {
   key: string
   maxRequests: number
@@ -25,7 +27,7 @@ function cleanup(now: number) {
   }
 }
 
-export function checkRuntimeRateLimit({
+function checkInMemoryRuntimeRateLimit({
   key,
   maxRequests,
   windowMs,
@@ -47,5 +49,30 @@ export function checkRuntimeRateLimit({
     remaining: Math.max(0, maxRequests - bucket.count),
     retryAfterSeconds,
     resetAt: bucket.resetAt,
+  }
+}
+
+export async function checkRuntimeRateLimit(options: RuntimeRateLimitOptions): Promise<RuntimeRateLimitDecision> {
+  if (!hasRedisRuntime()) return checkInMemoryRuntimeRateLimit(options)
+
+  const redisKey = `dashboardos:rate:${options.key}`
+  const results = await redisPipeline<number>([
+    ['INCR', redisKey],
+    ['PEXPIRE', redisKey, String(options.windowMs), 'NX'],
+    ['PTTL', redisKey],
+  ])
+
+  const count = Number(results?.[0]?.result ?? 0)
+  const ttlMs = Number(results?.[2]?.result ?? options.windowMs)
+  if (!results || results.some(result => result.error) || count <= 0 || ttlMs < 0) {
+    return checkInMemoryRuntimeRateLimit(options)
+  }
+
+  const retryAfterSeconds = Math.max(1, Math.ceil(ttlMs / 1000))
+  return {
+    ok: count <= options.maxRequests,
+    remaining: Math.max(0, options.maxRequests - count),
+    retryAfterSeconds,
+    resetAt: Date.now() + ttlMs,
   }
 }

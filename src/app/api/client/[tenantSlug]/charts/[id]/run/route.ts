@@ -5,6 +5,7 @@ import { accessContext, requireTenantAccess } from '@/lib/security/project-acces
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
+import { getQueryResultCache, queryResultCacheKey, setQueryResultCache } from '@/lib/semantic/query-result-cache'
 import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -91,7 +92,7 @@ export async function POST(
     const auth = await getAuthedSupabase()
     if (!auth) return NextResponse.json({ result: null, error: 'Unauthorized' }, { status: 401 })
 
-    const rateLimit = checkRuntimeRateLimit({
+    const rateLimit = await checkRuntimeRateLimit({
       key: `client-chart:${tenantSlug}:${id}:${auth.userId}`,
       maxRequests: 60,
       windowMs: 60_000,
@@ -149,6 +150,9 @@ export async function POST(
     }
 
     const dataset = datasetRow as Record<string, unknown>
+    const cachePolicy = dataset.cache_policy && typeof dataset.cache_policy === 'object'
+      ? dataset.cache_policy as Record<string, unknown>
+      : {}
     const selection = selectionFromDataset(dataset)
     const [fieldsResult, metricsResult, relationshipsResult] = await Promise.all([
       selection.fieldIds.length > 0
@@ -235,7 +239,7 @@ export async function POST(
 
     const { data: sourceRow, error: sourceError } = await auth.supabase
       .from('data_sources')
-      .select('id, credential_ciphertext, status')
+      .select('id, credential_ciphertext, status, schema_hash')
       .eq('id', compileResult.dataSourceId)
       .eq('tenant_id', tenant.id)
       .eq('project_id', chart.projectId)
@@ -259,6 +263,66 @@ export async function POST(
         warnings: compileResult.warnings,
       })
       return NextResponse.json({ result: null, error: 'Data source is not active' }, { status: 409 })
+    }
+
+    const cacheKey = queryResultCacheKey({
+      tenantId: chart.tenantId,
+      projectId: chart.projectId,
+      datasetId: chart.datasetId,
+      chartId: chart.id,
+      dataSourceId: compileResult.dataSourceId,
+      sql: compileResult.queryPlan.executableSql,
+      datasetUpdatedAt: typeof dataset.updated_at === 'string' ? dataset.updated_at : null,
+      chartUpdatedAt: chart.updatedAt,
+      schemaHash: typeof sourceRow.schema_hash === 'string' ? sourceRow.schema_hash : null,
+    })
+    const cached = await getQueryResultCache<Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>>(cacheKey)
+    if (cached.hit && cached.value) {
+      await recordSemanticQueryRun({
+        supabase: auth.supabase,
+        tenantId: chart.tenantId,
+        projectId: chart.projectId,
+        datasetId: chart.datasetId,
+        chartId: chart.id,
+        dataSourceId: compileResult.dataSourceId,
+        actorUserId: auth.userId,
+        surface: 'client_chart',
+        status: 'success',
+        sql: compileResult.queryPlan.executableSql,
+        rowCount: cached.value.rowCount,
+        elapsedMs: 0,
+        timeoutMs: compileResult.queryPlan.limits.timeoutMs,
+        warnings: [...compileResult.warnings, `cache_hit:${cached.backend}`],
+      })
+
+      return NextResponse.json({
+        result: {
+          chart: {
+            id: chart.id,
+            name: chart.name,
+            templateId: chart.templateId,
+            encoding: chart.encoding,
+            presentation: chart.presentation,
+            layout: chart.layout,
+            resolved: {
+              xField: labelForId(fields, chart.encoding.xAxisFieldId),
+              yFields: chart.encoding.yMetricIds.map(metricId => labelForId(metrics, metricId)).filter(Boolean),
+              tooltipFields: chart.encoding.tooltipFieldIds.map(itemId => (
+                labelForId(fields, itemId) || labelForId(metrics, itemId)
+              )).filter(Boolean),
+              sortField: labelForId([...fields, ...metrics], chart.encoding.sort?.byId),
+            },
+          },
+          dataset: {
+            id: String(dataset.id),
+            name: String(dataset.name ?? ''),
+            status: String(dataset.status ?? 'published'),
+          },
+          warnings: compileResult.warnings,
+          cache: { hit: true, backend: cached.backend },
+          ...cached.value,
+        },
+      })
     }
 
     let execution: Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>
@@ -307,6 +371,7 @@ export async function POST(
       timeoutMs: compileResult.queryPlan.limits.timeoutMs,
       warnings: compileResult.warnings,
     })
+    const cacheWrite = await setQueryResultCache(cacheKey, execution, cachePolicy.ttlSeconds)
 
     return NextResponse.json({
       result: {
@@ -332,6 +397,7 @@ export async function POST(
           status: String(dataset.status ?? 'published'),
         },
         warnings: compileResult.warnings,
+        cache: { hit: false, backend: cacheWrite.backend, ttlSeconds: cacheWrite.ttlSeconds },
         ...execution,
       },
     })

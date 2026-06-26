@@ -42,7 +42,7 @@ export async function POST(
     const auth = await getAuthedSupabase()
     if (!auth) return NextResponse.json({ result: null, error: 'Unauthorized' }, { status: 401 })
 
-    const rateLimit = checkRuntimeRateLimit({
+    const rateLimit = await checkRuntimeRateLimit({
       key: `admin-preview:${auth.userId}`,
       maxRequests: 30,
       windowMs: 60_000,
