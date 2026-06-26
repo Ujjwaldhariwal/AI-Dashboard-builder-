@@ -836,6 +836,40 @@ Body:
 
 Response: `{ "alert": { ... } }`
 
+### `GET /api/admin/dashboard-exports`
+
+Purpose: list generated dashboard export artifacts for an operator or export history view.
+
+Auth: authenticated tenant/project access; platform admins may list globally.
+
+Query:
+- `tenantId`: optional UUID
+- `projectId`: optional UUID
+- `dashboardId`: optional UUID
+- `limit`: optional number, default `50`, max `200`
+
+Response: `{ "exports": [...] }`
+
+### `POST /api/admin/dashboard-exports`
+
+Purpose: enqueue an export job for a published dashboard or a specific dashboard version.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "tenantId": "uuid",
+  "projectId": "uuid",
+  "dashboardId": "uuid",
+  "exportType": "manifest_json",
+  "priority": 0
+}
+```
+
+Response: `{ "job": { ... } }`
+
 ### `GET /api/admin/jobs`
 
 Purpose: list scheduled or queued platform background work for operators and scheduler dashboards.
@@ -988,6 +1022,7 @@ Behavior:
 - executes `dashboard_health` by recording dashboard health runs
 - executes `schema_refresh` by introspecting the target data source and refreshing schema metadata
 - executes `cache_warm` by compiling published dataset/chart SQL, running read-only queries, and writing query-result cache entries
+- executes `export` by generating a durable `manifest_json` artifact for a published dashboard or dashboard version
 - marks failed jobs back to `queued` with backoff until `maxAttempts`, then `failed`
 
 Response:

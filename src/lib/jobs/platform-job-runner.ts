@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { reconcileDashboardHealthAlerts } from '@/lib/alerts/platform-alerts'
 import { runDataSourceSchemaIntrospection } from '@/lib/data-sources/schema-introspection-runner'
+import { createDashboardManifestExport } from '@/lib/publishing/dashboard-export-artifact'
 import { auditPublishedDashboards, recordDashboardHealthRuns } from '@/lib/publishing/dashboard-health-auditor'
 import { warmQueryResultCache } from '@/lib/semantic/query-cache-warmer'
 import type { PlatformJob } from '@/lib/jobs/platform-jobs'
@@ -83,13 +84,41 @@ async function runCacheWarmJob(supabase: SupabaseClient, job: PlatformJob): Prom
   }
 }
 
+async function runExportJob(supabase: SupabaseClient, job: PlatformJob): Promise<PlatformJobRunResult> {
+  const exportType = typeof job.payload.exportType === 'string' ? job.payload.exportType : 'manifest_json'
+  if (exportType !== 'manifest_json') throw new Error(`Unsupported export type: ${exportType}`)
+  if (job.targetType !== 'dashboard' && job.targetType !== 'dashboard_version') {
+    throw new Error('export jobs require targetType=dashboard or targetType=dashboard_version')
+  }
+  if (!job.targetId) throw new Error('export jobs require targetId')
+
+  const artifact = await createDashboardManifestExport({
+    supabase,
+    dashboardId: job.targetType === 'dashboard' ? job.targetId : null,
+    versionId: job.targetType === 'dashboard_version' ? job.targetId : null,
+    requestedBy: job.createdBy,
+    jobId: job.id,
+  })
+
+  return {
+    ok: true,
+    result: {
+      artifactId: artifact.id,
+      artifactName: artifact.artifactName,
+      contentType: artifact.contentType,
+      exportType: artifact.exportType,
+      dashboardId: artifact.dashboardId,
+      versionId: artifact.versionId,
+      metadata: artifact.metadata,
+    },
+  }
+}
+
 export async function runPlatformJob(supabase: SupabaseClient, job: PlatformJob): Promise<PlatformJobRunResult> {
   if (job.jobType === 'dashboard_health') return runDashboardHealthJob(supabase, job)
   if (job.jobType === 'schema_refresh') return runSchemaRefreshJob(supabase, job)
   if (job.jobType === 'cache_warm') return runCacheWarmJob(supabase, job)
-  if (job.jobType === 'export') {
-    throw new Error('export executor is not implemented yet')
-  }
+  if (job.jobType === 'export') return runExportJob(supabase, job)
 
   throw new Error(`Unsupported platform job type: ${job.jobType}`)
 }

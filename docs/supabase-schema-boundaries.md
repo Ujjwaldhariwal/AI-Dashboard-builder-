@@ -33,6 +33,7 @@ These tables are the current foundation and should be protected:
 - `dashboard_health_runs`
 - `platform_alerts`
 - `query_budget_policies`
+- `dashboard_export_artifacts`
 - `audit_logs`
 
 ## Removed Legacy Tables
@@ -77,9 +78,15 @@ Migration `20260625213000_dashboard_publishing_integrity.sql` hardens the publis
 - Published dashboard `current_version_id` must point to a version owned by that dashboard.
 - New dashboard health rows must include tenant, project, and dashboard scope.
 
+Migration `20260626183000_dashboard_export_artifacts.sql` adds durable export records for published dashboards:
+
+- Export artifacts are scoped to tenant, project, dashboard, and optionally dashboard version.
+- The initial supported artifact type is `manifest_json`, a portable dashboard metadata bundle without source credentials or raw query results.
+- Export rows are readable by project/tenant access and insertable by project editors or trusted worker execution.
+
 ## Next Schema Work
 
-The next foundation migrations should add scheduled health automation around the new publishing tables:
+The next foundation migrations should add delivery integrations around the new operational tables:
 
-- scheduled dashboard health checks
-- client-visible dashboard degradation state
+- external alert delivery attempts
+- external export object storage metadata for PDF/ZIP artifacts

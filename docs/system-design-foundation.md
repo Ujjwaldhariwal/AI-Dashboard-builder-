@@ -95,7 +95,7 @@ The semantic query compiler produces guarded read-only SQL and query telemetry i
 
 The runtime now supports query budget policies through `query_budget_policies` and `GET/POST /api/admin/query-budgets`. Runtime cache misses check tenant/project/source policies before opening a Postgres query. Exhausted budgets return `429` with `Retry-After` and reset metadata, and budget denials are recorded in `semantic_query_runs`.
 
-The missing scale piece is:
+Completed scale pieces now include:
 
 - proactive cache warming through scheduled jobs
 
@@ -117,6 +117,7 @@ The platform now has `platform_jobs` as the shared queue contract for:
 - `dashboard_health`: audits published dashboards and records `dashboard_health_runs`
 - `schema_refresh`: introspects the target data source and refreshes schema metadata
 - `cache_warm`: compiles published dataset/chart SQL, runs read-only queries, and writes query-result cache entries
+- `export`: generates a durable `manifest_json` artifact for a published dashboard or dashboard version
 
 Failed jobs return to `queued` with backoff until `max_attempts`, then become `failed`.
 
@@ -126,7 +127,7 @@ Alert hooks now create persistent `platform_alerts` when a scheduled or manual d
 
 Remaining job work:
 
-- add PDF/export execution and artifact storage
+- add PDF/ZIP rendering and external object storage for export artifacts
 - add external alert fan-out, such as email/webhooks, for newly blocked dashboards
 
 ### 7. AI Filter Layer
