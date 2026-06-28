@@ -57,7 +57,7 @@ Those tables belonged to the earlier user-owned builder flow. They mixed `user_i
 
 ## Remaining App Debt
 
-Some UI and API code still references the removed legacy concepts through the local builder store and older routes. Treat that code as a legacy shell until it is replaced with tenant/project-scoped admin screens.
+Some UI code still references removed legacy concepts through the local builder store. Legacy builder/viewer routes are quarantined by default through `DASHBOARDOS_ENABLE_LEGACY_ROUTES`; treat that code as a maintenance-only shell until it is replaced with tenant/project-scoped admin screens.
 
 Do not add new Supabase dependencies on the removed tables. New work should use the core product tables above.
 

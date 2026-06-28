@@ -11,22 +11,13 @@ import {
   normalizeRequestHostname,
   resolveHostnamePolicy,
 } from '@/lib/routing/hostname-policy'
+import { isLegacyPublicShareRoute, isLegacyUiRoute, legacyUiRoutesEnabled } from '@/lib/legacy/legacy-route-policy'
 import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
-const PUBLIC_ROUTES = ['/view']
 const ADMIN_ONLY = ['/settings']
 const BUILDER_CANVAS_ROUTE = '/builder'
 const DASHBOARDOS_HOME_ROUTE = '/admin'
 const CLIENT_ROUTE = '/client'
-const LEGACY_ROUTES = [
-  '/api-config',
-  '/auth-flow',
-  '/builder',
-  '/dashboard',
-  '/monitoring',
-  '/pdf-export',
-  '/workspaces',
-]
 
 interface TenantDomainResolution {
   tenantId: string
@@ -155,14 +146,16 @@ export async function proxy(request: NextRequest) {
   const hostname = normalizeHostname(request)
   const hostnamePolicy = resolveHostnamePolicy(hostname)
   const isTenantHost = isTenantHostnamePolicy(hostnamePolicy)
+  const legacyRoutesEnabled = legacyUiRoutesEnabled()
 
-  // Always allow /view/[token] public share links.
-  if (PUBLIC_ROUTES.some(route => pathname.startsWith(route))) {
+  if (legacyRoutesEnabled && isLegacyPublicShareRoute(pathname)) {
     return NextResponse.next()
   }
 
-  if (LEGACY_ROUTES.some(route => pathname === route || pathname.startsWith(`${route}/`))) {
-    return NextResponse.redirect(new URL(DASHBOARDOS_HOME_ROUTE, request.url))
+  if (!legacyRoutesEnabled && isLegacyUiRoute(pathname)) {
+    const response = NextResponse.redirect(new URL(DASHBOARDOS_HOME_ROUTE, request.url))
+    response.headers.set('x-dashboardos-legacy-route', 'disabled')
+    return response
   }
 
   const response = NextResponse.next({

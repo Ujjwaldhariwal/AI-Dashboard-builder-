@@ -1,25 +1,25 @@
 # Graph Report - .  (2026-06-28)
 
 ## Corpus Check
-- 287 files · ~194,410 words
+- 287 files · ~194,506 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2241 nodes · 6280 edges · 100 communities detected
+- 2242 nodes · 6283 edges · 100 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
-- Edge kinds: contains: 1694 · imports: 1279 · MODIFIES: 1129 · imports_from: 780 · calls: 552 · ON_BRANCH: 401 · PARENT_OF: 260 · references: 133 · method: 45 · inherits: 5 · re_exports: 2
+- Edge kinds: contains: 1694 · imports: 1279 · MODIFIES: 1130 · imports_from: 780 · calls: 552 · ON_BRANCH: 402 · PARENT_OF: 261 · references: 133 · method: 45 · inherits: 5 · re_exports: 2
 
 
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
 - Included files: 287 · Candidates: 308
-- Excluded: 0 untracked · 89348 ignored · 2 sensitive · 0 missing committed
+- Excluded: 1 untracked · 89569 ignored · 2 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `8209246`
+- Built from Git commit: `1b7f8dd`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Button` - 49 edges
@@ -81,7 +81,7 @@ Nodes (47): CACHE, CachedResponse, clearEndpointResponseCache(), EndpointCacheEn
 
 ### Community 8 - "Community 8"
 Cohesion: 0.07
-Nodes (45): 0b3c27f feat: enforce query budget policies, 26a8f15 feat: execute cache warm jobs, 63029fc feat: revalidate client chart runtime, a977d05 refactor: extract chart health auditor, ec0739b feat: show chart audit health in admin, f22b8bd feat: add chart health audit endpoint, f3cd521 feat: add client chart runtime endpoint, asEncoding() (+37 more)
+Nodes (46): 0b3c27f feat: enforce query budget policies, 26a8f15 feat: execute cache warm jobs, 57f69d1 feat: enforce query budget hard stops, 63029fc feat: revalidate client chart runtime, a977d05 refactor: extract chart health auditor, ec0739b feat: show chart audit health in admin, f22b8bd feat: add chart health audit endpoint, f3cd521 feat: add client chart runtime endpoint (+38 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.07
@@ -288,8 +288,8 @@ Cohesion: 0.30
 Nodes (7): audit_logs, auth.users, dashboard_projects, project_assignments, tenant_domains, tenant_memberships, tenants
 
 ### Community 60 - "Community 60"
-Cohesion: 0.25
-Nodes (9): 57f69d1 feat: enforce query budget hard stops, 8209246 feat: render dashboard pdf and zip exports, clampLimit(), CreateExportSchema, ExportTypeSchema, GET(), POST(), requireExportAccess() (+1 more)
+Cohesion: 0.24
+Nodes (9): 1b7f8dd feat: add native alert email delivery, 8209246 feat: render dashboard pdf and zip exports, chartLabel(), DashboardExportManifest, DashboardExportManifestChart, renderDashboardBundleZip(), renderDashboardReportPdf(), styles (+1 more)
 
 ### Community 61 - "Community 61"
 Cohesion: 0.35
@@ -333,35 +333,35 @@ Nodes (6): 27b5d6e feat(sprint-4): add bosch demo polish and export validation, 
 
 ### Community 71 - "Community 71"
 Cohesion: 0.39
-Nodes (7): FieldMappingSchema, GET(), mapEntity(), mapField(), POST(), semanticKey(), BusinessEntityType
+Nodes (7): clampLimit(), CreateExportSchema, ExportTypeSchema, GET(), POST(), requireExportAccess(), verifyExportTarget()
 
 ### Community 72 - "Community 72"
+Cohesion: 0.39
+Nodes (7): FieldMappingSchema, GET(), mapEntity(), mapField(), POST(), semanticKey(), BusinessEntityType
+
+### Community 73 - "Community 73"
 Cohesion: 0.61
 Nodes (7): auth.users, dashboards, endpoint_mapping_feedback, endpoint_profile_runs, endpoint_profiles, endpoints, widgets
 
-### Community 73 - "Community 73"
+### Community 74 - "Community 74"
 Cohesion: 0.54
 Nodes (7): business_entities, business_fields, business_metrics, business_models, business_relationships, dashboard_projects, tenants
 
-### Community 74 - "Community 74"
+### Community 75 - "Community 75"
 Cohesion: 0.46
 Nodes (7): auth.users, dashboard_chart_configs, dashboard_projects, data_sources, semantic_datasets, semantic_query_runs, tenants
 
-### Community 75 - "Community 75"
+### Community 76 - "Community 76"
 Cohesion: 0.57
 Nodes (7): dashboard_chart_configs, dashboard_chart_slots, dashboard_health_runs, dashboard_pages, dashboard_publish_events, dashboard_versions, published_dashboards
 
-### Community 76 - "Community 76"
+### Community 77 - "Community 77"
 Cohesion: 0.46
 Nodes (7): auth.users, dashboard_export_artifacts, dashboard_projects, dashboard_versions, platform_jobs, published_dashboards, tenants
 
-### Community 77 - "Community 77"
+### Community 78 - "Community 78"
 Cohesion: 0.54
 Nodes (7): auth.users, dashboard_projects, platform_alert_channels, platform_alert_delivery_attempts, platform_alerts, platform_jobs, tenants
-
-### Community 78 - "Community 78"
-Cohesion: 0.36
-Nodes (7): chartLabel(), DashboardExportManifest, DashboardExportManifestChart, renderDashboardBundleZip(), renderDashboardReportPdf(), styles, text()
 
 ### Community 79 - "Community 79"
 Cohesion: 0.43
@@ -472,7 +472,7 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.023) - this node is a cross-community bridge._
 - **Why does `Badge()` connect `Community 3` to `Community 12`, `Community 19`, `Community 68`, `Community 13`, `Community 24`, `Community 20`, `Community 37`, `Community 46`, `Community 49`, `Community 14`, `Community 30`, `Community 4`, `Community 15`, `Community 18`, `Community 9`, `Community 5`, `Community 25`, `Community 2`, `Community 38`, `Community 22`?**
   _High betweenness centrality (0.018) - this node is a cross-community bridge._
-- **Why does `getAuthedSupabase()` connect `Community 0` to `Community 9`, `Community 60`, `Community 42`, `Community 71`, `Community 25`, `Community 24`, `Community 16`, `Community 2`, `Community 8`?**
+- **Why does `getAuthedSupabase()` connect `Community 0` to `Community 9`, `Community 71`, `Community 42`, `Community 72`, `Community 25`, `Community 24`, `Community 16`, `Community 2`, `Community 8`?**
   _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **What connects `nextConfig`, `config`, `root` to the rest of the system?**
   _525 weakly-connected nodes found - possible documentation gaps or missing edges._

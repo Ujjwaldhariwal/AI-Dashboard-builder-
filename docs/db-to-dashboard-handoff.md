@@ -40,6 +40,7 @@ Completed or started:
 - Publish promotion now runs a version-specific dashboard health audit, blocks `blocked` releases, and records the publish-time health snapshot on successful promotion.
 - Rollback promotion now exists as a governed endpoint: it rejects invalid rollback states, health-gates the target version, records a `rolled_back` event, writes audit metadata, and persists the rollback health snapshot.
 - Authenticated default entry points now land in DashboardOS admin instead of legacy workspaces.
+- Legacy builder/viewer UI routes are quarantined by default through `DASHBOARDOS_ENABLE_LEGACY_ROUTES`; enable the matching `NEXT_PUBLIC_DASHBOARDOS_ENABLE_LEGACY_ROUTES` only for intentional maintenance access.
 - Legacy widget persistence and endpoint-training APIs now return `410 Gone` with DashboardOS replacement pointers.
 - Shared tenant/project access guard at `src/lib/security/project-access.ts`.
 - RBAC/project access checks across high-risk admin data source, semantic model, dataset, chart, schema-column, and project routes.
@@ -162,12 +163,12 @@ Why:
 
 Suggested sprint sequence:
 1. Add visual chart snapshot rendering for PDF exports.
-2. Replace the remaining legacy builder/viewer Supabase assumptions with tenant/project admin flows.
+2. Replace any remaining legacy local-store dependencies inside shared layout utilities.
 3. Add alert suppression/escalation windows once operational thresholds are clearer.
 
 ## Major Flaws To Plan
 
-1. Legacy UI/API routes still reference removed Supabase concepts and need replacement before demo.
+1. Legacy UI/API surfaces are quarantined, but some shared layout utilities still import the old local builder store and should be removed from the DashboardOS shell before final hardening.
 2. Semantic model is still too shallow for enterprise analytics:
    - no certified fields
    - no business glossary

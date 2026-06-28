@@ -26,7 +26,7 @@ Goal: create the product structure without breaking the existing builder.
 - Introduce `/client/[tenantSlug]` as the future read-only tenant entry point.
 - Add a shared platform shell with restrained enterprise navigation.
 - Document the target domain model and migration path.
-- Keep `/workspaces`, `/builder`, `/api-config`, and `/dashboard` available only as reversible legacy fallbacks while default entry points move to DashboardOS admin.
+- Keep `/workspaces`, `/builder`, `/api-config`, `/dashboard`, `/pdf-export`, and `/view/[token]` behind an explicit legacy fallback flag while default entry points move to DashboardOS admin.
 
 Exit criteria:
 

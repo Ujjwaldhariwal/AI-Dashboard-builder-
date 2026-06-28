@@ -25,21 +25,21 @@ const METRICS = [
 const SPRINTS = [
   {
     name: 'Sprint 1',
-    status: 'Active',
+    status: 'Complete',
     title: 'Platform spine',
-    items: ['Admin shell', 'Client shell', 'Roadmap', 'Legacy builder bridge'],
+    items: ['Admin shell', 'Client shell', 'Roadmap', 'Legacy quarantine'],
   },
   {
     name: 'Sprint 2',
-    status: 'Next',
+    status: 'Complete',
     title: 'Tenancy and access',
-    items: ['Tenant model', 'Engineer assignments', 'Client roles', 'RLS plan'],
+    items: ['Tenant model', 'Engineer assignments', 'Client roles', 'RLS boundaries'],
   },
   {
     name: 'Sprint 3',
-    status: 'Planned',
-    title: 'Database foundation',
-    items: ['Postgres source', 'Encrypted credentials', 'Schema introspection', 'Query guards'],
+    status: 'Active',
+    title: 'Operating foundation',
+    items: ['Postgres source', 'Publishing', 'Jobs/alerts', 'Exports'],
   },
 ]
 
@@ -75,7 +75,8 @@ export default function AdminOverviewPage() {
           </h2>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400">
             This admin surface is the new home for tenant onboarding, database connections, semantic datasets,
-            dashboard publishing, and report governance. The existing builder remains available while we migrate.
+            dashboard publishing, report governance, and platform operations. Legacy builder routes are quarantined
+            by default and require an explicit environment flag for maintenance access.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Button asChild className="bg-cyan-500 text-slate-950 hover:bg-cyan-400">
