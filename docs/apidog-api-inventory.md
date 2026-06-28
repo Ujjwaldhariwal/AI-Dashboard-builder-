@@ -874,6 +874,7 @@ Body:
 
 Email channels use `channelType: "email"` and provide recipients through `config.to`.
 When `RESEND_API_KEY` or `DASHBOARDOS_RESEND_API_KEY` and `RESEND_FROM_EMAIL` or `DASHBOARDOS_EMAIL_FROM` are configured, email channels send directly through Resend. Supported email config fields are `to`, `cc`, `bcc`, `replyTo`, `from`, and `subjectPrefix`; `webhookUrl` remains a fallback gateway.
+Webhook and email channel config may also set `suppressionMinutes` and `escalationAfterMinutes`. Defaults come from `DASHBOARDOS_ALERT_SUPPRESSION_MINUTES` and `DASHBOARDOS_ALERT_ESCALATION_MINUTES`.
 
 Response: `{ "channel": { ... } }`
 
@@ -1084,6 +1085,8 @@ Environment:
 - `DASHBOARDOS_WORKER_SECRET`: required to authorize the worker route
 - `RESEND_API_KEY` or `DASHBOARDOS_RESEND_API_KEY`: optional native email provider key for `alert_delivery`
 - `RESEND_FROM_EMAIL` or `DASHBOARDOS_EMAIL_FROM`: optional sender identity for native alert email delivery
+- `DASHBOARDOS_ALERT_SUPPRESSION_MINUTES`: optional default repeat-delivery suppression window, default `60`
+- `DASHBOARDOS_ALERT_ESCALATION_MINUTES`: optional default escalation age, default `240`
 
 Query:
 - `limit`: optional number, default `5`, max `25`
@@ -1094,7 +1097,7 @@ Behavior:
 - executes `schema_refresh` by introspecting the target data source and refreshing schema metadata
 - executes `cache_warm` by compiling published dataset/chart SQL, running read-only queries, and writing query-result cache entries
 - executes `export` by generating a durable `manifest_json`, `report_pdf`, or `bundle_zip` artifact for a published dashboard or dashboard version, with checksum/size metadata and optional Supabase Storage upload
-- executes `alert_delivery` by fanning out newly opened platform alerts to configured webhook/email-gateway channels and recording delivery attempts
+- executes `alert_delivery` by fanning out newly opened platform alerts to configured webhook/email-gateway channels, applying suppression/escalation policy, and recording delivery attempts
 - marks failed jobs back to `queued` with backoff until `maxAttempts`, then `failed`
 
 Response:

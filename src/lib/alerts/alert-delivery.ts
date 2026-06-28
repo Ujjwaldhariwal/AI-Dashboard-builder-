@@ -62,6 +62,16 @@ const SEVERITY_RANK: Record<PlatformAlertSeverity, number> = {
   critical: 2,
 }
 
+const DEFAULT_SUPPRESSION_MINUTES = 60
+const DEFAULT_ESCALATION_MINUTES = 240
+
+interface AlertDeliveryPolicy {
+  suppressionMinutes: number
+  escalationAfterMinutes: number
+  escalated: boolean
+  ageMinutes: number
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
@@ -77,6 +87,41 @@ function asOptionalString(value: unknown) {
 
 function textPreview(value: string, maxLength = 1500) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
+}
+
+function numericConfig(value: unknown, fallback: number) {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback
+  return Math.trunc(parsed)
+}
+
+function envNumber(name: string, fallback: number) {
+  return numericConfig(process.env[name], fallback)
+}
+
+function minutesSince(iso: string) {
+  const timestamp = new Date(iso).getTime()
+  if (!Number.isFinite(timestamp)) return 0
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 60000))
+}
+
+function deliveryPolicy(alert: PlatformAlert, channel: PlatformAlertChannel): AlertDeliveryPolicy {
+  const suppressionMinutes = numericConfig(
+    channel.config.suppressionMinutes,
+    envNumber('DASHBOARDOS_ALERT_SUPPRESSION_MINUTES', DEFAULT_SUPPRESSION_MINUTES),
+  )
+  const escalationAfterMinutes = numericConfig(
+    channel.config.escalationAfterMinutes,
+    envNumber('DASHBOARDOS_ALERT_ESCALATION_MINUTES', DEFAULT_ESCALATION_MINUTES),
+  )
+  const ageMinutes = minutesSince(alert.firstSeenAt)
+
+  return {
+    suppressionMinutes,
+    escalationAfterMinutes,
+    escalated: escalationAfterMinutes > 0 && ageMinutes >= escalationAfterMinutes,
+    ageMinutes,
+  }
 }
 
 function escapeHtml(value: string) {
@@ -95,12 +140,13 @@ function configuredEmailProvider() {
   return { provider: 'resend' as const, apiKey, from }
 }
 
-function emailSubject(alert: PlatformAlert, channel: PlatformAlertChannel) {
+function emailSubject(alert: PlatformAlert, channel: PlatformAlertChannel, policy?: AlertDeliveryPolicy) {
   const prefix = asOptionalString(channel.config.subjectPrefix) ?? 'DashboardOS'
-  return `[${prefix}] [${alert.severity.toUpperCase()}] ${alert.title}`
+  const escalation = policy?.escalated ? '[ESCALATED] ' : ''
+  return `[${prefix}] ${escalation}[${alert.severity.toUpperCase()}] ${alert.title}`
 }
 
-function emailText(alert: PlatformAlert) {
+function emailText(alert: PlatformAlert, policy?: AlertDeliveryPolicy) {
   return [
     alert.title,
     '',
@@ -108,6 +154,7 @@ function emailText(alert: PlatformAlert) {
     '',
     `Severity: ${alert.severity}`,
     `State: ${alert.state}`,
+    ...(policy?.escalated ? [`Escalated: yes after ${policy.ageMinutes} minutes open`] : []),
     `Source: ${alert.sourceType}${alert.sourceId ? ` / ${alert.sourceId}` : ''}`,
     `First seen: ${alert.firstSeenAt}`,
     `Last seen: ${alert.lastSeenAt}`,
@@ -116,12 +163,13 @@ function emailText(alert: PlatformAlert) {
   ].join('\n')
 }
 
-function emailHtml(alert: PlatformAlert) {
+function emailHtml(alert: PlatformAlert, policy?: AlertDeliveryPolicy) {
   const title = escapeHtml(alert.title)
   const message = escapeHtml(alert.message).replace(/\n/g, '<br />')
   const rows = [
     ['Severity', alert.severity],
     ['State', alert.state],
+    ...(policy?.escalated ? [['Escalated', `Yes after ${policy.ageMinutes} minutes open`]] : []),
     ['Source', `${alert.sourceType}${alert.sourceId ? ` / ${alert.sourceId}` : ''}`],
     ['First seen', alert.firstSeenAt],
     ['Last seen', alert.lastSeenAt],
@@ -335,13 +383,79 @@ async function recordDeliveryAttempt({
   return mapPlatformAlertDeliveryAttempt(data as Record<string, unknown>)
 }
 
-function alertPayload(alert: PlatformAlert, channel: PlatformAlertChannel) {
+async function latestSuccessfulDeliveryAttempt({
+  supabase,
+  alertId,
+  channelId,
+}: {
+  supabase: SupabaseClient
+  alertId: string
+  channelId: string
+}) {
+  const { data, error } = await supabase
+    .from('platform_alert_delivery_attempts')
+    .select('*')
+    .eq('alert_id', alertId)
+    .eq('channel_id', channelId)
+    .eq('status', 'succeeded')
+    .order('attempted_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  return data ? mapPlatformAlertDeliveryAttempt(data as Record<string, unknown>) : null
+}
+
+async function maybeRecordSuppressedAttempt({
+  supabase,
+  alert,
+  channel,
+  jobId,
+  policy,
+}: {
+  supabase: SupabaseClient
+  alert: PlatformAlert
+  channel: PlatformAlertChannel
+  jobId?: string | null
+  policy: AlertDeliveryPolicy
+}) {
+  if (policy.escalated || policy.suppressionMinutes <= 0) return null
+
+  const latest = await latestSuccessfulDeliveryAttempt({
+    supabase,
+    alertId: alert.id,
+    channelId: channel.id,
+  })
+  if (!latest) return null
+
+  const elapsedMinutes = minutesSince(latest.attemptedAt)
+  if (elapsedMinutes >= policy.suppressionMinutes) return null
+
+  return recordDeliveryAttempt({
+    supabase,
+    alert,
+    channel,
+    jobId,
+    destination: latest.destination || channel.name,
+    status: 'skipped',
+    requestPayload: alertPayload(alert, channel, policy),
+    errorMessage: `Delivery suppressed for ${policy.suppressionMinutes - elapsedMinutes} more minute(s) after the last successful attempt`,
+  })
+}
+
+function alertPayload(alert: PlatformAlert, channel: PlatformAlertChannel, policy = deliveryPolicy(alert, channel)) {
   return {
     event: 'platform.alert.opened',
     channel: {
       id: channel.id,
       name: channel.name,
       type: channel.channelType,
+    },
+    deliveryPolicy: {
+      suppressionMinutes: policy.suppressionMinutes,
+      escalationAfterMinutes: policy.escalationAfterMinutes,
+      escalated: policy.escalated,
+      ageMinutes: policy.ageMinutes,
     },
     alert: {
       id: alert.id,
@@ -367,14 +481,16 @@ async function deliverWebhook({
   alert,
   channel,
   jobId,
+  policy,
 }: {
   supabase: SupabaseClient
   alert: PlatformAlert
   channel: PlatformAlertChannel
   jobId?: string | null
+  policy: AlertDeliveryPolicy
 }) {
   const url = typeof channel.config.url === 'string' ? channel.config.url : ''
-  const payload = alertPayload(alert, channel)
+  const payload = alertPayload(alert, channel, policy)
   if (!url) {
     return recordDeliveryAttempt({
       supabase,
@@ -433,6 +549,7 @@ async function deliverResendEmail({
   jobId,
   to,
   providerConfig,
+  policy,
 }: {
   supabase: SupabaseClient
   alert: PlatformAlert
@@ -440,16 +557,17 @@ async function deliverResendEmail({
   jobId?: string | null
   to: string[]
   providerConfig: NonNullable<ReturnType<typeof configuredEmailProvider>>
+  policy: AlertDeliveryPolicy
 }) {
   const cc = asStringArray(channel.config.cc)
   const bcc = asStringArray(channel.config.bcc)
   const replyTo = asOptionalString(channel.config.replyTo)
   const from = asOptionalString(channel.config.from) ?? providerConfig.from
-  const subject = emailSubject(alert, channel)
-  const text = emailText(alert)
-  const html = emailHtml(alert)
+  const subject = emailSubject(alert, channel, policy)
+  const text = emailText(alert, policy)
+  const html = emailHtml(alert, policy)
   const requestPayload = {
-    ...alertPayload(alert, channel),
+    ...alertPayload(alert, channel, policy),
     email: {
       provider: providerConfig.provider,
       from,
@@ -519,21 +637,23 @@ async function deliverEmail({
   alert,
   channel,
   jobId,
+  policy,
 }: {
   supabase: SupabaseClient
   alert: PlatformAlert
   channel: PlatformAlertChannel
   jobId?: string | null
+  policy: AlertDeliveryPolicy
 }) {
   const to = asStringArray(channel.config.to)
   const gatewayUrl = typeof channel.config.webhookUrl === 'string' ? channel.config.webhookUrl : ''
   const providerConfig = configuredEmailProvider()
   const payload = {
-    ...alertPayload(alert, channel),
+    ...alertPayload(alert, channel, policy),
     email: {
       to,
-      subject: emailSubject(alert, channel),
-      text: emailText(alert),
+      subject: emailSubject(alert, channel, policy),
+      text: emailText(alert, policy),
     },
   }
   const destination = to.join(', ') || channel.name
@@ -552,7 +672,7 @@ async function deliverEmail({
   }
 
   if (providerConfig) {
-    return deliverResendEmail({ supabase, alert, channel, jobId, to, providerConfig })
+    return deliverResendEmail({ supabase, alert, channel, jobId, to, providerConfig, policy })
   }
 
   if (!gatewayUrl) {
@@ -642,9 +762,22 @@ export async function deliverPlatformAlert({
 
   const attempts: PlatformAlertDeliveryAttempt[] = []
   for (const channel of channels) {
+    const policy = deliveryPolicy(alert, channel)
+    const suppressed = await maybeRecordSuppressedAttempt({
+      supabase,
+      alert,
+      channel,
+      jobId,
+      policy,
+    })
+    if (suppressed) {
+      attempts.push(suppressed)
+      continue
+    }
+
     const attempt = channel.channelType === 'email'
-      ? await deliverEmail({ supabase, alert, channel, jobId })
-      : await deliverWebhook({ supabase, alert, channel, jobId })
+      ? await deliverEmail({ supabase, alert, channel, jobId, policy })
+      : await deliverWebhook({ supabase, alert, channel, jobId, policy })
     attempts.push(attempt)
   }
 

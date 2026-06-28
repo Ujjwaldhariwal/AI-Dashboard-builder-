@@ -119,18 +119,18 @@ The platform now has `platform_jobs` as the shared queue contract for:
 - `schema_refresh`: introspects the target data source and refreshes schema metadata
 - `cache_warm`: compiles published dataset/chart SQL, runs read-only queries, and writes query-result cache entries
 - `export`: generates durable `manifest_json`, `report_pdf`, and `bundle_zip` artifacts for a published dashboard or dashboard version, computes byte/checksum metadata from the rendered payload, and uploads to the configured export bucket when available
-- `alert_delivery`: sends newly opened platform alerts to configured webhook, native Resend email, or email-gateway channels and records delivery attempts
+- `alert_delivery`: sends newly opened platform alerts to configured webhook, native Resend email, or email-gateway channels, applies suppression/escalation policy, and records delivery attempts
 
 Failed jobs return to `queued` with backoff until `max_attempts`, then become `failed`.
 
 `platform_job_schedules` and `POST /api/admin/jobs/scheduler` now provide recurring job seeding. The scheduler route is protected by the same worker secret, claims due schedules atomically through `claim_platform_job_schedules`, advances `next_run_at`, and enqueues deduped jobs for the worker route. `GET/POST /api/admin/jobs/schedules` lets authenticated operators inspect and manage schedules.
 
-Alert hooks now create persistent `platform_alerts` when a scheduled or manual dashboard health run finds a dashboard in `blocked` state. Repeated blocked runs refresh the existing open alert instead of spamming duplicates, and later non-blocked health runs auto-resolve the alert. Newly opened alerts enqueue `alert_delivery` jobs. Operators can configure channels through `GET/POST /api/admin/alert-channels`, inspect attempts through `GET /api/admin/alert-deliveries`, list alerts through `GET /api/admin/alerts`, and acknowledge/resolve them through `PATCH /api/admin/alerts/{id}`. Email channels send through Resend when `RESEND_API_KEY`/`DASHBOARDOS_RESEND_API_KEY` and `RESEND_FROM_EMAIL`/`DASHBOARDOS_EMAIL_FROM` are configured, with the existing `config.webhookUrl` path retained as a fallback gateway.
+Alert hooks now create persistent `platform_alerts` when a scheduled or manual dashboard health run finds a dashboard in `blocked` state. Repeated blocked runs refresh the existing open alert instead of spamming duplicates, and later non-blocked health runs auto-resolve the alert. Newly opened alerts enqueue `alert_delivery` jobs. Operators can configure channels through `GET/POST /api/admin/alert-channels`, inspect attempts through `GET /api/admin/alert-deliveries`, list alerts through `GET /api/admin/alerts`, and acknowledge/resolve them through `PATCH /api/admin/alerts/{id}`. Email channels send through Resend when `RESEND_API_KEY`/`DASHBOARDOS_RESEND_API_KEY` and `RESEND_FROM_EMAIL`/`DASHBOARDOS_EMAIL_FROM` are configured, with the existing `config.webhookUrl` path retained as a fallback gateway. Delivery policy suppresses repeat successful sends by default for 60 minutes and marks long-running alerts escalated by default after 240 minutes; channel config can override both windows.
 
 Remaining job work:
 
 - add visual chart snapshot rendering for PDF exports after the client runtime presentation is stable
-- add alert delivery suppression/escalation windows after real operational thresholds are known
+- tune alert delivery suppression/escalation thresholds after real operational data exists
 
 ### 7. AI Filter Layer
 
@@ -150,5 +150,5 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 1. Visual chart snapshot rendering for PDF/report exports.
 2. Standalone ZIP app package generation from the published-dashboard runtime.
-3. Alert delivery suppression/escalation windows.
+3. Alert delivery policy tuning from real operations.
 4. AI filter policy after the above are stable.

@@ -103,9 +103,10 @@ Migration `20260626193000_alert_delivery_channels.sql` adds external alert deliv
 - `platform_alert_delivery_attempts` records delivery outcomes, response metadata, and errors per alert/channel/job.
 - `platform_jobs` and `platform_job_schedules` now allow `alert_delivery` jobs with `alert` targets.
 - Native email delivery is application-level provider configuration and does not require an additional schema migration.
+- Suppression and escalation windows are channel `config` policy fields, with environment defaults, and do not require an additional schema migration.
 
 ## Next Schema Work
 
-The next foundation migrations should add operational policy around the new delivery tables:
+The next foundation migrations should add deeper semantic governance once product policy is finalized:
 
-- alert suppression/escalation windows once operator policy is finalized
+- certified semantic fields, time grains, calculated metrics, and metric ownership/versioning

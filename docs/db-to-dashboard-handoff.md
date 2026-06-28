@@ -60,7 +60,7 @@ Completed or started:
 - Recurring schedules now exist through `platform_job_schedules`, `GET/POST /api/admin/jobs/schedules`, and secret-protected `POST /api/admin/jobs/scheduler`.
 - Persistent platform alerts now exist through `platform_alerts`, `GET /api/admin/alerts`, and `PATCH /api/admin/alerts/{id}`.
 - Dashboard health jobs now open or refresh one `dashboard_blocked` alert per blocked dashboard and auto-resolve it once health recovers.
-- Alert fan-out now exists through `platform_alert_channels`, `platform_alert_delivery_attempts`, `GET/POST /api/admin/alert-channels`, `GET /api/admin/alert-deliveries`, and `alert_delivery` worker jobs for webhook, native Resend email, or email-gateway channels.
+- Alert fan-out now exists through `platform_alert_channels`, `platform_alert_delivery_attempts`, `GET/POST /api/admin/alert-channels`, `GET /api/admin/alert-deliveries`, and `alert_delivery` worker jobs for webhook, native Resend email, or email-gateway channels, with suppression and escalation policy applied per channel.
 - Query budget policies now exist through `query_budget_policies` and `GET/POST /api/admin/query-budgets`.
 - Admin preview, client dataset/chart runtime, and cache-warm jobs enforce tenant/project/source query budgets before opening source database queries.
 - Runtime cache misses now also enforce post-execution row and elapsed-time budget projections before caching or returning query results.
@@ -164,8 +164,8 @@ Why:
 
 Suggested sprint sequence:
 1. Add visual chart snapshot rendering for PDF exports.
-2. Add alert suppression/escalation windows once operational thresholds are clearer.
-3. Add standalone ZIP app package generation from the published-dashboard runtime.
+2. Add standalone ZIP app package generation from the published-dashboard runtime.
+3. Add semantic-model maturity features: certified fields, time grains, and calculated metrics.
 
 ## Major Flaws To Plan
 
@@ -176,15 +176,9 @@ Suggested sprint sequence:
    - no time grain model
    - no calculated metrics
    - no metric ownership/versioning
-3. Query runtime needs enterprise safeguards:
-   - caching
-   - persistent/distributed rate limiting
-   - stronger query cost policies
-4. Publishing model needs versioning:
-   - dashboard versions
-   - draft vs published separation
-   - release notes/audit trail
-5. Alert delivery has native Resend support, but production policy still needs suppression windows, escalation rules, and bounce/error handling decisions.
+3. Query runtime has caching, rate limiting, and budgets, but still lacks deeper SQL cost estimation and source-specific concurrency caps.
+4. Publishing model has dashboard versions, draft/published separation, rollback, and release events, but still needs richer release notes and reviewer approval policy.
+5. Alert delivery has native Resend support plus suppression/escalation policy, but production still needs bounce/error handling decisions after real provider testing.
 6. PDF/ZIP exports are generated, but PDF content is a textual governance report rather than visual chart snapshots.
 7. Standalone ZIP app generation still needs the published-dashboard runtime packaged as a portable client artifact.
 8. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
