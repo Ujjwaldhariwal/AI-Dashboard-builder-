@@ -1,25 +1,25 @@
 # Graph Report - .  (2026-06-28)
 
 ## Corpus Check
-- 287 files · ~194,506 words
+- 288 files · ~192,772 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2242 nodes · 6283 edges · 100 communities detected
+- 2250 nodes · 6299 edges · 100 communities detected
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
-- Edge kinds: contains: 1694 · imports: 1279 · MODIFIES: 1130 · imports_from: 780 · calls: 552 · ON_BRANCH: 402 · PARENT_OF: 261 · references: 133 · method: 45 · inherits: 5 · re_exports: 2
+- Edge kinds: contains: 1700 · imports: 1282 · MODIFIES: 1134 · imports_from: 781 · calls: 552 · ON_BRANCH: 403 · PARENT_OF: 262 · references: 133 · method: 45 · inherits: 5 · re_exports: 2
 
 
 ## Input Scope
 - Requested: auto
 - Resolved: committed (source: default-auto)
-- Included files: 287 · Candidates: 308
-- Excluded: 1 untracked · 89569 ignored · 2 sensitive · 0 missing committed
+- Included files: 288 · Candidates: 309
+- Excluded: 0 untracked · 89683 ignored · 2 sensitive · 0 missing committed
 - Recommendation: Use --scope all or graphify.yaml inputs.corpus for a knowledge-base folder.
 
 ## Graph Freshness
-- Built from Git commit: `1b7f8dd`
+- Built from Git commit: `b4ef5a6`
 - Compare this hash to `git rev-parse HEAD` before trusting freshness-sensitive graph output.
 ## God Nodes (most connected - your core abstractions)
 1. `Button` - 49 edges
@@ -104,20 +104,20 @@ Cohesion: 0.10
 Nodes (30): AUTH_HINTS, AuthType, BOSCH_UPPCL_PRESET, CHART_TYPE_OPTIONS, DEFAULT_FORM, StatusType, AuthType, EMPTY_FORM (+22 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.07
-Nodes (28): DashboardEndpointProbeSummary, BuilderApiHealthSummary, dispatchBuilderApiHealthRescan(), dispatchBuilderApiHealthSummary(), BuilderHeaderProps, DEFAULT_NAV_SELECTION, NavSelection, 24cf646 feat(workspaces): inline dashboard rename — pencil icon on hover, Enter/blur to save, Esc to cancel (+20 more)
+Cohesion: 0.08
+Nodes (40): consumeSessionExpiredSignalCookie(), hasSessionExpiredSignalCookie(), hasSupabaseAuthCookieFootprint(), parseCookie(), b4ef5a6 feat: quarantine legacy dashboard routes, isLegacyPublicShareRoute(), isLegacyUiRoute(), LEGACY_PUBLIC_SHARE_ROUTES (+32 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.09
-Nodes (33): buildChartNavTree(), buildGroupIndexes(), ChartNavBuildOptions, ChartNavCategory, ChartNavEndpointRef, ChartNavItem, ChartNavSelection, ChartNavSubgroup (+25 more)
+Cohesion: 0.07
+Nodes (29): DashboardEndpointProbeSummary, BuilderApiHealthSummary, dispatchBuilderApiHealthRescan(), dispatchBuilderApiHealthSummary(), BuilderHeaderProps, DEFAULT_NAV_SELECTION, NavSelection, 24cf646 feat(workspaces): inline dashboard rename — pencil icon on hover, Enter/blur to save, Esc to cancel (+21 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.09
-Nodes (32): 2c0ba68 feat: add platform job queue contract, 8f1c410 feat: execute platform jobs with worker route, asRecord(), claimPlatformJobs(), ClaimPlatformJobsInput, completePlatformJob(), CompletePlatformJobInput, enqueuePlatformJob() (+24 more)
+Nodes (33): buildChartNavTree(), buildGroupIndexes(), ChartNavBuildOptions, ChartNavCategory, ChartNavEndpointRef, ChartNavItem, ChartNavSelection, ChartNavSubgroup (+25 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.09
-Nodes (34): consumeSessionExpiredSignalCookie(), hasSessionExpiredSignalCookie(), hasSupabaseAuthCookieFootprint(), parseCookie(), getPlatformHostnames(), getTenantRootDomains(), HostnameKind, HostnamePolicy (+26 more)
+Nodes (32): 2c0ba68 feat: add platform job queue contract, 8f1c410 feat: execute platform jobs with worker route, asRecord(), claimPlatformJobs(), ClaimPlatformJobsInput, completePlatformJob(), CompletePlatformJobInput, enqueuePlatformJob() (+24 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.08
@@ -448,7 +448,7 @@ Cohesion: 0.83
 Nodes (3): dashboard_projects, data_sources, tenants
 
 ## Knowledge Gaps
-- **525 isolated node(s):** `nextConfig`, `config`, `root`, `apiRoots`, `inventoryPath` (+520 more)
+- **528 isolated node(s):** `nextConfig`, `config`, `root`, `apiRoots`, `inventoryPath` (+523 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **Thin community `Community 62`** (1 nodes): `AIInsightsEngine`
   Too small to be a meaningful cluster - may be noise or needs more connections extracted.
@@ -468,14 +468,14 @@ Nodes (3): dashboard_projects, data_sources, tenants
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Button` connect `Community 3` to `Community 12`, `Community 19`, `Community 68`, `Community 13`, `Community 20`, `Community 37`, `Community 46`, `Community 49`, `Community 14`, `Community 45`, `Community 28`, `Community 11`, `Community 2`, `Community 4`, `Community 15`, `Community 18`, `Community 31`, `Community 23`, `Community 9`, `Community 5`, `Community 25`, `Community 38`, `Community 27`, `Community 22`?**
+- **Why does `Button` connect `Community 3` to `Community 12`, `Community 19`, `Community 68`, `Community 13`, `Community 20`, `Community 37`, `Community 46`, `Community 49`, `Community 15`, `Community 45`, `Community 28`, `Community 11`, `Community 2`, `Community 4`, `Community 16`, `Community 18`, `Community 31`, `Community 23`, `Community 9`, `Community 5`, `Community 25`, `Community 38`, `Community 27`, `Community 22`?**
   _High betweenness centrality (0.023) - this node is a cross-community bridge._
-- **Why does `Badge()` connect `Community 3` to `Community 12`, `Community 19`, `Community 68`, `Community 13`, `Community 24`, `Community 20`, `Community 37`, `Community 46`, `Community 49`, `Community 14`, `Community 30`, `Community 4`, `Community 15`, `Community 18`, `Community 9`, `Community 5`, `Community 25`, `Community 2`, `Community 38`, `Community 22`?**
+- **Why does `Badge()` connect `Community 3` to `Community 12`, `Community 19`, `Community 68`, `Community 13`, `Community 24`, `Community 20`, `Community 37`, `Community 46`, `Community 49`, `Community 15`, `Community 30`, `Community 4`, `Community 16`, `Community 18`, `Community 9`, `Community 5`, `Community 25`, `Community 2`, `Community 38`, `Community 22`?**
   _High betweenness centrality (0.018) - this node is a cross-community bridge._
-- **Why does `getAuthedSupabase()` connect `Community 0` to `Community 9`, `Community 71`, `Community 42`, `Community 72`, `Community 25`, `Community 24`, `Community 16`, `Community 2`, `Community 8`?**
+- **Why does `getAuthedSupabase()` connect `Community 0` to `Community 9`, `Community 71`, `Community 42`, `Community 72`, `Community 25`, `Community 24`, `Community 17`, `Community 2`, `Community 8`?**
   _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **What connects `nextConfig`, `config`, `root` to the rest of the system?**
-  _525 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _528 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.04330637915543576 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**

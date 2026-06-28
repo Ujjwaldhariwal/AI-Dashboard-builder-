@@ -1,393 +1,189 @@
 'use client'
 
-// src/components/layout/app-layout.tsx
-
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  LayoutDashboard, Database, FolderTree,
-  Settings, LogOut, Search,
-  Activity, ChevronRight, FolderKanban,
-  Shield, BadgeCheck, X, GitBranch,
-  Menu, PanelLeftClose, PanelLeftOpen,
-  Zap, CircleDot, ArrowRight, Network,
+  BadgeCheck,
+  BarChart3,
+  BookOpen,
+  ChevronRight,
+  Database,
+  FolderKanban,
+  GitBranch,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Network,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Settings,
+  Shield,
+  SlidersHorizontal,
+  UserRound,
+  Users,
+  X,
+  Zap,
 } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { useDashboardStore } from '@/store/builder-store'
-import { useAuthStore } from '@/store/auth-store'
-import { useMonitoringStore } from '@/store/monitoring-store'
-import { NotificationBell } from '@/components/layout/notification-bell'
-import { MonitoringPanel } from '@/components/layout/monitoring-panel'
-import { OnboardingWizard } from '@/components/layout/onboarding-wizard'
+import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 import { KeyboardShortcuts } from '@/components/layout/keyboard-shortcuts'
+import { OnboardingWizard } from '@/components/layout/onboarding-wizard'
 import { TokenSessionTimer } from '@/components/layout/token-session-timer'
-import type { DashboardEndpointProbeSummary } from '@/lib/api/endpoint-runtime-cache'
-import {
-  BUILDER_API_HEALTH_EVENT,
-  dispatchBuilderApiHealthRescan,
-} from '@/lib/builder/api-health-events'
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useAuthStore } from '@/store/auth-store'
 
 interface AppLayoutProps {
   children: React.ReactNode
 }
 
-// ── Search result type ────────────────────────────────────────────────────
-interface SearchResult {
-  id:      string
-  label:   string
-  sub:     string
-  href:    string
-  type:    'dashboard' | 'api' | 'page'
-  action?: () => void
+interface ShellNavItem {
+  name: string
+  href: string
+  icon: React.ElementType
+  show: boolean
+  iconColor: string
+  activeBg: string
+  pillColor: string
 }
 
-type SidebarHealthFilters = {
-  healthy: boolean
-  unauthorized: boolean
-  failed: boolean
-  empty: boolean
+interface SearchResult {
+  id: string
+  label: string
+  sub: string
+  href: string
 }
 
 const LEGACY_NAVIGATION_ENABLED = process.env.NEXT_PUBLIC_DASHBOARDOS_ENABLE_LEGACY_ROUTES === 'true'
-
-function getSidebarHealthBucket(
-  status: DashboardEndpointProbeSummary['results'][number]['status'],
-): keyof SidebarHealthFilters {
-  if (status === 'healthy') return 'healthy'
-  if (status === 'unauthorized') return 'unauthorized'
-  if (status === 'empty') return 'empty'
-  return 'failed'
-}
-
-// ── Sidebar nav item with tooltip for collapsed mode ──────────────────────
-function SidebarStatCard({
-  label,
-  value,
-  accent,
-}: {
-  label: string
-  value: number
-  accent?: string
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg hover:bg-muted/50 transition-colors">
-      <span className="text-[11px] text-muted-foreground whitespace-nowrap truncate">{label}</span>
-      <span className={`text-xs font-bold tabular-nums flex-shrink-0 ${accent ?? ''}`}>{value}</span>
-    </div>
-  )
-}
-
-function SidebarHealthToggle({
-  active,
-  count,
-  label,
-  colorActive,
-  colorInactive,
-  onClick,
-}: {
-  active: boolean
-  count: number
-  label: string
-  colorActive: string
-  colorInactive: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`
-        rounded-xl border px-2.5 py-2 text-left transition-all duration-200
-        ${active ? colorActive : colorInactive}
-        hover:scale-[1.02] active:scale-[0.98]
-      `}
-    >
-      <p className="text-sm font-bold leading-tight tabular-nums">{count}</p>
-      <p className="text-[10px] leading-tight mt-0.5 opacity-80">{label}</p>
-    </button>
-  )
-}
 
 function SidebarNavItem({
   item,
   isActive,
   isCompact,
-  errorCount,
 }: {
-  item: { name: string; href: string; icon: React.ElementType; show: boolean; iconColor: string; activeBg: string; pillColor: string }
+  item: ShellNavItem
   isActive: boolean
   isCompact: boolean
-  errorCount: number
 }) {
   const Icon = item.icon
-
   const inner = (
     <Link href={item.href} className="block">
       <div
-        className={`
-          group relative flex items-center gap-3 rounded-xl transition-all duration-200 overflow-hidden
-          ${isCompact
-            ? 'h-12 w-12 mx-auto justify-center'
-            : 'h-10 px-3'
-          }
-          ${isActive
-            ? `bg-gradient-to-r ${item.activeBg}`
-            : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-          }
-        `}
+        className={[
+          'group relative flex items-center gap-3 overflow-hidden rounded-xl transition-all duration-200',
+          isCompact ? 'mx-auto h-12 w-12 justify-center' : 'h-10 px-3',
+          isActive ? `bg-gradient-to-r ${item.activeBg}` : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+        ].join(' ')}
       >
-        {/* Active indicator pill — unique color per route */}
-        {isActive && (
+        {isActive ? (
           <motion.div
             layoutId="sidebar-active-pill"
-            className={`
-              absolute bg-gradient-to-b ${item.pillColor} rounded-full
-              ${isCompact
-                ? 'left-0 top-2 bottom-2 w-[3px]'
-                : 'left-0 top-1.5 bottom-1.5 w-[3px]'
-              }
-            `}
+            className={[
+              'absolute rounded-full bg-gradient-to-b',
+              item.pillColor,
+              isCompact ? 'bottom-2 left-0 top-2 w-[3px]' : 'bottom-1.5 left-0 top-1.5 w-[3px]',
+            ].join(' ')}
             transition={{ type: 'spring', stiffness: 350, damping: 30 }}
           />
-        )}
+        ) : null}
 
-        <div className={`
-          relative flex items-center justify-center flex-shrink-0 transition-transform duration-200
-          ${isCompact ? 'w-6 h-6' : 'w-5 h-5'}
-          ${!isActive ? 'group-hover:scale-110' : ''}
-        `}>
-          <Icon
-            className={`
-              ${isCompact ? 'w-[22px] h-[22px]' : 'w-[18px] h-[18px]'}
-              ${item.iconColor}
-            `}
-            strokeWidth={isActive ? 2.2 : 1.8}
-          />
+        <div className={['relative flex shrink-0 items-center justify-center', isCompact ? 'h-6 w-6' : 'h-5 w-5'].join(' ')}>
+          <Icon className={`${isCompact ? 'h-[22px] w-[22px]' : 'h-[18px] w-[18px]'} ${item.iconColor}`} strokeWidth={isActive ? 2.2 : 1.8} />
         </div>
 
-        {!isCompact && (
-          <span className={`text-[13px] tracking-tight whitespace-nowrap truncate ${isActive ? 'font-semibold text-foreground' : 'font-medium'}`}>
+        {!isCompact ? (
+          <span className={`truncate whitespace-nowrap text-[13px] tracking-tight ${isActive ? 'font-semibold text-foreground' : 'font-medium'}`}>
             {item.name}
           </span>
-        )}
-
-        {!isCompact && item.name === 'Monitoring' && errorCount > 0 && (
-          <Badge variant="destructive" className="ml-auto text-[9px] px-1.5 h-4 animate-pulse">
-            {errorCount}
-          </Badge>
-        )}
-
-        {isCompact && item.name === 'Monitoring' && errorCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[8px] rounded-full flex items-center justify-center font-bold ring-2 ring-card">
-            {errorCount > 9 ? '!' : errorCount}
-          </span>
-        )}
+        ) : null}
       </div>
     </Link>
   )
 
-  if (isCompact) {
-    return (
-      <div
-        className="group/tip relative"
-        title={item.name + (item.name === 'Monitoring' && errorCount > 0 ? ` (${errorCount} errors)` : '')}
-      >
-        {inner}
-        {/* CSS-only tooltip */}
-        <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs font-medium whitespace-nowrap opacity-0 scale-95 group-hover/tip:opacity-100 group-hover/tip:scale-100 transition-all duration-150 shadow-md z-50">
-          {item.name}
-          {item.name === 'Monitoring' && errorCount > 0 && (
-            <span className="ml-1.5 text-red-400">({errorCount} errors)</span>
-          )}
-        </span>
-      </div>
-    )
-  }
+  if (!isCompact) return inner
 
-  return inner
+  return (
+    <div className="group/tip relative" title={item.name}>
+      {inner}
+      <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 scale-95 whitespace-nowrap rounded-md border border-border bg-popover px-2.5 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-md transition-all duration-150 group-hover/tip:scale-100 group-hover/tip:opacity-100">
+        {item.name}
+      </span>
+    </div>
+  )
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname()
-  const router   = useRouter()
-
-  const { endpoints, dashboards, widgets, currentDashboardId, setCurrentDashboard } =
-    useDashboardStore()
+  const router = useRouter()
   const { user, logout } = useAuthStore()
-  const { logs, getErrorCount } = useMonitoringStore()
-
-  const [monitoringOpen, setMonitoringOpen] = useState(false)
-  const [searchQuery, setSearchQuery]       = useState('')
-  const [searchFocused, setSearchFocused]   = useState(false)
-  const [sidebarOpen, setSidebarOpen]       = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isDesktopViewport, setIsDesktopViewport] = useState(false)
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false)
-  const [builderHealthSummary, setBuilderHealthSummary] =
-    useState<DashboardEndpointProbeSummary | null>(null)
-  const [builderHealthFilters, setBuilderHealthFilters] = useState<SidebarHealthFilters>({
-    healthy: true,
-    unauthorized: true,
-    failed: true,
-    empty: true,
-  })
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // ── Navigation ────────────────────────────────────────────────────────
-  const navigation = useMemo(() => [
+  const navigation = useMemo<ShellNavItem[]>(() => [
     { name: 'DashboardOS', href: '/admin', icon: Network, show: true, iconColor: 'text-cyan-500', activeBg: 'from-cyan-600/10 to-blue-400/5 dark:from-cyan-500/15 dark:to-blue-400/5', pillColor: 'from-cyan-500 to-blue-600' },
+    { name: 'Tenants', href: '/admin/tenants', icon: Users, show: true, iconColor: 'text-indigo-500', activeBg: 'from-indigo-600/10 to-indigo-400/5 dark:from-indigo-500/15 dark:to-indigo-400/5', pillColor: 'from-indigo-500 to-indigo-600' },
+    { name: 'Data Sources', href: '/admin/data-sources', icon: Database, show: true, iconColor: 'text-emerald-500', activeBg: 'from-emerald-600/10 to-emerald-400/5 dark:from-emerald-500/15 dark:to-emerald-400/5', pillColor: 'from-emerald-500 to-emerald-600' },
+    { name: 'Semantic Model', href: '/admin/semantic-model', icon: GitBranch, show: true, iconColor: 'text-amber-500', activeBg: 'from-amber-600/10 to-amber-400/5 dark:from-amber-500/15 dark:to-amber-400/5', pillColor: 'from-amber-500 to-amber-600' },
+    { name: 'Datasets', href: '/admin/datasets', icon: BarChart3, show: true, iconColor: 'text-lime-500', activeBg: 'from-lime-600/10 to-lime-400/5 dark:from-lime-500/15 dark:to-lime-400/5', pillColor: 'from-lime-500 to-lime-600' },
+    { name: 'Charts', href: '/admin/charts', icon: SlidersHorizontal, show: true, iconColor: 'text-fuchsia-500', activeBg: 'from-fuchsia-600/10 to-fuchsia-400/5 dark:from-fuchsia-500/15 dark:to-fuchsia-400/5', pillColor: 'from-fuchsia-500 to-fuchsia-600' },
     { name: 'Publishing', href: '/admin/publishing', icon: LayoutDashboard, show: true, iconColor: 'text-blue-500', activeBg: 'from-blue-600/10 to-blue-400/5 dark:from-blue-500/15 dark:to-blue-400/5', pillColor: 'from-blue-500 to-blue-600' },
+    { name: 'API Docs', href: '/admin/api-docs', icon: BookOpen, show: true, iconColor: 'text-sky-500', activeBg: 'from-sky-600/10 to-sky-400/5 dark:from-sky-500/15 dark:to-sky-400/5', pillColor: 'from-sky-500 to-sky-600' },
     { name: 'Legacy Workspaces', href: '/workspaces', icon: FolderKanban, show: LEGACY_NAVIGATION_ENABLED, iconColor: 'text-slate-400', activeBg: 'from-slate-600/10 to-slate-400/5 dark:from-slate-500/15 dark:to-slate-400/5', pillColor: 'from-slate-400 to-slate-500' },
-    { name: 'Legacy Builder', href: '/builder', icon: FolderTree, show: LEGACY_NAVIGATION_ENABLED && !!currentDashboardId, iconColor: 'text-violet-500', activeBg: 'from-violet-600/10 to-violet-400/5 dark:from-violet-500/15 dark:to-violet-400/5', pillColor: 'from-violet-500 to-violet-600' },
-    { name: 'Legacy API Config', href: '/api-config', icon: Database, show: LEGACY_NAVIGATION_ENABLED && !!currentDashboardId, iconColor: 'text-emerald-500', activeBg: 'from-emerald-600/10 to-emerald-400/5 dark:from-emerald-500/15 dark:to-emerald-400/5', pillColor: 'from-emerald-500 to-emerald-600' },
-    { name: 'Legacy Auth Flow', href: '/auth-flow', icon: GitBranch, show: LEGACY_NAVIGATION_ENABLED && !!currentDashboardId, iconColor: 'text-amber-500', activeBg: 'from-amber-600/10 to-amber-400/5 dark:from-amber-500/15 dark:to-amber-400/5', pillColor: 'from-amber-500 to-amber-600' },
-    { name: 'Monitoring', href: '/monitoring',  icon: Activity,        show: LEGACY_NAVIGATION_ENABLED && !!currentDashboardId,  iconColor: 'text-rose-500',   activeBg: 'from-rose-600/10 to-rose-400/5 dark:from-rose-500/15 dark:to-rose-400/5',       pillColor: 'from-rose-500 to-rose-600' },
-    { name: 'Settings',   href: '/settings',    icon: Settings,        show: true,                  iconColor: 'text-slate-400',  activeBg: 'from-slate-600/10 to-slate-400/5 dark:from-slate-500/15 dark:to-slate-400/5',   pillColor: 'from-slate-400 to-slate-500' },
-  ], [currentDashboardId])
+    { name: 'Legacy Builder', href: '/builder', icon: FolderKanban, show: LEGACY_NAVIGATION_ENABLED, iconColor: 'text-violet-500', activeBg: 'from-violet-600/10 to-violet-400/5 dark:from-violet-500/15 dark:to-violet-400/5', pillColor: 'from-violet-500 to-violet-600' },
+    { name: 'Settings', href: '/settings', icon: Settings, show: true, iconColor: 'text-slate-400', activeBg: 'from-slate-600/10 to-slate-400/5 dark:from-slate-500/15 dark:to-slate-400/5', pillColor: 'from-slate-400 to-slate-500' },
+  ], [])
+
+  const visibleNavigation = useMemo(() => navigation.filter(item => item.show), [navigation])
+
+  const searchResults = useMemo<SearchResult[]>(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return []
+    return visibleNavigation
+      .filter(item => item.name.toLowerCase().includes(query) || item.href.toLowerCase().includes(query))
+      .slice(0, 8)
+      .map(item => ({
+        id: item.href,
+        label: item.name,
+        sub: item.href.startsWith('/admin') ? 'DashboardOS platform' : 'Maintenance-only legacy route',
+        href: item.href,
+      }))
+  }, [searchQuery, visibleNavigation])
 
   const handleLogout = useCallback(async () => {
     await logout()
     router.push('/login')
   }, [logout, router])
 
-  const currentDashboard  = dashboards.find(d => d.id === currentDashboardId)
-  const activeWidgetCount = currentDashboardId
-    ? widgets.filter(w => w.dashboardId === currentDashboardId).length
-    : widgets.length
-  const errorCount     = getErrorCount()
-  const recentLogCount = logs.length
-  const isBuilderRoute = pathname?.startsWith('/builder') ?? false
-  const isCompactSidebar = isDesktopViewport && desktopSidebarCollapsed
-
-  const visibleSidebarHealthResults = useMemo(
-    () => (builderHealthSummary?.results ?? []).filter(result => {
-      const bucket = getSidebarHealthBucket(result.status)
-      return builderHealthFilters[bucket]
-    }),
-    [builderHealthSummary, builderHealthFilters],
-  )
-
-  // ── Search results ────────────────────────────────────────────────────
-  const searchResults = useMemo<SearchResult[]>(() => {
-    if (!searchQuery.trim()) return []
-    const q = searchQuery.toLowerCase()
-
-    const dashResults: SearchResult[] = LEGACY_NAVIGATION_ENABLED ? dashboards
-      .filter(d =>
-        d.name.toLowerCase().includes(q) ||
-        (d.description ?? '').toLowerCase().includes(q),
-      )
-      .slice(0, 4)
-      .map(d => ({
-        id:     `dash-${d.id}`,
-        label:  d.name,
-        sub:    d.description || 'Dashboard',
-        href:   '/builder',
-        type:   'dashboard' as const,
-        action: () => { setCurrentDashboard(d.id); router.push('/builder') },
-      })) : []
-
-    const apiResults: SearchResult[] = LEGACY_NAVIGATION_ENABLED ? endpoints
-      .filter(e =>
-        e.name.toLowerCase().includes(q) ||
-        e.url.toLowerCase().includes(q),
-      )
-      .slice(0, 3)
-      .map(e => ({
-        id:    `ep-${e.id}`,
-        label: e.name,
-        sub:   e.url,
-        href:  '/api-config',
-        type:  'api' as const,
-      })) : []
-
-    const pageResults: SearchResult[] = (
-      [
-        { id: 'p-os',  label: 'DashboardOS', sub: 'DB-to-dashboard platform', href: '/admin', type: 'page' as const },
-        { id: 'p-pub', label: 'Publishing', sub: 'Versioned dashboard releases', href: '/admin/publishing', type: 'page' as const },
-        ...(LEGACY_NAVIGATION_ENABLED ? [
-          { id: 'p-ws',  label: 'Legacy Workspaces', sub: 'Old local dashboard builder', href: '/workspaces', type: 'page' as const },
-          { id: 'p-api', label: 'Legacy API Config', sub: 'Old endpoint widget setup', href: '/api-config', type: 'page' as const },
-          { id: 'p-mon', label: 'Monitoring', sub: 'Logs & health', href: '/monitoring', type: 'page' as const },
-        ] : []),
-        { id: 'p-set', label: 'Settings',   sub: 'App settings',     href: '/settings',   type: 'page' as const },
-      ] satisfies SearchResult[]
-    ).filter(p => p.label.toLowerCase().includes(q))
-
-    return [...dashResults, ...apiResults, ...pageResults].slice(0, 8)
-  }, [searchQuery, dashboards, endpoints, setCurrentDashboard, router])
-
   const handleSearchSelect = useCallback((result: SearchResult) => {
-    if (result.action) result.action()
-    else router.push(result.href)
+    router.push(result.href)
     setSearchQuery('')
     setSearchFocused(false)
   }, [router])
 
-  // ── Close sidebar on route change (mobile) ────────────────────────────
   useEffect(() => { setSidebarOpen(false) }, [pathname])
 
-  // ── Body scroll lock when any overlay is open ─────────────────────────
   useEffect(() => {
-    const anyOverlay = (sidebarOpen && !isDesktopViewport) || monitoringOpen
-    if (anyOverlay) {
-      const scrollY = window.scrollY
-      document.body.style.position = 'fixed'
-      document.body.style.top = `-${scrollY}px`
-      document.body.style.left = '0'
-      document.body.style.right = '0'
-      document.body.style.overflow = 'hidden'
-      return () => {
-        document.body.style.position = ''
-        document.body.style.top = ''
-        document.body.style.left = ''
-        document.body.style.right = ''
-        document.body.style.overflow = ''
-        window.scrollTo(0, scrollY)
-      }
-    }
-  }, [sidebarOpen, isDesktopViewport, monitoringOpen])
-
-  // ── Keyboard shortcuts: Escape, ⌘K ───────────────────────────────────
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
         setSearchQuery('')
         setSearchFocused(false)
         setSidebarOpen(false)
-        setMonitoringOpen(false)
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault()
         searchRef.current?.focus()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
-
-  // ── Builder health event listener ─────────────────────────────────────
-  useEffect(() => {
-    const handleBuilderHealth = (event: Event) => {
-      const detail = (event as CustomEvent<DashboardEndpointProbeSummary | null>).detail
-      setBuilderHealthSummary(detail ?? null)
-    }
-    window.addEventListener(BUILDER_API_HEALTH_EVENT, handleBuilderHealth as EventListener)
-    return () => {
-      window.removeEventListener(BUILDER_API_HEALTH_EVENT, handleBuilderHealth as EventListener)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!pathname?.startsWith('/builder')) setBuilderHealthSummary(null)
-  }, [pathname])
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 1280px)')
@@ -398,6 +194,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       setIsDesktopViewport(matches)
       if (!matches) setDesktopSidebarCollapsed(false)
     }
+
     updateViewport(media.matches)
     const onChange = (event: MediaQueryListEvent) => updateViewport(event.matches)
     media.addEventListener('change', onChange)
@@ -406,505 +203,219 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   useEffect(() => {
     if (!isDesktopViewport) return
-    window.localStorage.setItem(
-      'app_layout_sidebar_collapsed',
-      desktopSidebarCollapsed ? '1' : '0',
-    )
+    window.localStorage.setItem('app_layout_sidebar_collapsed', desktopSidebarCollapsed ? '1' : '0')
   }, [desktopSidebarCollapsed, isDesktopViewport])
 
-  const handleSidebarToggle = useCallback(() => {
-    if (isDesktopViewport) {
-      setDesktopSidebarCollapsed(v => !v)
-      return
-    }
-    setSidebarOpen(v => !v)
-  }, [isDesktopViewport])
-
-  // ── Helpers ───────────────────────────────────────────────────────────
-  const typeIcon = (type: SearchResult['type']) => {
-    if (type === 'dashboard') return <FolderKanban className="w-3.5 h-3.5 text-blue-500" />
-    if (type === 'api')       return <Database className="w-3.5 h-3.5 text-purple-500" />
-    return                           <LayoutDashboard className="w-3.5 h-3.5 text-muted-foreground" />
-  }
-
+  const isCompactSidebar = isDesktopViewport && desktopSidebarCollapsed
   const roleBadgeClass = user?.role === 'admin'
     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
     : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
 
-  // ── Sidebar content ───────────────────────────────────────────────────
+  const handleSidebarToggle = useCallback(() => {
+    if (isDesktopViewport) {
+      setDesktopSidebarCollapsed(value => !value)
+      return
+    }
+    setSidebarOpen(value => !value)
+  }, [isDesktopViewport])
+
   const sidebarContent = (
     <>
-      {/* Section label */}
-      {!isCompactSidebar && (
-        <div className="px-4 pt-4 pb-1">
-          <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-[0.12em] whitespace-nowrap">
-            Navigation
-          </p>
+      <div className="px-3 py-4">
+        <div className={isCompactSidebar ? 'flex justify-center' : ''}>
+          <Link href="/admin" className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-600/20">
+              <Zap className="h-4 w-4 text-white" strokeWidth={2.4} />
+            </div>
+            {!isCompactSidebar ? (
+              <div className="min-w-0">
+                <p className="text-sm font-bold tracking-tight">DashboardOS</p>
+                <p className="text-[11px] text-muted-foreground">Platform shell</p>
+              </div>
+            ) : null}
+          </Link>
         </div>
-      )}
+      </div>
 
-      {/* Nav items */}
-      <nav className={`space-y-0.5 ${isCompactSidebar ? 'px-2 pt-3' : 'px-2.5 py-1'}`}>
-        {navigation.filter(item => item.show).map(item => {
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
-          return (
-            <SidebarNavItem
-              key={item.name}
-              item={item}
-              isActive={isActive}
-              isCompact={isCompactSidebar}
-              errorCount={errorCount}
-            />
-          )
-        })}
+      <nav className="space-y-1 px-2">
+        {visibleNavigation.map(item => (
+          <SidebarNavItem
+            key={item.href}
+            item={item}
+            isActive={pathname === item.href || (item.href !== '/admin' && pathname?.startsWith(`${item.href}/`))}
+            isCompact={isCompactSidebar}
+          />
+        ))}
       </nav>
 
-      {/* Quick Stats */}
-      {!isCompactSidebar && (
-        <div className="mx-3 mt-5">
-          <div className="rounded-xl border border-border/60 bg-muted/20 overflow-hidden">
-            <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
-              <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-[0.12em] whitespace-nowrap">
-                Quick Stats
-              </p>
-              <CircleDot className="w-3 h-3 text-green-500 animate-pulse flex-shrink-0" />
-            </div>
-            <div className="px-1 pb-2">
-              <SidebarStatCard label="Active APIs" value={endpoints.length} />
-              <SidebarStatCard label="Dashboards" value={dashboards.length} />
-              <SidebarStatCard label="Widgets" value={activeWidgetCount} />
-              <SidebarStatCard label="Log entries" value={recentLogCount} />
-              {errorCount > 0 && (
-                <SidebarStatCard label="Errors" value={errorCount} accent="text-red-500" />
-              )}
-            </div>
-
-            {currentDashboardId && (
-              <Link href="/monitoring" className="block border-t border-border/40">
-                <div className="flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors whitespace-nowrap">
-                  <span className="flex items-center gap-1.5">
-                    <Activity className="w-3 h-3 flex-shrink-0" />
-                    Full Monitoring
-                  </span>
-                  <ArrowRight className="w-3 h-3 flex-shrink-0" />
-                </div>
-              </Link>
-            )}
-          </div>
+      {!isCompactSidebar ? (
+        <div className="mx-3 mt-4 rounded-lg border border-border/60 bg-muted/30 p-3">
+          <p className="text-xs font-semibold">Legacy routes</p>
+          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+            {LEGACY_NAVIGATION_ENABLED ? 'Maintenance access is enabled for this environment.' : 'Quarantined for this environment.'}
+          </p>
         </div>
-      )}
+      ) : null}
 
-      {/* Compact sidebar: mini stat dots */}
-      {isCompactSidebar && (
-        <div className="flex flex-col items-center gap-2 mt-5 px-2">
-          <div
-            className="group/tip relative w-10 h-10 rounded-xl bg-muted/40 border border-border/40 flex flex-col items-center justify-center cursor-default"
-            title={`${endpoints.length} Active APIs · ${dashboards.length} Dashboards · ${activeWidgetCount} Widgets`}
-          >
-            <span className="text-[11px] font-bold tabular-nums">{endpoints.length}</span>
-            <span className="text-[7px] text-muted-foreground leading-none">APIs</span>
-            <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs font-medium whitespace-nowrap opacity-0 scale-95 group-hover/tip:opacity-100 group-hover/tip:scale-100 transition-all duration-150 shadow-md z-50">
-              {endpoints.length} Active APIs · {dashboards.length} Dashboards · {activeWidgetCount} Widgets
-            </span>
-          </div>
-          {errorCount > 0 && (
-            <div
-              className="group/tip relative w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex flex-col items-center justify-center cursor-default"
-              title={`${errorCount} errors detected`}
-            >
-              <span className="text-[11px] font-bold tabular-nums text-red-500">{errorCount}</span>
-              <span className="text-[7px] text-red-400 leading-none">Err</span>
-              <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs font-medium whitespace-nowrap opacity-0 scale-95 group-hover/tip:opacity-100 group-hover/tip:scale-100 transition-all duration-150 shadow-md z-50">
-                {errorCount} errors detected
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Builder health snapshot */}
-      {!isCompactSidebar && isBuilderRoute && builderHealthSummary && (
-        <div className="mx-3 mt-4">
-          <div className="rounded-xl border border-border/60 bg-muted/20 overflow-hidden">
-            <div className="px-3 pt-2.5 pb-2 flex items-center justify-between">
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-[0.12em]">
-                  API Health
-                </p>
-                <p className="text-[10px] text-muted-foreground/50 mt-0.5">
-                  Builder scan summary
-                </p>
-              </div>
-              <button
-                className="text-[10px] px-2 py-1 rounded-lg border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
-                onClick={dispatchBuilderApiHealthRescan}
-                title="Run API health scan"
-              >
-                Rescan
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5 px-2.5 pb-2.5">
-              <SidebarHealthToggle
-                active={builderHealthFilters.healthy}
-                count={builderHealthSummary.healthy}
-                label="Healthy"
-                colorActive="bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-600/20"
-                colorInactive="border-emerald-200 text-emerald-700 bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:bg-emerald-950/30"
-                onClick={() => setBuilderHealthFilters(c => ({ ...c, healthy: !c.healthy }))}
-              />
-              <SidebarHealthToggle
-                active={builderHealthFilters.unauthorized}
-                count={builderHealthSummary.unauthorized}
-                label="Auth"
-                colorActive="bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/20"
-                colorInactive="border-amber-200 text-amber-700 bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:bg-amber-950/30"
-                onClick={() => setBuilderHealthFilters(c => ({ ...c, unauthorized: !c.unauthorized }))}
-              />
-              <SidebarHealthToggle
-                active={builderHealthFilters.empty}
-                count={builderHealthSummary.empty}
-                label="Empty"
-                colorActive="bg-slate-600 text-white border-slate-600 shadow-sm shadow-slate-600/20"
-                colorInactive="border-slate-200 text-slate-700 bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:bg-slate-900/30"
-                onClick={() => setBuilderHealthFilters(c => ({ ...c, empty: !c.empty }))}
-              />
-              <SidebarHealthToggle
-                active={builderHealthFilters.failed}
-                count={builderHealthSummary.failed}
-                label="Failed"
-                colorActive="bg-rose-600 text-white border-rose-600 shadow-sm shadow-rose-600/20"
-                colorInactive="border-rose-200 text-rose-700 bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:bg-rose-950/30"
-                onClick={() => setBuilderHealthFilters(c => ({ ...c, failed: !c.failed }))}
-              />
-            </div>
-
-            {visibleSidebarHealthResults.length === 0 ? (
-              <p className="text-[10px] text-muted-foreground/60 px-3 pb-2.5">
-                No APIs match active filters.
-              </p>
-            ) : (
-              <div className="space-y-1.5 px-2.5 pb-2.5 max-h-56 overflow-auto">
-                {visibleSidebarHealthResults.slice(0, 6).map(result => {
-                  const bucket = getSidebarHealthBucket(result.status)
-                  const dotColor = bucket === 'healthy'
-                    ? 'bg-emerald-500'
-                    : bucket === 'unauthorized' || bucket === 'empty'
-                      ? 'bg-amber-500'
-                      : 'bg-rose-500'
-
-                  return (
-                    <div
-                      key={`${result.endpointId ?? result.url}-${result.status}`}
-                      className="rounded-lg border border-border/40 p-2.5 bg-background/60 space-y-1 hover:border-border transition-colors"
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${dotColor}`} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-medium leading-snug break-words">
-                            {result.endpointName || result.url}
-                          </p>
-                          {result.likelyReason && (
-                            <p className="text-[10px] text-muted-foreground/70 leading-snug mt-0.5">
-                              {result.likelyReason}
-                            </p>
-                          )}
-                        </div>
-                        <span className={`text-[8px] font-bold uppercase tracking-wider flex-shrink-0 mt-0.5 ${
-                          bucket === 'healthy' ? 'text-emerald-600 dark:text-emerald-400'
-                          : bucket === 'failed' ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-amber-600 dark:text-amber-400'
-                        }`}>
-                          {result.status}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Collapse toggle at bottom (desktop expanded only) */}
-      {!isCompactSidebar && isDesktopViewport && (
-        <div className="mt-auto px-3 py-3 border-t border-border/40">
+      {!isCompactSidebar && isDesktopViewport ? (
+        <div className="mt-auto border-t border-border/40 px-3 py-3">
           <button
             onClick={() => setDesktopSidebarCollapsed(true)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/40 transition-colors whitespace-nowrap"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-muted-foreground"
           >
-            <PanelLeftClose className="w-3.5 h-3.5" />
+            <PanelLeftClose className="h-3.5 w-3.5" />
             Collapse sidebar
           </button>
         </div>
-      )}
+      ) : null}
 
-      {/* Expand button at bottom (compact only) */}
-      {isCompactSidebar && (
-        <div className="mt-auto flex justify-center py-3 border-t border-border/40">
-          <div className="group/tip relative">
-            <button
-              onClick={() => setDesktopSidebarCollapsed(false)}
-              className="w-10 h-10 flex items-center justify-center rounded-xl text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/40 transition-colors"
-              title="Expand sidebar"
-            >
-              <PanelLeftOpen className="w-5 h-5" />
-            </button>
-            <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1 rounded-md bg-popover border border-border text-popover-foreground text-xs font-medium whitespace-nowrap opacity-0 scale-95 group-hover/tip:opacity-100 group-hover/tip:scale-100 transition-all duration-150 shadow-md z-50">
-              Expand sidebar
-            </span>
-          </div>
+      {isCompactSidebar ? (
+        <div className="mt-auto flex justify-center border-t border-border/40 py-3">
+          <button
+            onClick={() => setDesktopSidebarCollapsed(false)}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-muted-foreground"
+            title="Expand sidebar"
+          >
+            <PanelLeftOpen className="h-5 w-5" />
+          </button>
         </div>
-      )}
+      ) : null}
     </>
   )
 
   return (
     <div className="min-h-screen bg-background">
-
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-border/60 bg-card/80 backdrop-blur-xl">
-        <div className="flex h-full items-center px-3 sm:px-4 gap-2 sm:gap-3">
-
-          {/* Sidebar toggle (mobile only — desktop uses sidebar bottom toggles) */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 flex-shrink-0 xl:hidden"
-            onClick={handleSidebarToggle}
-            aria-label="Toggle sidebar"
-          >
-            <Menu className="w-5 h-5" />
+      <header className="fixed left-0 right-0 top-0 z-50 h-14 border-b border-border/60 bg-card/80 backdrop-blur-xl">
+        <div className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-4">
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 xl:hidden" onClick={handleSidebarToggle} aria-label="Toggle sidebar">
+            <Menu className="h-5 w-5" />
           </Button>
 
-          {/* Logo */}
-          <Link href="/admin" className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-md shadow-cyan-600/20">
-              <Zap className="w-4 h-4 text-white" strokeWidth={2.4} />
+          <Link href="/admin" className="flex shrink-0 items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-600/20">
+              <Zap className="h-4 w-4 text-white" strokeWidth={2.4} />
             </div>
-            <span className="font-bold text-base hidden sm:block tracking-tight">
+            <span className="hidden text-base font-bold tracking-tight sm:block">
               Dashboard<span className="text-cyan-600 dark:text-cyan-400">OS</span>
             </span>
           </Link>
 
-          {/* Breadcrumb */}
-          {LEGACY_NAVIGATION_ENABLED && currentDashboard && (
-            <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
-              <ChevronRight className="w-3 h-3" />
+          <div className="hidden items-center gap-1 text-xs text-muted-foreground md:flex">
+            <ChevronRight className="h-3 w-3" />
+            <span className="capitalize">{pathname?.replace(/^\//, '').replace(/\//g, ' / ') || 'admin'}</span>
+          </div>
+
+          <div className="relative max-w-md flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={searchRef}
+              placeholder="Search platform pages... (Ctrl+K)"
+              className="h-8 rounded-xl border-border/60 bg-muted/30 pl-8 pr-8 text-sm transition-colors focus:bg-background"
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+            />
+            {searchQuery ? (
               <button
-                className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-muted transition-colors font-medium text-foreground"
-                onClick={() => router.push('/workspaces')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
               >
-                <FolderKanban className="w-3 h-3 text-blue-500" />
-                <span className="max-w-[120px] lg:max-w-[200px] truncate">
-                  {currentDashboard.name}
-                </span>
+                <X className="h-3 w-3" />
               </button>
-              {pathname !== '/workspaces' && (
-                <>
-                  <ChevronRight className="w-3 h-3" />
-                  <span className="capitalize">{pathname.replace('/', '')}</span>
-                </>
-              )}
-            </div>
-          )}
+            ) : null}
 
-          {/* Search */}
-          <div className="flex-1 max-w-md relative">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                ref={searchRef}
-                placeholder="Search… (⌘K)"
-                className="pl-8 h-8 text-sm pr-8 rounded-xl border-border/60 bg-muted/30 focus:bg-background transition-colors"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-              />
-              {searchQuery && (
-                <button
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setSearchQuery('')}
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-
-            {/* Search dropdown */}
             <AnimatePresence>
-              {searchFocused && searchResults.length > 0 && (
+              {searchFocused && searchResults.length > 0 ? (
                 <motion.div
                   initial={{ opacity: 0, y: -4, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.98 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute top-full mt-1.5 left-0 right-0 z-50 rounded-xl border border-border/60 bg-card shadow-2xl shadow-black/10 overflow-hidden"
+                  className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-border/60 bg-card shadow-2xl shadow-black/10"
                 >
-                  {(['dashboard', 'api', 'page'] as const).map(group => {
-                    const items = searchResults.filter(r => r.type === group)
-                    if (!items.length) return null
-                    const groupLabel =
-                      group === 'dashboard' ? 'Dashboards'
-                      : group === 'api'     ? 'APIs'
-                      : 'Pages'
-                    return (
-                      <div key={group}>
-                        <p className="px-3 py-1.5 text-[10px] font-bold text-muted-foreground/60 uppercase tracking-[0.12em] bg-muted/30">
-                          {groupLabel}
-                        </p>
-                        {items.map(result => (
-                          <button
-                            key={result.id}
-                            className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 text-left transition-colors"
-                            onMouseDown={() => handleSearchSelect(result)}
-                          >
-                            {typeIcon(result.type)}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium truncate">{result.label}</p>
-                              <p className="text-[10px] text-muted-foreground truncate">{result.sub}</p>
-                            </div>
-                            <ChevronRight className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                          </button>
-                        ))}
+                  {searchResults.map(result => (
+                    <button
+                      key={result.id}
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/60"
+                      onMouseDown={() => handleSearchSelect(result)}
+                    >
+                      <LayoutDashboard className="h-3.5 w-3.5 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium">{result.label}</p>
+                        <p className="truncate text-[10px] text-muted-foreground">{result.sub}</p>
                       </div>
-                    )
-                  })}
+                      <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    </button>
+                  ))}
                 </motion.div>
-              )}
-
-              {searchFocused && searchQuery.trim() && searchResults.length === 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="absolute top-full mt-1.5 left-0 right-0 z-50 rounded-xl border border-border/60 bg-card shadow-2xl p-4 text-center"
-                >
-                  <p className="text-xs text-muted-foreground">No results for &ldquo;{searchQuery}&rdquo;</p>
-                </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
           </div>
 
-          {/* Right actions */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 relative"
-              onClick={() => setMonitoringOpen(v => !v)}
-              title="Monitoring & Logs"
-            >
-              <Activity className={`w-4 h-4 ${errorCount > 0 ? 'text-red-500' : ''}`} />
-              {errorCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold ring-2 ring-card">
-                  {errorCount > 9 ? '9+' : errorCount}
-                </span>
-              )}
-            </Button>
-
-            <NotificationBell />
+          <div className="flex shrink-0 items-center gap-1">
             <span className="hidden sm:inline-flex">
               <TokenSessionTimer />
             </span>
 
-            {/* User profile dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-full relative"
-                  title={user?.name ?? 'Profile'}
-                >
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center ring-2 ring-blue-600/20">
+                <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full" title={user?.name ?? 'Profile'}>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 ring-2 ring-blue-600/20">
                     <span className="text-[11px] font-bold text-white">
-                      {user?.name
-                        ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-                        : 'U'}
+                      {user?.name ? user.name.split(' ').map(name => name[0]).join('').slice(0, 2).toUpperCase() : 'U'}
                     </span>
                   </div>
-                  <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border-2 border-card" />
+                  <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full border-2 border-card bg-green-500" />
                 </Button>
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end" className="w-64 rounded-xl" sideOffset={8}>
                 <DropdownMenuLabel className="p-0">
-                  <div className="flex items-center gap-3 p-3 border-b">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center flex-shrink-0 ring-2 ring-blue-600/20">
-                      <span className="text-sm font-bold text-white">
-                        {user?.name
-                          ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-                          : 'U'}
-                      </span>
+                  <div className="flex items-center gap-3 border-b p-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 ring-2 ring-blue-600/20">
+                      <UserRound className="h-4 w-4 text-white" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{user?.name ?? 'Employee'}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">{user?.email ?? ''}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${roleBadgeClass}`}>
-                          {user?.role === 'admin' ? '👑 Admin' : '👤 Employee'}
-                        </span>
-                        {user?.emp_id && user.emp_id !== 'UNKNOWN' && (
-                          <span className="text-[10px] text-muted-foreground font-mono">#{user.emp_id}</span>
-                        )}
-                      </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{user?.name ?? 'Employee'}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{user?.email ?? ''}</p>
+                      <span className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${roleBadgeClass}`}>
+                        {user?.role === 'admin' ? 'Admin' : 'Employee'}
+                      </span>
                     </div>
                   </div>
                 </DropdownMenuLabel>
 
-                <div className="grid grid-cols-3 gap-0 border-b">
-                  {[
-                    { label: 'Boards',  value: dashboards.length },
-                    { label: 'APIs',    value: endpoints.length },
-                    { label: 'Widgets', value: widgets.length },
-                  ].map(s => (
-                    <div key={s.label} className="flex flex-col items-center py-2 px-1">
-                      <span className="text-sm font-bold tabular-nums">{s.value}</span>
-                      <span className="text-[10px] text-muted-foreground">{s.label}</span>
-                    </div>
-                  ))}
-                </div>
-
                 <div className="py-1">
-                  <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push('/settings')}>
-                    <Settings className="w-3.5 h-3.5" /> Settings
+                  <DropdownMenuItem className="gap-2" onClick={() => router.push('/admin')}>
+                    <Shield className="h-3.5 w-3.5 text-purple-500" />
+                    DashboardOS Admin
                   </DropdownMenuItem>
-                  {LEGACY_NAVIGATION_ENABLED ? (
-                    <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push('/workspaces')}>
-                      <FolderKanban className="w-3.5 h-3.5" /> My Dashboards
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push('/admin/publishing')}>
-                      <FolderKanban className="w-3.5 h-3.5" /> Publishing
-                    </DropdownMenuItem>
-                  )}
-                  {user?.role === 'admin' && (
-                    <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => router.push('/admin')}>
-                      <Shield className="w-3.5 h-3.5 text-purple-500" />
-                      <span className="text-purple-600 dark:text-purple-400">DashboardOS Admin</span>
-                    </DropdownMenuItem>
-                  )}
+                  <DropdownMenuItem className="gap-2" onClick={() => router.push('/admin/publishing')}>
+                    <FolderKanban className="h-3.5 w-3.5" />
+                    Publishing
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="gap-2" onClick={() => router.push('/settings')}>
+                    <Settings className="h-3.5 w-3.5" />
+                    Settings
+                  </DropdownMenuItem>
                 </div>
 
                 <DropdownMenuSeparator />
 
                 <div className="py-1">
-                  <div className="px-2 py-1.5 flex items-center gap-2">
-                    <BadgeCheck className="w-3.5 h-3.5 text-green-500" />
+                  <div className="flex items-center gap-2 px-2 py-1.5">
+                    <BadgeCheck className="h-3.5 w-3.5 text-green-500" />
                     <span className="text-[11px] text-muted-foreground">Session active</span>
-                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-green-500" />
                   </div>
                   <div className="px-2 py-1.5 sm:hidden">
                     <TokenSessionTimer />
                   </div>
-                  <DropdownMenuItem
-                    className="gap-2 cursor-pointer text-red-500 hover:text-red-600 focus:text-red-600"
-                    onClick={handleLogout}
-                  >
-                    <LogOut className="w-3.5 h-3.5" /> Log out
+                  <DropdownMenuItem className="gap-2 text-red-500 hover:text-red-600 focus:text-red-600" onClick={handleLogout}>
+                    <LogOut className="h-3.5 w-3.5" />
+                    Log out
                   </DropdownMenuItem>
                 </div>
               </DropdownMenuContent>
@@ -913,12 +424,9 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </header>
 
-      {/* ── Sidebar + Main ───────────────────────────────────────────────── */}
       <div className="flex pt-14">
-
-        {/* Mobile / Tablet sidebar overlay (below xl) */}
         <AnimatePresence>
-          {sidebarOpen && !isDesktopViewport && (
+          {sidebarOpen && !isDesktopViewport ? (
             <>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -934,76 +442,42 @@ export function AppLayout({ children }: AppLayoutProps) {
                 animate={{ x: 0 }}
                 exit={{ x: '-100%' }}
                 transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                className="fixed left-0 top-14 bottom-0 w-[272px] max-w-[85vw] border-r border-border/60 bg-card z-50 flex flex-col will-change-transform"
-                style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+                className="fixed bottom-0 left-0 top-14 z-50 flex w-[272px] max-w-[85vw] flex-col overflow-y-auto border-r border-border/60 bg-card"
               >
                 {sidebarContent}
               </motion.aside>
             </>
-          )}
+          ) : null}
         </AnimatePresence>
 
-        {/*
-          Desktop sidebar (xl+) — TRUE OVERLAY.
-          Always floats on top of content. Main content never changes width.
-          Expanded = wide sidebar overlays content with subtle scrim behind it.
-          Collapsed = compact icon rail overlays left edge.
-        */}
         <aside
-          className={`
-            hidden xl:flex xl:flex-col fixed left-0 top-14 bottom-0 border-r border-border/60
-            bg-card z-50 will-change-[width]
-            transition-[width] duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]
-            ${isCompactSidebar ? 'w-[68px]' : 'w-60'}
-          `}
-          style={{ overflowY: 'auto', overflowX: 'hidden' }}
+          className={[
+            'fixed bottom-0 left-0 top-14 z-50 hidden flex-col overflow-y-auto overflow-x-hidden border-r border-border/60 bg-card transition-[width] duration-300 xl:flex',
+            isCompactSidebar ? 'w-[68px]' : 'w-60',
+          ].join(' ')}
         >
           {sidebarContent}
         </aside>
 
-        {/* Desktop scrim — click to collapse expanded sidebar back to icon rail */}
         <AnimatePresence>
-          {isDesktopViewport && !desktopSidebarCollapsed && (
+          {isDesktopViewport && !desktopSidebarCollapsed ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="hidden xl:block fixed top-14 bottom-0 right-0 z-40 bg-black/5 cursor-pointer"
+              className="fixed bottom-0 right-0 top-14 z-40 hidden cursor-pointer bg-black/5 xl:block"
               style={{ left: 68 }}
               onClick={() => setDesktopSidebarCollapsed(true)}
               aria-label="Collapse sidebar"
             />
-          )}
+          ) : null}
         </AnimatePresence>
 
-        {/* Main content — FIXED xl:ml-[68px] always. Sidebar expansion overlays on top. Content width NEVER changes. */}
-        <main className="w-full flex-1 min-h-[calc(100vh-3.5rem)] bg-muted/20 xl:ml-[68px]">
+        <main className="min-h-[calc(100vh-3.5rem)] w-full flex-1 bg-muted/20 xl:ml-[68px]">
           {children}
         </main>
       </div>
-
-      {/* Monitoring slide-over */}
-      <AnimatePresence>
-        {monitoringOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]"
-              onClick={() => setMonitoringOpen(false)}
-              aria-hidden="true"
-            />
-            <motion.div
-              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="fixed right-0 top-14 bottom-0 w-full max-w-sm sm:w-96 z-50 border-l shadow-2xl bg-card will-change-transform"
-            >
-              <MonitoringPanel onClose={() => setMonitoringOpen(false)} />
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
       <OnboardingWizard />
       <KeyboardShortcuts />

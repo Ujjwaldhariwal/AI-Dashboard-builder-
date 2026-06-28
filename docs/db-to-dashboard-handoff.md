@@ -41,6 +41,7 @@ Completed or started:
 - Rollback promotion now exists as a governed endpoint: it rejects invalid rollback states, health-gates the target version, records a `rolled_back` event, writes audit metadata, and persists the rollback health snapshot.
 - Authenticated default entry points now land in DashboardOS admin instead of legacy workspaces.
 - Legacy builder/viewer UI routes are quarantined by default through `DASHBOARDOS_ENABLE_LEGACY_ROUTES`; enable the matching `NEXT_PUBLIC_DASHBOARDOS_ENABLE_LEGACY_ROUTES` only for intentional maintenance access.
+- The authenticated `AppLayout` shell no longer imports the legacy local builder or monitoring stores; legacy dashboards/widgets remain isolated to the flagged maintenance routes.
 - Legacy widget persistence and endpoint-training APIs now return `410 Gone` with DashboardOS replacement pointers.
 - Shared tenant/project access guard at `src/lib/security/project-access.ts`.
 - RBAC/project access checks across high-risk admin data source, semantic model, dataset, chart, schema-column, and project routes.
@@ -163,12 +164,12 @@ Why:
 
 Suggested sprint sequence:
 1. Add visual chart snapshot rendering for PDF exports.
-2. Replace any remaining legacy local-store dependencies inside shared layout utilities.
-3. Add alert suppression/escalation windows once operational thresholds are clearer.
+2. Add alert suppression/escalation windows once operational thresholds are clearer.
+3. Add standalone ZIP app package generation from the published-dashboard runtime.
 
 ## Major Flaws To Plan
 
-1. Legacy UI/API surfaces are quarantined, but some shared layout utilities still import the old local builder store and should be removed from the DashboardOS shell before final hardening.
+1. Legacy UI/API surfaces are quarantined, but old builder route-group pages still exist for maintenance mode and should not be part of the demo path.
 2. Semantic model is still too shallow for enterprise analytics:
    - no certified fields
    - no business glossary

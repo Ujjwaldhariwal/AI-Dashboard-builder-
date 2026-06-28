@@ -44,7 +44,7 @@ Remaining routing work:
 
 - support public pre-login tenant branding on custom domains
 - move verified tenant-domain lookup to a public-safe resolver if pre-login tenant branding must distinguish known and unknown custom domains before auth
-- remove remaining local builder-store dependencies from the shared DashboardOS shell
+- keep legacy maintenance routes behind explicit environment flags until fully removed
 
 ### 3. Connection Pool Manager
 
