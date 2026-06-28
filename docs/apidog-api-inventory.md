@@ -911,6 +911,11 @@ Export records include storage metadata when available:
 - `byteSize`
 - `checksumSha256`
 
+Supported `exportType` values:
+- `manifest_json`: portable dashboard metadata bundle
+- `report_pdf`: generated dashboard report PDF
+- `bundle_zip`: ZIP bundle containing the manifest, PDF report, and README
+
 ### `POST /api/admin/dashboard-exports`
 
 Purpose: enqueue an export job for a published dashboard or a specific dashboard version.
@@ -930,6 +935,8 @@ Body:
 ```
 
 Response: `{ "job": { ... } }`
+
+`exportType` may be `manifest_json`, `report_pdf`, or `bundle_zip`.
 
 ### `GET /api/admin/jobs`
 
@@ -1083,7 +1090,7 @@ Behavior:
 - executes `dashboard_health` by recording dashboard health runs
 - executes `schema_refresh` by introspecting the target data source and refreshing schema metadata
 - executes `cache_warm` by compiling published dataset/chart SQL, running read-only queries, and writing query-result cache entries
-- executes `export` by generating a durable `manifest_json` artifact for a published dashboard or dashboard version, with checksum/size metadata and optional Supabase Storage upload
+- executes `export` by generating a durable `manifest_json`, `report_pdf`, or `bundle_zip` artifact for a published dashboard or dashboard version, with checksum/size metadata and optional Supabase Storage upload
 - executes `alert_delivery` by fanning out newly opened platform alerts to configured webhook/email-gateway channels and recording delivery attempts
 - marks failed jobs back to `queued` with backoff until `maxAttempts`, then `failed`
 

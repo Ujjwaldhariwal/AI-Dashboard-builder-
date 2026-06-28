@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createHash } from 'crypto'
 
+import { renderDashboardBundleZip, renderDashboardReportPdf } from '@/lib/publishing/dashboard-export-renderers'
 import {
   mapDashboardChartSlot,
   mapDashboardPage,
@@ -8,7 +9,7 @@ import {
   mapPublishedDashboard,
 } from '@/lib/publishing/dashboard-publishing'
 
-export type DashboardExportType = 'manifest_json'
+export type DashboardExportType = 'manifest_json' | 'report_pdf' | 'bundle_zip'
 export type DashboardExportStatus = 'succeeded' | 'failed'
 export type DashboardExportStorageStatus = 'inline' | 'uploaded' | 'failed' | 'skipped'
 
@@ -36,8 +37,9 @@ export interface DashboardExportArtifact {
   createdAt: string
 }
 
-interface CreateDashboardManifestExportInput {
+interface CreateDashboardExportInput {
   supabase: SupabaseClient
+  exportType?: DashboardExportType
   dashboardId?: string | null
   versionId?: string | null
   requestedBy?: string | null
@@ -60,9 +62,17 @@ function toArtifactRecord(value: unknown): Record<string, unknown> {
   return asRecord(value)
 }
 
-function makeArtifactName(slug: string, versionNumber: number) {
+function makeArtifactName(slug: string, versionNumber: number, exportType: DashboardExportType) {
   const safeSlug = slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'dashboard'
+  if (exportType === 'report_pdf') return `${safeSlug}-v${versionNumber}-report.pdf`
+  if (exportType === 'bundle_zip') return `${safeSlug}-v${versionNumber}-bundle.zip`
   return `${safeSlug}-v${versionNumber}-manifest.json`
+}
+
+function contentTypeForExport(exportType: DashboardExportType) {
+  if (exportType === 'report_pdf') return 'application/pdf'
+  if (exportType === 'bundle_zip') return 'application/zip'
+  return 'application/json'
 }
 
 function exportStorageBucket() {
@@ -91,11 +101,11 @@ function exportStoragePath({
   ].join('/')
 }
 
-function serializeArtifact(value: Record<string, unknown>) {
-  const body = JSON.stringify(value, null, 2)
+function serializeArtifactBody(value: string | Buffer) {
+  const body = value
   return {
     body,
-    byteSize: Buffer.byteLength(body, 'utf8'),
+    byteSize: typeof body === 'string' ? Buffer.byteLength(body, 'utf8') : body.byteLength,
     checksumSha256: createHash('sha256').update(body).digest('hex'),
   }
 }
@@ -128,14 +138,14 @@ export function mapDashboardExportArtifact(row: Record<string, unknown>): Dashbo
 
 async function persistArtifactToStorage({
   supabase,
-  artifact,
+  storageBody,
   artifactRecord,
 }: {
   supabase: SupabaseClient
-  artifact: Record<string, unknown>
+  storageBody: string | Buffer
   artifactRecord: DashboardExportArtifact
 }) {
-  const serialized = serializeArtifact(artifact)
+  const serialized = serializeArtifactBody(storageBody)
   const bucket = exportStorageBucket()
   const storagePath = exportStoragePath({
     tenantId: artifactRecord.tenantId,
@@ -305,15 +315,15 @@ async function loadVersionBundle(supabase: SupabaseClient, versionId: string) {
   }
 }
 
-export async function createDashboardManifestExport({
-  supabase,
-  dashboardId,
-  versionId,
-  requestedBy = null,
-  jobId = null,
-}: CreateDashboardManifestExportInput): Promise<DashboardExportArtifact> {
-  const { dashboard, version } = await loadExportTarget({ supabase, dashboardId, versionId })
-  const bundle = await loadVersionBundle(supabase, version.id)
+function buildDashboardExportManifest({
+  dashboard,
+  version,
+  bundle,
+}: {
+  dashboard: ReturnType<typeof mapPublishedDashboard>
+  version: ReturnType<typeof mapDashboardVersion>
+  bundle: Awaited<ReturnType<typeof loadVersionBundle>>
+}) {
   const slotsByPageId = new Map<string, typeof bundle.slots>()
   for (const slot of bundle.slots) {
     const existing = slotsByPageId.get(slot.pageId) ?? []
@@ -321,7 +331,7 @@ export async function createDashboardManifestExport({
     slotsByPageId.set(slot.pageId, existing)
   }
 
-  const artifact = {
+  return {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
     dashboard,
@@ -371,6 +381,56 @@ export async function createDashboardManifestExport({
       readOnly: true,
     },
   }
+}
+
+async function buildDashboardExportPayload(exportType: DashboardExportType, manifest: ReturnType<typeof buildDashboardExportManifest>) {
+  if (exportType === 'manifest_json') {
+    return {
+      artifact: manifest,
+      storageBody: JSON.stringify(manifest, null, 2),
+    }
+  }
+
+  const pdfBuffer = await renderDashboardReportPdf(manifest)
+  if (exportType === 'report_pdf') {
+    return {
+      artifact: {
+        schemaVersion: 1,
+        format: 'pdf',
+        generatedAt: new Date().toISOString(),
+        manifest,
+        base64: pdfBuffer.toString('base64'),
+      },
+      storageBody: pdfBuffer,
+    }
+  }
+
+  const zipBuffer = await renderDashboardBundleZip({ manifest, pdfBuffer })
+  return {
+    artifact: {
+      schemaVersion: 1,
+      format: 'zip',
+      generatedAt: new Date().toISOString(),
+      files: ['manifest.json', 'dashboard-report.pdf', 'README.md'],
+      manifest,
+      base64: zipBuffer.toString('base64'),
+    },
+    storageBody: zipBuffer,
+  }
+}
+
+export async function createDashboardExport({
+  supabase,
+  exportType = 'manifest_json',
+  dashboardId,
+  versionId,
+  requestedBy = null,
+  jobId = null,
+}: CreateDashboardExportInput): Promise<DashboardExportArtifact> {
+  const { dashboard, version } = await loadExportTarget({ supabase, dashboardId, versionId })
+  const bundle = await loadVersionBundle(supabase, version.id)
+  const manifest = buildDashboardExportManifest({ dashboard, version, bundle })
+  const { artifact, storageBody } = await buildDashboardExportPayload(exportType, manifest)
 
   const { data, error } = await supabase
     .from('dashboard_export_artifacts')
@@ -381,16 +441,17 @@ export async function createDashboardManifestExport({
       version_id: version.id,
       job_id: jobId,
       requested_by: requestedBy,
-      export_type: 'manifest_json',
+      export_type: exportType,
       status: 'succeeded',
-      artifact_name: makeArtifactName(dashboard.slug, version.versionNumber),
-      content_type: 'application/json',
+      artifact_name: makeArtifactName(dashboard.slug, version.versionNumber, exportType),
+      content_type: contentTypeForExport(exportType),
       artifact,
       metadata: {
         pageCount: bundle.pages.length,
         slotCount: bundle.slots.length,
         chartCount: bundle.charts.length,
         datasetCount: bundle.datasets.length,
+        exportType,
       },
     })
     .select('*')
@@ -398,7 +459,11 @@ export async function createDashboardManifestExport({
 
   if (error || !data) throw new Error(error?.message ?? 'Unable to create dashboard export artifact')
   const artifactRecord = mapDashboardExportArtifact(data as Record<string, unknown>)
-  return persistArtifactToStorage({ supabase, artifact, artifactRecord })
+  return persistArtifactToStorage({ supabase, storageBody, artifactRecord })
+}
+
+export async function createDashboardManifestExport(input: Omit<CreateDashboardExportInput, 'exportType'>): Promise<DashboardExportArtifact> {
+  return createDashboardExport({ ...input, exportType: 'manifest_json' })
 }
 
 export async function listDashboardExportArtifacts({

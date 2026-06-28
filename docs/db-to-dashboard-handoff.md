@@ -63,8 +63,8 @@ Completed or started:
 - Admin preview, client dataset/chart runtime, and cache-warm jobs enforce tenant/project/source query budgets before opening source database queries.
 - Runtime cache misses now also enforce post-execution row and elapsed-time budget projections before caching or returning query results.
 - Cache-warm jobs now execute through the worker for dataset, chart, and project targets, writing the same query-result cache used by client runtime.
-- Export artifact jobs now execute through the worker for published dashboards and dashboard versions, generating durable `manifest_json` records in `dashboard_export_artifacts`.
-- Export artifacts now record storage bucket/path, byte size, SHA-256 checksum, and upload to `DASHBOARDOS_EXPORT_BUCKET`/`SUPABASE_EXPORT_BUCKET` when configured.
+- Export artifact jobs now execute through the worker for published dashboards and dashboard versions, generating durable `manifest_json`, `report_pdf`, and `bundle_zip` records in `dashboard_export_artifacts`.
+- Export artifacts now record storage bucket/path, byte size, SHA-256 checksum, and upload the rendered manifest/PDF/ZIP payload to `DASHBOARDOS_EXPORT_BUCKET`/`SUPABASE_EXPORT_BUCKET` when configured.
 - Supabase schema cleanup now removes the legacy API-dashboard tables from the active database contract.
 - Schema boundaries are documented in `docs/supabase-schema-boundaries.md`.
 - System design scaling order is documented in `docs/system-design-foundation.md`.
@@ -161,8 +161,8 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add PDF/ZIP export rendering on top of the export artifact storage contract.
-2. Add native email provider integration after the alert channel contract stabilizes.
+1. Add native email provider integration after the alert channel contract stabilizes.
+2. Add visual chart snapshot rendering for PDF exports.
 3. Replace the remaining legacy builder/viewer Supabase assumptions with tenant/project admin flows.
 
 ## Major Flaws To Plan
@@ -182,12 +182,12 @@ Suggested sprint sequence:
    - dashboard versions
    - draft vs published separation
    - release notes/audit trail
-5. No external alert delivery yet:
-   - durable queue, recurring schedules, worker execution, and persistent alerts exist
-   - blocked dashboard alerts are queryable in-app/API but not sent to email/webhooks yet
-6. Query budgets are count-enforced before execution; row and elapsed totals are tracked for policy visibility but not yet hard-stopped mid-query.
-6. Client dashboard needs PDF/report architecture.
-7. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
+5. Native email delivery still needs a real provider integration:
+   - durable queue, recurring schedules, worker execution, persistent alerts, and webhook/email-gateway fan-out exist
+   - direct provider-backed email templates, sender policy, and bounce/error handling are still pending
+6. PDF/ZIP exports are generated, but PDF content is a textual governance report rather than visual chart snapshots.
+7. Standalone ZIP app generation still needs the published-dashboard runtime packaged as a portable client artifact.
+8. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.
 
 ## Verification Pattern Used
 

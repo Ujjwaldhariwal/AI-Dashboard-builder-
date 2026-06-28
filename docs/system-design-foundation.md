@@ -117,7 +117,7 @@ The platform now has `platform_jobs` as the shared queue contract for:
 - `dashboard_health`: audits published dashboards and records `dashboard_health_runs`
 - `schema_refresh`: introspects the target data source and refreshes schema metadata
 - `cache_warm`: compiles published dataset/chart SQL, runs read-only queries, and writes query-result cache entries
-- `export`: generates a durable `manifest_json` artifact for a published dashboard or dashboard version, computes byte/checksum metadata, and uploads to the configured export bucket when available
+- `export`: generates durable `manifest_json`, `report_pdf`, and `bundle_zip` artifacts for a published dashboard or dashboard version, computes byte/checksum metadata from the rendered payload, and uploads to the configured export bucket when available
 - `alert_delivery`: sends newly opened platform alerts to configured webhook/email-gateway channels and records delivery attempts
 
 Failed jobs return to `queued` with backoff until `max_attempts`, then become `failed`.
@@ -128,8 +128,8 @@ Alert hooks now create persistent `platform_alerts` when a scheduled or manual d
 
 Remaining job work:
 
-- add PDF/ZIP rendering on top of the export artifact storage contract
 - add native email provider integration once delivery channel policy is stable
+- add visual chart snapshot rendering for PDF exports after the client runtime presentation is stable
 
 ### 7. AI Filter Layer
 
@@ -147,7 +147,7 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. PDF/ZIP export rendering and object storage.
-2. Stronger budget dimensions beyond query count, such as row and elapsed-time hard stops.
-3. Native email provider integration.
+1. Native email provider integration.
+2. Visual chart snapshot rendering for PDF/report exports.
+3. Standalone ZIP app package generation from the published-dashboard runtime.
 4. AI filter policy after the above are stable.

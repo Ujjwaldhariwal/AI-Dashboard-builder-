@@ -6,7 +6,7 @@ import { listDashboardExportArtifacts } from '@/lib/publishing/dashboard-export-
 import { accessContext, requireProjectAccess, requireTenantAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
-const ExportTypeSchema = z.enum(['manifest_json'])
+const ExportTypeSchema = z.enum(['manifest_json', 'report_pdf', 'bundle_zip'])
 
 const CreateExportSchema = z.object({
   tenantId: z.string().uuid(),

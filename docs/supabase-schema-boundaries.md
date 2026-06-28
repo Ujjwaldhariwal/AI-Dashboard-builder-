@@ -92,6 +92,11 @@ Migration `20260626203000_dashboard_export_storage_metadata.sql` adds object-sto
 - When `DASHBOARDOS_EXPORT_BUCKET` or `SUPABASE_EXPORT_BUCKET` is configured, worker-generated manifest JSON uploads to that Supabase Storage bucket.
 - When no bucket is configured, the artifact remains inline in Postgres with checksum and byte-size metadata for local/demo use.
 
+Migration `20260628103000_dashboard_pdf_zip_exports.sql` expands the export artifact type contract:
+
+- `dashboard_export_artifacts.export_type` now supports `manifest_json`, `report_pdf`, and `bundle_zip`.
+- PDF and ZIP exports use the same tenant/project/dashboard scoping, checksum metadata, and optional storage upload path as manifest exports.
+
 Migration `20260626193000_alert_delivery_channels.sql` adds external alert delivery state:
 
 - `platform_alert_channels` stores tenant/project webhook and email-gateway channel configuration.
@@ -102,4 +107,4 @@ Migration `20260626193000_alert_delivery_channels.sql` adds external alert deliv
 
 The next foundation migrations should add delivery integrations around the new operational tables:
 
-- external export object storage metadata for PDF/ZIP artifacts
+- native email provider delivery state once sender, retry, and template policies are finalized

@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { deliverPlatformAlert } from '@/lib/alerts/alert-delivery'
 import { reconcileDashboardHealthAlerts } from '@/lib/alerts/platform-alerts'
 import { runDataSourceSchemaIntrospection } from '@/lib/data-sources/schema-introspection-runner'
-import { createDashboardManifestExport } from '@/lib/publishing/dashboard-export-artifact'
+import { createDashboardExport, type DashboardExportType } from '@/lib/publishing/dashboard-export-artifact'
 import { auditPublishedDashboards, recordDashboardHealthRuns } from '@/lib/publishing/dashboard-health-auditor'
 import { warmQueryResultCache } from '@/lib/semantic/query-cache-warmer'
 import type { PlatformJob } from '@/lib/jobs/platform-jobs'
@@ -87,14 +87,15 @@ async function runCacheWarmJob(supabase: SupabaseClient, job: PlatformJob): Prom
 
 async function runExportJob(supabase: SupabaseClient, job: PlatformJob): Promise<PlatformJobRunResult> {
   const exportType = typeof job.payload.exportType === 'string' ? job.payload.exportType : 'manifest_json'
-  if (exportType !== 'manifest_json') throw new Error(`Unsupported export type: ${exportType}`)
+  if (!['manifest_json', 'report_pdf', 'bundle_zip'].includes(exportType)) throw new Error(`Unsupported export type: ${exportType}`)
   if (job.targetType !== 'dashboard' && job.targetType !== 'dashboard_version') {
     throw new Error('export jobs require targetType=dashboard or targetType=dashboard_version')
   }
   if (!job.targetId) throw new Error('export jobs require targetId')
 
-  const artifact = await createDashboardManifestExport({
+  const artifact = await createDashboardExport({
     supabase,
+    exportType: exportType as DashboardExportType,
     dashboardId: job.targetType === 'dashboard' ? job.targetId : null,
     versionId: job.targetType === 'dashboard_version' ? job.targetId : null,
     requestedBy: job.createdBy,
