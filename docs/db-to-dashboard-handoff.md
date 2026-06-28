@@ -58,7 +58,7 @@ Completed or started:
 - Recurring schedules now exist through `platform_job_schedules`, `GET/POST /api/admin/jobs/schedules`, and secret-protected `POST /api/admin/jobs/scheduler`.
 - Persistent platform alerts now exist through `platform_alerts`, `GET /api/admin/alerts`, and `PATCH /api/admin/alerts/{id}`.
 - Dashboard health jobs now open or refresh one `dashboard_blocked` alert per blocked dashboard and auto-resolve it once health recovers.
-- Alert fan-out now exists through `platform_alert_channels`, `platform_alert_delivery_attempts`, `GET/POST /api/admin/alert-channels`, `GET /api/admin/alert-deliveries`, and `alert_delivery` worker jobs for webhook/email-gateway channels.
+- Alert fan-out now exists through `platform_alert_channels`, `platform_alert_delivery_attempts`, `GET/POST /api/admin/alert-channels`, `GET /api/admin/alert-deliveries`, and `alert_delivery` worker jobs for webhook, native Resend email, or email-gateway channels.
 - Query budget policies now exist through `query_budget_policies` and `GET/POST /api/admin/query-budgets`.
 - Admin preview, client dataset/chart runtime, and cache-warm jobs enforce tenant/project/source query budgets before opening source database queries.
 - Runtime cache misses now also enforce post-execution row and elapsed-time budget projections before caching or returning query results.
@@ -161,9 +161,9 @@ Why:
 - Enterprise clients need governed published dashboards before broader UI completion.
 
 Suggested sprint sequence:
-1. Add native email provider integration after the alert channel contract stabilizes.
-2. Add visual chart snapshot rendering for PDF exports.
-3. Replace the remaining legacy builder/viewer Supabase assumptions with tenant/project admin flows.
+1. Add visual chart snapshot rendering for PDF exports.
+2. Replace the remaining legacy builder/viewer Supabase assumptions with tenant/project admin flows.
+3. Add alert suppression/escalation windows once operational thresholds are clearer.
 
 ## Major Flaws To Plan
 
@@ -182,9 +182,7 @@ Suggested sprint sequence:
    - dashboard versions
    - draft vs published separation
    - release notes/audit trail
-5. Native email delivery still needs a real provider integration:
-   - durable queue, recurring schedules, worker execution, persistent alerts, and webhook/email-gateway fan-out exist
-   - direct provider-backed email templates, sender policy, and bounce/error handling are still pending
+5. Alert delivery has native Resend support, but production policy still needs suppression windows, escalation rules, and bounce/error handling decisions.
 6. PDF/ZIP exports are generated, but PDF content is a textual governance report rather than visual chart snapshots.
 7. Standalone ZIP app generation still needs the published-dashboard runtime packaged as a portable client artifact.
 8. UI still feels like panels/forms rather than an enterprise control center, but this is intentionally secondary until the foundation is stronger.

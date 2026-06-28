@@ -872,7 +872,8 @@ Body:
 }
 ```
 
-Email channels use `channelType: "email"` and can provide `config.to` plus `config.webhookUrl` for an email gateway until a native mail provider is configured.
+Email channels use `channelType: "email"` and provide recipients through `config.to`.
+When `RESEND_API_KEY` or `DASHBOARDOS_RESEND_API_KEY` and `RESEND_FROM_EMAIL` or `DASHBOARDOS_EMAIL_FROM` are configured, email channels send directly through Resend. Supported email config fields are `to`, `cc`, `bcc`, `replyTo`, `from`, and `subjectPrefix`; `webhookUrl` remains a fallback gateway.
 
 Response: `{ "channel": { ... } }`
 
@@ -1081,6 +1082,8 @@ Auth: worker secret only. Send `Authorization: Bearer <DASHBOARDOS_WORKER_SECRET
 Environment:
 - `SUPABASE_SERVICE_ROLE_KEY`: required to claim and execute jobs server-side
 - `DASHBOARDOS_WORKER_SECRET`: required to authorize the worker route
+- `RESEND_API_KEY` or `DASHBOARDOS_RESEND_API_KEY`: optional native email provider key for `alert_delivery`
+- `RESEND_FROM_EMAIL` or `DASHBOARDOS_EMAIL_FROM`: optional sender identity for native alert email delivery
 
 Query:
 - `limit`: optional number, default `5`, max `25`

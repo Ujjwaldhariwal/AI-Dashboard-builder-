@@ -71,8 +71,74 @@ function asStringArray(value: unknown) {
   return typeof value === 'string' && value.trim() ? [value] : []
 }
 
+function asOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
 function textPreview(value: string, maxLength = 1500) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function configuredEmailProvider() {
+  const apiKey = process.env.DASHBOARDOS_RESEND_API_KEY?.trim() || process.env.RESEND_API_KEY?.trim()
+  const from = process.env.DASHBOARDOS_EMAIL_FROM?.trim() || process.env.RESEND_FROM_EMAIL?.trim()
+  if (!apiKey || !from) return null
+  return { provider: 'resend' as const, apiKey, from }
+}
+
+function emailSubject(alert: PlatformAlert, channel: PlatformAlertChannel) {
+  const prefix = asOptionalString(channel.config.subjectPrefix) ?? 'DashboardOS'
+  return `[${prefix}] [${alert.severity.toUpperCase()}] ${alert.title}`
+}
+
+function emailText(alert: PlatformAlert) {
+  return [
+    alert.title,
+    '',
+    alert.message,
+    '',
+    `Severity: ${alert.severity}`,
+    `State: ${alert.state}`,
+    `Source: ${alert.sourceType}${alert.sourceId ? ` / ${alert.sourceId}` : ''}`,
+    `First seen: ${alert.firstSeenAt}`,
+    `Last seen: ${alert.lastSeenAt}`,
+    '',
+    `Alert ID: ${alert.id}`,
+  ].join('\n')
+}
+
+function emailHtml(alert: PlatformAlert) {
+  const title = escapeHtml(alert.title)
+  const message = escapeHtml(alert.message).replace(/\n/g, '<br />')
+  const rows = [
+    ['Severity', alert.severity],
+    ['State', alert.state],
+    ['Source', `${alert.sourceType}${alert.sourceId ? ` / ${alert.sourceId}` : ''}`],
+    ['First seen', alert.firstSeenAt],
+    ['Last seen', alert.lastSeenAt],
+    ['Alert ID', alert.id],
+  ]
+
+  return [
+    '<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5">',
+    `<h2 style="margin:0 0 12px">${title}</h2>`,
+    `<p style="margin:0 0 16px">${message}</p>`,
+    '<table style="border-collapse:collapse;width:100%;max-width:680px">',
+    ...rows.map(([label, value]) => (
+      `<tr><td style="border:1px solid #e5e7eb;padding:8px;font-weight:700">${escapeHtml(label)}</td><td style="border:1px solid #e5e7eb;padding:8px">${escapeHtml(value)}</td></tr>`
+    )),
+    '</table>',
+    '</div>',
+  ].join('')
 }
 
 export function mapPlatformAlertChannel(row: Record<string, unknown>): PlatformAlertChannel {
@@ -360,6 +426,94 @@ async function deliverWebhook({
   }
 }
 
+async function deliverResendEmail({
+  supabase,
+  alert,
+  channel,
+  jobId,
+  to,
+  providerConfig,
+}: {
+  supabase: SupabaseClient
+  alert: PlatformAlert
+  channel: PlatformAlertChannel
+  jobId?: string | null
+  to: string[]
+  providerConfig: NonNullable<ReturnType<typeof configuredEmailProvider>>
+}) {
+  const cc = asStringArray(channel.config.cc)
+  const bcc = asStringArray(channel.config.bcc)
+  const replyTo = asOptionalString(channel.config.replyTo)
+  const from = asOptionalString(channel.config.from) ?? providerConfig.from
+  const subject = emailSubject(alert, channel)
+  const text = emailText(alert)
+  const html = emailHtml(alert)
+  const requestPayload = {
+    ...alertPayload(alert, channel),
+    email: {
+      provider: providerConfig.provider,
+      from,
+      to,
+      cc,
+      bcc,
+      replyTo,
+      subject,
+      text,
+      html,
+    },
+  }
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${providerConfig.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to,
+        cc: cc.length > 0 ? cc : undefined,
+        bcc: bcc.length > 0 ? bcc : undefined,
+        reply_to: replyTo ?? undefined,
+        subject,
+        text,
+        html,
+        tags: [
+          { name: 'alert_id', value: alert.id },
+          { name: 'alert_type', value: alert.alertType },
+          { name: 'tenant_id', value: alert.tenantId },
+        ],
+      }),
+    })
+    const body = textPreview(await response.text().catch(() => ''))
+
+    return recordDeliveryAttempt({
+      supabase,
+      alert,
+      channel,
+      jobId,
+      destination: to.join(', '),
+      status: response.ok ? 'succeeded' : 'failed',
+      requestPayload,
+      responseStatus: response.status,
+      responseBody: body,
+      errorMessage: response.ok ? null : `Resend returned HTTP ${response.status}`,
+    })
+  } catch (error) {
+    return recordDeliveryAttempt({
+      supabase,
+      alert,
+      channel,
+      jobId,
+      destination: to.join(', '),
+      status: 'failed',
+      requestPayload,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 async function deliverEmail({
   supabase,
   alert,
@@ -373,15 +527,33 @@ async function deliverEmail({
 }) {
   const to = asStringArray(channel.config.to)
   const gatewayUrl = typeof channel.config.webhookUrl === 'string' ? channel.config.webhookUrl : ''
+  const providerConfig = configuredEmailProvider()
   const payload = {
     ...alertPayload(alert, channel),
     email: {
       to,
-      subject: `[${alert.severity.toUpperCase()}] ${alert.title}`,
-      text: `${alert.title}\n\n${alert.message}`,
+      subject: emailSubject(alert, channel),
+      text: emailText(alert),
     },
   }
   const destination = to.join(', ') || channel.name
+
+  if (to.length === 0) {
+    return recordDeliveryAttempt({
+      supabase,
+      alert,
+      channel,
+      jobId,
+      destination,
+      status: 'skipped',
+      requestPayload: payload,
+      errorMessage: 'Email channel requires config.to',
+    })
+  }
+
+  if (providerConfig) {
+    return deliverResendEmail({ supabase, alert, channel, jobId, to, providerConfig })
+  }
 
   if (!gatewayUrl) {
     return recordDeliveryAttempt({
@@ -392,7 +564,7 @@ async function deliverEmail({
       destination,
       status: 'skipped',
       requestPayload: payload,
-      errorMessage: 'Email channel requires config.webhookUrl until a native mail provider is configured',
+      errorMessage: 'Email channel requires DASHBOARDOS_RESEND_API_KEY/RESEND_API_KEY plus DASHBOARDOS_EMAIL_FROM/RESEND_FROM_EMAIL, or config.webhookUrl as a gateway fallback',
     })
   }
 
