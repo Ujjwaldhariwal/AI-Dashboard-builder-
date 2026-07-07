@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertTriangle, BarChart3, Loader2, Table2 } from 'lucide-react'
+import { AlertTriangle, BarChart3, CheckCircle2, Clock3, Loader2, Table2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ModernBarChart } from '@/components/charts/modern-bar-chart'
@@ -10,6 +10,10 @@ import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-hori
 import { ModernLineChart } from '@/components/charts/modern-line-chart'
 import { ModernPieChart } from '@/components/charts/modern-pie-chart'
 import { Badge } from '@/components/ui/badge'
+import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
+import { demoChartRows } from '@/lib/dashboardos/demo-data'
+import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
+import { getEnterpriseChartColors } from '@/lib/echarts/theme'
 import type { ChartTemplateId } from '@/types/chart-template'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 
@@ -113,10 +117,37 @@ function chartHeight(chart: DashboardChartConfig) {
   return 'h-80'
 }
 
-function chartStyle(chart: DashboardChartConfig) {
+function resolveInitialDarkMode() {
+  if (typeof window === 'undefined') return false
+  const stored = window.localStorage.getItem(DASHBOARDOS_THEME_STORAGE_KEY)
+  if (stored === 'dark') return true
+  if (stored === 'light') return false
+  if (document.querySelector('[data-dashboardos-theme="dark"]')) return true
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+
+function useDashboardChartDarkMode() {
+  const [dark, setDark] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setDark(resolveInitialDarkMode())
+    update()
+    media.addEventListener('change', update)
+    window.addEventListener('storage', update)
+    return () => {
+      media.removeEventListener('change', update)
+      window.removeEventListener('storage', update)
+    }
+  }, [])
+
+  return dark
+}
+
+function chartStyle(chart: DashboardChartConfig, dark: boolean) {
   const colors = Object.values(chart.encoding.colorById).filter(Boolean)
   return {
-    colors: colors.length > 0 ? colors : ['#a6e22e', '#66d9ef', '#f92672', '#fd971f', '#ae81ff', '#e6db74'],
+    colors: colors.length > 0 ? colors : getEnterpriseChartColors(dark),
     showLegend: chart.presentation.showLegend,
     showGrid: true,
     labelFormat: chart.presentation.valueFormat === 'currency' ? 'currency' as const : undefined,
@@ -136,20 +167,20 @@ function DataTable({
 }) {
   const columns = fieldNames.length > 0 ? fieldNames.slice(0, 8) : Object.keys(rows[0] ?? {}).slice(0, 8)
   return (
-    <div className="overflow-x-auto rounded-md border border-[#272822]/10 bg-white">
+    <div className="overflow-x-auto rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
       <table className="w-full min-w-[520px] table-fixed text-left text-xs">
-        <thead className="bg-[#f8f8f2] text-[11px] uppercase text-[#75715e]">
+        <thead className="bg-[var(--dos-surface-muted)] text-[11px] uppercase text-[var(--dos-text-muted)]">
           <tr>
             {columns.map(column => (
               <th key={column} className="w-40 truncate px-3 py-2 font-medium">{column}</th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#272822]/10">
+        <tbody className="divide-y divide-[color:var(--dos-border-soft)]">
           {rows.slice(0, 10).map((row, index) => (
             <tr key={index}>
               {columns.map(column => (
-                <td key={column} className="truncate px-3 py-2 text-[#3e3d32]">
+                <td key={column} className="truncate px-3 py-2 text-[var(--dos-text-secondary)]">
                   {String(row[column] ?? '-')}
                 </td>
               ))}
@@ -177,9 +208,9 @@ function KpiView({
       {metrics.map((metricId, index) => {
         const label = labels[index] || fieldNameFromId(chart, metricId)
         return (
-          <div key={metricId} className="rounded-md border border-[#272822]/10 bg-white p-4">
-            <p className="text-xs font-medium text-[#75715e]">{label}</p>
-            <p className="mt-2 text-2xl font-semibold text-[#272822]">
+          <div key={metricId} className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
+            <p className="text-xs font-medium text-[var(--dos-text-muted)]">{label}</p>
+            <p className="mt-2 text-2xl font-semibold text-[var(--dos-text-primary)]">
               {toNumber(firstRow[label]).toLocaleString('en')}
             </p>
           </div>
@@ -192,24 +223,28 @@ function KpiView({
 function ChartBody({
   chart,
   state,
+  dark,
 }: {
   chart: DashboardChartConfig
   state: ChartRunState
+  dark: boolean
 }) {
   if (state.status === 'loading') {
     return (
-      <div className="flex h-64 items-center justify-center text-xs text-[#75715e]">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading dataset
+      <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]/40 px-6 text-center">
+        <Loader2 className="h-5 w-5 animate-spin text-[var(--dos-chart-info)]" />
+        <p className="mt-3 text-sm font-semibold text-[var(--dos-text-primary)]">Loading governed data</p>
+        <p className="mt-1 max-w-xs text-xs text-[var(--dos-text-muted)]">Running the published semantic query with read-only access.</p>
       </div>
     )
   }
 
   if (state.status === 'error') {
     return (
-      <div className="flex gap-2 rounded-md border border-[#f92672]/20 bg-[#f92672]/10 p-3 text-xs text-[#8a0030]">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>{state.error}</span>
+      <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]/35 px-6 text-center">
+        <AlertTriangle className="h-5 w-5 text-[var(--dos-chart-warning)]" />
+        <p className="mt-3 text-sm font-semibold text-[var(--dos-text-primary)]">Chart is preparing</p>
+        <p className="mt-1 max-w-sm text-xs leading-5 text-[var(--dos-text-muted)]">{state.error}</p>
       </div>
     )
   }
@@ -220,11 +255,17 @@ function ChartBody({
     ? state.resolved.yFields
     : chart.encoding.yMetricIds.map(metricId => fieldNameFromId(chart, metricId)).filter(Boolean)
   const primaryMetric = yFields[0] ?? state.fieldNames.find(field => field !== xField) ?? 'value'
-  const style = chartStyle(chart)
+  const style = chartStyle(chart, dark)
   const height = chartHeight(chart)
 
   if (!rows.length) {
-    return <div className="rounded-md border border-dashed border-[#272822]/15 p-6 text-center text-xs text-[#75715e]">No rows returned.</div>
+    return (
+      <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-[color:var(--dos-border-mid)] bg-[var(--dos-surface-muted)]/30 p-6 text-center">
+        <Table2 className="h-5 w-5 text-[var(--dos-text-muted)]" />
+        <p className="mt-3 text-sm font-semibold text-[var(--dos-text-primary)]">No rows returned</p>
+        <p className="mt-1 text-xs text-[var(--dos-text-muted)]">The chart is valid, but the current dataset filter returned no records.</p>
+      </div>
+    )
   }
 
   if (isChartTemplate(chart.templateId, ['kpi-card', 'kpi-grid'])) {
@@ -260,6 +301,8 @@ function ChartBody({
 
 export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridProps) {
   const [chartRuns, setChartRuns] = useState<Record<string, ChartRunState>>({})
+  const dark = useDashboardChartDarkMode()
+  const demoMode = isDashboardOsDemoMode()
   const chartIds = useMemo(() => charts.map(chart => chart.id), [charts])
 
   const chartKey = useMemo(() => chartIds.join('|'), [chartIds])
@@ -269,6 +312,22 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
     const ids = chartKey ? chartKey.split('|') : []
 
     async function loadCharts() {
+      if (demoMode && tenantSlug === 'demo') {
+        setChartRuns(Object.fromEntries(ids.map(id => [id, {
+          status: 'ready' as const,
+          rows: demoChartRows,
+          fieldNames: ['Month', 'Revenue', 'Orders', 'Customers'],
+          resolved: {
+            xField: 'Month',
+            yFields: ['Revenue', 'Orders', 'Customers'],
+            tooltipFields: ['Revenue', 'Orders', 'Customers'],
+            sortField: 'Month',
+          },
+          rowCount: demoChartRows.length,
+          elapsedMs: 38,
+        }])))
+        return
+      }
       setChartRuns(Object.fromEntries(ids.map(id => [id, { ...EMPTY_STATE, status: 'loading' as const }])))
       const entries = await Promise.all(ids.map(async chartId => {
         try {
@@ -307,39 +366,46 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
 
     if (ids.length > 0) void loadCharts()
     return () => controller.abort()
-  }, [chartKey, tenantSlug])
+  }, [chartKey, demoMode, tenantSlug])
 
   if (charts.length === 0) return null
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Published charts</h2>
-          <p className="mt-1 text-xs text-[#75715e]">Validated chart configs rendered from read-only semantic datasets.</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--dos-chart-success)]">Operations Overview</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight">Published dashboard charts</h2>
+          <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Validated chart configs rendered from read-only semantic datasets.</p>
         </div>
-        <Badge variant="outline" className="border-[#66d9ef]/30 bg-[#66d9ef]/10 text-[#13515e]">
-          {charts.length} charts
+        <Badge variant="outline" className="border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[var(--dos-chart-info)]">
+          {charts.length} live charts
         </Badge>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-4">
         {charts.map(chart => {
           const state = chartRuns[chart.id] ?? EMPTY_STATE
+          const statusLabel = state.status === 'ready' ? 'Live' : state.status === 'loading' ? 'Loading' : state.status === 'error' ? 'Review' : 'Queued'
           return (
-            <article key={chart.id} className={`${sizeClass(chart)} rounded-lg border border-[#272822]/10 bg-[#f8f8f2] p-4 shadow-sm`}>
-              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <article key={chart.id} className={`${sizeClass(chart)} rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.16)] transition duration-200 hover:border-[color:var(--dos-border-mid)]`}>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 text-[#a6e22e]" />
-                    <h3 className="truncate text-sm font-semibold">{chart.name}</h3>
+                    <BarChart3 className="h-4 w-4 text-[var(--dos-chart-success)]" />
+                    <h3 className="truncate text-base font-semibold tracking-tight">{chart.name}</h3>
                   </div>
-                  <p className="mt-1 text-[11px] text-[#75715e]">
-                    {chart.templateId} / {state.rowCount} rows / {state.elapsedMs}ms
-                  </p>
+                  <p className="mt-1 text-xs text-[var(--dos-text-muted)]">Read-only semantic query</p>
                 </div>
-                <Table2 className="h-4 w-4 text-[#75715e]" />
+                <Badge variant="outline" className="gap-1 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] text-[var(--dos-text-secondary)]">
+                  {state.status === 'ready' ? <CheckCircle2 className="h-3 w-3 text-[var(--dos-chart-success)]" /> : <Clock3 className="h-3 w-3 text-[var(--dos-chart-warning)]" />}
+                  {statusLabel}
+                </Badge>
               </div>
-              <ChartBody chart={chart} state={state} />
+              <ChartBody chart={chart} state={state} dark={dark} />
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--dos-border-soft)] pt-3 text-[11px] text-[var(--dos-text-muted)]">
+                <span>{chart.templateId}</span>
+                <span>{state.rowCount} rows{state.elapsedMs ? ` / ${state.elapsedMs}ms` : ''}</span>
+              </div>
             </article>
           )
         })}
