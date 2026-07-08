@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { buildGovernedAiChartContext, serializeGovernedAiChartContext } from '@/lib/ai/chart-ai-contract'
+import { resolveAiChartRefinementGate } from '@/lib/ai/chart-refinement-gate'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -31,6 +32,17 @@ export async function POST(req: NextRequest) {
     const access = await requireAiProjectAccess({ auth, scope: parsed.data })
     if (!access.ok) {
       return NextResponse.json({ context: null, error: access.error }, { status: access.status })
+    }
+
+    if (parsed.data.purpose === 'chart_refinement') {
+      const gate = resolveAiChartRefinementGate({
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        userId: auth.userId,
+      })
+      if (!gate.enabled) {
+        return NextResponse.json({ context: null, errorCode: 'feature_gated', error: gate.reason }, { status: 403 })
+      }
     }
 
     const rateLimit = await checkRuntimeRateLimit({

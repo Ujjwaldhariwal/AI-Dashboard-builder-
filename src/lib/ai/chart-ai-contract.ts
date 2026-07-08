@@ -16,8 +16,10 @@ import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashb
 
 export const AI_PREVIEW_MAX_ROWS = 10
 export const AI_PREVIEW_MAX_COLUMNS = 6
+export const AI_CHART_PATCH_SCHEMA_VERSION = 'dashboardos.ai.chart_patch.v1'
 
 export const ChartAiPatchSchema = z.object({
+  schemaVersion: z.literal(AI_CHART_PATCH_SCHEMA_VERSION).optional(),
   name: z.string().min(2).max(120).optional(),
   description: z.string().max(500).nullable().optional(),
   templateId: z.string().min(2).max(80).optional(),
@@ -53,8 +55,36 @@ export const ChartAiPatchSchema = z.object({
 
 export type ChartAiPatch = z.infer<typeof ChartAiPatchSchema>
 
+export type ChartAiPatchParseResult =
+  | { ok: true; patch: ChartAiPatch }
+  | { ok: false; errorCode: 'schema_version_mismatch' | 'invalid_model_patch'; error: string; issues?: unknown }
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+export function parseChartAiPatchPayload(value: unknown): ChartAiPatchParseResult {
+  const record = asRecord(value)
+  const schemaVersion = record.schemaVersion
+  if (typeof schemaVersion === 'string' && schemaVersion !== AI_CHART_PATCH_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      errorCode: 'schema_version_mismatch',
+      error: `Unsupported AI chart patch schema version. Expected ${AI_CHART_PATCH_SCHEMA_VERSION}.`,
+    }
+  }
+
+  const parsed = ChartAiPatchSchema.safeParse(value)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      errorCode: 'invalid_model_patch',
+      error: 'AI patch failed schema validation',
+      issues: parsed.error.flatten(),
+    }
+  }
+
+  return { ok: true, patch: { ...parsed.data, schemaVersion: parsed.data.schemaVersion ?? AI_CHART_PATCH_SCHEMA_VERSION } }
 }
 
 function toStringArray(value: unknown) {

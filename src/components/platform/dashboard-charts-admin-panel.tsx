@@ -39,6 +39,12 @@ interface DatasetPlan {
   }
 }
 
+interface AiRefinementGateState {
+  enabled: boolean
+  source: string
+  reason: string
+}
+
 function errorToText(value: unknown) {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object') {
@@ -97,6 +103,7 @@ export function DashboardChartsAdminPanel() {
   const [auditLoading, setAuditLoading] = useState(false)
   const [chartAudit, setChartAudit] = useState<DashboardChartAudit | null>(null)
   const [aiRefineChartId, setAiRefineChartId] = useState<string | null>(null)
+  const [aiRefinementGate, setAiRefinementGate] = useState<AiRefinementGateState | null>(null)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -159,22 +166,35 @@ export function DashboardChartsAdminPanel() {
       setCharts([demoChart])
       setDatasetId(current => current || demoDataset.id)
       setChartAudit(demoChartAudit)
+      setAiRefinementGate({ enabled: false, source: 'demo', reason: 'AI refinement uses real governed chart IDs outside browser-only demo mode.' })
       return
     }
-    const [datasetsResponse, chartsResponse] = await Promise.all([
+    const nextProject = projects.find(project => project.id === nextProjectId)
+    const [datasetsResponse, chartsResponse, gateResponse] = await Promise.all([
       fetch(`/api/admin/datasets?projectId=${nextProjectId}`, { cache: 'no-store' }),
       fetch(`/api/admin/dashboard-charts?projectId=${nextProjectId}`, { cache: 'no-store' }),
+      nextProject
+        ? fetch('/api/ai/chart-refine/gate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tenantId: nextProject.tenantId, projectId: nextProject.id }),
+        })
+        : Promise.resolve(null),
     ])
     const datasetsPayload = await datasetsResponse.json().catch(() => null)
     const chartsPayload = await chartsResponse.json().catch(() => null)
+    const gatePayload = gateResponse ? await gateResponse.json().catch(() => null) : null
     if (!datasetsResponse.ok) throw new Error(errorToText(datasetsPayload))
     if (!chartsResponse.ok) throw new Error(errorToText(chartsPayload))
     const nextDatasets = Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets as SemanticDataset[] : []
     setDatasets(nextDatasets)
     setCharts(Array.isArray(chartsPayload?.charts) ? chartsPayload.charts as DashboardChartConfig[] : [])
+    setAiRefinementGate(gatePayload && typeof gatePayload.enabled === 'boolean'
+      ? gatePayload as AiRefinementGateState
+      : { enabled: false, source: 'off', reason: 'AI refinement gate status is unavailable.' })
     setDatasetId(current => nextDatasets.some(dataset => dataset.id === current) ? current : nextDatasets[0]?.id ?? '')
     void fetchChartAudit(nextProjectId)
-  }, [demoMode, fetchChartAudit])
+  }, [demoMode, fetchChartAudit, projects])
 
   const fetchPlan = useCallback(async (nextDatasetId: string) => {
     if (!nextDatasetId) {
@@ -555,6 +575,18 @@ export function DashboardChartsAdminPanel() {
               <p>Dataset fields and metrics are validated before save.</p>
               <p>Incompatible chart templates are blocked by the server.</p>
               <p>Validation history is stored for publish checks.</p>
+              <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--dos-text-muted)]">AI refinement</p>
+                  <Badge variant="outline" className={aiRefinementGate?.enabled
+                    ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]'
+                    : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'}
+                  >
+                    {aiRefinementGate?.enabled ? aiRefinementGate.source : 'gated'}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[11px] leading-4 text-[color:var(--dos-text-muted)]">{aiRefinementGate?.reason ?? 'Checking controlled rollout gate.'}</p>
+              </div>
               <div className="grid grid-cols-3 gap-2 pt-2">
                 <div className="rounded-md border border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] p-2">
                   <p className="text-[10px] uppercase text-[color:var(--dos-chart-success)]">Healthy</p>
@@ -630,22 +662,24 @@ export function DashboardChartsAdminPanel() {
                       {updatingId === chart.id ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
                       Publish
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 border-[color:var(--dos-accent-primary)] bg-transparent text-[color:var(--dos-accent-primary)] hover:bg-[var(--dos-accent-primary-soft)]"
-                      onClick={() => {
-                        if (demoMode) {
-                          toast.info('AI refinement uses real governed chart IDs. Open a real project chart to use it.')
-                          return
-                        }
-                        setAiRefineChartId(chart.id)
-                      }}
-                      disabled={updatingId === chart.id}
-                    >
-                      <Sparkles className="mr-2 h-3.5 w-3.5" />
-                      Refine with AI
-                    </Button>
+                    {aiRefinementGate?.enabled ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-[color:var(--dos-accent-primary)] bg-transparent text-[color:var(--dos-accent-primary)] hover:bg-[var(--dos-accent-primary-soft)]"
+                        onClick={() => {
+                          if (demoMode) {
+                            toast.info('AI refinement uses real governed chart IDs. Open a real project chart to use it.')
+                            return
+                          }
+                          setAiRefineChartId(chart.id)
+                        }}
+                        disabled={updatingId === chart.id}
+                      >
+                        <Sparkles className="mr-2 h-3.5 w-3.5" />
+                        Refine with AI
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="outline"

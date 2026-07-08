@@ -3,13 +3,19 @@ import OpenAI from 'openai'
 import { z } from 'zod'
 
 import {
+  AI_CHART_PATCH_SCHEMA_VERSION,
   ChartAiPatch,
-  ChartAiPatchSchema,
   buildGovernedAiChartContext,
   doesPromptReferenceBlockedAiDescriptors,
+  parseChartAiPatchPayload,
   serializeGovernedAiChartContext,
   validateChartAiPatchAgainstAllowlist,
 } from '@/lib/ai/chart-ai-contract'
+import { resolveAiChartRefinementGate } from '@/lib/ai/chart-refinement-gate'
+import {
+  buildAiChartRefinementEventMetadata,
+  logAiChartRefinementMetric,
+} from '@/lib/ai/chart-refinement-observability'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -21,7 +27,7 @@ const ChartRefineBodySchema = z.object({
   instruction: z.string().min(3).max(1_200),
   includePreview: z.boolean().default(false),
   apply: z.boolean().default(false),
-  patch: ChartAiPatchSchema.optional(),
+  patch: z.unknown().optional(),
 }).strict()
 
 function parseJsonObject(value: string) {
@@ -73,6 +79,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ patch: null, chart: null, validation: null, error: access.error }, { status: access.status })
     }
 
+    const gate = resolveAiChartRefinementGate({
+      tenantId: access.tenantId,
+      projectId: access.projectId,
+      userId: auth.userId,
+    })
+    if (!gate.enabled) {
+      return NextResponse.json({
+        patch: null,
+        chart: null,
+        validation: null,
+        errorCode: 'feature_gated',
+        error: gate.reason,
+      }, { status: 403 })
+    }
+
     const rateLimit = await checkRuntimeRateLimit({
       key: `ai-chart-refine:${access.tenantId}:${access.projectId}:${auth.userId}`,
       maxRequests: 15,
@@ -104,7 +125,28 @@ export async function POST(req: NextRequest) {
       projectId: access.projectId,
       chartId: parsed.data.chartId,
       action: 'ai.chart_refine.prompt_submitted',
-      metadata: { apply: parsed.data.apply, patchProvided: Boolean(parsed.data.patch), includePreview: parsed.data.includePreview },
+      metadata: buildAiChartRefinementEventMetadata({
+        eventType: 'prompt_submitted',
+        instruction: parsed.data.instruction,
+        patchProvided: Boolean(parsed.data.patch),
+        includePreview: parsed.data.includePreview,
+        gateSource: gate.source,
+      }),
+    })
+    await logAiChartRefinementMetric({
+      supabase: auth.supabase,
+      tenantId: access.tenantId,
+      projectId: access.projectId,
+      actorUserId: auth.userId,
+      chartId: parsed.data.chartId,
+      eventType: 'prompt_submitted',
+      metadata: buildAiChartRefinementEventMetadata({
+        eventType: 'prompt_submitted',
+        instruction: parsed.data.instruction,
+        patchProvided: Boolean(parsed.data.patch),
+        includePreview: parsed.data.includePreview,
+        gateSource: gate.source,
+      }),
     })
 
     if (!parsed.data.patch && doesPromptReferenceBlockedAiDescriptors({
@@ -118,7 +160,26 @@ export async function POST(req: NextRequest) {
         projectId: access.projectId,
         chartId: parsed.data.chartId,
         action: 'ai.chart_refine.rejected',
-        metadata: { reason: 'blocked_field_prompt_reference' },
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'blocked_sensitive_request',
+          instruction: parsed.data.instruction,
+          errorCode: 'restricted_field_request',
+          gateSource: gate.source,
+        }),
+      })
+      await logAiChartRefinementMetric({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: parsed.data.chartId,
+        eventType: 'blocked_sensitive_request',
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'blocked_sensitive_request',
+          instruction: parsed.data.instruction,
+          errorCode: 'restricted_field_request',
+          gateSource: gate.source,
+        }),
       })
       return NextResponse.json({
         patch: null,
@@ -133,7 +194,44 @@ export async function POST(req: NextRequest) {
     let patch: ChartAiPatch
 
     if (parsed.data.patch) {
-      patch = parsed.data.patch
+      const providedPatch = parseChartAiPatchPayload(parsed.data.patch)
+      if (!providedPatch.ok) {
+        await auditChartRefine({
+          auth,
+          tenantId: access.tenantId,
+          projectId: access.projectId,
+          chartId: parsed.data.chartId,
+          action: 'ai.chart_refine.validation_failed',
+          metadata: buildAiChartRefinementEventMetadata({
+            eventType: 'patch_validation_failure',
+            instruction: parsed.data.instruction,
+            errorCode: providedPatch.errorCode,
+            gateSource: gate.source,
+          }),
+        })
+        await logAiChartRefinementMetric({
+          supabase: auth.supabase,
+          tenantId: access.tenantId,
+          projectId: access.projectId,
+          actorUserId: auth.userId,
+          chartId: parsed.data.chartId,
+          eventType: 'patch_validation_failure',
+          metadata: buildAiChartRefinementEventMetadata({
+            eventType: 'patch_validation_failure',
+            instruction: parsed.data.instruction,
+            errorCode: providedPatch.errorCode,
+            gateSource: gate.source,
+          }),
+        })
+        return NextResponse.json({
+          patch: null,
+          chart: context.chart,
+          validation: null,
+          errorCode: providedPatch.errorCode,
+          error: providedPatch.error,
+        }, { status: 422 })
+      }
+      patch = providedPatch.patch
     } else {
       const apiKey = process.env.OPENAI_API_KEY
       if (!apiKey) {
@@ -150,6 +248,7 @@ Privacy rules:
 
 chartPatch shape:
 {
+  "schemaVersion": "${AI_CHART_PATCH_SCHEMA_VERSION}",
   "name": "optional title",
   "description": "optional short description or null",
   "templateId": "optional chart template id",
@@ -189,19 +288,71 @@ ${JSON.stringify(publicContext, null, 2)}`
       })
 
       const raw = completion.choices[0]?.message?.content ?? '{}'
-      const patchParse = ChartAiPatchSchema.safeParse(parseJsonObject(raw))
-      if (!patchParse.success) {
+      let parsedJson: unknown
+      try {
+        parsedJson = parseJsonObject(raw)
+      } catch {
         await auditChartRefine({
           auth,
           tenantId: access.tenantId,
           projectId: access.projectId,
           chartId: parsed.data.chartId,
           action: 'ai.chart_refine.validation_failed',
-          metadata: { reason: 'patch_schema_invalid', issues: patchParse.error.flatten() },
+          metadata: buildAiChartRefinementEventMetadata({
+            eventType: 'model_parse_failure',
+            instruction: parsed.data.instruction,
+            errorCode: 'model_parse_failure',
+            gateSource: gate.source,
+          }),
         })
-        return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: 'invalid_model_patch', error: 'AI patch failed schema validation' }, { status: 422 })
+        await logAiChartRefinementMetric({
+          supabase: auth.supabase,
+          tenantId: access.tenantId,
+          projectId: access.projectId,
+          actorUserId: auth.userId,
+          chartId: parsed.data.chartId,
+          eventType: 'model_parse_failure',
+          metadata: buildAiChartRefinementEventMetadata({
+            eventType: 'model_parse_failure',
+            instruction: parsed.data.instruction,
+            errorCode: 'model_parse_failure',
+            gateSource: gate.source,
+          }),
+        })
+        return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: 'invalid_model_patch', error: 'AI response could not be parsed as a chart patch. The current chart was left unchanged.' }, { status: 422 })
       }
-      patch = patchParse.data
+      const patchParse = parseChartAiPatchPayload(parsedJson)
+      if (!patchParse.ok) {
+        await auditChartRefine({
+          auth,
+          tenantId: access.tenantId,
+          projectId: access.projectId,
+          chartId: parsed.data.chartId,
+          action: 'ai.chart_refine.validation_failed',
+          metadata: buildAiChartRefinementEventMetadata({
+            eventType: 'patch_validation_failure',
+            instruction: parsed.data.instruction,
+            errorCode: patchParse.errorCode,
+            gateSource: gate.source,
+          }),
+        })
+        await logAiChartRefinementMetric({
+          supabase: auth.supabase,
+          tenantId: access.tenantId,
+          projectId: access.projectId,
+          actorUserId: auth.userId,
+          chartId: parsed.data.chartId,
+          eventType: 'patch_validation_failure',
+          metadata: buildAiChartRefinementEventMetadata({
+            eventType: 'patch_validation_failure',
+            instruction: parsed.data.instruction,
+            errorCode: patchParse.errorCode,
+            gateSource: gate.source,
+          }),
+        })
+        return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: patchParse.errorCode, error: patchParse.error }, { status: 422 })
+      }
+      patch = patchParse.patch
     }
 
     const allowed = validateChartAiPatchAgainstAllowlist({
@@ -214,18 +365,42 @@ ${JSON.stringify(publicContext, null, 2)}`
     })
 
     if (!allowed.ok) {
+      const failedValidation = 'validation' in allowed && allowed.validation ? allowed.validation : null
       await auditChartRefine({
         auth,
         tenantId: access.tenantId,
         projectId: access.projectId,
         chartId: parsed.data.chartId,
         action: 'ai.chart_refine.rejected',
-        metadata: { reason: allowed.error, blockedIds: allowed.blockedIds, validation: 'validation' in allowed ? allowed.validation : null },
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: allowed.blockedIds.length > 0 ? 'blocked_sensitive_request' : 'patch_validation_failure',
+          instruction: parsed.data.instruction,
+          errorCode: allowed.blockedIds.length > 0 ? 'restricted_field_request' : 'chart_validation_failed',
+          validationState: failedValidation?.state ?? null,
+          schemaVersion: patch.schemaVersion,
+          gateSource: gate.source,
+        }),
+      })
+      await logAiChartRefinementMetric({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: parsed.data.chartId,
+        eventType: allowed.blockedIds.length > 0 ? 'blocked_sensitive_request' : 'patch_validation_failure',
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: allowed.blockedIds.length > 0 ? 'blocked_sensitive_request' : 'patch_validation_failure',
+          instruction: parsed.data.instruction,
+          errorCode: allowed.blockedIds.length > 0 ? 'restricted_field_request' : 'chart_validation_failed',
+          validationState: failedValidation?.state ?? null,
+          schemaVersion: patch.schemaVersion,
+          gateSource: gate.source,
+        }),
       })
       return NextResponse.json({
         patch,
         chart: context.chart,
-        validation: 'validation' in allowed ? allowed.validation : null,
+        validation: failedValidation,
         errorCode: allowed.blockedIds.length > 0 ? 'restricted_field_request' : 'chart_validation_failed',
         error: allowed.error,
       }, { status: 422 })
@@ -238,7 +413,28 @@ ${JSON.stringify(publicContext, null, 2)}`
         projectId: access.projectId,
         chartId: parsed.data.chartId,
         action: 'ai.chart_refine.patch_proposed',
-        metadata: { validationState: allowed.validation.state, patch },
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'proposal_success',
+          instruction: parsed.data.instruction,
+          validationState: allowed.validation.state,
+          schemaVersion: patch.schemaVersion,
+          gateSource: gate.source,
+        }),
+      })
+      await logAiChartRefinementMetric({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: parsed.data.chartId,
+        eventType: 'proposal_success',
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'proposal_success',
+          instruction: parsed.data.instruction,
+          validationState: allowed.validation.state,
+          schemaVersion: patch.schemaVersion,
+          gateSource: gate.source,
+        }),
       })
       return NextResponse.json({ patch, chart: allowed.nextChart, validation: allowed.validation })
     }
@@ -282,7 +478,28 @@ ${JSON.stringify(publicContext, null, 2)}`
         projectId: access.projectId,
         chartId: context.chart.id,
         action: 'ai.chart_refine.patch_accepted',
-        metadata: { instruction: parsed.data.instruction, validationState: allowed.validation.state },
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'apply_success',
+          instruction: parsed.data.instruction,
+          validationState: allowed.validation.state,
+          schemaVersion: patch.schemaVersion,
+          gateSource: gate.source,
+        }),
+      }),
+      logAiChartRefinementMetric({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: context.chart.id,
+        eventType: 'apply_success',
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'apply_success',
+          instruction: parsed.data.instruction,
+          validationState: allowed.validation.state,
+          schemaVersion: patch.schemaVersion,
+          gateSource: gate.source,
+        }),
       }),
     ])
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Bot, CheckCircle2, Eye, Loader2, SlidersHorizontal, Sparkles, TriangleAlert, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -62,7 +62,7 @@ interface RefineResponse {
     state: string
     issues: Array<{ severity: string; code: string; message: string }>
   } | null
-  errorCode?: 'restricted_field_request' | 'unsupported_chart_edit' | 'invalid_model_patch' | 'chart_validation_failed'
+  errorCode?: 'feature_gated' | 'restricted_field_request' | 'unsupported_chart_edit' | 'invalid_model_patch' | 'schema_version_mismatch' | 'chart_validation_failed'
   error?: string
 }
 
@@ -92,11 +92,17 @@ function refinementErrorMessage(payload: RefineResponse | { error?: unknown; err
   if (payload?.errorCode === 'invalid_model_patch') {
     return 'The model returned a patch that did not match the approved chart schema. The current chart was left unchanged.'
   }
+  if (payload?.errorCode === 'schema_version_mismatch') {
+    return 'The patch used a schema version this environment does not support. The current chart was left unchanged.'
+  }
   if (payload?.errorCode === 'chart_validation_failed') {
     return 'The proposed edit did not pass chart validation. Try a smaller change or pick one of the suggested actions.'
   }
   if (payload?.errorCode === 'unsupported_chart_edit') {
     return 'That edit is not supported by the governed chart refinement workflow yet.'
+  }
+  if (payload?.errorCode === 'feature_gated') {
+    return 'AI chart refinement is gated for this tenant, project, or user. No chart changes were made.'
   }
   return errorToText(payload)
 }
@@ -336,6 +342,24 @@ export function AiChartRefinementDialog({
   const diff = useMemo(() => (
     result?.chart ? describeAiChartDiff({ before: chart, after: result.chart, context }) : []
   ), [chart, context, result?.chart])
+  const previewAvailable = useMemo(() => (
+    result?.chart ? canRenderAiChartPreview(result.chart, context) : null
+  ), [context, result?.chart])
+  const hasPreviewOnlyFilters = Boolean(result?.chart?.encoding.filters?.length)
+
+  useEffect(() => {
+    if (previewAvailable === null || !result?.chart) return
+    void fetch('/api/ai/chart-refine/preview-observed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tenantId,
+        projectId,
+        chartId: chart.id,
+        previewAvailable,
+      }),
+    }).catch(() => undefined)
+  }, [chart.id, previewAvailable, projectId, result?.chart, tenantId])
 
   async function fetchContext() {
     setLoadingContext(true)
@@ -576,6 +600,11 @@ export function AiChartRefinementDialog({
                       {result.validation.issues[0]?.message}
                     </div>
                   ) : null}
+                  {hasPreviewOnlyFilters ? (
+                    <div className="mt-3 rounded-lg border border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] p-3 text-xs leading-5 text-[color:var(--dos-chart-info)]">
+                      Filter edits are schema-validated metadata in this release. Runtime query execution for these filters is intentionally not promised yet.
+                    </div>
+                  ) : null}
                 </div>
                 <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
@@ -597,7 +626,7 @@ export function AiChartRefinementDialog({
                   <div>
                     <h3 className="text-sm font-semibold text-[color:var(--dos-text-primary)]">Describe a safe chart edit</h3>
                     <p className="mt-1 max-w-2xl text-xs leading-5 text-[color:var(--dos-text-muted)]">
-                      Try a rename, compatible type change, metric comparison, grouping swap, sort, row limit, or a narrow literal filter. The patch will be validated before anything changes.
+                      Try a rename, compatible type change, metric comparison, grouping swap, sort, or row limit. Narrow filters are validated as metadata for now and will be marked clearly before apply.
                     </p>
                   </div>
                 </div>
@@ -629,10 +658,13 @@ export function AiChartRefinementDialog({
               <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
                 <p className="text-sm font-semibold">Guardrails</p>
                 <ul className="mt-3 space-y-2 text-xs leading-5 text-[color:var(--dos-text-muted)]">
+                  <li>Feature is gated for controlled rollout</li>
+                  <li>Governed chart context only</li>
                   <li>No SQL or code generation</li>
                   <li>Only semantic IDs can change</li>
                   <li>Patch must pass chart validation</li>
                   <li>Blocked fields stay hidden</li>
+                  <li>Filters are limited metadata until runtime support lands</li>
                 </ul>
               </div>
             </div>

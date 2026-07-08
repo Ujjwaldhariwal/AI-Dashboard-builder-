@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { resolveAiChartRefinementGate } from '@/lib/ai/chart-refinement-gate'
+import {
+  buildAiChartRefinementEventMetadata,
+  logAiChartRefinementMetric,
+} from '@/lib/ai/chart-refinement-observability'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -26,6 +31,13 @@ export async function POST(req: NextRequest) {
     const access = await requireAiProjectAccess({ auth, scope: parsed.data })
     if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
 
+    const gate = resolveAiChartRefinementGate({
+      tenantId: access.tenantId,
+      projectId: access.projectId,
+      userId: auth.userId,
+    })
+    if (!gate.enabled) return NextResponse.json({ ok: false, errorCode: 'feature_gated', error: gate.reason }, { status: 403 })
+
     const rateLimit = await checkRuntimeRateLimit({
       key: `ai-chart-refine-reject:${access.tenantId}:${access.projectId}:${auth.userId}`,
       maxRequests: 40,
@@ -50,16 +62,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: chartError?.message ?? 'Chart not found' }, { status: 404 })
     }
 
-    await auth.supabase.from('audit_logs').insert({
-      tenant_id: access.tenantId,
-      project_id: access.projectId,
-      actor_user_id: auth.userId,
-      action: 'ai.chart_refine.patch_rejected',
-      target_type: 'dashboard_chart_config',
-      target_id: parsed.data.chartId,
-      metadata: { reason: parsed.data.reason },
-      created_at: new Date().toISOString(),
-    })
+    await Promise.all([
+      auth.supabase.from('audit_logs').insert({
+        tenant_id: access.tenantId,
+        project_id: access.projectId,
+        actor_user_id: auth.userId,
+        action: 'ai.chart_refine.patch_rejected',
+        target_type: 'dashboard_chart_config',
+        target_id: parsed.data.chartId,
+        metadata: { reason: 'reviewer_rejected_preview' },
+        created_at: new Date().toISOString(),
+      }),
+      logAiChartRefinementMetric({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: parsed.data.chartId,
+        eventType: 'proposal_rejected',
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'proposal_rejected',
+          gateSource: gate.source,
+        }),
+      }),
+    ])
 
     return NextResponse.json({ ok: true })
   } catch (error) {

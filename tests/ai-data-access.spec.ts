@@ -1,12 +1,19 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  AI_CHART_PATCH_SCHEMA_VERSION,
   ChartAiPatchSchema,
   applyChartAiPatch,
   buildAiChartContextAuditMetadata,
   doesPromptReferenceBlockedAiDescriptors,
+  parseChartAiPatchPayload,
   validateChartAiPatchAgainstAllowlist,
 } from '../src/lib/ai/chart-ai-contract'
+import { resolveAiChartRefinementGate } from '../src/lib/ai/chart-refinement-gate'
+import {
+  buildAiChartRefinementEventMetadata,
+  classifyAiChartRefinementPrompt,
+} from '../src/lib/ai/chart-refinement-observability'
 import {
   buildAiChartExamplePrompts,
   canRenderAiChartPreview,
@@ -311,5 +318,95 @@ test.describe('AI data access guardrails', () => {
       ...currentChart,
       templateId: 'table-grid',
     }, context)).toBe(false)
+  })
+
+  test('keeps AI chart refinement gated off unless an explicit allowlist enables it', () => {
+    const previousGlobal = process.env.DASHBOARDOS_AI_CHART_REFINEMENT_ENABLED
+    const previousTenantIds = process.env.DASHBOARDOS_AI_CHART_REFINEMENT_TENANT_IDS
+    const previousUserIds = process.env.DASHBOARDOS_AI_CHART_REFINEMENT_USER_IDS
+    const previousProjectIds = process.env.DASHBOARDOS_AI_CHART_REFINEMENT_PROJECT_IDS
+
+    delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_ENABLED
+    delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_TENANT_IDS
+    delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_USER_IDS
+    delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_PROJECT_IDS
+
+    const gated = resolveAiChartRefinementGate({
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: '99999999-9999-4999-8999-999999999999',
+    })
+    expect(gated.enabled).toBe(false)
+
+    process.env.DASHBOARDOS_AI_CHART_REFINEMENT_TENANT_IDS = currentChart.tenantId
+    const enabled = resolveAiChartRefinementGate({
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: '99999999-9999-4999-8999-999999999999',
+    })
+    expect(enabled).toMatchObject({ enabled: true, source: 'tenant_allowlist' })
+
+    if (previousGlobal === undefined) delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_ENABLED
+    else process.env.DASHBOARDOS_AI_CHART_REFINEMENT_ENABLED = previousGlobal
+    if (previousTenantIds === undefined) delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_TENANT_IDS
+    else process.env.DASHBOARDOS_AI_CHART_REFINEMENT_TENANT_IDS = previousTenantIds
+    if (previousUserIds === undefined) delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_USER_IDS
+    else process.env.DASHBOARDOS_AI_CHART_REFINEMENT_USER_IDS = previousUserIds
+    if (previousProjectIds === undefined) delete process.env.DASHBOARDOS_AI_CHART_REFINEMENT_PROJECT_IDS
+    else process.env.DASHBOARDOS_AI_CHART_REFINEMENT_PROJECT_IDS = previousProjectIds
+  })
+
+  test('accepts current AI patch schema version and rejects explicit mismatches', () => {
+    const current = parseChartAiPatchPayload({
+      schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
+      name: 'Monthly Billing Trend',
+    })
+    expect(current.ok).toBe(true)
+
+    const legacyMissingVersion = parseChartAiPatchPayload({
+      name: 'Monthly Billing Trend',
+    })
+    expect(legacyMissingVersion.ok).toBe(true)
+    if (legacyMissingVersion.ok) expect(legacyMissingVersion.patch.schemaVersion).toBe(AI_CHART_PATCH_SCHEMA_VERSION)
+
+    const future = parseChartAiPatchPayload({
+      schemaVersion: 'dashboardos.ai.chart_patch.v99',
+      name: 'Monthly Billing Trend',
+    })
+    expect(future).toMatchObject({ ok: false, errorCode: 'schema_version_mismatch' })
+  })
+
+  test('rejects malformed AI model patches without changing the chart', () => {
+    const malformed = parseChartAiPatchPayload({
+      schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
+      encoding: {
+        filters: [{ fieldId: safeCityField.id, operator: 'raw_sql', value: '1=1' }],
+      },
+    })
+
+    expect(malformed).toMatchObject({ ok: false, errorCode: 'invalid_model_patch' })
+    expect(currentChart.encoding.filters).toBeUndefined()
+  })
+
+  test('emits sanitized AI refinement observability metadata', () => {
+    expect(classifyAiChartRefinementPrompt('rename this to Customer Name rollup')).toBe('rename')
+    const metadata = buildAiChartRefinementEventMetadata({
+      eventType: 'blocked_sensitive_request',
+      instruction: 'group by customer name',
+      errorCode: 'restricted_field_request',
+      schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
+      previewAvailable: false,
+      gateSource: 'tenant_allowlist',
+    })
+
+    expect(metadata).toMatchObject({
+      eventType: 'blocked_sensitive_request',
+      promptType: 'grouping',
+      errorCode: 'restricted_field_request',
+      schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
+      previewAvailable: false,
+      gateSource: 'tenant_allowlist',
+    })
+    expect(JSON.stringify(metadata)).not.toContain('customer name')
   })
 })
