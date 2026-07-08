@@ -1,0 +1,253 @@
+import { expect, test } from '@playwright/test'
+
+import {
+  ChartAiPatchSchema,
+  applyChartAiPatch,
+  buildAiChartContextAuditMetadata,
+  doesPromptReferenceBlockedAiDescriptors,
+  validateChartAiPatchAgainstAllowlist,
+} from '../src/lib/ai/chart-ai-contract'
+import {
+  buildAiChartExamplePrompts,
+  describeAiChartDiff,
+  type AiChartContext,
+} from '../src/components/platform/ai-chart-refinement-dialog'
+import {
+  classifyFieldForAi,
+  isFieldAllowedForAiPreview,
+  isMetricAllowedForAi,
+  sanitizedFieldDescriptor,
+  sanitizedMetricDescriptor,
+} from '../src/lib/ai/field-classification'
+import type { DashboardChartConfig } from '../src/types/dashboard-chart'
+
+const safeCityField = {
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'City',
+  semantic_key: 'customer.city',
+  role: 'dimension',
+  source_column: {
+    dataType: 'text',
+    schemaName: 'public',
+    tableName: 'electricity_customers',
+    columnName: 'city',
+  },
+}
+
+const piiNameField = {
+  id: '22222222-2222-4222-8222-222222222222',
+  name: 'Customer Name',
+  semantic_key: 'customer.name',
+  role: 'dimension',
+  source_column: {
+    dataType: 'text',
+    schemaName: 'public',
+    tableName: 'electricity_customers',
+    columnName: 'customer_name',
+  },
+}
+
+const billAmountField = {
+  id: '33333333-3333-4333-8333-333333333333',
+  name: 'Bill Amount',
+  semantic_key: 'reading.bill_amount',
+  role: 'metric_source',
+  source_column: {
+    dataType: 'numeric',
+    schemaName: 'public',
+    tableName: 'electricity_readings',
+    columnName: 'bill_amount',
+  },
+}
+
+const billMetric = {
+  id: '44444444-4444-4444-8444-444444444444',
+  name: 'Total Bill Amount',
+  semantic_key: 'metric.total_bill_amount',
+  aggregation: 'sum',
+  expression: { fieldId: billAmountField.id },
+}
+
+const currentChart: DashboardChartConfig = {
+  id: '55555555-5555-4555-8555-555555555555',
+  tenantId: '66666666-6666-4666-8666-666666666666',
+  projectId: '77777777-7777-4777-8777-777777777777',
+  datasetId: '88888888-8888-4888-8888-888888888888',
+  name: 'Billing by City',
+  description: null,
+  status: 'draft',
+  templateId: 'bar',
+  encoding: {
+    xAxisFieldId: safeCityField.id,
+    yMetricIds: [billMetric.id],
+    tooltipFieldIds: [],
+    labelById: {},
+    colorById: {},
+    sort: null,
+    limit: null,
+  },
+  presentation: {
+    size: 'standard',
+    showLegend: true,
+    showLabels: false,
+    valueFormat: null,
+  },
+  interactions: {},
+  layout: { order: 0, gridSpan: 2 },
+  validationState: 'valid',
+  createdAt: new Date(0).toISOString(),
+  updatedAt: new Date(0).toISOString(),
+}
+
+test.describe('AI data access guardrails', () => {
+  test('blocks sensitive fields from AI preview descriptors', () => {
+    expect(classifyFieldForAi(piiNameField).classification).toBe('pii_blocked')
+    expect(isFieldAllowedForAiPreview(piiNameField)).toBe(false)
+
+    const descriptor = sanitizedFieldDescriptor(piiNameField)
+    expect(descriptor.allowedInPreview).toBe(false)
+    expect(JSON.stringify(descriptor)).not.toContain('electricity_customers')
+    expect(JSON.stringify(descriptor)).not.toContain('customer_name')
+  })
+
+  test('allows financial values only as aggregated metrics', () => {
+    expect(classifyFieldForAi(billAmountField).classification).toBe('aggregated_only')
+    expect(isFieldAllowedForAiPreview(billAmountField)).toBe(false)
+    expect(isMetricAllowedForAi(billMetric, billAmountField)).toBe(true)
+
+    const descriptor = sanitizedMetricDescriptor(billMetric, billAmountField)
+    expect(descriptor.classification).toBe('aggregated_only')
+    expect(descriptor.allowedInPreview).toBe(true)
+  })
+
+  test('rejects arbitrary fields in structured chart patches without mutating the current chart', () => {
+    const patch = ChartAiPatchSchema.parse({
+      encoding: {
+        xAxisFieldId: piiNameField.id,
+        yMetricIds: [billMetric.id],
+      },
+    })
+
+    const result = validateChartAiPatchAgainstAllowlist({
+      currentChart,
+      patch,
+      allowedFieldIds: new Set([safeCityField.id]),
+      allowedMetricIds: new Set([billMetric.id]),
+      fields: [safeCityField],
+      metrics: [billMetric],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(currentChart.encoding.xAxisFieldId).toBe(safeCityField.id)
+  })
+
+  test('rejects SQL or component generation in AI patches', () => {
+    const parsed = ChartAiPatchSchema.safeParse({
+      encoding: {
+        yMetricIds: [billMetric.id],
+      },
+      sql: 'select * from electricity_customers',
+      component: 'CustomReactChart',
+    })
+
+    expect(parsed.success).toBe(false)
+    expect(applyChartAiPatch(currentChart, { name: 'Updated Billing' }).name).toBe('Updated Billing')
+  })
+
+  test('builds an audit payload for AI context requests', () => {
+    const metadata = buildAiChartContextAuditMetadata({
+      purpose: 'chart_refinement',
+      datasetId: currentChart.datasetId,
+      chartId: currentChart.id,
+      allowedFields: [safeCityField],
+      allowedMetrics: [billMetric],
+      blockedFields: [piiNameField],
+      blockedMetrics: [],
+      allFields: [safeCityField, piiNameField],
+      allMetrics: [billMetric],
+      rowCount: 4,
+    })
+
+    expect(metadata).toMatchObject({
+      purpose: 'chart_refinement',
+      datasetId: currentChart.datasetId,
+      chartId: currentChart.id,
+      allowedFieldsReturned: ['City'],
+      allowedMetricsReturned: ['Total Bill Amount'],
+      rowCount: 4,
+      maxPreviewRows: 10,
+      maxPreviewColumns: 6,
+    })
+    expect(metadata.blockedFieldsRequested).toEqual([{
+      id: piiNameField.id,
+      label: 'Customer Name',
+      classification: 'pii_blocked',
+    }])
+  })
+
+  test('detects blocked-field prompts before model refinement', () => {
+    expect(doesPromptReferenceBlockedAiDescriptors({
+      instruction: 'Group this by customer name',
+      blockedFields: [sanitizedFieldDescriptor(piiNameField)],
+      blockedMetrics: [],
+    })).toBe(true)
+
+    expect(doesPromptReferenceBlockedAiDescriptors({
+      instruction: 'Group this by city',
+      blockedFields: [sanitizedFieldDescriptor(piiNameField)],
+      blockedMetrics: [],
+    })).toBe(false)
+  })
+
+  test('supports valid prompt preview then deterministic patch apply', () => {
+    const patch = ChartAiPatchSchema.parse({
+      name: 'Monthly Billing Trend',
+      templateId: 'bar',
+      encoding: {
+        xAxisFieldId: safeCityField.id,
+        yMetricIds: [billMetric.id],
+        limit: 6,
+      },
+    })
+
+    const preview = validateChartAiPatchAgainstAllowlist({
+      currentChart,
+      patch,
+      allowedFieldIds: new Set([safeCityField.id]),
+      allowedMetricIds: new Set([billMetric.id]),
+      fields: [safeCityField],
+      metrics: [billMetric],
+    })
+    expect(preview.ok).toBe(true)
+
+    const applied = applyChartAiPatch(currentChart, patch)
+    expect(applied.name).toBe('Monthly Billing Trend')
+    expect(applied.templateId).toBe('bar')
+    expect(applied.encoding.limit).toBe(6)
+    expect(currentChart.name).toBe('Billing by City')
+  })
+
+  test('builds AI prompt suggestions only from allowed fields and metrics', () => {
+    const context: AiChartContext = {
+      contractVersion: 'dashboardos.ai.chart_context.v1',
+      dataset: { id: currentChart.datasetId, name: 'Electricity Operations', status: 'published' },
+      chart: currentChart,
+      allowedFields: [sanitizedFieldDescriptor(safeCityField)],
+      allowedMetrics: [sanitizedMetricDescriptor(billMetric, billAmountField)],
+      blockedFieldCount: 1,
+      blockedMetricCount: 0,
+    }
+
+    const prompts = buildAiChartExamplePrompts(currentChart, context)
+    expect(prompts.join(' ')).toContain('City')
+    expect(prompts.join(' ')).toContain('Total Bill Amount')
+    expect(prompts.join(' ')).not.toContain('Customer Name')
+
+    const nextChart = applyChartAiPatch(currentChart, { name: 'Monthly Billing Trend', templateId: 'line' })
+    const diff = describeAiChartDiff({ before: currentChart, after: nextChart, context })
+    expect(diff).toEqual(expect.arrayContaining([
+      { label: 'Title', before: 'Billing by City', after: 'Monthly Billing Trend' },
+      { label: 'Chart type', before: 'bar', after: 'line' },
+    ]))
+  })
+})

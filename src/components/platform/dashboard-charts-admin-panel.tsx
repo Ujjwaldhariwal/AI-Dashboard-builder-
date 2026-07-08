@@ -1,15 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, Archive, CheckCircle2, Loader2, Palette, Plus, RefreshCw, Send, ShieldCheck, SlidersHorizontal, TriangleAlert } from 'lucide-react'
+import { Activity, Archive, CheckCircle2, Loader2, Palette, Plus, RefreshCw, Send, ShieldCheck, SlidersHorizontal, Sparkles, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { AiChartRefinementDialog } from '@/components/platform/ai-chart-refinement-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { demoChart, demoChartAudit, demoDataset, demoDatasetPlan, demoProjects, DEMO_TENANT_ID, DEMO_PROJECT_ID } from '@/lib/dashboardos/demo-data'
+import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import type { DashboardChartAudit, DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
 import type { ChartCompatibilityResult, ChartTemplateId, DatasetShape } from '@/types/chart-template'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -21,7 +25,6 @@ interface ProjectOption {
   name: string
   tenantName?: string | null
 }
-
 interface DatasetPlan {
   dataset: {
     id: string
@@ -47,10 +50,10 @@ function errorToText(value: unknown) {
 }
 
 function healthClassName(state?: DashboardChartAuditItem['healthState']) {
-  if (state === 'healthy') return 'border-[#a6e22e]/30 bg-[#a6e22e]/10 text-[#d7ff8f]'
-  if (state === 'stale') return 'border-[#fd971f]/30 bg-[#fd971f]/10 text-[#ffd866]'
-  if (state === 'blocked') return 'border-[#f92672]/30 bg-[#f92672]/10 text-[#ff8db9]'
-  return 'border-white/10 bg-slate-950/40 text-slate-400'
+  if (state === 'healthy') return 'border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] text-[color:var(--dos-chart-success)]'
+  if (state === 'stale') return 'border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[color:var(--dos-chart-warning)]'
+  if (state === 'blocked') return 'border-[color:var(--dos-chart-risk)] bg-[var(--dos-danger-soft)] text-[color:var(--dos-chart-risk)]'
+  return 'border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-muted)]'
 }
 
 function toggleValue(values: string[], value: string) {
@@ -74,6 +77,9 @@ function defaultEncoding(plan: DatasetPlan | null): DashboardChartEncoding {
 }
 
 export function DashboardChartsAdminPanel() {
+  const builderScope = useScopedBuilderStore(state => state.scope)
+  const setBuilderScope = useScopedBuilderStore(state => state.setScope)
+  const addBuilderChartId = useScopedBuilderStore(state => state.addChartId)
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [datasets, setDatasets] = useState<SemanticDataset[]>([])
   const [charts, setCharts] = useState<DashboardChartConfig[]>([])
@@ -90,6 +96,8 @@ export function DashboardChartsAdminPanel() {
   const [planLoading, setPlanLoading] = useState(false)
   const [auditLoading, setAuditLoading] = useState(false)
   const [chartAudit, setChartAudit] = useState<DashboardChartAudit | null>(null)
+  const [aiRefineChartId, setAiRefineChartId] = useState<string | null>(null)
+  const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedDataset = datasets.find(dataset => dataset.id === datasetId)
@@ -102,17 +110,33 @@ export function DashboardChartsAdminPanel() {
   ), [chartAudit])
 
   const fetchProjects = useCallback(async () => {
+    if (demoMode) {
+      setProjects(demoProjects)
+      setProjectId(current => current || DEMO_PROJECT_ID)
+      if (!builderScope || builderScope.tenantId !== DEMO_TENANT_ID || builderScope.projectId !== DEMO_PROJECT_ID) {
+        setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'charts')
+      }
+      return
+    }
     const response = await fetch('/api/admin/projects', { cache: 'no-store' })
     const payload = await response.json().catch(() => null)
     if (!response.ok) throw new Error(errorToText(payload))
     const nextProjects = Array.isArray(payload?.projects) ? payload.projects as ProjectOption[] : []
     setProjects(nextProjects)
-    setProjectId(current => current || nextProjects[0]?.id || '')
-  }, [])
+    setProjectId(current => {
+      if (current) return current
+      if (builderScope && nextProjects.some(project => project.id === builderScope.projectId)) return builderScope.projectId
+      return ''
+    })
+  }, [builderScope, demoMode, setBuilderScope])
 
   const fetchChartAudit = useCallback(async (nextProjectId: string) => {
     if (!nextProjectId) {
       setChartAudit(null)
+      return
+    }
+    if (demoMode) {
+      setChartAudit(demoChartAudit)
       return
     }
     setAuditLoading(true)
@@ -126,10 +150,17 @@ export function DashboardChartsAdminPanel() {
     } finally {
       setAuditLoading(false)
     }
-  }, [])
+  }, [demoMode])
 
   const fetchProjectAssets = useCallback(async (nextProjectId: string) => {
     if (!nextProjectId) return
+    if (demoMode) {
+      setDatasets([demoDataset])
+      setCharts([demoChart])
+      setDatasetId(current => current || demoDataset.id)
+      setChartAudit(demoChartAudit)
+      return
+    }
     const [datasetsResponse, chartsResponse] = await Promise.all([
       fetch(`/api/admin/datasets?projectId=${nextProjectId}`, { cache: 'no-store' }),
       fetch(`/api/admin/dashboard-charts?projectId=${nextProjectId}`, { cache: 'no-store' }),
@@ -143,7 +174,7 @@ export function DashboardChartsAdminPanel() {
     setCharts(Array.isArray(chartsPayload?.charts) ? chartsPayload.charts as DashboardChartConfig[] : [])
     setDatasetId(current => nextDatasets.some(dataset => dataset.id === current) ? current : nextDatasets[0]?.id ?? '')
     void fetchChartAudit(nextProjectId)
-  }, [fetchChartAudit])
+  }, [demoMode, fetchChartAudit])
 
   const fetchPlan = useCallback(async (nextDatasetId: string) => {
     if (!nextDatasetId) {
@@ -152,6 +183,17 @@ export function DashboardChartsAdminPanel() {
     }
     setPlanLoading(true)
     try {
+      if (demoMode) {
+        const nextPlan = demoDatasetPlan
+        const nextRecommendedTemplateId = nextPlan.chartOptions?.compatibility
+          .find((option: ChartCompatibilityResult) => option.status === 'recommended')
+          ?.template.id ?? ''
+        setPlan(nextPlan)
+        setName(current => current || `${nextPlan.dataset.name} chart`)
+        setTemplateId(current => current || nextRecommendedTemplateId)
+        setEncoding(defaultEncoding(nextPlan))
+        return
+      }
       const response = await fetch(`/api/admin/datasets/${nextDatasetId}/plan`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
@@ -168,7 +210,7 @@ export function DashboardChartsAdminPanel() {
     } finally {
       setPlanLoading(false)
     }
-  }, [])
+  }, [demoMode])
 
   useEffect(() => {
     void fetchProjects().catch(error => toast.error(errorToText(error))).finally(() => setLoading(false))
@@ -194,6 +236,25 @@ export function DashboardChartsAdminPanel() {
     }
     setSaving(true)
     try {
+      if (demoMode) {
+        const chart: DashboardChartConfig = {
+          ...demoChart,
+          id: `demo-chart-${Date.now()}`,
+          name: name.trim() || demoChart.name,
+          templateId,
+          encoding,
+          layout: { order: charts.length, gridSpan: Number(gridSpan) },
+          status: 'draft',
+          publishedAt: null,
+          updatedAt: new Date().toISOString(),
+        }
+        setCharts(current => [chart, ...current])
+        setBuilderScope({ tenantId: chart.tenantId, projectId: chart.projectId }, 'dashboard')
+        addBuilderChartId(chart.id)
+        setChartAudit(demoChartAudit)
+        toast.success('Demo draft chart saved')
+        return
+      }
       const response = await fetch('/api/admin/dashboard-charts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -219,7 +280,10 @@ export function DashboardChartsAdminPanel() {
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
-      setCharts(current => [payload.chart as DashboardChartConfig, ...current])
+      const chart = payload.chart as DashboardChartConfig
+      setCharts(current => [chart, ...current])
+      setBuilderScope({ tenantId: chart.tenantId, projectId: chart.projectId }, 'dashboard')
+      addBuilderChartId(chart.id)
       void fetchChartAudit(selectedProject.id)
       toast.success('Draft chart saved')
     } catch (error) {
@@ -232,6 +296,16 @@ export function DashboardChartsAdminPanel() {
   async function handleStatus(chartId: string, status: 'draft' | 'published' | 'archived') {
     setUpdatingId(chartId)
     try {
+      if (demoMode) {
+        setCharts(current => current.map(chart => (
+          chart.id === chartId
+            ? { ...chart, status, publishedAt: status === 'published' ? new Date().toISOString() : chart.publishedAt }
+            : chart
+        )))
+        setChartAudit(demoChartAudit)
+        toast.success(status === 'published' ? 'Demo chart published' : 'Demo chart status updated')
+        return
+      }
       const response = await fetch(`/api/admin/dashboard-charts/${chartId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -249,9 +323,14 @@ export function DashboardChartsAdminPanel() {
     }
   }
 
+  function handleAiApplied(chart: DashboardChartConfig) {
+    setCharts(current => current.map(item => item.id === chart.id ? chart : item))
+    void fetchChartAudit(chart.projectId)
+  }
+
   if (loading) {
     return (
-      <div className="flex min-h-[320px] items-center justify-center text-slate-400">
+      <div className="flex min-h-[320px] items-center justify-center text-[color:var(--dos-text-muted)]">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         Loading chart composer
       </div>
@@ -262,36 +341,38 @@ export function DashboardChartsAdminPanel() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-[#a6e22e]">Chart Composer</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-50">Validated dashboard charts</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+          <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--dos-chart-success)]">Chart Composer</p>
+          <h1 className="mt-1 text-2xl font-semibold text-[color:var(--dos-text-primary)]">Validated dashboard charts</h1>
+          <p className="mt-2 max-w-2xl text-sm text-[color:var(--dos-text-muted)]">
             Convert published semantic datasets into guarded chart configs with axis, tooltip, sizing, and template validation.
           </p>
         </div>
-        <Badge className="bg-[#66d9ef]/15 text-[#9beaff] hover:bg-[#66d9ef]/20">
+        <Badge className="bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)] hover:bg-[var(--dos-info-soft)]">
           {charts.length} saved configs
         </Badge>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="border-white/10 bg-slate-900/70">
+        <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-slate-100">
-              <SlidersHorizontal className="h-4 w-4 text-[#fd971f]" />
+              <SlidersHorizontal className="h-4 w-4 text-[color:var(--dos-chart-warning)]" />
               Draft chart setup
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label className="text-slate-300">Project</Label>
+                <Label className="text-[color:var(--dos-text-secondary)]" style={{ color: 'var(--dos-text-secondary)' }}>Project</Label>
                 <Select value={projectId} onValueChange={(value) => {
+                  const selected = projects.find(project => project.id === value)
                   setProjectId(value)
                   setDatasetId('')
                   setPlan(null)
                   setTemplateId('')
+                  if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'charts')
                 }}>
-                  <SelectTrigger className="border-white/10 bg-slate-950 text-slate-100">
+                  <SelectTrigger className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]">
                     <SelectValue placeholder="Select project" />
                   </SelectTrigger>
                   <SelectContent>
@@ -302,12 +383,12 @@ export function DashboardChartsAdminPanel() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Dataset</Label>
+                <Label className="text-[color:var(--dos-text-secondary)]" style={{ color: 'var(--dos-text-secondary)' }}>Dataset</Label>
                 <Select value={datasetId} onValueChange={(value) => {
                   setDatasetId(value)
                   setTemplateId('')
                 }}>
-                  <SelectTrigger className="border-white/10 bg-slate-950 text-slate-100">
+                  <SelectTrigger className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]">
                     <SelectValue placeholder="Select dataset" />
                   </SelectTrigger>
                   <SelectContent>
@@ -321,13 +402,13 @@ export function DashboardChartsAdminPanel() {
 
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
               <div className="space-y-2">
-                <Label className="text-slate-300">Chart name</Label>
-                <Input value={name} onChange={event => setName(event.target.value)} className="border-white/10 bg-slate-950 text-slate-100" />
+                <Label className="text-[color:var(--dos-text-secondary)]" style={{ color: 'var(--dos-text-secondary)' }}>Chart name</Label>
+                <Input value={name} onChange={event => setName(event.target.value)} className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]" />
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Grid span</Label>
+                <Label className="text-[color:var(--dos-text-secondary)]" style={{ color: 'var(--dos-text-secondary)' }}>Grid span</Label>
                 <Select value={gridSpan} onValueChange={setGridSpan}>
-                  <SelectTrigger className="border-white/10 bg-slate-950 text-slate-100">
+                  <SelectTrigger className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -340,16 +421,16 @@ export function DashboardChartsAdminPanel() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-fuchsia-300/20 bg-fuchsia-300/10 p-3">
+            <div className="rounded-lg border border-[color:var(--dos-chart-tooltip-border)] bg-[var(--dos-background-deep)] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-xs font-semibold text-fuchsia-100">
+                  <p className="text-xs font-semibold text-[color:var(--dos-text-primary)]" style={{ color: 'var(--dos-text-primary)' }}>
                     {planLoading ? 'Analyzing dataset...' : `Shape: ${plan?.chartOptions?.shape.kind ?? 'unknown'}`}
                   </p>
-                  <p className="mt-1 text-[11px] text-slate-400">Only compatible chart templates are selectable.</p>
+                  <p className="mt-1 text-[11px] text-[color:var(--dos-text-muted)]">Only compatible chart templates are selectable.</p>
                 </div>
                 {recommendedOption ? (
-                  <Badge className="bg-[#a6e22e]/20 text-[#d7ff8f] hover:bg-[#a6e22e]/25">
+                  <Badge className="bg-[var(--dos-success-soft)] text-[color:var(--dos-chart-success)] hover:bg-[var(--dos-success-soft)]" style={{ color: 'var(--dos-chart-success)' }}>
                     Recommended: {recommendedOption.template.name}
                   </Badge>
                 ) : null}
@@ -363,12 +444,12 @@ export function DashboardChartsAdminPanel() {
                     className={[
                       'rounded-md border px-3 py-2 text-left text-xs transition-colors',
                       templateId === option.template.id
-                        ? 'border-[#a6e22e]/60 bg-[#a6e22e]/15 text-[#d7ff8f]'
-                        : 'border-white/10 bg-slate-950/60 text-slate-300 hover:border-white/25',
+                        ? 'border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] text-[color:var(--dos-text-primary)]'
+                        : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[color:var(--dos-text-secondary)] hover:border-[color:var(--dos-border-mid)]',
                     ].join(' ')}
                   >
                     <span className="font-semibold">{option.template.name}</span>
-                    <span className="mt-1 block text-[11px] text-slate-500">{option.template.family} / score {option.score}</span>
+                    <span className="mt-1 block text-[11px] text-[color:var(--dos-text-muted)]">{option.template.family} / score {option.score}</span>
                   </button>
                 ))}
               </div>
@@ -376,9 +457,9 @@ export function DashboardChartsAdminPanel() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label className="text-slate-300">X axis</Label>
+                <Label className="text-[color:var(--dos-text-secondary)]" style={{ color: 'var(--dos-text-secondary)' }}>X axis</Label>
                 <Select value={encoding.xAxisFieldId ?? ''} onValueChange={(value) => setEncoding(current => ({ ...current, xAxisFieldId: value }))}>
-                  <SelectTrigger className="border-white/10 bg-slate-950 text-slate-100">
+                  <SelectTrigger className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]">
                     <SelectValue placeholder="Select field" />
                   </SelectTrigger>
                   <SelectContent>
@@ -389,21 +470,21 @@ export function DashboardChartsAdminPanel() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-slate-300">Row limit</Label>
+                <Label className="text-[color:var(--dos-text-secondary)]" style={{ color: 'var(--dos-text-secondary)' }}>Row limit</Label>
                 <Input
                   type="number"
                   min={1}
                   max={500}
                   value={encoding.limit ?? 25}
                   onChange={event => setEncoding(current => ({ ...current, limit: Number(event.target.value) || 25 }))}
-                  className="border-white/10 bg-slate-950 text-slate-100"
+                  className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]"
                 />
               </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-white/10 bg-slate-950/50 p-3">
-                <p className="text-xs font-semibold text-slate-200">Y metrics</p>
+              <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3">
+                <p className="text-xs font-semibold text-[color:var(--dos-text-primary)]" style={{ color: 'var(--dos-text-primary)' }}>Y metrics</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {plan?.metrics.map(metric => (
                     <button
@@ -413,8 +494,8 @@ export function DashboardChartsAdminPanel() {
                       className={[
                         'rounded-md border px-2 py-1 text-xs',
                         encoding.yMetricIds.includes(metric.id)
-                          ? 'border-[#66d9ef]/50 bg-[#66d9ef]/15 text-[#9beaff]'
-                          : 'border-white/10 text-slate-400',
+                          ? 'border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)]'
+                          : 'border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]',
                       ].join(' ')}
                     >
                       {metric.name}
@@ -422,8 +503,8 @@ export function DashboardChartsAdminPanel() {
                   ))}
                 </div>
               </div>
-              <div className="rounded-lg border border-white/10 bg-slate-950/50 p-3">
-                <p className="text-xs font-semibold text-slate-200">Tooltip fields</p>
+              <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3">
+                <p className="text-xs font-semibold text-[color:var(--dos-text-primary)]" style={{ color: 'var(--dos-text-primary)' }}>Tooltip fields</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {[...(plan?.fields ?? []), ...(plan?.metrics ?? [])].map(item => (
                     <button
@@ -433,8 +514,8 @@ export function DashboardChartsAdminPanel() {
                       className={[
                         'rounded-md border px-2 py-1 text-xs',
                         encoding.tooltipFieldIds.includes(item.id)
-                          ? 'border-[#fd971f]/50 bg-[#fd971f]/15 text-[#ffd866]'
-                          : 'border-white/10 text-slate-400',
+                          ? 'border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[color:var(--dos-chart-warning)]'
+                          : 'border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]',
                       ].join(' ')}
                     >
                       {item.name}
@@ -444,7 +525,7 @@ export function DashboardChartsAdminPanel() {
               </div>
             </div>
 
-            <Button onClick={() => void handleSave()} disabled={saving || !templateId || !datasetId} className="bg-[#a6e22e] text-[#1f1f1c] hover:bg-[#cfff55]">
+            <Button onClick={() => void handleSave()} disabled={saving || !templateId || !datasetId} className="bg-[var(--dos-chart-success)] text-[color:var(--dos-background-deep)] hover:bg-[var(--dos-chart-success)]">
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
               Save validated draft
             </Button>
@@ -452,11 +533,11 @@ export function DashboardChartsAdminPanel() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-white/10 bg-slate-900/70">
+          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
                 <CardTitle className="flex items-center gap-2 text-base text-slate-100">
-                  <ShieldCheck className="h-4 w-4 text-[#a6e22e]" />
+                  <ShieldCheck className="h-4 w-4 text-[color:var(--dos-chart-success)]" />
                   Guardrails
                 </CardTitle>
                 <Button
@@ -475,21 +556,21 @@ export function DashboardChartsAdminPanel() {
               <p>Incompatible chart templates are blocked by the server.</p>
               <p>Validation history is stored for publish checks.</p>
               <div className="grid grid-cols-3 gap-2 pt-2">
-                <div className="rounded-md border border-[#a6e22e]/20 bg-[#a6e22e]/10 p-2">
-                  <p className="text-[10px] uppercase text-[#d7ff8f]">Healthy</p>
-                  <p className="mt-1 text-lg font-semibold text-slate-50">{chartAudit?.summary.healthy ?? 0}</p>
+                <div className="rounded-md border border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] p-2">
+                  <p className="text-[10px] uppercase text-[color:var(--dos-chart-success)]">Healthy</p>
+                  <p className="mt-1 text-lg font-semibold text-[color:var(--dos-text-primary)]">{chartAudit?.summary.healthy ?? 0}</p>
                 </div>
-                <div className="rounded-md border border-[#fd971f]/20 bg-[#fd971f]/10 p-2">
-                  <p className="text-[10px] uppercase text-[#ffd866]">Stale</p>
-                  <p className="mt-1 text-lg font-semibold text-slate-50">{chartAudit?.summary.stale ?? 0}</p>
+                <div className="rounded-md border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] p-2">
+                  <p className="text-[10px] uppercase text-[color:var(--dos-chart-warning)]">Stale</p>
+                  <p className="mt-1 text-lg font-semibold text-[color:var(--dos-text-primary)]">{chartAudit?.summary.stale ?? 0}</p>
                 </div>
-                <div className="rounded-md border border-[#f92672]/20 bg-[#f92672]/10 p-2">
-                  <p className="text-[10px] uppercase text-[#ff8db9]">Blocked</p>
-                  <p className="mt-1 text-lg font-semibold text-slate-50">{chartAudit?.summary.blocked ?? 0}</p>
+                <div className="rounded-md border border-[color:var(--dos-chart-risk)] bg-[var(--dos-danger-soft)] p-2">
+                  <p className="text-[10px] uppercase text-[color:var(--dos-chart-risk)]">Blocked</p>
+                  <p className="mt-1 text-lg font-semibold text-[color:var(--dos-text-primary)]">{chartAudit?.summary.blocked ?? 0}</p>
                 </div>
               </div>
               {chartAudit?.checkedAt ? (
-                <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                <div className="flex items-center gap-1 text-[11px] text-[color:var(--dos-text-muted)]">
                   <Activity className="h-3 w-3" />
                   Last audit {new Date(chartAudit.checkedAt).toLocaleTimeString()}
                 </div>
@@ -497,29 +578,29 @@ export function DashboardChartsAdminPanel() {
             </CardContent>
           </Card>
 
-          <Card className="border-white/10 bg-slate-900/70">
+          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base text-slate-100">
-                <Palette className="h-4 w-4 text-[#f92672]" />
+                <Palette className="h-4 w-4 text-[color:var(--dos-chart-risk)]" />
                 Saved Drafts
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {charts.length === 0 ? (
-                <div className="rounded-md border border-dashed border-white/10 p-4 text-xs text-slate-500">
+                <div className="rounded-md border border-dashed border-[color:var(--dos-border-soft)] p-4 text-xs text-[color:var(--dos-text-muted)]">
                   No chart configs saved for this project yet.
                 </div>
               ) : charts.slice(0, 8).map(chart => {
                 const auditItem = auditByChartId.get(chart.id)
                 return (
-                <div key={chart.id} className="rounded-md border border-white/10 bg-slate-950/50 p-3">
+                <div key={chart.id} className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-medium text-slate-100">{chart.name}</p>
-                      <p className="mt-1 text-[11px] text-slate-500">{chart.templateId} / {chart.status} / span {chart.layout.gridSpan}</p>
+                      <p className="mt-1 text-[11px] text-[color:var(--dos-text-muted)]">{chart.templateId} / {chart.status} / span {chart.layout.gridSpan}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge variant="outline" className={chart.validationState === 'valid' ? 'border-[#a6e22e]/30 text-[#d7ff8f]' : 'border-[#fd971f]/30 text-[#ffd866]'}>
+                      <Badge variant="outline" className={chart.validationState === 'valid' ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]' : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'}>
                         {chart.validationState}
                       </Badge>
                       <Badge variant="outline" className={healthClassName(auditItem?.healthState)}>
@@ -533,7 +614,7 @@ export function DashboardChartsAdminPanel() {
                       <span>{auditItem.validation.issues[0]?.message}</span>
                     </div>
                   ) : chart.validationState === 'valid' ? (
-                    <div className="mt-2 flex items-center gap-1 text-[11px] text-[#a6e22e]">
+                    <div className="mt-2 flex items-center gap-1 text-[11px] text-[color:var(--dos-chart-success)]">
                       <CheckCircle2 className="h-3 w-3" />
                       Ready for publish validator
                     </div>
@@ -542,12 +623,28 @@ export function DashboardChartsAdminPanel() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 border-[#a6e22e]/30 bg-transparent text-[#d7ff8f] hover:bg-[#a6e22e]/10"
+                      className="h-8 border-[color:var(--dos-chart-success)] bg-transparent text-[color:var(--dos-chart-success)] hover:bg-[var(--dos-success-soft)]"
                       onClick={() => void handleStatus(chart.id, 'published')}
                       disabled={updatingId === chart.id || chart.status === 'published'}
                     >
                       {updatingId === chart.id ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
                       Publish
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-[color:var(--dos-accent-primary)] bg-transparent text-[color:var(--dos-accent-primary)] hover:bg-[var(--dos-accent-primary-soft)]"
+                      onClick={() => {
+                        if (demoMode) {
+                          toast.info('AI refinement uses real governed chart IDs. Open a real project chart to use it.')
+                          return
+                        }
+                        setAiRefineChartId(chart.id)
+                      }}
+                      disabled={updatingId === chart.id}
+                    >
+                      <Sparkles className="mr-2 h-3.5 w-3.5" />
+                      Refine with AI
                     </Button>
                     <Button
                       size="sm"
@@ -560,6 +657,14 @@ export function DashboardChartsAdminPanel() {
                       Archive
                     </Button>
                   </div>
+                  <AiChartRefinementDialog
+                    chart={chart}
+                    tenantId={chart.tenantId}
+                    projectId={chart.projectId}
+                    open={aiRefineChartId === chart.id}
+                    onOpenChange={(open) => setAiRefineChartId(open ? chart.id : null)}
+                    onApplied={handleAiApplied}
+                  />
                 </div>
                 )
               })}

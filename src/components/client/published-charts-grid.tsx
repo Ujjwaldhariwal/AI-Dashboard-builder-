@@ -9,6 +9,7 @@ import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-
 import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-horizontal-stacked-bar-chart'
 import { ModernLineChart } from '@/components/charts/modern-line-chart'
 import { ModernPieChart } from '@/components/charts/modern-pie-chart'
+import { DASHBOARDOS_THEME_CHANGE_EVENT } from '@/components/client/client-theme-shell'
 import { Badge } from '@/components/ui/badge'
 import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
 import { demoChartRows } from '@/lib/dashboardos/demo-data'
@@ -135,9 +136,11 @@ function useDashboardChartDarkMode() {
     update()
     media.addEventListener('change', update)
     window.addEventListener('storage', update)
+    window.addEventListener(DASHBOARDOS_THEME_CHANGE_EVENT, update)
     return () => {
       media.removeEventListener('change', update)
       window.removeEventListener('storage', update)
+      window.removeEventListener(DASHBOARDOS_THEME_CHANGE_EVENT, update)
     }
   }, [])
 

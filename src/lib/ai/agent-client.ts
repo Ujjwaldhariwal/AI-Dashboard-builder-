@@ -21,9 +21,17 @@ const ReportAgentResponseSchema = z.object({
 }).strict()
 
 interface AskDataTransformerOptions {
+  tenantId?: string
+  projectId?: string
   dashboardId?: string
   endpointId?: string
   endpointName?: string
+}
+
+interface AiScopeOptions {
+  tenantId?: string
+  projectId?: string
+  dashboardId?: string
 }
 
 function getErrorMessage(payload: unknown, fallback: string) {
@@ -55,6 +63,8 @@ export async function askDataTransformer(
     body: JSON.stringify({
       prompt,
       sampleData,
+      tenantId: options.tenantId,
+      projectId: options.projectId,
       dashboardId: options.dashboardId,
       endpointId: options.endpointId,
       endpointName: options.endpointName,
@@ -80,12 +90,13 @@ export async function askDataTransformer(
 
 export async function askUiDesigner(
   prompt: string,
-  currentStyle: any,
+  currentStyle: unknown,
+  options: AiScopeOptions = {},
 ): Promise<WidgetStyle> {
   const response = await fetch('/api/agents/ui', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, currentStyle }),
+    body: JSON.stringify({ prompt, currentStyle, ...options }),
   })
 
   const payload = await readJsonSafe(response)
@@ -107,12 +118,13 @@ export async function askUiDesigner(
 
 export async function askReportGenerator(
   dashboardTitle: string,
-  widgetsData: any[],
+  widgetsData: unknown[],
+  options: AiScopeOptions = {},
 ): Promise<ReportInsight> {
   const response = await fetch('/api/agents/report', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dashboardTitle, widgetsData }),
+    body: JSON.stringify({ dashboardTitle, widgetsData, ...options }),
   })
 
   const payload = await readJsonSafe(response)

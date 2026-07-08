@@ -1,11 +1,11 @@
-import { LayoutDashboard, LockKeyhole, Table2 } from 'lucide-react'
+import { LayoutDashboard, LockKeyhole, ShieldAlert, Table2 } from 'lucide-react'
 import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 
+import { ClientThemeShell } from '@/components/client/client-theme-shell'
 import { PublishedChartsGrid } from '@/components/client/published-charts-grid'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { getDashboardOsThemeVars } from '@/lib/dashboardos/theme'
 import { DASHBOARDOS_DEMO_COOKIE, isLocalDemoHost } from '@/lib/dashboardos/demo-mode'
 import { demoChart, demoDashboard, demoDataset, demoPage, demoSlot, demoVersion } from '@/lib/dashboardos/demo-data'
 import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
@@ -139,6 +139,44 @@ function healthLabel(state?: DashboardHealthRunRecord['health_state']) {
   return 'Health pending'
 }
 
+function AccessDeniedRuntime({ tenantSlug }: { tenantSlug: string }) {
+  return (
+    <ClientThemeShell>
+      <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]/92 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)]">
+              <LayoutDashboard className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--dos-chart-warning)]">Client runtime</p>
+              <h1 className="truncate text-xl font-semibold tracking-tight">Dashboard access required</h1>
+            </div>
+          </div>
+          <Badge variant="outline" className="border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[var(--dos-chart-warning)]">
+            Restricted
+          </Badge>
+        </div>
+      </header>
+
+      <main className="mx-auto flex min-h-[calc(100vh-80px)] max-w-3xl items-center px-4 py-12">
+        <section className="w-full rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-8 text-center shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[var(--dos-chart-warning)]">
+            <ShieldAlert className="h-6 w-6" />
+          </div>
+          <h2 className="mt-5 text-2xl font-semibold tracking-tight">You do not have access to this dashboard yet</h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[var(--dos-text-muted)]">
+            Your account is signed in, but it has not been assigned to the <span className="font-mono text-[var(--dos-text-secondary)]">{tenantSlug}</span> tenant or one of its published dashboard entitlements.
+          </p>
+          <div className="mt-6 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] px-4 py-3 text-left text-xs leading-5 text-[var(--dos-text-muted)]">
+            Ask a workspace admin to add your employee account as a tenant member or grant a dashboard entitlement. Source credentials and unpublished semantic assets remain hidden.
+          </div>
+        </section>
+      </main>
+    </ClientThemeShell>
+  )
+}
+
 export default async function TenantClientPage({
   params,
 }: {
@@ -188,7 +226,7 @@ export default async function TenantClientPage({
     }
 
     return (
-      <div className="dashboardos-client min-h-screen bg-[var(--dos-background-base)] text-[var(--dos-text-primary)]" data-dashboardos-theme="dark" style={getDashboardOsThemeVars('dark')}>
+      <ClientThemeShell>
         <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]/90 backdrop-blur">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -280,7 +318,7 @@ export default async function TenantClientPage({
             })}
           </section>
         </main>
-      </div>
+      </ClientThemeShell>
     )
   }
 
@@ -293,7 +331,7 @@ export default async function TenantClientPage({
     .eq('status', 'active')
     .single()
 
-  if (tenantError || !tenant) notFound()
+  if (tenantError || !tenant) return <AccessDeniedRuntime tenantSlug={tenantSlug} />
   const activeTenant = tenant as TenantRecord
 
   const [entitledDashboardIds, entitledDatasetIds] = await Promise.all([
@@ -337,6 +375,10 @@ export default async function TenantClientPage({
 
   if (datasetsError || dashboardsError) {
     throw new Error(datasetsError?.message ?? dashboardsError?.message ?? 'Failed to load client dashboard')
+  }
+
+  if (auth.role !== 'admin' && entitledDashboardIds.length === 0 && entitledDatasetIds.length === 0) {
+    return <AccessDeniedRuntime tenantSlug={tenantSlug} />
   }
 
   const datasetList = (datasets ?? []) as DatasetRecord[]
@@ -438,7 +480,7 @@ export default async function TenantClientPage({
   }
 
   return (
-    <div className="dashboardos-client min-h-screen bg-[var(--dos-background-base)] text-[var(--dos-text-primary)]" data-dashboardos-theme="dark" style={getDashboardOsThemeVars('dark')}>
+    <ClientThemeShell>
       <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]/92 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -593,6 +635,6 @@ export default async function TenantClientPage({
           </section>
         )}
       </main>
-    </div>
+    </ClientThemeShell>
   )
 }
