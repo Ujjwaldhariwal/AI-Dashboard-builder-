@@ -68,6 +68,9 @@ function asEncoding(value: unknown): DashboardChartEncoding {
     colorById: asRecord(record.colorById) as Record<string, string>,
     sort: asRecord(record.sort) as DashboardChartEncoding['sort'],
     limit: typeof record.limit === 'number' ? record.limit : null,
+    filters: Array.isArray(record.filters)
+      ? record.filters as DashboardChartEncoding['filters']
+      : [],
   }
 }
 
@@ -112,18 +115,20 @@ async function warmDataset({
   dataset,
   chartId = null,
   chartUpdatedAt = null,
+  filters = [],
 }: {
   supabase: SupabaseClient
   dataset: Record<string, unknown>
   chartId?: string | null
   chartUpdatedAt?: string | null
+  filters?: DashboardChartEncoding['filters']
 }): Promise<WarmOneResult> {
   const datasetId = String(dataset.id)
   const tenantId = String(dataset.tenant_id)
   const projectId = String(dataset.project_id)
   const cachePolicy = asRecord(dataset.cache_policy)
   const inputs = await loadDatasetInputs(supabase, dataset)
-  const compileResult = compileDatasetQueryPlan(inputs)
+  const compileResult = compileDatasetQueryPlan({ ...inputs, filters })
 
   if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
     return {
@@ -188,6 +193,7 @@ async function warmDataset({
     String(sourceRow.credential_ciphertext),
     compileResult.queryPlan.executableSql,
     {
+      parameters: compileResult.parameters,
       poolKey: `data-source:${String(sourceRow.id)}`,
       queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs,
     },
@@ -239,6 +245,7 @@ async function warmDataset({
     chartId,
     dataSourceId: compileResult.dataSourceId,
     sql: compileResult.queryPlan.executableSql,
+    parameters: compileResult.parameters,
     datasetUpdatedAt: typeof dataset.updated_at === 'string' ? dataset.updated_at : null,
     chartUpdatedAt,
     schemaHash: typeof sourceRow.schema_hash === 'string' ? sourceRow.schema_hash : null,
@@ -307,9 +314,10 @@ async function warmChartById(supabase: SupabaseClient, chartId: string) {
   if (datasetError || !datasetRow) throw new Error(datasetError?.message ?? 'Published dataset not found')
 
   const inputs = await loadDatasetInputs(supabase, datasetRow as Record<string, unknown>)
+  const encoding = asEncoding(chart.encoding)
   const validation = validateDashboardChartConfig({
     templateId: String(chart.template_id),
-    encoding: asEncoding(chart.encoding),
+    encoding,
     fields: inputs.fields,
     metrics: inputs.metrics,
   })
@@ -328,6 +336,7 @@ async function warmChartById(supabase: SupabaseClient, chartId: string) {
     dataset: datasetRow as Record<string, unknown>,
     chartId,
     chartUpdatedAt: typeof chart.updated_at === 'string' ? chart.updated_at : null,
+    filters: encoding.filters ?? [],
   })
 }
 

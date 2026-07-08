@@ -282,22 +282,23 @@ export function validateChartAiPatchAgainstAllowlist({
     nextChart.encoding.xAxisFieldId,
     nextChart.encoding.seriesFieldId,
     nextChart.encoding.sort?.byId,
-    ...(nextChart.encoding.filters ?? []).map(filter => filter.fieldId),
     ...(nextChart.encoding.tooltipFieldIds ?? []),
   ].filter(Boolean) as string[]
+  const filterFieldIdsToCheck = (nextChart.encoding.filters ?? []).map(filter => filter.fieldId)
   const metricIdsToCheck = [
     ...(nextChart.encoding.yMetricIds ?? []),
     ...(nextChart.encoding.stackMetricIds ?? []),
   ]
 
   const blockedFields = idsToCheck.filter(id => !allowedFieldIds.has(id) && !allowedMetricIds.has(id))
+  const blockedFilterFields = filterFieldIdsToCheck.filter(id => !allowedFieldIds.has(id))
   const blockedMetrics = metricIdsToCheck.filter(id => !allowedMetricIds.has(id))
-  if (blockedFields.length > 0 || blockedMetrics.length > 0) {
+  if (blockedFields.length > 0 || blockedFilterFields.length > 0 || blockedMetrics.length > 0) {
     return {
       ok: false as const,
       nextChart,
       error: 'AI patch referenced fields or metrics outside the AI allowlist',
-      blockedIds: [...blockedFields, ...blockedMetrics],
+      blockedIds: [...blockedFields, ...blockedFilterFields, ...blockedMetrics],
     }
   }
 
@@ -418,6 +419,7 @@ export async function buildGovernedAiChartContext({
           String(sourceRow.credential_ciphertext),
           compileResult.queryPlan.executableSql,
           {
+            parameters: compileResult.parameters,
             poolKey: `ai-preview:${String(sourceRow.id)}`,
             queryTimeoutMs: Math.min(compileResult.queryPlan.limits.timeoutMs, 8_000),
           },

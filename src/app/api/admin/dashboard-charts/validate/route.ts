@@ -40,6 +40,9 @@ function asEncoding(value: unknown): DashboardChartEncoding {
       ? record.sort as DashboardChartEncoding['sort']
       : null,
     limit: typeof record.limit === 'number' ? record.limit : null,
+    filters: Array.isArray(record.filters)
+      ? record.filters as DashboardChartEncoding['filters']
+      : [],
   }
 }
 

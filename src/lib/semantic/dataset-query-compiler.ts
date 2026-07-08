@@ -1,4 +1,5 @@
 import type { BusinessMetricAggregation } from '@/types/semantic-model'
+import type { DashboardChartFilter, DashboardChartFilterOperator } from '@/types/dashboard-chart'
 import type { CompiledDatasetQueryPlan } from '@/types/semantic-dataset'
 
 const MAX_ROW_LIMIT = 500
@@ -33,6 +34,7 @@ export interface DatasetQueryCompileResult {
   queryPlan: CompiledDatasetQueryPlan
   warnings: string[]
   dataSourceId?: string
+  parameters: unknown[]
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -87,6 +89,114 @@ function getFieldSource(field: FieldRow) {
 function getMetricFieldId(metric: MetricRow) {
   const expression = asRecord(metric.expression)
   return typeof expression.fieldId === 'string' ? expression.fieldId : null
+}
+
+function isScalarFilterValue(value: unknown): value is string | number | boolean {
+  return ['string', 'number', 'boolean'].includes(typeof value)
+}
+
+function isFilterOperator(value: unknown): value is DashboardChartFilterOperator {
+  return value === 'eq'
+    || value === 'not_eq'
+    || value === 'in'
+    || value === 'contains'
+    || value === 'gte'
+    || value === 'lte'
+}
+
+function addParameter(parameters: unknown[], value: unknown) {
+  parameters.push(value)
+  return `$${parameters.length}`
+}
+
+function compileFilterCondition({
+  filter,
+  fieldById,
+  tableAliases,
+  referencedTables,
+  parameters,
+  warnings,
+}: {
+  filter: DashboardChartFilter
+  fieldById: Map<string, FieldRow>
+  tableAliases: Map<string, string>
+  referencedTables: Map<string, SelectTable>
+  parameters: unknown[]
+  warnings: string[]
+}) {
+  if (!isFilterOperator(filter.operator)) {
+    warnings.push(`Filter on field "${filter.fieldId}" uses an unsupported operator.`)
+    return null
+  }
+
+  const field = fieldById.get(filter.fieldId)
+  const source = field ? getFieldSource(field) : null
+  const table = source ? tableFromSource(source) : null
+  if (!field || !source || !table) {
+    warnings.push(`Filter field "${filter.fieldId}" is not executable.`)
+    return null
+  }
+
+  const alias = addTable(tableAliases, table)
+  referencedTables.set(tableKey(table), table)
+  const column = columnSql(source, alias)
+
+  if (filter.operator === 'in') {
+    const values = Array.isArray(filter.value) ? filter.value.filter(isScalarFilterValue) : []
+    if (values.length === 0) {
+      warnings.push(`Filter field "${filter.fieldId}" requires at least one scalar value.`)
+      return null
+    }
+    const placeholders = values.map(value => addParameter(parameters, value))
+    return {
+      sql: `${column} in (${placeholders.join(', ')})`,
+      descriptor: {
+        fieldId: filter.fieldId,
+        operator: filter.operator,
+        parameterIndexes: placeholders.map(placeholder => Number(placeholder.slice(1))),
+      },
+    }
+  }
+
+  if (!isScalarFilterValue(filter.value)) {
+    warnings.push(`Filter field "${filter.fieldId}" requires a scalar value.`)
+    return null
+  }
+
+  if ((filter.operator === 'gte' || filter.operator === 'lte') && typeof filter.value === 'boolean') {
+    warnings.push(`Filter field "${filter.fieldId}" cannot use a boolean comparison value.`)
+    return null
+  }
+
+  if (filter.operator === 'contains') {
+    const placeholder = addParameter(parameters, String(filter.value))
+    return {
+      sql: `${column}::text ilike '%' || ${placeholder}::text || '%'`,
+      descriptor: {
+        fieldId: filter.fieldId,
+        operator: filter.operator,
+        parameterIndexes: [Number(placeholder.slice(1))],
+      },
+    }
+  }
+
+  const placeholder = addParameter(parameters, filter.value)
+  const operatorSql = filter.operator === 'eq'
+    ? '='
+    : filter.operator === 'not_eq'
+      ? '<>'
+      : filter.operator === 'gte'
+        ? '>='
+        : '<='
+
+  return {
+    sql: `${column} ${operatorSql} ${placeholder}`,
+    descriptor: {
+      fieldId: filter.fieldId,
+      operator: filter.operator,
+      parameterIndexes: [Number(placeholder.slice(1))],
+    },
+  }
 }
 
 function aggregationSql(
@@ -167,16 +277,19 @@ export function compileDatasetQueryPlan({
   metrics,
   relationships,
   metricSourceFields,
+  filters = [],
 }: {
   fields: FieldRow[]
   metrics: MetricRow[]
   relationships: RelationshipRow[]
   metricSourceFields?: FieldRow[]
+  filters?: DashboardChartFilter[]
 }): DatasetQueryCompileResult {
   const warnings: string[] = []
   const allFields = [...fields, ...(metricSourceFields ?? [])]
   const fieldById = new Map(allFields.map(field => [String(field.id), field]))
   const tableAliases = new Map<string, string>()
+  const parameters: unknown[] = []
 
   const selectedFields: CompiledSelect[] = fields.map(row => ({
     id: String(row.id),
@@ -201,6 +314,9 @@ export function compileDatasetQueryPlan({
   const selectSql: string[] = []
   const groupBySql: string[] = []
   const referencedTables = new Map<string, SelectTable>()
+  const filterSql: string[] = []
+  const compiledFilters: Array<{ fieldId: string; operator: DashboardChartFilterOperator; parameterIndexes: number[] }> = []
+  let filtersExecutable = true
 
   for (const field of fields) {
     const source = getFieldSource(field)
@@ -233,6 +349,28 @@ export function compileDatasetQueryPlan({
     selectSql.push(`${expression} as ${outputAlias(String(metric.name ?? ''), String(metric.id))}`)
   }
 
+  if (filters.length > 4) {
+    warnings.push('Chart filters are limited to four predicates for runtime execution.')
+    filtersExecutable = false
+  }
+
+  for (const filter of filters) {
+    const compiled = compileFilterCondition({
+      filter,
+      fieldById,
+      tableAliases,
+      referencedTables,
+      parameters,
+      warnings,
+    })
+    if (!compiled) {
+      filtersExecutable = false
+      continue
+    }
+    filterSql.push(compiled.sql)
+    compiledFilters.push(compiled.descriptor)
+  }
+
   const tables = Array.from(referencedTables.values())
   const dataSourceIds = new Set(tables.map(table => table.dataSourceId))
   if (dataSourceIds.size > 1) {
@@ -244,7 +382,7 @@ export function compileDatasetQueryPlan({
 
   if (!baseTable) {
     warnings.push('Dataset has no executable source tables.')
-  } else if (dataSourceIds.size === 1 && selectSql.length > 0) {
+  } else if (dataSourceIds.size === 1 && selectSql.length > 0 && filtersExecutable) {
     const baseAlias = addTable(tableAliases, baseTable)
     const joinedTableKeys = new Set([tableKey(baseTable)])
     const joins: string[] = []
@@ -262,11 +400,13 @@ export function compileDatasetQueryPlan({
     if (unresolvedTables.length > 0) {
       warnings.push('Dataset references multiple tables without enough selected relationships to join them.')
     } else {
+      const where = filterSql.length > 0 ? `\nwhere ${filterSql.join('\n  and ')}` : ''
       const groupBy = groupBySql.length > 0 ? `\ngroup by ${groupBySql.join(', ')}` : ''
       executableSql = [
         `select ${selectSql.join(', ')}`,
         `from ${quoteIdent(baseTable.schemaName)}.${quoteIdent(baseTable.tableName)} ${quoteIdent(baseAlias)}`,
         joins.join('\n'),
+        where,
         groupBy,
         `limit ${MAX_ROW_LIMIT}`,
       ].filter(Boolean).join('\n')
@@ -290,7 +430,7 @@ export function compileDatasetQueryPlan({
         }
       }),
       groupByFieldIds: fields.map(row => String(row.id)),
-      filters: [],
+      filters: compiledFilters,
       limits: {
         rowLimit: MAX_ROW_LIMIT,
         timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -298,5 +438,6 @@ export function compileDatasetQueryPlan({
       executableSql,
       warnings,
     },
+    parameters,
   }
 }

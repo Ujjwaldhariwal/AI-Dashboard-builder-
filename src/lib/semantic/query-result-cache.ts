@@ -17,6 +17,7 @@ export interface QueryResultCacheKeyInput {
   chartId?: string | null
   dataSourceId: string
   sql: string
+  parameters?: unknown[]
   datasetUpdatedAt?: string | null
   chartUpdatedAt?: string | null
   schemaHash?: string | null
@@ -60,6 +61,7 @@ export function queryResultCacheKey(input: QueryResultCacheKeyInput) {
     chartId: input.chartId ?? null,
     dataSourceId: input.dataSourceId,
     sql: input.sql,
+    parameters: input.parameters ?? [],
     datasetUpdatedAt: input.datasetUpdatedAt ?? null,
     chartUpdatedAt: input.chartUpdatedAt ?? null,
     schemaHash: input.schemaHash ?? null,

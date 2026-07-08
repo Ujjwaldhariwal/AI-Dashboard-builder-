@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
         userId: auth.userId,
       })
       if (!gate.enabled) {
-        return NextResponse.json({ context: null, errorCode: 'feature_gated', error: gate.reason }, { status: 403 })
+        return NextResponse.json({ context: null, errorCode: 'feature_gated', reasonCode: gate.reasonCode, error: gate.reason }, { status: 403 })
       }
     }
 

@@ -43,6 +43,25 @@ interface AiRefinementGateState {
   enabled: boolean
   source: string
   reason: string
+  reasonCode?: string
+  policy?: string
+}
+
+interface AiRefinementSummaryState {
+  counts: {
+    promptsSubmitted: number
+    proposalsSucceeded: number
+    blockedSensitiveRequests: number
+    validationFailures: number
+    applySuccesses: number
+    previewUnavailableCases: number
+    unsupportedSchemaVersions: number
+    modelParseFailures: number
+    gatedOffAccess: number
+    lastEventAt: string | null
+  }
+  windowDays: number
+  generatedAt: string
 }
 
 function errorToText(value: unknown) {
@@ -104,6 +123,7 @@ export function DashboardChartsAdminPanel() {
   const [chartAudit, setChartAudit] = useState<DashboardChartAudit | null>(null)
   const [aiRefineChartId, setAiRefineChartId] = useState<string | null>(null)
   const [aiRefinementGate, setAiRefinementGate] = useState<AiRefinementGateState | null>(null)
+  const [aiRefinementSummary, setAiRefinementSummary] = useState<AiRefinementSummaryState | null>(null)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -167,10 +187,11 @@ export function DashboardChartsAdminPanel() {
       setDatasetId(current => current || demoDataset.id)
       setChartAudit(demoChartAudit)
       setAiRefinementGate({ enabled: false, source: 'demo', reason: 'AI refinement uses real governed chart IDs outside browser-only demo mode.' })
+      setAiRefinementSummary(null)
       return
     }
     const nextProject = projects.find(project => project.id === nextProjectId)
-    const [datasetsResponse, chartsResponse, gateResponse] = await Promise.all([
+    const [datasetsResponse, chartsResponse, gateResponse, summaryResponse] = await Promise.all([
       fetch(`/api/admin/datasets?projectId=${nextProjectId}`, { cache: 'no-store' }),
       fetch(`/api/admin/dashboard-charts?projectId=${nextProjectId}`, { cache: 'no-store' }),
       nextProject
@@ -180,10 +201,14 @@ export function DashboardChartsAdminPanel() {
           body: JSON.stringify({ tenantId: nextProject.tenantId, projectId: nextProject.id }),
         })
         : Promise.resolve(null),
+      nextProject
+        ? fetch(`/api/admin/dashboard-charts/ai-refinement-summary?tenantId=${encodeURIComponent(nextProject.tenantId)}&projectId=${encodeURIComponent(nextProject.id)}`, { cache: 'no-store' })
+        : Promise.resolve(null),
     ])
     const datasetsPayload = await datasetsResponse.json().catch(() => null)
     const chartsPayload = await chartsResponse.json().catch(() => null)
     const gatePayload = gateResponse ? await gateResponse.json().catch(() => null) : null
+    const summaryPayload = summaryResponse ? await summaryResponse.json().catch(() => null) : null
     if (!datasetsResponse.ok) throw new Error(errorToText(datasetsPayload))
     if (!chartsResponse.ok) throw new Error(errorToText(chartsPayload))
     const nextDatasets = Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets as SemanticDataset[] : []
@@ -192,6 +217,9 @@ export function DashboardChartsAdminPanel() {
     setAiRefinementGate(gatePayload && typeof gatePayload.enabled === 'boolean'
       ? gatePayload as AiRefinementGateState
       : { enabled: false, source: 'off', reason: 'AI refinement gate status is unavailable.' })
+    setAiRefinementSummary(summaryResponse?.ok && summaryPayload?.summary
+      ? summaryPayload.summary as AiRefinementSummaryState
+      : null)
     setDatasetId(current => nextDatasets.some(dataset => dataset.id === current) ? current : nextDatasets[0]?.id ?? '')
     void fetchChartAudit(nextProjectId)
   }, [demoMode, fetchChartAudit, projects])
@@ -606,6 +634,65 @@ export function DashboardChartsAdminPanel() {
                   <Activity className="h-3 w-3" />
                   Last audit {new Date(chartAudit.checkedAt).toLocaleTimeString()}
                 </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base text-[color:var(--dos-text-primary)]">
+                <Activity className="h-4 w-4 text-[color:var(--dos-chart-info)]" />
+                AI refinement ops
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs text-[color:var(--dos-text-muted)]">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-2">
+                  <p className="text-[10px] uppercase tracking-wide">Prompts</p>
+                  <p className="mt-1 text-lg font-semibold text-[color:var(--dos-text-primary)]">{aiRefinementSummary?.counts.promptsSubmitted ?? 0}</p>
+                </div>
+                <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-2">
+                  <p className="text-[10px] uppercase tracking-wide">Proposals</p>
+                  <p className="mt-1 text-lg font-semibold text-[color:var(--dos-text-primary)]">{aiRefinementSummary?.counts.proposalsSucceeded ?? 0}</p>
+                </div>
+                <div className="rounded-md border border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] p-2">
+                  <p className="text-[10px] uppercase tracking-wide text-[color:var(--dos-chart-success)]">Applied</p>
+                  <p className="mt-1 text-lg font-semibold text-[color:var(--dos-text-primary)]">{aiRefinementSummary?.counts.applySuccesses ?? 0}</p>
+                </div>
+                <div className="rounded-md border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] p-2">
+                  <p className="text-[10px] uppercase tracking-wide text-[color:var(--dos-chart-warning)]">Validation</p>
+                  <p className="mt-1 text-lg font-semibold text-[color:var(--dos-text-primary)]">{aiRefinementSummary?.counts.validationFailures ?? 0}</p>
+                </div>
+              </div>
+              <div className="grid gap-2 text-[11px]">
+                <div className="flex items-center justify-between rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-2 py-1.5">
+                  <span>Restricted requests</span>
+                  <span className="font-semibold text-[color:var(--dos-chart-warning)]">{aiRefinementSummary?.counts.blockedSensitiveRequests ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-2 py-1.5">
+                  <span>Unsupported versions</span>
+                  <span className="font-semibold text-[color:var(--dos-chart-warning)]">{aiRefinementSummary?.counts.unsupportedSchemaVersions ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-2 py-1.5">
+                  <span>Parse failures</span>
+                  <span className="font-semibold text-[color:var(--dos-chart-warning)]">{aiRefinementSummary?.counts.modelParseFailures ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-2 py-1.5">
+                  <span>Preview unavailable</span>
+                  <span className="font-semibold text-[color:var(--dos-chart-info)]">{aiRefinementSummary?.counts.previewUnavailableCases ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-2 py-1.5">
+                  <span>Gated off</span>
+                  <span className="font-semibold text-[color:var(--dos-chart-warning)]">{aiRefinementSummary?.counts.gatedOffAccess ?? 0}</span>
+                </div>
+              </div>
+              <p className="text-[11px] leading-4">
+                Counts cover the last {aiRefinementSummary?.windowDays ?? 7} days and exclude raw prompt text, filter values, and sensitive field details.
+              </p>
+              {aiRefinementSummary?.counts.lastEventAt ? (
+                <p className="text-[11px] text-[color:var(--dos-text-muted)]">
+                  Last event {new Date(aiRefinementSummary.counts.lastEventAt).toLocaleString()}
+                </p>
               ) : null}
             </CardContent>
           </Card>

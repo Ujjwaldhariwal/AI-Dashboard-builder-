@@ -11,10 +11,24 @@ const DEFAULT_POOL_CONNECTION_IDLE_MS = 30_000
 const DEFAULT_MAX_ACTIVE_POOLS = 30
 const MAX_SCHEMA_TABLES = 500
 const MAX_SCHEMA_COLUMNS = 5_000
+const DEFAULT_EXCLUDED_SCHEMAS = [
+  'auth',
+  'extensions',
+  'graphql',
+  'graphql_public',
+  'net',
+  'pgbouncer',
+  'realtime',
+  'storage',
+  'supabase_functions',
+  'supabase_migrations',
+  'vault',
+]
 
 interface PostgresRuntimeOptions {
   connectTimeoutMs?: number
   queryTimeoutMs?: number
+  parameters?: unknown[]
   poolKey?: string
   poolMax?: number
   poolIdleMs?: number
@@ -233,11 +247,12 @@ export async function introspectPostgresSchema(ciphertext: string): Promise<Post
           on t.table_schema = c.table_schema
          and t.table_name = c.table_name
         where c.table_schema not in ('pg_catalog', 'information_schema')
+          and c.table_schema <> all($2::text[])
           and t.table_type in ('BASE TABLE', 'VIEW')
         order by c.table_schema, c.table_name, c.ordinal_position
         limit $1
       `,
-      [MAX_SCHEMA_COLUMNS],
+      [MAX_SCHEMA_COLUMNS, DEFAULT_EXCLUDED_SCHEMAS],
     )
 
     const tableMap = new Map<string, PostgresTableMetadata>()
@@ -294,7 +309,7 @@ export async function executePostgresReadOnlyQuery(
         'statement_timeout',
         String(options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS),
       ])
-      const result = await client.query<Record<string, unknown>>(sql)
+      const result = await client.query<Record<string, unknown>>(sql, options.parameters ?? [])
       await client.query('commit')
       return {
         rows: result.rows,

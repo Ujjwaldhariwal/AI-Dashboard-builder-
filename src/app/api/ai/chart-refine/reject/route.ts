@@ -36,7 +36,22 @@ export async function POST(req: NextRequest) {
       projectId: access.projectId,
       userId: auth.userId,
     })
-    if (!gate.enabled) return NextResponse.json({ ok: false, errorCode: 'feature_gated', error: gate.reason }, { status: 403 })
+    if (!gate.enabled) {
+      await logAiChartRefinementMetric({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: parsed.data.chartId,
+        eventType: 'gated_off_access',
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'gated_off_access',
+          errorCode: gate.reasonCode,
+          gateSource: gate.source,
+        }),
+      })
+      return NextResponse.json({ ok: false, errorCode: 'feature_gated', reasonCode: gate.reasonCode, error: gate.reason }, { status: 403 })
+    }
 
     const rateLimit = await checkRuntimeRateLimit({
       key: `ai-chart-refine-reject:${access.tenantId}:${access.projectId}:${auth.userId}`,

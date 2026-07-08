@@ -85,11 +85,27 @@ export async function POST(req: NextRequest) {
       userId: auth.userId,
     })
     if (!gate.enabled) {
+      await logAiChartRefinementMetric({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: parsed.data.chartId,
+        eventType: 'gated_off_access',
+        metadata: buildAiChartRefinementEventMetadata({
+          eventType: 'gated_off_access',
+          errorCode: gate.reasonCode,
+          patchProvided: Boolean(parsed.data.patch),
+          includePreview: parsed.data.includePreview,
+          gateSource: gate.source,
+        }),
+      })
       return NextResponse.json({
         patch: null,
         chart: null,
         validation: null,
         errorCode: 'feature_gated',
+        reasonCode: gate.reasonCode,
         error: gate.reason,
       }, { status: 403 })
     }
@@ -196,6 +212,9 @@ export async function POST(req: NextRequest) {
     if (parsed.data.patch) {
       const providedPatch = parseChartAiPatchPayload(parsed.data.patch)
       if (!providedPatch.ok) {
+        const eventType = providedPatch.errorCode === 'schema_version_mismatch'
+          ? 'unsupported_schema_version'
+          : 'patch_validation_failure'
         await auditChartRefine({
           auth,
           tenantId: access.tenantId,
@@ -203,7 +222,7 @@ export async function POST(req: NextRequest) {
           chartId: parsed.data.chartId,
           action: 'ai.chart_refine.validation_failed',
           metadata: buildAiChartRefinementEventMetadata({
-            eventType: 'patch_validation_failure',
+            eventType,
             instruction: parsed.data.instruction,
             errorCode: providedPatch.errorCode,
             gateSource: gate.source,
@@ -215,9 +234,9 @@ export async function POST(req: NextRequest) {
           projectId: access.projectId,
           actorUserId: auth.userId,
           chartId: parsed.data.chartId,
-          eventType: 'patch_validation_failure',
+          eventType,
           metadata: buildAiChartRefinementEventMetadata({
-            eventType: 'patch_validation_failure',
+            eventType,
             instruction: parsed.data.instruction,
             errorCode: providedPatch.errorCode,
             gateSource: gate.source,
@@ -319,10 +338,13 @@ ${JSON.stringify(publicContext, null, 2)}`
             gateSource: gate.source,
           }),
         })
-        return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: 'invalid_model_patch', error: 'AI response could not be parsed as a chart patch. The current chart was left unchanged.' }, { status: 422 })
+        return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: 'model_parse_failure', error: 'AI response could not be parsed as a chart patch. The current chart was left unchanged.' }, { status: 422 })
       }
       const patchParse = parseChartAiPatchPayload(parsedJson)
       if (!patchParse.ok) {
+        const eventType = patchParse.errorCode === 'schema_version_mismatch'
+          ? 'unsupported_schema_version'
+          : 'patch_validation_failure'
         await auditChartRefine({
           auth,
           tenantId: access.tenantId,
@@ -330,7 +352,7 @@ ${JSON.stringify(publicContext, null, 2)}`
           chartId: parsed.data.chartId,
           action: 'ai.chart_refine.validation_failed',
           metadata: buildAiChartRefinementEventMetadata({
-            eventType: 'patch_validation_failure',
+            eventType,
             instruction: parsed.data.instruction,
             errorCode: patchParse.errorCode,
             gateSource: gate.source,
@@ -342,9 +364,9 @@ ${JSON.stringify(publicContext, null, 2)}`
           projectId: access.projectId,
           actorUserId: auth.userId,
           chartId: parsed.data.chartId,
-          eventType: 'patch_validation_failure',
+          eventType,
           metadata: buildAiChartRefinementEventMetadata({
-            eventType: 'patch_validation_failure',
+            eventType,
             instruction: parsed.data.instruction,
             errorCode: patchParse.errorCode,
             gateSource: gate.source,

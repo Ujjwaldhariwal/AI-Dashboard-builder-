@@ -63,6 +63,7 @@ interface RefineResponse {
     issues: Array<{ severity: string; code: string; message: string }>
   } | null
   errorCode?: 'feature_gated' | 'restricted_field_request' | 'unsupported_chart_edit' | 'invalid_model_patch' | 'schema_version_mismatch' | 'chart_validation_failed'
+    | 'model_parse_failure'
   error?: string
 }
 
@@ -91,6 +92,9 @@ function refinementErrorMessage(payload: RefineResponse | { error?: unknown; err
   }
   if (payload?.errorCode === 'invalid_model_patch') {
     return 'The model returned a patch that did not match the approved chart schema. The current chart was left unchanged.'
+  }
+  if (payload?.errorCode === 'model_parse_failure') {
+    return 'The model response could not be parsed as a chart patch. The current chart was left unchanged.'
   }
   if (payload?.errorCode === 'schema_version_mismatch') {
     return 'The patch used a schema version this environment does not support. The current chart was left unchanged.'
@@ -345,7 +349,7 @@ export function AiChartRefinementDialog({
   const previewAvailable = useMemo(() => (
     result?.chart ? canRenderAiChartPreview(result.chart, context) : null
   ), [context, result?.chart])
-  const hasPreviewOnlyFilters = Boolean(result?.chart?.encoding.filters?.length)
+  const hasRuntimeFilters = Boolean(result?.chart?.encoding.filters?.length)
 
   useEffect(() => {
     if (previewAvailable === null || !result?.chart) return
@@ -600,9 +604,9 @@ export function AiChartRefinementDialog({
                       {result.validation.issues[0]?.message}
                     </div>
                   ) : null}
-                  {hasPreviewOnlyFilters ? (
+                  {hasRuntimeFilters ? (
                     <div className="mt-3 rounded-lg border border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] p-3 text-xs leading-5 text-[color:var(--dos-chart-info)]">
-                      Filter edits are schema-validated metadata in this release. Runtime query execution for these filters is intentionally not promised yet.
+                      Narrow filters run in the published chart runtime after validation. This mini preview uses sanitized sample rows and does not re-run filter predicates.
                     </div>
                   ) : null}
                 </div>
@@ -626,7 +630,7 @@ export function AiChartRefinementDialog({
                   <div>
                     <h3 className="text-sm font-semibold text-[color:var(--dos-text-primary)]">Describe a safe chart edit</h3>
                     <p className="mt-1 max-w-2xl text-xs leading-5 text-[color:var(--dos-text-muted)]">
-                      Try a rename, compatible type change, metric comparison, grouping swap, sort, or row limit. Narrow filters are validated as metadata for now and will be marked clearly before apply.
+                      Try a rename, compatible type change, metric comparison, grouping swap, sort, row limit, or narrow governed filter. Filter previews are sample-based; published runtime applies the validated predicates.
                     </p>
                   </div>
                 </div>
@@ -664,7 +668,7 @@ export function AiChartRefinementDialog({
                   <li>Only semantic IDs can change</li>
                   <li>Patch must pass chart validation</li>
                   <li>Blocked fields stay hidden</li>
-                  <li>Filters are limited metadata until runtime support lands</li>
+                  <li>Narrow filters execute in published runtime only after validation</li>
                 </ul>
               </div>
             </div>

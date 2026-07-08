@@ -80,6 +80,29 @@ export function validateDashboardChartConfig({
     addIssue(issues, 'error', 'invalid_limit', 'Chart row limit must be between 1 and 500.')
   }
 
+  if ((encoding.filters?.length ?? 0) > 4) {
+    addIssue(issues, 'error', 'too_many_filters', 'Chart filters are limited to four predicates.')
+  }
+
+  for (const filter of encoding.filters ?? []) {
+    if (!fieldIds.has(filter.fieldId)) {
+      addIssue(issues, 'error', 'invalid_filter_field', 'Filter field is not part of this dataset.')
+    }
+    if (filter.operator === 'in') {
+      if (!Array.isArray(filter.value) || filter.value.length === 0) {
+        addIssue(issues, 'error', 'invalid_filter_value', 'In filters require one or more values.')
+      }
+      if (Array.isArray(filter.value) && filter.value.length > 12) {
+        addIssue(issues, 'error', 'invalid_filter_value', 'In filters are limited to 12 values.')
+      }
+    } else if (Array.isArray(filter.value)) {
+      addIssue(issues, 'error', 'invalid_filter_value', 'This filter operator requires a single value.')
+    }
+    if ((filter.operator === 'gte' || filter.operator === 'lte') && typeof filter.value === 'boolean') {
+      addIssue(issues, 'error', 'invalid_filter_value', 'Range filters require a text, date, or numeric value.')
+    }
+  }
+
   if (shape.dimensionCount > 2 && template?.id !== 'table-grid') {
     addIssue(issues, 'warning', 'dense_dimensions', 'Dataset has many dimensions; table-grid is usually safer.')
   }

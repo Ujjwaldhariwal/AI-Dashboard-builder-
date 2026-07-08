@@ -19,6 +19,16 @@ const EncodingSchema = z.object({
     direction: z.enum(['asc', 'desc']),
   }).nullable().optional(),
   limit: z.number().int().min(1).max(500).nullable().optional(),
+  filters: z.array(z.object({
+    fieldId: z.string().uuid(),
+    operator: z.enum(['eq', 'not_eq', 'in', 'contains', 'gte', 'lte']),
+    value: z.union([
+      z.string().max(120),
+      z.number(),
+      z.boolean(),
+      z.array(z.union([z.string().max(120), z.number(), z.boolean()])).min(1).max(12),
+    ]),
+  }).strict()).max(4).default([]),
 }).strict()
 
 const ChartSchema = z.object({
@@ -140,7 +150,7 @@ export async function POST(req: NextRequest) {
 
     const { data: datasetRow, error: datasetError } = await auth.supabase
       .from('semantic_datasets')
-      .select('id, tenant_id, project_id, selection')
+      .select('id, tenant_id, project_id, model_id, selection')
       .eq('id', parsed.data.datasetId)
       .eq('tenant_id', parsed.data.tenantId)
       .eq('project_id', parsed.data.projectId)
@@ -150,7 +160,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ chart: null, validation: null, error: datasetError?.message ?? 'Dataset not found' }, { status: 404 })
     }
 
-    const selection = selectionFromDataset(datasetRow as Record<string, unknown>)
+    const dataset = datasetRow as Record<string, unknown>
+    const modelId = typeof dataset.model_id === 'string' ? dataset.model_id : ''
+    const { data: modelRow, error: modelError } = await auth.supabase
+      .from('business_models')
+      .select('id, status')
+      .eq('id', modelId)
+      .eq('tenant_id', parsed.data.tenantId)
+      .eq('project_id', parsed.data.projectId)
+      .single()
+
+    if (modelError || !modelRow) {
+      return NextResponse.json({ chart: null, validation: null, error: modelError?.message ?? 'Business model not found' }, { status: 404 })
+    }
+    if (modelRow.status !== 'approved') {
+      return NextResponse.json({ chart: null, validation: null, error: 'Business model must be approved before creating chart configs' }, { status: 409 })
+    }
+
+    const selection = selectionFromDataset(dataset)
     const [fieldsResult, metricsResult] = await Promise.all([
       selection.fieldIds.length > 0
         ? auth.supabase.from('business_fields').select('*').in('id', selection.fieldIds)

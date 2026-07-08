@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import { requireDashboardEntitlement } from '@/lib/security/entitlements'
 import { accessContext, requireTenantAccess } from '@/lib/security/project-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
@@ -8,6 +9,7 @@ import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { checkQueryBudget } from '@/lib/semantic/query-budget-policy'
 import { getQueryResultCache, queryResultCacheKey, setQueryResultCache } from '@/lib/semantic/query-result-cache'
 import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
+import { selectionFromRecord, validateSemanticReferencesForModel } from '@/lib/semantic/semantic-hardening'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
 
@@ -31,24 +33,10 @@ function asEncoding(value: unknown): DashboardChartEncoding {
     colorById: asRecord(record.colorById) as Record<string, string>,
     sort: asRecord(record.sort) as DashboardChartEncoding['sort'],
     limit: typeof record.limit === 'number' ? record.limit : null,
+    filters: Array.isArray(record.filters)
+      ? record.filters as DashboardChartEncoding['filters']
+      : [],
   }
-}
-
-function selectionFromDataset(row: Record<string, unknown>) {
-  const selection = asRecord(row.selection)
-  return {
-    fieldIds: toStringArray(selection.fieldIds),
-    metricIds: toStringArray(selection.metricIds),
-    relationshipIds: toStringArray(selection.relationshipIds),
-  }
-}
-
-function metricSourceFieldIds(metrics: Record<string, unknown>[], fields: Record<string, unknown>[]) {
-  const selectedFieldIds = new Set(fields.map(field => String(field.id)))
-  return Array.from(new Set(metrics.map(metric => {
-    const expression = asRecord(metric.expression)
-    return typeof expression.fieldId === 'string' ? expression.fieldId : null
-  }).filter(Boolean) as string[])).filter(fieldId => !selectedFieldIds.has(fieldId))
 }
 
 function mapChart(row: Record<string, unknown>): DashboardChartConfig {
@@ -138,6 +126,53 @@ export async function POST(
     }
 
     const chart = mapChart(chartRow as Record<string, unknown>)
+    const { data: slots, error: slotsError } = await auth.supabase
+      .from('dashboard_chart_slots')
+      .select('dashboard_id, version_id')
+      .eq('tenant_id', tenant.id)
+      .eq('project_id', chart.projectId)
+      .eq('chart_config_id', chart.id)
+
+    if (slotsError) return NextResponse.json({ result: null, error: slotsError.message }, { status: 500 })
+    const slotRows = (slots ?? []) as Record<string, unknown>[]
+    const dashboardIds = Array.from(new Set(slotRows.map(slot => String(slot.dashboard_id ?? '')).filter(Boolean)))
+    const { data: dashboards, error: dashboardsError } = dashboardIds.length > 0
+      ? await auth.supabase
+        .from('published_dashboards')
+        .select('id, current_version_id')
+        .eq('tenant_id', tenant.id)
+        .eq('project_id', chart.projectId)
+        .eq('status', 'published')
+        .in('id', dashboardIds)
+      : { data: [], error: null }
+
+    if (dashboardsError) return NextResponse.json({ result: null, error: dashboardsError.message }, { status: 500 })
+    const currentVersionByDashboard = new Map(((dashboards ?? []) as Record<string, unknown>[])
+      .map(dashboard => [String(dashboard.id), String(dashboard.current_version_id ?? '')]))
+    const eligibleDashboardIds = Array.from(new Set(slotRows
+      .filter(slot => currentVersionByDashboard.get(String(slot.dashboard_id)) === String(slot.version_id))
+      .map(slot => String(slot.dashboard_id))))
+
+    let authorizedDashboardId: string | null = null
+    for (const dashboardId of eligibleDashboardIds) {
+      const entitlement = await requireDashboardEntitlement({
+        supabase: auth.supabase,
+        userId: auth.userId,
+        platformRole: auth.role,
+        tenantId: String(tenant.id),
+        projectId: chart.projectId,
+        dashboardId,
+        access: 'view',
+      })
+      if (entitlement.ok) {
+        authorizedDashboardId = dashboardId
+        break
+      }
+    }
+    if (!authorizedDashboardId) {
+      return NextResponse.json({ result: null, error: 'Dashboard entitlement is required' }, { status: 403 })
+    }
+
     const { data: datasetRow, error: datasetError } = await auth.supabase
       .from('semantic_datasets')
       .select('*')
@@ -154,26 +189,20 @@ export async function POST(
     const cachePolicy = dataset.cache_policy && typeof dataset.cache_policy === 'object'
       ? dataset.cache_policy as Record<string, unknown>
       : {}
-    const selection = selectionFromDataset(dataset)
-    const [fieldsResult, metricsResult, relationshipsResult] = await Promise.all([
-      selection.fieldIds.length > 0
-        ? auth.supabase.from('business_fields').select('*').in('id', selection.fieldIds)
-        : Promise.resolve({ data: [], error: null }),
-      selection.metricIds.length > 0
-        ? auth.supabase.from('business_metrics').select('*').in('id', selection.metricIds)
-        : Promise.resolve({ data: [], error: null }),
-      selection.relationshipIds.length > 0
-        ? auth.supabase.from('business_relationships').select('*').in('id', selection.relationshipIds)
-        : Promise.resolve({ data: [], error: null }),
-    ])
+    const semanticValidation = await validateSemanticReferencesForModel({
+      supabase: auth.supabase,
+      tenantId: String(tenant.id),
+      projectId: chart.projectId,
+      modelId: String(dataset.model_id),
+      selection: selectionFromRecord(dataset.selection),
+    })
+    if (!semanticValidation.ok) {
+      return NextResponse.json({ result: null, error: semanticValidation.error }, { status: 422 })
+    }
 
-    if (fieldsResult.error) return NextResponse.json({ result: null, error: fieldsResult.error.message }, { status: 500 })
-    if (metricsResult.error) return NextResponse.json({ result: null, error: metricsResult.error.message }, { status: 500 })
-    if (relationshipsResult.error) return NextResponse.json({ result: null, error: relationshipsResult.error.message }, { status: 500 })
-
-    const fields = (fieldsResult.data ?? []) as Record<string, unknown>[]
-    const metrics = (metricsResult.data ?? []) as Record<string, unknown>[]
-    const relationships = (relationshipsResult.data ?? []) as Record<string, unknown>[]
+    const fields = semanticValidation.fields
+    const metrics = semanticValidation.metrics
+    const relationships = semanticValidation.relationships
     const validation = validateDashboardChartConfig({
       templateId: chart.templateId,
       encoding: chart.encoding,
@@ -201,20 +230,12 @@ export async function POST(
       }, { status: 422 })
     }
 
-    const missingMetricSourceFieldIds = metricSourceFieldIds(metrics, fields)
-    const { data: metricSourceFields, error: metricSourceFieldsError } = missingMetricSourceFieldIds.length > 0
-      ? await auth.supabase.from('business_fields').select('*').in('id', missingMetricSourceFieldIds)
-      : { data: [], error: null }
-
-    if (metricSourceFieldsError) {
-      return NextResponse.json({ result: null, error: metricSourceFieldsError.message }, { status: 500 })
-    }
-
     const compileResult = compileDatasetQueryPlan({
       fields,
       metrics,
       relationships,
-      metricSourceFields: (metricSourceFields ?? []) as Record<string, unknown>[],
+      metricSourceFields: semanticValidation.metricSourceFields,
+      filters: chart.encoding.filters ?? [],
     })
 
     if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
@@ -273,6 +294,7 @@ export async function POST(
       chartId: chart.id,
       dataSourceId: compileResult.dataSourceId,
       sql: compileResult.queryPlan.executableSql,
+      parameters: compileResult.parameters,
       datasetUpdatedAt: typeof dataset.updated_at === 'string' ? dataset.updated_at : null,
       chartUpdatedAt: chart.updatedAt,
       schemaHash: typeof sourceRow.schema_hash === 'string' ? sourceRow.schema_hash : null,
@@ -361,6 +383,7 @@ export async function POST(
         String(sourceRow.credential_ciphertext),
         compileResult.queryPlan.executableSql,
         {
+          parameters: compileResult.parameters,
           poolKey: `data-source:${String(sourceRow.id)}`,
           queryTimeoutMs: compileResult.queryPlan.limits.timeoutMs,
         },

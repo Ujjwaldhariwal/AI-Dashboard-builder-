@@ -9,11 +9,18 @@ import {
   parseChartAiPatchPayload,
   validateChartAiPatchAgainstAllowlist,
 } from '../src/lib/ai/chart-ai-contract'
-import { resolveAiChartRefinementGate } from '../src/lib/ai/chart-refinement-gate'
+import {
+  createEnvAiChartRefinementGatePolicy,
+  inspectAiChartRefinementGatePolicy,
+  resolveAiChartRefinementGate,
+} from '../src/lib/ai/chart-refinement-gate'
 import {
   buildAiChartRefinementEventMetadata,
   classifyAiChartRefinementPrompt,
+  summarizeAiChartRefinementMetrics,
 } from '../src/lib/ai/chart-refinement-observability'
+import { compileDatasetQueryPlan } from '../src/lib/semantic/dataset-query-compiler'
+import { queryResultCacheKey } from '../src/lib/semantic/query-result-cache'
 import {
   buildAiChartExamplePrompts,
   canRenderAiChartPreview,
@@ -35,6 +42,7 @@ const safeCityField = {
   semantic_key: 'customer.city',
   role: 'dimension',
   source_column: {
+    dataSourceId: '99999999-9999-4999-8999-999999999998',
     dataType: 'text',
     schemaName: 'public',
     tableName: 'electricity_customers',
@@ -48,6 +56,7 @@ const piiNameField = {
   semantic_key: 'customer.name',
   role: 'dimension',
   source_column: {
+    dataSourceId: '99999999-9999-4999-8999-999999999998',
     dataType: 'text',
     schemaName: 'public',
     tableName: 'electricity_customers',
@@ -61,6 +70,7 @@ const billAmountField = {
   semantic_key: 'reading.bill_amount',
   role: 'metric_source',
   source_column: {
+    dataSourceId: '99999999-9999-4999-8999-999999999998',
     dataType: 'numeric',
     schemaName: 'public',
     tableName: 'electricity_readings',
@@ -356,6 +366,43 @@ test.describe('AI data access guardrails', () => {
     else process.env.DASHBOARDOS_AI_CHART_REFINEMENT_PROJECT_IDS = previousProjectIds
   })
 
+  test('returns inspectable gate reason codes from the env policy abstraction', () => {
+    const env = {
+      DASHBOARDOS_AI_CHART_REFINEMENT_TENANT_IDS: currentChart.tenantId,
+      DASHBOARDOS_AI_CHART_REFINEMENT_PROJECT_IDS: '',
+      DASHBOARDOS_AI_CHART_REFINEMENT_USER_IDS: '',
+    }
+    const policy = createEnvAiChartRefinementGatePolicy(env)
+    const inspection = policy.inspect()
+
+    expect(inspection).toMatchObject({
+      policy: 'env',
+      globalEnabled: false,
+      allowlistCounts: { tenantIds: 1, projectIds: 0, userIds: 0 },
+    })
+    expect(inspectAiChartRefinementGatePolicy(env).allowlistCounts.tenantIds).toBe(1)
+    expect(policy.resolve({
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: '99999999-9999-4999-8999-999999999999',
+    })).toMatchObject({
+      enabled: true,
+      source: 'tenant_allowlist',
+      reasonCode: 'tenant_allowlisted',
+      policy: 'env',
+    })
+
+    expect(createEnvAiChartRefinementGatePolicy({}).resolve({
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: '99999999-9999-4999-8999-999999999999',
+    })).toMatchObject({
+      enabled: false,
+      source: 'off',
+      reasonCode: 'rollout_not_enabled',
+    })
+  })
+
   test('accepts current AI patch schema version and rejects explicit mismatches', () => {
     const current = parseChartAiPatchPayload({
       schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
@@ -408,5 +455,84 @@ test.describe('AI data access guardrails', () => {
       gateSource: 'tenant_allowlist',
     })
     expect(JSON.stringify(metadata)).not.toContain('customer name')
+  })
+
+  test('summarizes AI refinement observability counts without prompt content', () => {
+    const rows = [
+      { action: 'ai.chart_refine.metric.prompt_submitted', metadata: { eventType: 'prompt_submitted', promptType: 'grouping' }, created_at: '2026-07-08T10:00:00.000Z' },
+      { action: 'ai.chart_refine.metric.proposal_success', metadata: { eventType: 'proposal_success' }, created_at: '2026-07-08T10:01:00.000Z' },
+      { action: 'ai.chart_refine.metric.blocked_sensitive_request', metadata: { eventType: 'blocked_sensitive_request', errorCode: 'restricted_field_request' }, created_at: '2026-07-08T10:02:00.000Z' },
+      { action: 'ai.chart_refine.metric.unsupported_schema_version', metadata: { eventType: 'unsupported_schema_version', errorCode: 'schema_version_mismatch' }, created_at: '2026-07-08T10:03:00.000Z' },
+      { action: 'ai.chart_refine.metric.patch_validation_failure', metadata: { eventType: 'patch_validation_failure', errorCode: 'chart_validation_failed' }, created_at: '2026-07-08T10:04:00.000Z' },
+      { action: 'ai.chart_refine.metric.apply_success', metadata: { eventType: 'apply_success' }, created_at: '2026-07-08T10:05:00.000Z' },
+      { action: 'ai.chart_refine.metric.preview_render_unavailable', metadata: { eventType: 'preview_render_unavailable' }, created_at: '2026-07-08T10:06:00.000Z' },
+      { action: 'ai.chart_refine.metric.model_parse_failure', metadata: { eventType: 'model_parse_failure', errorCode: 'model_parse_failure' }, created_at: '2026-07-08T10:07:00.000Z' },
+      { action: 'ai.chart_refine.metric.gated_off_access', metadata: { eventType: 'gated_off_access', errorCode: 'rollout_not_enabled' }, created_at: '2026-07-08T10:08:00.000Z' },
+    ]
+
+    const summary = summarizeAiChartRefinementMetrics(rows)
+    expect(summary).toMatchObject({
+      promptsSubmitted: 1,
+      proposalsSucceeded: 1,
+      blockedSensitiveRequests: 1,
+      validationFailures: 1,
+      applySuccesses: 1,
+      previewUnavailableCases: 1,
+      unsupportedSchemaVersions: 1,
+      modelParseFailures: 1,
+      gatedOffAccess: 1,
+      lastEventAt: '2026-07-08T10:08:00.000Z',
+    })
+    expect(JSON.stringify(summary)).not.toContain('customer name')
+  })
+
+  test('compiles narrow chart filters into parameterized runtime SQL and cache keys', () => {
+    const dataSourceId = '99999999-9999-4999-8999-999999999998'
+    const runtimeCityField = {
+      ...safeCityField,
+      source_column: {
+        ...safeCityField.source_column,
+        dataSourceId,
+      },
+    }
+    const metricSourceField = {
+      ...billAmountField,
+      source_column: {
+        ...billAmountField.source_column,
+        dataSourceId,
+        tableName: 'electricity_customers',
+      },
+    }
+    const runtimeBillMetric = {
+      ...billMetric,
+      expression: { fieldId: metricSourceField.id },
+    }
+    const result = compileDatasetQueryPlan({
+      fields: [runtimeCityField],
+      metrics: [runtimeBillMetric],
+      relationships: [],
+      metricSourceFields: [metricSourceField],
+      filters: [{ fieldId: runtimeCityField.id, operator: 'eq', value: 'Pune' }],
+    })
+
+    expect(result.queryPlan.executableSql).toContain('where "t1"."city" = $1')
+    expect(result.queryPlan.executableSql).not.toContain('Pune')
+    expect(result.parameters).toEqual(['Pune'])
+    expect(result.queryPlan.filters).toEqual([{
+      fieldId: runtimeCityField.id,
+      operator: 'eq',
+      parameterIndexes: [1],
+    }])
+
+    const baseKey = {
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      datasetId: currentChart.datasetId,
+      chartId: currentChart.id,
+      dataSourceId,
+      sql: result.queryPlan.executableSql ?? '',
+    }
+    expect(queryResultCacheKey({ ...baseKey, parameters: ['Pune'] }))
+      .not.toBe(queryResultCacheKey({ ...baseKey, parameters: ['Mumbai'] }))
   })
 })
