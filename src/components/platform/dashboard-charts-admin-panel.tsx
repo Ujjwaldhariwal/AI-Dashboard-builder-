@@ -59,9 +59,72 @@ interface AiRefinementSummaryState {
     modelParseFailures: number
     gatedOffAccess: number
     lastEventAt: string | null
+    outcomeCategories?: {
+      restrictedFieldRequests: number
+      unsupportedSchemaVersions: number
+      modelParseFailures: number
+      validationFailures: number
+      gatedOffAccess: number
+      previewUnavailableCases: number
+    }
+    buckets?: Array<{
+      bucketStart: string
+      totalEvents: number
+      promptsSubmitted: number
+      proposalsSucceeded: number
+      applySuccesses: number
+      validationFailures: number
+      gatedOffAccess: number
+      previewUnavailableCases: number
+    }>
   }
   windowDays: number
   generatedAt: string
+}
+
+type AiRolloutScopeType = 'global' | 'tenant' | 'project' | 'user'
+
+interface AiRolloutPolicyState {
+  id?: string
+  scopeType: AiRolloutScopeType
+  scopeId: string | null
+  tenantId: string | null
+  projectId: string | null
+  userId: string | null
+  enabled: boolean
+  reason: string | null
+  updatedAt: string | null
+  updatedBy: string | null
+}
+
+interface AiRefinementRolloutState {
+  gate: AiRefinementGateState
+  policies: AiRolloutPolicyState[]
+  storage: {
+    available: boolean
+    errorCode: string | null
+  }
+  env: {
+    policy: 'env'
+    globalEnabled: boolean
+    allowlistCounts: {
+      tenantIds: number
+      projectIds: number
+      userIds: number
+    }
+  }
+}
+
+export function aiRolloutPolicyStateLabel(policy: Pick<AiRolloutPolicyState, 'enabled'> | null | undefined) {
+  if (!policy) return 'Env fallback'
+  return policy.enabled ? 'Enabled override' : 'Disabled override'
+}
+
+function aiRolloutPolicyBadgeClass(policy: Pick<AiRolloutPolicyState, 'enabled'> | null | undefined) {
+  if (!policy) return 'border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]'
+  return policy.enabled
+    ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]'
+    : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'
 }
 
 function errorToText(value: unknown) {
@@ -124,6 +187,8 @@ export function DashboardChartsAdminPanel() {
   const [aiRefineChartId, setAiRefineChartId] = useState<string | null>(null)
   const [aiRefinementGate, setAiRefinementGate] = useState<AiRefinementGateState | null>(null)
   const [aiRefinementSummary, setAiRefinementSummary] = useState<AiRefinementSummaryState | null>(null)
+  const [aiRefinementRollout, setAiRefinementRollout] = useState<AiRefinementRolloutState | null>(null)
+  const [savingRolloutScope, setSavingRolloutScope] = useState<AiRolloutScopeType | null>(null)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -135,6 +200,9 @@ export function DashboardChartsAdminPanel() {
   const auditByChartId = useMemo(() => new Map(
     chartAudit?.items.map(item => [item.chart.id, item]) ?? [],
   ), [chartAudit])
+  const rolloutPolicyByScope = useMemo(() => new Map(
+    aiRefinementRollout?.policies.map(policy => [policy.scopeType, policy]) ?? [],
+  ), [aiRefinementRollout])
 
   const fetchProjects = useCallback(async () => {
     if (demoMode) {
@@ -188,10 +256,11 @@ export function DashboardChartsAdminPanel() {
       setChartAudit(demoChartAudit)
       setAiRefinementGate({ enabled: false, source: 'demo', reason: 'AI refinement uses real governed chart IDs outside browser-only demo mode.' })
       setAiRefinementSummary(null)
+      setAiRefinementRollout(null)
       return
     }
     const nextProject = projects.find(project => project.id === nextProjectId)
-    const [datasetsResponse, chartsResponse, gateResponse, summaryResponse] = await Promise.all([
+    const [datasetsResponse, chartsResponse, gateResponse, summaryResponse, rolloutResponse] = await Promise.all([
       fetch(`/api/admin/datasets?projectId=${nextProjectId}`, { cache: 'no-store' }),
       fetch(`/api/admin/dashboard-charts?projectId=${nextProjectId}`, { cache: 'no-store' }),
       nextProject
@@ -204,17 +273,26 @@ export function DashboardChartsAdminPanel() {
       nextProject
         ? fetch(`/api/admin/dashboard-charts/ai-refinement-summary?tenantId=${encodeURIComponent(nextProject.tenantId)}&projectId=${encodeURIComponent(nextProject.id)}`, { cache: 'no-store' })
         : Promise.resolve(null),
+      nextProject
+        ? fetch(`/api/admin/dashboard-charts/ai-refinement-rollout?tenantId=${encodeURIComponent(nextProject.tenantId)}&projectId=${encodeURIComponent(nextProject.id)}`, { cache: 'no-store' })
+        : Promise.resolve(null),
     ])
     const datasetsPayload = await datasetsResponse.json().catch(() => null)
     const chartsPayload = await chartsResponse.json().catch(() => null)
     const gatePayload = gateResponse ? await gateResponse.json().catch(() => null) : null
     const summaryPayload = summaryResponse ? await summaryResponse.json().catch(() => null) : null
+    const rolloutPayload = rolloutResponse ? await rolloutResponse.json().catch(() => null) : null
     if (!datasetsResponse.ok) throw new Error(errorToText(datasetsPayload))
     if (!chartsResponse.ok) throw new Error(errorToText(chartsPayload))
     const nextDatasets = Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets as SemanticDataset[] : []
     setDatasets(nextDatasets)
     setCharts(Array.isArray(chartsPayload?.charts) ? chartsPayload.charts as DashboardChartConfig[] : [])
-    setAiRefinementGate(gatePayload && typeof gatePayload.enabled === 'boolean'
+    setAiRefinementRollout(rolloutResponse?.ok && rolloutPayload?.rollout
+      ? rolloutPayload.rollout as AiRefinementRolloutState
+      : null)
+    setAiRefinementGate(rolloutPayload?.rollout?.gate && typeof rolloutPayload.rollout.gate.enabled === 'boolean'
+      ? rolloutPayload.rollout.gate as AiRefinementGateState
+      : gatePayload && typeof gatePayload.enabled === 'boolean'
       ? gatePayload as AiRefinementGateState
       : { enabled: false, source: 'off', reason: 'AI refinement gate status is unavailable.' })
     setAiRefinementSummary(summaryResponse?.ok && summaryPayload?.summary
@@ -223,6 +301,37 @@ export function DashboardChartsAdminPanel() {
     setDatasetId(current => nextDatasets.some(dataset => dataset.id === current) ? current : nextDatasets[0]?.id ?? '')
     void fetchChartAudit(nextProjectId)
   }, [demoMode, fetchChartAudit, projects])
+
+  const updateAiRolloutPolicy = useCallback(async (scopeType: AiRolloutScopeType, enabled: boolean | null) => {
+    if (demoMode || !selectedProject) return
+    setSavingRolloutScope(scopeType)
+    try {
+      const response = await fetch('/api/admin/dashboard-charts/ai-refinement-rollout', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: selectedProject.tenantId,
+          projectId: selectedProject.id,
+          scopeType,
+          enabled,
+          reason: enabled === null ? null : 'Updated from DashboardOS admin rollout controls',
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      if (payload?.rollout) {
+        setAiRefinementRollout(payload.rollout as AiRefinementRolloutState)
+        if (payload.rollout.gate && typeof payload.rollout.gate.enabled === 'boolean') {
+          setAiRefinementGate(payload.rollout.gate as AiRefinementGateState)
+        }
+      }
+      toast.success(enabled === null ? 'Rollout override cleared' : 'Rollout policy updated')
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setSavingRolloutScope(null)
+    }
+  }, [demoMode, selectedProject])
 
   const fetchPlan = useCallback(async (nextDatasetId: string) => {
     if (!nextDatasetId) {
@@ -641,6 +750,92 @@ export function DashboardChartsAdminPanel() {
           <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base text-[color:var(--dos-text-primary)]">
+                <SlidersHorizontal className="h-4 w-4 text-[color:var(--dos-chart-info)]" />
+                AI rollout control
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs text-[color:var(--dos-text-muted)]">
+              <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide">Effective gate</span>
+                  <Badge variant="outline" className={aiRefinementGate?.enabled
+                    ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]'
+                    : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'}
+                  >
+                    {aiRefinementGate?.enabled ? 'Enabled' : 'Gated'}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[11px]">{aiRefinementGate?.reasonCode ?? 'checking'}</p>
+              </div>
+              {aiRefinementRollout?.storage.available === false ? (
+                <div className="rounded-md border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] p-2 text-[11px] text-[color:var(--dos-chart-warning)]">
+                  DB policy store unavailable; env allowlists are still the fallback.
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                {([
+                  ['global', 'Global'],
+                  ['tenant', 'Tenant'],
+                  ['project', 'Project'],
+                  ['user', 'Current user'],
+                ] as Array<[AiRolloutScopeType, string]>).map(([scopeType, label]) => {
+                  const policy = rolloutPolicyByScope.get(scopeType)
+                  const savingScope = savingRolloutScope === scopeType
+                  return (
+                    <div key={scopeType} className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-medium text-[color:var(--dos-text-primary)]">{label}</p>
+                          <p className="mt-0.5 text-[10px] text-[color:var(--dos-text-muted)]">
+                            {policy?.updatedAt ? `Updated ${new Date(policy.updatedAt).toLocaleDateString()}` : 'No DB override'}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className={aiRolloutPolicyBadgeClass(policy)}>
+                          {aiRolloutPolicyStateLabel(policy)}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-[color:var(--dos-border-soft)] bg-transparent px-2 text-[10px]"
+                          disabled={savingScope || demoMode}
+                          onClick={() => void updateAiRolloutPolicy(scopeType, true)}
+                        >
+                          {savingScope ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Enable'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-[color:var(--dos-border-soft)] bg-transparent px-2 text-[10px]"
+                          disabled={savingScope || demoMode}
+                          onClick={() => void updateAiRolloutPolicy(scopeType, false)}
+                        >
+                          Disable
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[10px] text-[color:var(--dos-text-muted)]"
+                          disabled={savingScope || demoMode || !policy}
+                          onClick={() => void updateAiRolloutPolicy(scopeType, null)}
+                        >
+                          Fallback
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] leading-4">
+                Env fallback: global {aiRefinementRollout?.env.globalEnabled ? 'on' : 'off'}, tenants {aiRefinementRollout?.env.allowlistCounts.tenantIds ?? 0}, projects {aiRefinementRollout?.env.allowlistCounts.projectIds ?? 0}, users {aiRefinementRollout?.env.allowlistCounts.userIds ?? 0}.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base text-[color:var(--dos-text-primary)]">
                 <Activity className="h-4 w-4 text-[color:var(--dos-chart-info)]" />
                 AI refinement ops
               </CardTitle>
@@ -686,6 +881,21 @@ export function DashboardChartsAdminPanel() {
                   <span className="font-semibold text-[color:var(--dos-chart-warning)]">{aiRefinementSummary?.counts.gatedOffAccess ?? 0}</span>
                 </div>
               </div>
+              {aiRefinementSummary?.counts.buckets?.length ? (
+                <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide">Recent buckets</p>
+                  <div className="mt-2 space-y-1.5">
+                    {aiRefinementSummary.counts.buckets.slice(0, 3).map(bucket => (
+                      <div key={bucket.bucketStart} className="flex items-center justify-between gap-2 text-[11px]">
+                        <span>{new Date(bucket.bucketStart).toLocaleDateString()}</span>
+                        <span className="text-[color:var(--dos-text-primary)]">
+                          {bucket.promptsSubmitted} prompts / {bucket.proposalsSucceeded} proposals / {bucket.validationFailures + bucket.gatedOffAccess + bucket.previewUnavailableCases} operator-visible issues
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <p className="text-[11px] leading-4">
                 Counts cover the last {aiRefinementSummary?.windowDays ?? 7} days and exclude raw prompt text, filter values, and sensitive field details.
               </p>

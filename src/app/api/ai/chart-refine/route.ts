@@ -11,7 +11,7 @@ import {
   serializeGovernedAiChartContext,
   validateChartAiPatchAgainstAllowlist,
 } from '@/lib/ai/chart-ai-contract'
-import { resolveAiChartRefinementGate } from '@/lib/ai/chart-refinement-gate'
+import { resolveAiChartRefinementGateWithDb } from '@/lib/ai/chart-refinement-gate'
 import {
   buildAiChartRefinementEventMetadata,
   logAiChartRefinementMetric,
@@ -79,7 +79,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ patch: null, chart: null, validation: null, error: access.error }, { status: access.status })
     }
 
-    const gate = resolveAiChartRefinementGate({
+    const gate = await resolveAiChartRefinementGateWithDb({
+      supabase: auth.supabase,
       tenantId: access.tenantId,
       projectId: access.projectId,
       userId: auth.userId,

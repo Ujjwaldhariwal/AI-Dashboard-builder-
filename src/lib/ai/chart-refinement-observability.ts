@@ -103,6 +103,26 @@ export interface AiChartRefinementMetricRow {
   created_at?: string | null
 }
 
+export interface AiChartRefinementOutcomeSummary {
+  restrictedFieldRequests: number
+  unsupportedSchemaVersions: number
+  modelParseFailures: number
+  validationFailures: number
+  gatedOffAccess: number
+  previewUnavailableCases: number
+}
+
+export interface AiChartRefinementMetricBucket {
+  bucketStart: string
+  totalEvents: number
+  promptsSubmitted: number
+  proposalsSucceeded: number
+  applySuccesses: number
+  validationFailures: number
+  gatedOffAccess: number
+  previewUnavailableCases: number
+}
+
 export interface AiChartRefinementSummary {
   promptsSubmitted: number
   proposalsSucceeded: number
@@ -114,19 +134,36 @@ export interface AiChartRefinementSummary {
   modelParseFailures: number
   gatedOffAccess: number
   lastEventAt: string | null
+  outcomeCategories: AiChartRefinementOutcomeSummary
+  buckets: AiChartRefinementMetricBucket[]
 }
 
-const EMPTY_SUMMARY: AiChartRefinementSummary = {
-  promptsSubmitted: 0,
-  proposalsSucceeded: 0,
-  blockedSensitiveRequests: 0,
-  validationFailures: 0,
-  applySuccesses: 0,
-  previewUnavailableCases: 0,
-  unsupportedSchemaVersions: 0,
-  modelParseFailures: 0,
-  gatedOffAccess: 0,
-  lastEventAt: null,
+function emptyOutcomeSummary(): AiChartRefinementOutcomeSummary {
+  return {
+    restrictedFieldRequests: 0,
+    unsupportedSchemaVersions: 0,
+    modelParseFailures: 0,
+    validationFailures: 0,
+    gatedOffAccess: 0,
+    previewUnavailableCases: 0,
+  }
+}
+
+function emptySummary(): AiChartRefinementSummary {
+  return {
+    promptsSubmitted: 0,
+    proposalsSucceeded: 0,
+    blockedSensitiveRequests: 0,
+    validationFailures: 0,
+    applySuccesses: 0,
+    previewUnavailableCases: 0,
+    unsupportedSchemaVersions: 0,
+    modelParseFailures: 0,
+    gatedOffAccess: 0,
+    lastEventAt: null,
+    outcomeCategories: emptyOutcomeSummary(),
+    buckets: [],
+  }
 }
 
 function eventTypeFromMetricRow(row: AiChartRefinementMetricRow): AiChartRefinementEventType | null {
@@ -139,8 +176,34 @@ function eventTypeFromMetricRow(row: AiChartRefinementMetricRow): AiChartRefinem
   return suffix ? suffix as AiChartRefinementEventType : null
 }
 
+function bucketForMetricRow(row: AiChartRefinementMetricRow, buckets: Map<string, AiChartRefinementMetricBucket>) {
+  if (!row.created_at) return null
+  const createdAt = new Date(row.created_at)
+  if (Number.isNaN(createdAt.getTime())) return null
+  const bucketStart = new Date(Date.UTC(
+    createdAt.getUTCFullYear(),
+    createdAt.getUTCMonth(),
+    createdAt.getUTCDate(),
+  )).toISOString()
+  const existing = buckets.get(bucketStart)
+  if (existing) return existing
+  const bucket = {
+    bucketStart,
+    totalEvents: 0,
+    promptsSubmitted: 0,
+    proposalsSucceeded: 0,
+    applySuccesses: 0,
+    validationFailures: 0,
+    gatedOffAccess: 0,
+    previewUnavailableCases: 0,
+  }
+  buckets.set(bucketStart, bucket)
+  return bucket
+}
+
 export function summarizeAiChartRefinementMetrics(rows: AiChartRefinementMetricRow[]): AiChartRefinementSummary {
-  const summary = { ...EMPTY_SUMMARY }
+  const summary = emptySummary()
+  const buckets = new Map<string, AiChartRefinementMetricBucket>()
 
   for (const row of rows) {
     const eventType = eventTypeFromMetricRow(row)
@@ -148,6 +211,7 @@ export function summarizeAiChartRefinementMetrics(rows: AiChartRefinementMetricR
     const category = eventType
       ? classifyAiChartRefinementFailureCategory({ eventType, errorCode })
       : null
+    const bucket = bucketForMetricRow(row, buckets)
 
     if (eventType === 'prompt_submitted') summary.promptsSubmitted += 1
     if (eventType === 'proposal_success') summary.proposalsSucceeded += 1
@@ -159,10 +223,31 @@ export function summarizeAiChartRefinementMetrics(rows: AiChartRefinementMetricR
     if (eventType === 'blocked_sensitive_request' || category === 'restricted_field_request') summary.blockedSensitiveRequests += 1
     if (eventType === 'patch_validation_failure' || category === 'validation_failure') summary.validationFailures += 1
 
+    if (category === 'restricted_field_request') summary.outcomeCategories.restrictedFieldRequests += 1
+    if (category === 'unsupported_schema_version') summary.outcomeCategories.unsupportedSchemaVersions += 1
+    if (category === 'model_parse_failure') summary.outcomeCategories.modelParseFailures += 1
+    if (category === 'validation_failure') summary.outcomeCategories.validationFailures += 1
+    if (category === 'gated_off_access') summary.outcomeCategories.gatedOffAccess += 1
+    if (category === 'preview_unavailable') summary.outcomeCategories.previewUnavailableCases += 1
+
+    if (bucket) {
+      bucket.totalEvents += 1
+      if (eventType === 'prompt_submitted') bucket.promptsSubmitted += 1
+      if (eventType === 'proposal_success') bucket.proposalsSucceeded += 1
+      if (eventType === 'apply_success') bucket.applySuccesses += 1
+      if (eventType === 'patch_validation_failure' || category === 'validation_failure') bucket.validationFailures += 1
+      if (eventType === 'gated_off_access' || category === 'gated_off_access') bucket.gatedOffAccess += 1
+      if (eventType === 'preview_render_unavailable' || category === 'preview_unavailable') bucket.previewUnavailableCases += 1
+    }
+
     if (row.created_at && (!summary.lastEventAt || row.created_at > summary.lastEventAt)) {
       summary.lastEventAt = row.created_at
     }
   }
+
+  summary.buckets = Array.from(buckets.values())
+    .sort((a, b) => b.bucketStart.localeCompare(a.bucketStart))
+    .slice(0, 14)
 
   return summary
 }

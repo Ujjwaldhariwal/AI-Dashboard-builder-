@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { aiChartRefinementGateResponse, resolveAiChartRefinementGate } from '@/lib/ai/chart-refinement-gate'
+import { aiChartRefinementGateResponse, resolveAiChartRefinementGateWithDb } from '@/lib/ai/chart-refinement-gate'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
@@ -26,7 +26,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ enabled: false, source: 'off', reason: access.error }, { status: access.status })
     }
 
-    const gate = resolveAiChartRefinementGate({
+    const gate = await resolveAiChartRefinementGateWithDb({
+      supabase: auth.supabase,
       tenantId: access.tenantId,
       projectId: access.projectId,
       userId: auth.userId,

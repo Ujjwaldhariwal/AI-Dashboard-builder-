@@ -10,9 +10,11 @@ import {
   validateChartAiPatchAgainstAllowlist,
 } from '../src/lib/ai/chart-ai-contract'
 import {
+  buildAiChartRefinementRolloutAuditMetadata,
   createEnvAiChartRefinementGatePolicy,
   inspectAiChartRefinementGatePolicy,
   resolveAiChartRefinementGate,
+  resolveAiChartRefinementGateFromDbPolicies,
 } from '../src/lib/ai/chart-refinement-gate'
 import {
   buildAiChartRefinementEventMetadata,
@@ -27,6 +29,7 @@ import {
   describeAiChartDiff,
   type AiChartContext,
 } from '../src/components/platform/ai-chart-refinement-dialog'
+import { aiRolloutPolicyStateLabel } from '../src/components/platform/dashboard-charts-admin-panel'
 import {
   classifyFieldForAi,
   isFieldAllowedForAiPreview,
@@ -403,6 +406,131 @@ test.describe('AI data access guardrails', () => {
     })
   })
 
+  test('resolves DB-backed rollout policies before env fallback with safe reason codes', () => {
+    const fallback = createEnvAiChartRefinementGatePolicy({
+      DASHBOARDOS_AI_CHART_REFINEMENT_TENANT_IDS: currentChart.tenantId,
+    })
+    const disabledProjectPolicy = {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      scopeType: 'project' as const,
+      scopeId: currentChart.projectId,
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: null,
+      enabled: false,
+      reason: 'customer_name = Pune should not appear in gate reason',
+      createdBy: null,
+      updatedBy: null,
+      createdAt: '2026-07-08T10:00:00.000Z',
+      updatedAt: '2026-07-08T10:00:00.000Z',
+    }
+
+    const projectDisabled = resolveAiChartRefinementGateFromDbPolicies({
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: '99999999-9999-4999-8999-999999999999',
+    }, [disabledProjectPolicy], fallback)
+
+    expect(projectDisabled).toMatchObject({
+      enabled: false,
+      source: 'db_project_policy',
+      reasonCode: 'db_project_disabled',
+      policy: 'database',
+    })
+    expect(projectDisabled.reason).not.toContain('customer_name')
+
+    const userEnabled = resolveAiChartRefinementGateFromDbPolicies({
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: '99999999-9999-4999-8999-999999999999',
+    }, [
+      disabledProjectPolicy,
+      {
+        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        scopeType: 'user' as const,
+        scopeId: '99999999-9999-4999-8999-999999999999',
+        tenantId: currentChart.tenantId,
+        projectId: currentChart.projectId,
+        userId: '99999999-9999-4999-8999-999999999999',
+        enabled: true,
+        reason: null,
+        createdBy: null,
+        updatedBy: null,
+        createdAt: '2026-07-08T10:01:00.000Z',
+        updatedAt: '2026-07-08T10:01:00.000Z',
+      },
+    ], fallback)
+
+    expect(userEnabled).toMatchObject({
+      enabled: true,
+      source: 'db_user_policy',
+      reasonCode: 'db_user_enabled',
+      policy: 'database',
+    })
+  })
+
+  test('falls back to env allowlists when no DB rollout policy matches', () => {
+    const fallback = createEnvAiChartRefinementGatePolicy({
+      DASHBOARDOS_AI_CHART_REFINEMENT_PROJECT_IDS: currentChart.projectId,
+    })
+
+    expect(resolveAiChartRefinementGateFromDbPolicies({
+      tenantId: currentChart.tenantId,
+      projectId: currentChart.projectId,
+      userId: '99999999-9999-4999-8999-999999999999',
+    }, [], fallback)).toMatchObject({
+      enabled: true,
+      source: 'project_allowlist',
+      reasonCode: 'project_allowlisted',
+      policy: 'env',
+    })
+  })
+
+  test('builds privacy-safe audit metadata for rollout policy changes', () => {
+    const previousPolicy = {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      scopeType: 'tenant' as const,
+      scopeId: currentChart.tenantId,
+      tenantId: currentChart.tenantId,
+      projectId: null,
+      userId: null,
+      enabled: false,
+      reason: 'customer_name filter value Pune',
+      createdBy: null,
+      updatedBy: null,
+      createdAt: '2026-07-08T10:00:00.000Z',
+      updatedAt: '2026-07-08T10:00:00.000Z',
+    }
+    const nextPolicy = { ...previousPolicy, enabled: true, updatedAt: '2026-07-08T10:05:00.000Z' }
+
+    const metadata = buildAiChartRefinementRolloutAuditMetadata({
+      scopeType: 'tenant',
+      scopeId: currentChart.tenantId,
+      previousPolicy,
+      nextPolicy,
+    })
+
+    expect(metadata).toMatchObject({
+      scopeType: 'tenant',
+      scopeId: currentChart.tenantId,
+      previous: { enabled: false, notePresent: true },
+      next: { enabled: true, notePresent: true },
+    })
+    expect(JSON.stringify(metadata)).not.toContain('customer_name')
+    expect(JSON.stringify(metadata)).not.toContain('Pune')
+  })
+
+  test('renders safe rollout UI state labels without policy note content', () => {
+    const unsafePolicy = {
+      enabled: false,
+      reason: 'customer_name = Pune',
+    }
+
+    expect(aiRolloutPolicyStateLabel(null)).toBe('Env fallback')
+    expect(aiRolloutPolicyStateLabel(unsafePolicy)).toBe('Disabled override')
+    expect(aiRolloutPolicyStateLabel({ enabled: true })).toBe('Enabled override')
+  })
+
   test('accepts current AI patch schema version and rejects explicit mismatches', () => {
     const current = parseChartAiPatchPayload({
       schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
@@ -482,7 +610,25 @@ test.describe('AI data access guardrails', () => {
       modelParseFailures: 1,
       gatedOffAccess: 1,
       lastEventAt: '2026-07-08T10:08:00.000Z',
+      outcomeCategories: {
+        restrictedFieldRequests: 1,
+        unsupportedSchemaVersions: 1,
+        modelParseFailures: 1,
+        validationFailures: 1,
+        gatedOffAccess: 1,
+        previewUnavailableCases: 1,
+      },
     })
+    expect(summary.buckets).toEqual([expect.objectContaining({
+      bucketStart: '2026-07-08T00:00:00.000Z',
+      totalEvents: 9,
+      promptsSubmitted: 1,
+      proposalsSucceeded: 1,
+      applySuccesses: 1,
+      validationFailures: 1,
+      gatedOffAccess: 1,
+      previewUnavailableCases: 1,
+    })])
     expect(JSON.stringify(summary)).not.toContain('customer name')
   })
 

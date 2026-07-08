@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { aiChartRefinementGateResponse, resolveAiChartRefinementGate } from '@/lib/ai/chart-refinement-gate'
+import { aiChartRefinementGateResponse, resolveAiChartRefinementGateWithDb } from '@/lib/ai/chart-refinement-gate'
 import { summarizeAiChartRefinementMetrics } from '@/lib/ai/chart-refinement-observability'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -44,7 +44,8 @@ export async function GET(req: NextRequest) {
 
     if (error) return NextResponse.json({ summary: null, error: error.message }, { status: 500 })
 
-    const gate = resolveAiChartRefinementGate({
+    const gate = await resolveAiChartRefinementGateWithDb({
+      supabase: auth.supabase,
       tenantId,
       projectId,
       userId: auth.userId,

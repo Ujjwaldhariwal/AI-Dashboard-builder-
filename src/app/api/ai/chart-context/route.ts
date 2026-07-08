@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { buildGovernedAiChartContext, serializeGovernedAiChartContext } from '@/lib/ai/chart-ai-contract'
-import { resolveAiChartRefinementGate } from '@/lib/ai/chart-refinement-gate'
+import { resolveAiChartRefinementGateWithDb } from '@/lib/ai/chart-refinement-gate'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (parsed.data.purpose === 'chart_refinement') {
-      const gate = resolveAiChartRefinementGate({
+      const gate = await resolveAiChartRefinementGateWithDb({
+        supabase: auth.supabase,
         tenantId: access.tenantId,
         projectId: access.projectId,
         userId: auth.userId,
