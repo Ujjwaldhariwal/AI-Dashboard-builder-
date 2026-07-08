@@ -9,6 +9,7 @@ import {
 } from '../src/lib/ai/chart-ai-contract'
 import {
   buildAiChartExamplePrompts,
+  canRenderAiChartPreview,
   describeAiChartDiff,
   type AiChartContext,
 } from '../src/components/platform/ai-chart-refinement-dialog'
@@ -249,5 +250,66 @@ test.describe('AI data access guardrails', () => {
       { label: 'Title', before: 'Billing by City', after: 'Monthly Billing Trend' },
       { label: 'Chart type', before: 'bar', after: 'line' },
     ]))
+  })
+
+  test('validates narrow AI filter patches against allowed fields only', () => {
+    const safePatch = ChartAiPatchSchema.parse({
+      encoding: {
+        filters: [{ fieldId: safeCityField.id, operator: 'eq', value: 'Pune' }],
+      },
+    })
+    const safeResult = validateChartAiPatchAgainstAllowlist({
+      currentChart,
+      patch: safePatch,
+      allowedFieldIds: new Set([safeCityField.id]),
+      allowedMetricIds: new Set([billMetric.id]),
+      fields: [safeCityField],
+      metrics: [billMetric],
+    })
+    expect(safeResult.ok).toBe(true)
+    expect(applyChartAiPatch(currentChart, safePatch).encoding.filters).toEqual([
+      { fieldId: safeCityField.id, operator: 'eq', value: 'Pune' },
+    ])
+
+    const blockedPatch = ChartAiPatchSchema.parse({
+      encoding: {
+        filters: [{ fieldId: piiNameField.id, operator: 'contains', value: 'A' }],
+      },
+    })
+    const blockedResult = validateChartAiPatchAgainstAllowlist({
+      currentChart,
+      patch: blockedPatch,
+      allowedFieldIds: new Set([safeCityField.id]),
+      allowedMetricIds: new Set([billMetric.id]),
+      fields: [safeCityField],
+      metrics: [billMetric],
+    })
+    expect(blockedResult.ok).toBe(false)
+  })
+
+  test('identifies when rendered AI preview can use sanitized preview rows', () => {
+    const context: AiChartContext = {
+      contractVersion: 'dashboardos.ai.chart_context.v1',
+      dataset: { id: currentChart.datasetId, name: 'Electricity Operations', status: 'published' },
+      chart: currentChart,
+      allowedFields: [sanitizedFieldDescriptor(safeCityField)],
+      allowedMetrics: [sanitizedMetricDescriptor(billMetric, billAmountField)],
+      preview: {
+        rows: [
+          { City: 'Pune', 'Total Bill Amount': 1200 },
+          { City: 'Mumbai', 'Total Bill Amount': 1800 },
+        ],
+        fields: ['City', 'Total Bill Amount'],
+        rowCount: 2,
+        elapsedMs: 12,
+        warnings: [],
+      },
+    }
+
+    expect(canRenderAiChartPreview(currentChart, context)).toBe(true)
+    expect(canRenderAiChartPreview({
+      ...currentChart,
+      templateId: 'table-grid',
+    }, context)).toBe(false)
   })
 })

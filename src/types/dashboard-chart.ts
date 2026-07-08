@@ -6,6 +6,20 @@ export type DashboardChartValidationState = 'unknown' | 'valid' | 'warning' | 'i
 
 export type DashboardChartSize = 'compact' | 'standard' | 'wide' | 'full'
 
+export type DashboardChartFilterOperator =
+  | 'eq'
+  | 'not_eq'
+  | 'in'
+  | 'contains'
+  | 'gte'
+  | 'lte'
+
+export interface DashboardChartFilter {
+  fieldId: string
+  operator: DashboardChartFilterOperator
+  value: string | number | boolean | Array<string | number | boolean>
+}
+
 export interface DashboardChartEncoding {
   xAxisFieldId?: string
   yMetricIds: string[]
@@ -19,6 +33,7 @@ export interface DashboardChartEncoding {
     direction: 'asc' | 'desc'
   } | null
   limit?: number | null
+  filters?: DashboardChartFilter[]
 }
 
 export interface DashboardChartPresentation {

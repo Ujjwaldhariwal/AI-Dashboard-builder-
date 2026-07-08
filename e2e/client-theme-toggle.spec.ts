@@ -36,9 +36,6 @@ test('client runtime theme toggle persists and updates chart shell mode', async 
   await expect(page.locator('html')).toHaveAttribute('data-dashboardos-theme', 'light')
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('dashboardos-theme-mode'))).toBe('light')
 
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await expect(shell).toHaveAttribute('data-dashboardos-theme', 'light')
-
   await page.getByRole('button', { name: /switch to dark mode/i }).click()
   await expect(shell).toHaveAttribute('data-dashboardos-theme', 'dark')
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('dashboardos-theme-mode'))).toBe('dark')

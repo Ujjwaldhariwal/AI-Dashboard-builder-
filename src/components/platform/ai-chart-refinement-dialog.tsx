@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Bot, CheckCircle2, Loader2, Sparkles, TriangleAlert, XCircle } from 'lucide-react'
+import { Bot, CheckCircle2, Eye, Loader2, SlidersHorizontal, Sparkles, TriangleAlert, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -46,6 +46,13 @@ export interface AiChartContext {
   allowedMetrics: AiMetricDescriptor[]
   blockedFieldCount?: number
   blockedMetricCount?: number
+  preview?: {
+    rows: Record<string, unknown>[]
+    fields: string[]
+    rowCount: number
+    elapsedMs: number
+    warnings: string[]
+  } | null
 }
 
 interface RefineResponse {
@@ -55,6 +62,7 @@ interface RefineResponse {
     state: string
     issues: Array<{ severity: string; code: string; message: string }>
   } | null
+  errorCode?: 'restricted_field_request' | 'unsupported_chart_edit' | 'invalid_model_patch' | 'chart_validation_failed'
   error?: string
 }
 
@@ -77,6 +85,22 @@ function errorToText(value: unknown) {
   return 'Request failed'
 }
 
+function refinementErrorMessage(payload: RefineResponse | { error?: unknown; errorCode?: unknown } | null) {
+  if (payload?.errorCode === 'restricted_field_request') {
+    return 'That request uses data that is restricted from AI refinement. Try a governed dimension or aggregated metric instead.'
+  }
+  if (payload?.errorCode === 'invalid_model_patch') {
+    return 'The model returned a patch that did not match the approved chart schema. The current chart was left unchanged.'
+  }
+  if (payload?.errorCode === 'chart_validation_failed') {
+    return 'The proposed edit did not pass chart validation. Try a smaller change or pick one of the suggested actions.'
+  }
+  if (payload?.errorCode === 'unsupported_chart_edit') {
+    return 'That edit is not supported by the governed chart refinement workflow yet.'
+  }
+  return errorToText(payload)
+}
+
 function labelById(chart: DashboardChartConfig, context: AiChartContext | null) {
   const labels = new Map<string, string>()
   for (const field of context?.allowedFields ?? []) labels.set(field.id, field.label)
@@ -88,6 +112,14 @@ function labelById(chart: DashboardChartConfig, context: AiChartContext | null) 
 function metricLabels(ids: string[] | undefined, labels: Map<string, string>) {
   const values = (ids ?? []).map(id => labels.get(id) ?? id)
   return values.length ? values.join(', ') : 'None'
+}
+
+function filterLabels(filters: DashboardChartConfig['encoding']['filters'], labels: Map<string, string>) {
+  if (!filters?.length) return 'None'
+  return filters.map(filter => {
+    const value = Array.isArray(filter.value) ? filter.value.join(', ') : String(filter.value)
+    return `${labels.get(filter.fieldId) ?? filter.fieldId} ${filter.operator} ${value}`
+  }).join('; ')
 }
 
 export function describeAiChartDiff({
@@ -129,6 +161,10 @@ export function describeAiChartDiff({
     })
   }
 
+  const beforeFilters = filterLabels(before.encoding.filters, labels)
+  const afterFilters = filterLabels(after.encoding.filters, labels)
+  if (beforeFilters !== afterFilters) changes.push({ label: 'Filters', before: beforeFilters, after: afterFilters })
+
   if (before.presentation.size !== after.presentation.size) {
     changes.push({ label: 'Card size', before: before.presentation.size, after: after.presentation.size })
   }
@@ -145,12 +181,128 @@ export function buildAiChartExamplePrompts(chart: DashboardChartConfig, context:
   const secondMetric = metrics[1]
 
   return [
-    chart.templateId !== 'line' ? 'Make this a line chart' : 'Make this a bar chart',
+    chart.templateId !== 'line' && dateField ? 'Make this a line chart' : 'Make this a bar chart',
     cityField ? `Group by ${cityField.label}` : fields[0] ? `Group by ${fields[0].label}` : '',
     firstMetric && secondMetric ? `Compare ${firstMetric.label} vs ${secondMetric.label}` : firstMetric ? `Focus on ${firstMetric.label}` : '',
-    dateField ? `Show only last 6 ${dateField.label.toLowerCase().includes('month') ? 'months' : 'periods'}` : 'Show only the top 10 results',
+    'Sort by highest value and show the top 10',
+    dateField ? `Filter ${dateField.label} to the latest period` : '',
     `Rename this to ${dateField ? 'Monthly Billing Trend' : 'Executive Operations Trend'}`,
-  ].filter(Boolean).slice(0, 5)
+  ].filter(Boolean).slice(0, 6)
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/,/g, '').trim())
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
+}
+
+function previewBindings(chart: DashboardChartConfig, context: AiChartContext | null) {
+  const labels = labelById(chart, context)
+  const xField = chart.encoding.xAxisFieldId ? labels.get(chart.encoding.xAxisFieldId) ?? '' : ''
+  const yField = chart.encoding.yMetricIds[0] ? labels.get(chart.encoding.yMetricIds[0]) ?? '' : ''
+  return { xField, yField }
+}
+
+export function canRenderAiChartPreview(chart: DashboardChartConfig, context: AiChartContext | null) {
+  const rows = context?.preview?.rows ?? []
+  const { xField, yField } = previewBindings(chart, context)
+  return rows.length > 0
+    && Boolean(xField)
+    && Boolean(yField)
+    && rows.some(row => Object.prototype.hasOwnProperty.call(row, xField) && Object.prototype.hasOwnProperty.call(row, yField))
+    && ['bar', 'horizontal-bar', 'line', 'trend-composed', 'pie', 'ring-gauge'].includes(chart.templateId)
+}
+
+function MiniChartPreview({ chart, context }: { chart: DashboardChartConfig; context: AiChartContext | null }) {
+  const rows = (context?.preview?.rows ?? []).slice(0, chart.encoding.limit ?? 8)
+  const { xField, yField } = previewBindings(chart, context)
+  const colors = [
+    'var(--dos-chart-info)',
+    'var(--dos-chart-success)',
+    'var(--dos-chart-warning)',
+    'var(--dos-chart-risk)',
+    'var(--dos-accent-primary)',
+  ]
+
+  if (!canRenderAiChartPreview(chart, context)) {
+    return (
+      <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-6 text-center">
+        <Eye className="h-5 w-5 text-[color:var(--dos-text-muted)]" />
+        <p className="mt-3 text-sm font-semibold text-[color:var(--dos-text-primary)]">Visual preview unavailable</p>
+        <p className="mt-1 max-w-sm text-xs leading-5 text-[color:var(--dos-text-muted)]">
+          This patch is still validated, but the sanitized preview rows do not include the required axis/metric labels for a rendered preview.
+        </p>
+      </div>
+    )
+  }
+
+  const values = rows.map(row => toNumber(row[yField]))
+  const max = Math.max(...values, 1)
+
+  if (chart.templateId === 'line' || chart.templateId === 'trend-composed') {
+    const points = values.map((value, index) => {
+      const x = rows.length <= 1 ? 10 : 10 + (index / (rows.length - 1)) * 280
+      const y = 130 - (value / max) * 105
+      return `${x},${y}`
+    }).join(' ')
+    return (
+      <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
+        <svg viewBox="0 0 300 150" className="h-56 w-full overflow-visible">
+          <polyline points={points} fill="none" stroke={colors[0]} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          {values.map((value, index) => {
+            const x = rows.length <= 1 ? 10 : 10 + (index / (rows.length - 1)) * 280
+            const y = 130 - (value / max) * 105
+            return <circle key={`${x}-${y}`} cx={x} cy={y} r="4" fill={colors[1]} />
+          })}
+        </svg>
+        <p className="text-xs text-[color:var(--dos-text-muted)]">{xField} / {yField}</p>
+      </div>
+    )
+  }
+
+  if (chart.templateId === 'pie' || chart.templateId === 'ring-gauge') {
+    const total = values.reduce((sum, value) => sum + value, 0) || 1
+    return (
+      <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
+        <div className="grid gap-3">
+          {rows.slice(0, 6).map((row, index) => {
+            const pct = Math.round((toNumber(row[yField]) / total) * 100)
+            return (
+              <div key={`${String(row[xField])}-${index}`} className="flex items-center gap-3">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+                <span className="min-w-0 flex-1 truncate text-xs text-[color:var(--dos-text-secondary)]">{String(row[xField] ?? `#${index + 1}`)}</span>
+                <span className="text-xs font-semibold text-[color:var(--dos-text-primary)]">{pct}%</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
+      <div className="space-y-3">
+        {rows.slice(0, 8).map((row, index) => {
+          const value = toNumber(row[yField])
+          const width = Math.max(4, Math.round((value / max) * 100))
+          return (
+            <div key={`${String(row[xField])}-${index}`} className={chart.templateId === 'horizontal-bar' ? 'space-y-1' : 'grid grid-cols-[96px_minmax(0,1fr)] items-center gap-3'}>
+              <span className="truncate text-xs text-[color:var(--dos-text-muted)]">{String(row[xField] ?? `#${index + 1}`)}</span>
+              <div className="h-7 overflow-hidden rounded-md bg-[var(--dos-surface-muted)]">
+                <div className="flex h-full items-center justify-end rounded-md px-2 text-[10px] font-semibold text-white" style={{ width: `${width}%`, backgroundColor: colors[index % colors.length] }}>
+                  {value.toLocaleString('en')}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export function AiChartRefinementDialog({
@@ -171,6 +323,16 @@ export function AiChartRefinementDialog({
   const [error, setError] = useState('')
 
   const examples = useMemo(() => buildAiChartExamplePrompts(chart, context), [chart, context])
+  const quickActions = useMemo(() => {
+    const prompts = buildAiChartExamplePrompts(chart, context)
+    return [
+      { label: 'Rename', prompt: prompts.find(item => item.toLowerCase().startsWith('rename')) ?? `Rename this to ${chart.name}` },
+      { label: 'Type', prompt: prompts.find(item => item.toLowerCase().includes('chart')) ?? 'Make this a bar chart' },
+      { label: 'Group', prompt: prompts.find(item => item.toLowerCase().startsWith('group')) ?? '' },
+      { label: 'Compare', prompt: prompts.find(item => item.toLowerCase().startsWith('compare')) ?? '' },
+      { label: 'Sort/Limit', prompt: prompts.find(item => item.toLowerCase().includes('top 10')) ?? 'Sort by highest value and show the top 10' },
+    ].filter(action => action.prompt)
+  }, [chart, context])
   const diff = useMemo(() => (
     result?.chart ? describeAiChartDiff({ before: chart, after: result.chart, context }) : []
   ), [chart, context, result?.chart])
@@ -232,7 +394,10 @@ export function AiChartRefinementDialog({
         }),
       })
       const payload = await response.json().catch(() => null) as RefineResponse | null
-      if (!response.ok || !payload) throw new Error(errorToText(payload))
+      if (!response.ok || !payload) {
+        setError(refinementErrorMessage(payload))
+        return
+      }
       setResult(payload)
     } catch (caught) {
       setError(errorToText(caught))
@@ -259,7 +424,10 @@ export function AiChartRefinementDialog({
         }),
       })
       const payload = await response.json().catch(() => null) as RefineResponse | null
-      if (!response.ok || !payload?.chart) throw new Error(errorToText(payload))
+      if (!response.ok || !payload?.chart) {
+        setError(refinementErrorMessage(payload))
+        return
+      }
       onApplied(payload.chart)
       setResult(payload)
       toast.success('AI refinement applied')
@@ -313,7 +481,7 @@ export function AiChartRefinementDialog({
           </div>
         </DialogHeader>
 
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
           <section className="space-y-5 p-6">
             <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -340,6 +508,19 @@ export function AiChartRefinementDialog({
                 className="min-h-28 border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)] placeholder:text-[color:var(--dos-text-muted)]"
               />
               <div className="flex flex-wrap gap-2">
+                {quickActions.map(action => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    onClick={() => setPrompt(action.prompt)}
+                    className="inline-flex items-center gap-1 rounded-full border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] px-3 py-1 text-xs font-medium text-[color:var(--dos-accent-primary)] transition hover:bg-[var(--dos-surface)]"
+                  >
+                    <SlidersHorizontal className="h-3 w-3" />
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
                 {examples.map(example => (
                   <button
                     key={example}
@@ -361,37 +542,65 @@ export function AiChartRefinementDialog({
             ) : null}
 
             {result?.chart ? (
-              <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
-                <div className="flex items-center justify-between gap-3">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+                <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-chart-info)]">Before / After</p>
+                      <h3 className="mt-1 text-sm font-semibold">Structured patch preview</h3>
+                    </div>
+                    <Badge variant="outline" className={result.validation?.state === 'valid'
+                      ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]'
+                      : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'}
+                    >
+                      {result.validation?.state ?? 'validated'}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {diff.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-[color:var(--dos-border-soft)] p-4 text-sm text-[color:var(--dos-text-muted)]">
+                        The proposed patch is valid but does not change visible chart settings.
+                      </div>
+                    ) : diff.map(change => (
+                      <div key={change.label} className="grid gap-2 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-3 text-sm md:grid-cols-[110px_minmax(0,1fr)]">
+                        <span className="font-semibold text-[color:var(--dos-text-primary)]">{change.label}</span>
+                        <div className="grid gap-2">
+                          <span className="rounded-md bg-[var(--dos-surface-muted)] px-2 py-1 text-[color:var(--dos-text-muted)]">{change.before}</span>
+                          <span className="rounded-md bg-[var(--dos-success-soft)] px-2 py-1 text-[color:var(--dos-chart-success)]">{change.after}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {result.validation?.issues?.length ? (
+                    <div className="mt-3 rounded-lg border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] p-3 text-xs text-[color:var(--dos-chart-warning)]">
+                      {result.validation.issues[0]?.message}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-chart-success)]">Rendered preview</p>
+                      <h3 className="mt-1 text-sm font-semibold">{result.chart.name}</h3>
+                    </div>
+                    <Eye className="h-4 w-4 text-[color:var(--dos-text-muted)]" />
+                  </div>
+                  <MiniChartPreview chart={result.chart} context={context} />
+                </div>
+              </div>
+            ) : !generating ? (
+              <div className="rounded-xl border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)]">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-chart-info)]">Before / After</p>
-                    <h3 className="mt-1 text-sm font-semibold">Structured patch preview</h3>
+                    <h3 className="text-sm font-semibold text-[color:var(--dos-text-primary)]">Describe a safe chart edit</h3>
+                    <p className="mt-1 max-w-2xl text-xs leading-5 text-[color:var(--dos-text-muted)]">
+                      Try a rename, compatible type change, metric comparison, grouping swap, sort, row limit, or a narrow literal filter. The patch will be validated before anything changes.
+                    </p>
                   </div>
-                  <Badge variant="outline" className={result.validation?.state === 'valid'
-                    ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]'
-                    : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'}
-                  >
-                    {result.validation?.state ?? 'validated'}
-                  </Badge>
                 </div>
-                <div className="mt-4 space-y-2">
-                  {diff.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-[color:var(--dos-border-soft)] p-4 text-sm text-[color:var(--dos-text-muted)]">
-                      The proposed patch is valid but does not change visible chart settings.
-                    </div>
-                  ) : diff.map(change => (
-                    <div key={change.label} className="grid gap-2 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-3 text-sm md:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)]">
-                      <span className="font-semibold text-[color:var(--dos-text-primary)]">{change.label}</span>
-                      <span className="rounded-md bg-[var(--dos-surface-muted)] px-2 py-1 text-[color:var(--dos-text-muted)]">{change.before}</span>
-                      <span className="rounded-md bg-[var(--dos-success-soft)] px-2 py-1 text-[color:var(--dos-chart-success)]">{change.after}</span>
-                    </div>
-                  ))}
-                </div>
-                {result.validation?.issues?.length ? (
-                  <div className="mt-3 rounded-lg border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] p-3 text-xs text-[color:var(--dos-chart-warning)]">
-                    {result.validation.issues[0]?.message}
-                  </div>
-                ) : null}
               </div>
             ) : null}
           </section>

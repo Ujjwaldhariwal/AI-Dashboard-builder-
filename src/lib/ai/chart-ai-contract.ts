@@ -32,6 +32,16 @@ export const ChartAiPatchSchema = z.object({
       direction: z.enum(['asc', 'desc']),
     }).nullable().optional(),
     limit: z.number().int().min(1).max(100).nullable().optional(),
+    filters: z.array(z.object({
+      fieldId: z.string().uuid(),
+      operator: z.enum(['eq', 'not_eq', 'in', 'contains', 'gte', 'lte']),
+      value: z.union([
+        z.string().max(120),
+        z.number(),
+        z.boolean(),
+        z.array(z.union([z.string().max(120), z.number(), z.boolean()])).min(1).max(12),
+      ]),
+    }).strict()).max(4).optional(),
   }).strict().optional(),
   presentation: z.object({
     size: z.enum(['compact', 'standard', 'wide', 'full']).optional(),
@@ -150,6 +160,9 @@ function mapChart(row: Record<string, unknown>): DashboardChartConfig {
         ? encoding.sort as DashboardChartEncoding['sort']
         : null,
       limit: typeof encoding.limit === 'number' ? encoding.limit : null,
+      filters: Array.isArray(encoding.filters)
+        ? encoding.filters as DashboardChartEncoding['filters']
+        : [],
     },
     presentation: {
       size: typeof presentation.size === 'string'
@@ -181,6 +194,7 @@ function mergeEncoding(current: DashboardChartEncoding, patch?: ChartAiPatch['en
     colorById: current.colorById ?? {},
     sort: patch.sort === undefined ? current.sort ?? null : patch.sort,
     limit: patch.limit === undefined ? current.limit ?? null : patch.limit,
+    filters: patch.filters ?? current.filters ?? [],
   }
 }
 
@@ -238,6 +252,7 @@ export function validateChartAiPatchAgainstAllowlist({
     nextChart.encoding.xAxisFieldId,
     nextChart.encoding.seriesFieldId,
     nextChart.encoding.sort?.byId,
+    ...(nextChart.encoding.filters ?? []).map(filter => filter.fieldId),
     ...(nextChart.encoding.tooltipFieldIds ?? []),
   ].filter(Boolean) as string[]
   const metricIdsToCheck = [

@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
         patch: null,
         chart: context.chart,
         validation: null,
+        errorCode: 'restricted_field_request',
         error: 'That request mentions a field that is not available to AI because it is classified as sensitive or restricted.',
       }, { status: 422 })
     }
@@ -159,7 +160,10 @@ chartPatch shape:
     "stackMetricIds": ["optional allowed metric uuids"],
     "tooltipFieldIds": ["optional allowed field uuids"],
     "sort": { "byId": "allowed field or metric uuid", "direction": "asc|desc" },
-    "limit": 1
+    "limit": 1,
+    "filters": [
+      { "fieldId": "allowed field uuid", "operator": "eq|not_eq|in|contains|gte|lte", "value": "literal value only" }
+    ]
   },
   "presentation": {
     "size": "compact|standard|wide|full",
@@ -195,7 +199,7 @@ ${JSON.stringify(publicContext, null, 2)}`
           action: 'ai.chart_refine.validation_failed',
           metadata: { reason: 'patch_schema_invalid', issues: patchParse.error.flatten() },
         })
-        return NextResponse.json({ patch: null, chart: context.chart, validation: null, error: 'AI patch failed schema validation' }, { status: 422 })
+        return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: 'invalid_model_patch', error: 'AI patch failed schema validation' }, { status: 422 })
       }
       patch = patchParse.data
     }
@@ -218,7 +222,13 @@ ${JSON.stringify(publicContext, null, 2)}`
         action: 'ai.chart_refine.rejected',
         metadata: { reason: allowed.error, blockedIds: allowed.blockedIds, validation: 'validation' in allowed ? allowed.validation : null },
       })
-      return NextResponse.json({ patch, chart: context.chart, validation: 'validation' in allowed ? allowed.validation : null, error: allowed.error }, { status: 422 })
+      return NextResponse.json({
+        patch,
+        chart: context.chart,
+        validation: 'validation' in allowed ? allowed.validation : null,
+        errorCode: allowed.blockedIds.length > 0 ? 'restricted_field_request' : 'chart_validation_failed',
+        error: allowed.error,
+      }, { status: 422 })
     }
 
     if (!parsed.data.apply) {
