@@ -127,6 +127,12 @@ function aiRolloutPolicyBadgeClass(policy: Pick<AiRolloutPolicyState, 'enabled'>
     : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'
 }
 
+function aiGateDecisionCopy(gate: AiRefinementGateState | null) {
+  if (gate?.reason) return gate.reason
+  if (gate?.reasonCode) return `Reason code: ${gate.reasonCode}`
+  return 'Rollout decision is unavailable. Existing server gates still apply.'
+}
+
 function errorToText(value: unknown) {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object') {
@@ -509,8 +515,8 @@ export function DashboardChartsAdminPanel() {
         </Badge>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]" data-testid="dashboard-chart-composer">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-slate-100">
               <SlidersHorizontal className="h-4 w-4 text-[color:var(--dos-chart-warning)]" />
@@ -690,10 +696,10 @@ export function DashboardChartsAdminPanel() {
         </Card>
 
         <div className="space-y-4">
-          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
+          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[color:var(--dos-text-primary)]">
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
-                <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+                <CardTitle className="flex items-center gap-2 text-base text-[color:var(--dos-text-primary)]">
                   <ShieldCheck className="h-4 w-4 text-[color:var(--dos-chart-success)]" />
                   Guardrails
                 </CardTitle>
@@ -747,7 +753,7 @@ export function DashboardChartsAdminPanel() {
             </CardContent>
           </Card>
 
-          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
+          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[color:var(--dos-text-primary)]" data-testid="ai-rollout-control">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base text-[color:var(--dos-text-primary)]">
                 <SlidersHorizontal className="h-4 w-4 text-[color:var(--dos-chart-info)]" />
@@ -765,11 +771,19 @@ export function DashboardChartsAdminPanel() {
                     {aiRefinementGate?.enabled ? 'Enabled' : 'Gated'}
                   </Badge>
                 </div>
-                <p className="mt-1 text-[11px]">{aiRefinementGate?.reasonCode ?? 'checking'}</p>
+                <p className="mt-1 text-[11px] leading-4">{aiGateDecisionCopy(aiRefinementGate)}</p>
+                {aiRefinementGate?.reasonCode ? (
+                  <p className="mt-1 font-mono text-[10px] text-[color:var(--dos-text-muted)]">{aiRefinementGate.reasonCode}</p>
+                ) : null}
               </div>
               {aiRefinementRollout?.storage.available === false ? (
                 <div className="rounded-md border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] p-2 text-[11px] text-[color:var(--dos-chart-warning)]">
                   DB policy store unavailable; env allowlists are still the fallback.
+                </div>
+              ) : null}
+              {demoMode ? (
+                <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-2 text-[11px] leading-4">
+                  Rollout changes are disabled in browser demo mode. Real project scopes use the admin-managed policy controls here.
                 </div>
               ) : null}
               <div className="space-y-2">
@@ -833,7 +847,7 @@ export function DashboardChartsAdminPanel() {
             </CardContent>
           </Card>
 
-          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
+          <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[color:var(--dos-text-primary)]" data-testid="ai-refinement-ops">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base text-[color:var(--dos-text-primary)]">
                 <Activity className="h-4 w-4 text-[color:var(--dos-chart-info)]" />

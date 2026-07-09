@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { Bot, CheckCircle2, Eye, Loader2, SlidersHorizontal, Sparkles, TriangleAlert, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -109,6 +109,66 @@ function refinementErrorMessage(payload: RefineResponse | { error?: unknown; err
     return 'AI chart refinement is gated for this tenant, project, or user. No chart changes were made.'
   }
   return errorToText(payload)
+}
+
+type AiRefinementVisualState =
+  | 'idle'
+  | 'generating'
+  | 'preview ready'
+  | 'restricted request'
+  | 'validation failed'
+  | 'applied'
+
+const DASHBOARDOS_THEME_VARIABLES = [
+  '--dos-background-deep',
+  '--dos-background-base',
+  '--dos-surface',
+  '--dos-surface-raised',
+  '--dos-surface-muted',
+  '--dos-text-primary',
+  '--dos-text-secondary',
+  '--dos-text-muted',
+  '--dos-border-soft',
+  '--dos-border-mid',
+  '--dos-card-overlay',
+  '--dos-accent-primary',
+  '--dos-accent-primary-hover',
+  '--dos-accent-primary-soft',
+  '--dos-success',
+  '--dos-success-text',
+  '--dos-success-soft',
+  '--dos-warning',
+  '--dos-warning-text',
+  '--dos-warning-soft',
+  '--dos-danger',
+  '--dos-danger-text',
+  '--dos-danger-soft',
+  '--dos-info',
+  '--dos-info-text',
+  '--dos-info-soft',
+  '--dos-chart-success',
+  '--dos-chart-risk',
+  '--dos-chart-warning',
+  '--dos-chart-info',
+] as const
+
+function refinementStatusClass(status: AiRefinementVisualState) {
+  if (status === 'applied') return 'border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] text-[color:var(--dos-chart-success)]'
+  if (status === 'preview ready') return 'border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)]'
+  if (status === 'restricted request') return 'border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[color:var(--dos-chart-warning)]'
+  if (status === 'validation failed') return 'border-[color:var(--dos-chart-risk)] bg-[var(--dos-danger-soft)] text-[color:var(--dos-chart-risk)]'
+  if (status === 'generating') return 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[color:var(--dos-accent-primary)]'
+  return 'border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]'
+}
+
+function refinementErrorClass(errorCode: RefineResponse['errorCode'] | null) {
+  if (errorCode === 'restricted_field_request') {
+    return 'border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[color:var(--dos-chart-warning)]'
+  }
+  if (errorCode === 'feature_gated') {
+    return 'border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)]'
+  }
+  return 'border-[color:var(--dos-chart-risk)] bg-[var(--dos-danger-soft)] text-[color:var(--dos-chart-risk)]'
 }
 
 function labelById(chart: DashboardChartConfig, context: AiChartContext | null) {
@@ -331,6 +391,9 @@ export function AiChartRefinementDialog({
   const [rejecting, setRejecting] = useState(false)
   const [result, setResult] = useState<RefineResponse | null>(null)
   const [error, setError] = useState('')
+  const [errorCode, setErrorCode] = useState<RefineResponse['errorCode'] | null>(null)
+  const [applied, setApplied] = useState(false)
+  const [dialogThemeStyle, setDialogThemeStyle] = useState<CSSProperties>()
 
   const examples = useMemo(() => buildAiChartExamplePrompts(chart, context), [chart, context])
   const quickActions = useMemo(() => {
@@ -365,9 +428,10 @@ export function AiChartRefinementDialog({
     }).catch(() => undefined)
   }, [chart.id, previewAvailable, projectId, result?.chart, tenantId])
 
-  async function fetchContext() {
+  const fetchContext = useCallback(async () => {
     setLoadingContext(true)
     setError('')
+    setErrorCode(null)
     try {
       const response = await fetch('/api/ai/chart-context', {
         method: 'POST',
@@ -388,7 +452,26 @@ export function AiChartRefinementDialog({
     } finally {
       setLoadingContext(false)
     }
-  }
+  }, [chart.id, projectId, tenantId])
+
+  useEffect(() => {
+    if (open && !context && !loadingContext) void fetchContext()
+  }, [context, fetchContext, loadingContext, open])
+
+  useEffect(() => {
+    if (!open) return
+    const themeSources = document.querySelectorAll<HTMLElement>('[data-dashboardos-theme]')
+    const themeSource = themeSources.item(themeSources.length - 1)
+    if (!themeSource) return
+
+    const computedStyle = window.getComputedStyle(themeSource)
+    const themeVariables = Object.fromEntries(
+      DASHBOARDOS_THEME_VARIABLES
+        .map(variable => [variable, computedStyle.getPropertyValue(variable).trim()])
+        .filter(([, value]) => Boolean(value)),
+    ) as CSSProperties
+    setDialogThemeStyle(themeVariables)
+  }, [open])
 
   async function handleOpenChange(nextOpen: boolean) {
     onOpenChange(nextOpen)
@@ -397,17 +480,22 @@ export function AiChartRefinementDialog({
       setPrompt('')
       setResult(null)
       setError('')
+      setErrorCode(null)
+      setApplied(false)
     }
   }
 
   async function submitPrompt() {
     if (!prompt.trim()) {
       setError('Describe the chart change first.')
+      setErrorCode(null)
       return
     }
     setGenerating(true)
     setError('')
+    setErrorCode(null)
     setResult(null)
+    setApplied(false)
     try {
       const response = await fetch('/api/ai/chart-refine', {
         method: 'POST',
@@ -424,6 +512,7 @@ export function AiChartRefinementDialog({
       const payload = await response.json().catch(() => null) as RefineResponse | null
       if (!response.ok || !payload) {
         setError(refinementErrorMessage(payload))
+        setErrorCode(payload?.errorCode ?? null)
         return
       }
       setResult(payload)
@@ -438,6 +527,7 @@ export function AiChartRefinementDialog({
     if (!result?.patch) return
     setApplying(true)
     setError('')
+    setErrorCode(null)
     try {
       const response = await fetch('/api/ai/chart-refine', {
         method: 'POST',
@@ -454,10 +544,13 @@ export function AiChartRefinementDialog({
       const payload = await response.json().catch(() => null) as RefineResponse | null
       if (!response.ok || !payload?.chart) {
         setError(refinementErrorMessage(payload))
+        setErrorCode(payload?.errorCode ?? null)
         return
       }
       onApplied(payload.chart)
-      setResult(payload)
+      setResult(null)
+      setPrompt('')
+      setApplied(true)
       toast.success('AI refinement applied')
     } catch (caught) {
       setError(errorToText(caught))
@@ -482,6 +575,8 @@ export function AiChartRefinementDialog({
       })
       setResult(null)
       setPrompt('')
+      setApplied(false)
+      setErrorCode(null)
       toast.success('AI refinement rejected')
     } catch (caught) {
       setError(errorToText(caught))
@@ -490,12 +585,26 @@ export function AiChartRefinementDialog({
     }
   }
 
-  const status = generating ? 'generating' : result?.chart ? 'preview ready' : error ? 'validation failed' : 'idle'
+  const status: AiRefinementVisualState = generating
+    ? 'generating'
+    : applied
+      ? 'applied'
+      : result?.chart
+        ? 'preview ready'
+        : errorCode === 'restricted_field_request'
+          ? 'restricted request'
+          : error
+            ? 'validation failed'
+            : 'idle'
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-0 text-[color:var(--dos-text-primary)]">
-        <DialogHeader className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-5">
+      <DialogContent
+        data-testid="ai-refinement-dialog"
+        className="dashboardos-admin max-h-[92vh] max-w-4xl overflow-y-auto border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-0 text-[color:var(--dos-text-primary)] [&>button]:z-20"
+        style={dialogThemeStyle}
+      >
+        <DialogHeader className="sticky top-0 z-10 border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-5">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--dos-accent-primary-soft)] text-[color:var(--dos-accent-primary)]">
               <Sparkles className="h-5 w-5" />
@@ -503,7 +612,7 @@ export function AiChartRefinementDialog({
             <div>
               <DialogTitle className="text-lg text-[color:var(--dos-text-primary)]">Refine with AI</DialogTitle>
               <DialogDescription className="mt-1 text-[color:var(--dos-text-muted)]">
-                Propose a validated chart-config patch from governed semantic context. The chart stays unchanged until you accept.
+                Use governed chart context to propose a reviewable patch. Sensitive fields stay hidden, and nothing changes until you accept.
               </DialogDescription>
             </div>
           </div>
@@ -518,7 +627,7 @@ export function AiChartRefinementDialog({
                   <h3 className="mt-1 text-base font-semibold">{chart.name}</h3>
                   <p className="mt-1 text-xs text-[color:var(--dos-text-muted)]">{chart.templateId} / {chart.validationState} / dataset {context?.dataset.name ?? chart.datasetId}</p>
                 </div>
-                <Badge variant="outline" className="border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)]">
+                <Badge variant="outline" data-testid="ai-refinement-status" className={refinementStatusClass(status)}>
                   {status}
                 </Badge>
               </div>
@@ -563,15 +672,22 @@ export function AiChartRefinementDialog({
             </div>
 
             {error ? (
-              <div className="flex items-start gap-2 rounded-lg border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] p-3 text-sm text-[color:var(--dos-chart-warning)]">
+              <div data-testid="ai-refinement-error" className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${refinementErrorClass(errorCode)}`}>
                 <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>
             ) : null}
 
+            {applied ? (
+              <div data-testid="ai-refinement-applied" className="flex items-start gap-2 rounded-lg border border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] p-3 text-sm text-[color:var(--dos-chart-success)]">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Reviewed patch applied. The updated chart remains available for normal validation and publishing checks.</span>
+              </div>
+            ) : null}
+
             {result?.chart ? (
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-                <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
+              <div className="grid items-start gap-4">
+                <div data-testid="ai-refinement-preview-diff" className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-chart-info)]">Before / After</p>
@@ -610,7 +726,7 @@ export function AiChartRefinementDialog({
                     </div>
                   ) : null}
                 </div>
-                <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
+                <div data-testid="ai-refinement-mini-preview" className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-chart-success)]">Rendered preview</p>
@@ -621,7 +737,7 @@ export function AiChartRefinementDialog({
                   <MiniChartPreview chart={result.chart} context={context} />
                 </div>
               </div>
-            ) : !generating ? (
+            ) : !generating && !applied ? (
               <div className="rounded-xl border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-6">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)]">
@@ -675,29 +791,38 @@ export function AiChartRefinementDialog({
           </aside>
         </div>
 
-        <DialogFooter className="border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-4">
-          {result?.patch ? (
+        <DialogFooter className="sticky bottom-0 z-10 border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-4">
+          {applied ? (
             <Button
               type="button"
-              variant="outline"
-              onClick={() => void rejectPatch()}
-              disabled={rejecting || applying}
-              className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]"
-            >
-              {rejecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
-              Reject
-            </Button>
-          ) : null}
-          {result?.patch ? (
-            <Button
-              type="button"
-              onClick={() => void acceptPatch()}
-              disabled={applying || generating}
+              onClick={() => void handleOpenChange(false)}
               className="bg-[var(--dos-chart-success)] text-[color:var(--dos-background-deep)] hover:bg-[var(--dos-chart-success)]"
             >
-              {applying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              Accept patch
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Done
             </Button>
+          ) : result?.patch ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void rejectPatch()}
+                disabled={rejecting || applying}
+                className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]"
+              >
+                {rejecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+                Reject
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void acceptPatch()}
+                disabled={applying || generating}
+                className="bg-[var(--dos-chart-success)] text-[color:var(--dos-background-deep)] hover:bg-[var(--dos-chart-success)]"
+              >
+                {applying ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                Accept patch
+              </Button>
+            </>
           ) : (
             <Button
               type="button"
