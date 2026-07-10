@@ -81,7 +81,7 @@ async function hideFrameworkChrome(page: Page) {
   })
 }
 
-async function mockAiRoutes(page: Page, outcome: 'success' | 'restricted' = 'success') {
+async function mockAiRoutes(page: Page, outcome: 'success' | 'restricted' | 'validation' = 'success') {
   await page.route('**/api/ai/chart-context', route => fulfillJson(route, { context: chartContext }))
   await page.route('**/api/ai/chart-refine/preview-observed', route => fulfillJson(route, { ok: true }))
   await page.route('**/api/ai/chart-refine/reject', route => fulfillJson(route, { ok: true }))
@@ -99,12 +99,56 @@ async function mockAiRoutes(page: Page, outcome: 'success' | 'restricted' = 'suc
       return
     }
 
+    if (outcome === 'validation' && !body.apply) {
+      await fulfillJson(route, {
+        patch: null,
+        chart: demoChart,
+        validation: {
+          state: 'invalid',
+          issues: [{ severity: 'error', code: 'invalid_chart_patch', message: 'Patch did not pass chart validation.' }],
+        },
+        errorCode: 'chart_validation_failed',
+        error: 'chart_validation_failed',
+      }, 422)
+      return
+    }
+
     await fulfillJson(route, {
       patch: body.apply ? body.patch : previewPatch,
       chart: previewChart,
       validation: { state: 'valid', issues: [] },
     })
   })
+}
+
+async function mockPendingAiRoutes(page: Page) {
+  let releaseRefinement: (() => void) | null = null
+  let markStarted: () => void = () => undefined
+  const started = new Promise<void>(resolve => {
+    markStarted = resolve
+  })
+
+  await page.route('**/api/ai/chart-context', route => fulfillJson(route, { context: chartContext }))
+  await page.route('**/api/ai/chart-refine/preview-observed', route => fulfillJson(route, { ok: true }))
+  await page.route('**/api/ai/chart-refine/reject', route => fulfillJson(route, { ok: true }))
+  await page.route('**/api/ai/chart-refine', async route => {
+    const body = route.request().postDataJSON() as { apply?: boolean; patch?: unknown }
+    const releaseSignal = new Promise<void>(resolve => {
+      releaseRefinement = resolve
+    })
+    markStarted()
+    await releaseSignal
+    await fulfillJson(route, {
+      patch: body.apply ? body.patch : previewPatch,
+      chart: previewChart,
+      validation: { state: 'valid', issues: [] },
+    })
+  })
+
+  return {
+    started,
+    release: () => releaseRefinement?.(),
+  }
 }
 
 async function openHarness(page: Page, theme: 'dark' | 'light' = 'dark') {
@@ -188,6 +232,24 @@ test.describe('AI chart refinement visual states', () => {
     })
   })
 
+  test('generating state communicates review-safe progress', async ({ page }) => {
+    const pending = await mockPendingAiRoutes(page)
+    await openHarness(page)
+    await page.getByLabel('Natural-language refinement').fill('Create a safe monthly trend')
+    await page.getByRole('button', { name: 'Generate preview' }).click()
+    await pending.started
+
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('generating')
+    await expect(page.getByTestId('ai-refinement-generating')).toBeVisible()
+    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-generating.png', {
+      animations: 'disabled',
+      caret: 'hide',
+    })
+
+    pending.release()
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toBeVisible()
+  })
+
   test('restricted requests use a calm blocked state without field details', async ({ page }) => {
     await mockAiRoutes(page, 'restricted')
     await openHarness(page)
@@ -198,6 +260,38 @@ test.describe('AI chart refinement visual states', () => {
     await expect(error).toContainText('restricted from AI refinement')
     await expect(error).not.toContainText('customer')
     await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-blocked-request.png', {
+      animations: 'disabled',
+      caret: 'hide',
+    })
+  })
+
+  test('validation failures use a distinct state without raw model details', async ({ page }) => {
+    await mockAiRoutes(page, 'validation')
+    await openHarness(page)
+    await page.getByLabel('Natural-language refinement').fill('Make a governed but invalid edit')
+    await page.getByRole('button', { name: 'Generate preview' }).click()
+
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('validation failed')
+    const error = page.getByTestId('ai-refinement-error')
+    await expect(error).toContainText('did not pass chart validation')
+    await expect(error).not.toContainText('invalid_chart_patch')
+    await expect(error).not.toContainText('chart_validation_failed')
+    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-validation-failed.png', {
+      animations: 'disabled',
+      caret: 'hide',
+    })
+  })
+
+  test('mobile preview keeps governed review actions reachable', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 })
+    await mockAiRoutes(page)
+    await openHarness(page)
+    await page.getByLabel('Natural-language refinement').fill('Create a safe monthly trend')
+    await page.getByRole('button', { name: 'Generate preview' }).click()
+
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Accept patch' })).toBeVisible()
+    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-mobile-preview-ready.png', {
       animations: 'disabled',
       caret: 'hide',
     })

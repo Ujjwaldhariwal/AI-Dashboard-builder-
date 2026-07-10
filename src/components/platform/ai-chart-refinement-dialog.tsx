@@ -685,6 +685,13 @@ export function AiChartRefinementDialog({
               </div>
             ) : null}
 
+            {generating ? (
+              <div data-testid="ai-refinement-generating" className="flex items-start gap-2 rounded-lg border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] p-3 text-sm text-[color:var(--dos-accent-primary)]">
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                <span>Preparing a governed preview. The current chart stays unchanged until you review and accept a validated patch.</span>
+              </div>
+            ) : null}
+
             {result?.chart ? (
               <div className="grid items-start gap-4">
                 <div data-testid="ai-refinement-preview-diff" className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
@@ -791,7 +798,7 @@ export function AiChartRefinementDialog({
           </aside>
         </div>
 
-        <DialogFooter className="sticky bottom-0 z-10 border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-4">
+        <DialogFooter className="sticky bottom-0 z-10 gap-2 border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-4 sm:space-x-0">
           {applied ? (
             <Button
               type="button"
@@ -808,7 +815,7 @@ export function AiChartRefinementDialog({
                 variant="outline"
                 onClick={() => void rejectPatch()}
                 disabled={rejecting || applying}
-                className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]"
+                className="border-[color:var(--dos-border-soft)] bg-transparent text-slate-300 hover:bg-[var(--dos-surface-muted)]"
               >
                 {rejecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
                 Reject
