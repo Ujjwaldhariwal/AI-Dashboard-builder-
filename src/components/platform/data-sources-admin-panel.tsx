@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { AlertCircle, Clock3, Database, FileSearch, KeyRound, Loader2, LockKeyhole, PlugZap, Plus, RotateCcw, Server, ShieldCheck } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertCircle, BrainCircuit, Clock3, Database, FileSearch, KeyRound, Loader2, LockKeyhole, PlugZap, Plus, RotateCcw, Server, ShieldCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { demoColumns, demoDataSource, demoProjects, DEMO_DATA_SOURCE_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
+import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
+import { buildGuidedSchemaProfile } from '@/lib/dashboardos/guided-review'
 import type { DataSource, DataSourceSslMode } from '@/types/data-source'
 
 interface ProjectOption {
@@ -30,6 +34,29 @@ const REQUIREMENTS = [
   'Timeouts, row limits, and audit logs',
 ]
 
+const SCAN_TO_CHART_FLOW = [
+  {
+    title: '1. Connect',
+    body: 'Save one read-only Postgres connection under a tenant project.',
+  },
+  {
+    title: '2. Scan',
+    body: 'Run schema introspection to import schemas, tables, columns, data types, keys, and scan freshness.',
+  },
+  {
+    title: '3. Map',
+    body: 'Open Semantic Model and turn raw columns into business fields, metrics, and joins.',
+  },
+  {
+    title: '4. Package',
+    body: 'Create a Dataset from approved semantic fields and metrics; this becomes the chart contract.',
+  },
+  {
+    title: '5. Chart',
+    body: 'Choose a compatible chart template, bind axes and metrics, validate, then publish.',
+  },
+]
+
 function errorToText(value: unknown) {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object') {
@@ -41,13 +68,17 @@ function errorToText(value: unknown) {
 }
 
 export function DataSourcesAdminPanel() {
+  const builderScope = useScopedBuilderStore(state => state.scope)
+  const setBuilderScope = useScopedBuilderStore(state => state.setScope)
+  const addBuilderDataSourceId = useScopedBuilderStore(state => state.addDataSourceId)
+  const removeBuilderDataSourceId = useScopedBuilderStore(state => state.removeDataSourceId)
   const [dataSources, setDataSources] = useState<DataSource[]>([])
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [loading, setLoading] = useState(true)
   const [projectsLoading, setProjectsLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busySourceId, setBusySourceId] = useState<string | null>(null)
-  const [busyAction, setBusyAction] = useState<'test' | 'introspect' | 'refresh' | null>(null)
+  const [busyAction, setBusyAction] = useState<'test' | 'introspect' | 'refresh' | 'remove' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -59,12 +90,26 @@ export function DataSourcesAdminPanel() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [sslMode, setSslMode] = useState<DataSourceSslMode>('require')
+  const [clientReady, setClientReady] = useState(false)
+  const demoMode = isDashboardOsDemoMode()
+  const guidedProfile = useMemo(() => (
+    clientReady && demoMode ? buildGuidedSchemaProfile(demoColumns) : null
+  ), [clientReady, demoMode])
 
-  const fetchDataSources = async () => {
+  const fetchDataSources = async (nextProjectId = projectId) => {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/admin/data-sources', { cache: 'no-store' })
+      if (demoMode) {
+        setDataSources(nextProjectId ? [demoDataSource] : [demoDataSource])
+        if (!builderScope || builderScope.tenantId !== DEMO_TENANT_ID || builderScope.projectId !== DEMO_PROJECT_ID) {
+          setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'data_source')
+        }
+        addBuilderDataSourceId(DEMO_DATA_SOURCE_ID)
+        return
+      }
+      const query = nextProjectId ? `?projectId=${encodeURIComponent(nextProjectId)}` : ''
+      const response = await fetch(`/api/admin/data-sources${query}`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload) || `Request failed (${response.status})`)
       setDataSources(Array.isArray(payload?.dataSources) ? payload.dataSources : [])
@@ -78,10 +123,22 @@ export function DataSourcesAdminPanel() {
   const fetchProjects = async () => {
     setProjectsLoading(true)
     try {
+      if (demoMode) {
+        setProjects(demoProjects)
+        setProjectId(DEMO_PROJECT_ID)
+        if (!builderScope || builderScope.tenantId !== DEMO_TENANT_ID || builderScope.projectId !== DEMO_PROJECT_ID) {
+          setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'data_source')
+        }
+        return
+      }
       const response = await fetch('/api/admin/projects', { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload) || `Projects failed (${response.status})`)
-      setProjects(Array.isArray(payload?.projects) ? payload.projects : [])
+      const nextProjects = Array.isArray(payload?.projects) ? payload.projects as ProjectOption[] : []
+      setProjects(nextProjects)
+      if (builderScope && nextProjects.some(project => project.id === builderScope.projectId)) {
+        setProjectId(builderScope.projectId)
+      }
     } catch (fetchError) {
       toast.error(fetchError instanceof Error ? fetchError.message : String(fetchError))
     } finally {
@@ -90,9 +147,13 @@ export function DataSourcesAdminPanel() {
   }
 
   useEffect(() => {
-    void fetchDataSources()
+    setClientReady(true)
     void fetchProjects()
   }, [])
+
+  useEffect(() => {
+    void fetchDataSources(projectId)
+  }, [projectId])
 
   const resetForm = () => {
     setProjectId('')
@@ -114,6 +175,15 @@ export function DataSourcesAdminPanel() {
 
     setSaving(true)
     try {
+      if (demoMode) {
+        setDataSources(current => [demoDataSource, ...current.filter(source => source.id !== demoDataSource.id)])
+        setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'data_source')
+        addBuilderDataSourceId(DEMO_DATA_SOURCE_ID)
+        setCreateOpen(false)
+        resetForm()
+        toast.success('Demo source saved and 14 schema columns imported')
+        return
+      }
       const response = await fetch('/api/admin/data-sources', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -133,7 +203,21 @@ export function DataSourcesAdminPanel() {
       if (!response.ok) throw new Error(errorToText(payload) || `Create failed (${response.status})`)
 
       if (payload?.dataSource) {
-        setDataSources(current => [payload.dataSource as DataSource, ...current])
+        const dataSource = payload.dataSource as DataSource
+        setDataSources(current => [dataSource, ...current])
+        setBuilderScope({ tenantId: dataSource.tenantId, projectId: dataSource.projectId }, 'data_source')
+        addBuilderDataSourceId(dataSource.id)
+        setCreateOpen(false)
+        resetForm()
+
+        const introspectResponse = await fetch(`/api/admin/data-sources/${dataSource.id}/introspect`, { method: 'POST' })
+        const introspectPayload = await introspectResponse.json().catch(() => null)
+        if (!introspectResponse.ok) {
+          throw new Error(errorToText(introspectPayload) || `Introspection failed (${introspectResponse.status})`)
+        }
+        await fetchDataSources(dataSource.projectId)
+        toast.success(`Data source saved and ${introspectPayload?.columnCount ?? 0} schema columns imported`)
+        return
       }
       toast.success('Data source saved')
       setCreateOpen(false)
@@ -155,6 +239,11 @@ export function DataSourcesAdminPanel() {
     setBusySourceId(sourceId)
     setBusyAction('test')
     try {
+      if (demoMode) {
+        replaceSource({ ...demoDataSource, lastTestedAt: new Date().toISOString(), lastTestStatus: 'ok' })
+        toast.success('Demo connection healthy in 42 ms')
+        return
+      }
       const response = await fetch(`/api/admin/data-sources/${sourceId}/test`, { method: 'POST' })
       const payload = await response.json().catch(() => null)
       if (payload?.dataSource) replaceSource(payload.dataSource as DataSource)
@@ -172,10 +261,17 @@ export function DataSourcesAdminPanel() {
     setBusySourceId(sourceId)
     setBusyAction('introspect')
     try {
+      if (demoMode) {
+        replaceSource({ ...demoDataSource, schemaLastIntrospectedAt: new Date().toISOString(), schemaLastStatus: 'ok' })
+        addBuilderDataSourceId(sourceId)
+        toast.success('Imported 14 columns from 3 demo tables')
+        return
+      }
       const response = await fetch(`/api/admin/data-sources/${sourceId}/introspect`, { method: 'POST' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload) || `Introspection failed (${response.status})`)
-      await fetchDataSources()
+      addBuilderDataSourceId(sourceId)
+      await fetchDataSources(projectId)
       toast.success(`Imported ${payload?.columnCount ?? 0} columns from ${payload?.tables?.length ?? 0} tables`)
     } catch (introspectError) {
       toast.error(introspectError instanceof Error ? introspectError.message : String(introspectError))
@@ -189,6 +285,11 @@ export function DataSourcesAdminPanel() {
     setBusySourceId(sourceId)
     setBusyAction('refresh')
     try {
+      if (demoMode) {
+        replaceSource({ ...demoDataSource, schemaRefreshRequestedAt: new Date().toISOString(), schemaRefreshReason: 'admin_requested' })
+        toast.success('Demo schema refresh requested')
+        return
+      }
       const response = await fetch(`/api/admin/data-sources/${sourceId}/schema-refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -196,10 +297,36 @@ export function DataSourcesAdminPanel() {
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload) || `Refresh request failed (${response.status})`)
-      await fetchDataSources()
+      await fetchDataSources(projectId)
       toast.success('Schema refresh requested')
     } catch (refreshError) {
       toast.error(refreshError instanceof Error ? refreshError.message : String(refreshError))
+    } finally {
+      setBusySourceId(null)
+      setBusyAction(null)
+    }
+  }
+
+  const handleRemoveSource = async (source: DataSource) => {
+    if (!window.confirm(`Remove "${source.name}" from this project? Schema metadata for this source will be removed too.`)) return
+
+    setBusySourceId(source.id)
+    setBusyAction('remove')
+    try {
+      if (demoMode) {
+        setDataSources(current => current.filter(item => item.id !== source.id))
+        removeBuilderDataSourceId(source.id)
+        toast.success('Demo data source removed')
+        return
+      }
+      const response = await fetch(`/api/admin/data-sources/${source.id}`, { method: 'DELETE' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload) || `Remove failed (${response.status})`)
+      setDataSources(current => current.filter(item => item.id !== source.id))
+      removeBuilderDataSourceId(source.id)
+      toast.success('Data source removed')
+    } catch (removeError) {
+      toast.error(removeError instanceof Error ? removeError.message : String(removeError))
     } finally {
       setBusySourceId(null)
       setBusyAction(null)
@@ -281,6 +408,19 @@ export function DataSourcesAdminPanel() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8 border-rose-300/20 bg-rose-500/10 text-rose-200 hover:border-rose-300/35 hover:bg-rose-500/15 hover:text-rose-100"
+                        onClick={() => void handleRemoveSource(source)}
+                        disabled={busySourceId === source.id}
+                        title="Remove data source"
+                        aria-label={`Remove ${source.name}`}
+                      >
+                        {busySourceId === source.id && busyAction === 'remove'
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <X className="h-4 w-4" />}
+                      </Button>
                       <div className="flex items-center gap-2 text-xs text-slate-500">
                         <KeyRound className="h-3.5 w-3.5 text-cyan-300" />
                         key {source.credentialKeyId ?? 'pending'}
@@ -367,19 +507,68 @@ export function DataSourcesAdminPanel() {
 
         <Card className="border-white/10 bg-white/[0.03] text-slate-100">
           <CardHeader>
-            <CardTitle className="text-sm">Implementation checklist</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <BrainCircuit className="h-4 w-4 text-[#a6e22e]" />
+              Guided understanding
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-3">
-              {REQUIREMENTS.map((item) => (
-                <div key={item} className="rounded-md border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-300">
-                  {item}
-                </div>
-              ))}
+          <CardContent className="space-y-4">
+            <p className="text-xs leading-5 text-slate-400">
+              After schema scan, DashboardOS prepares a concise review summary: likely facts, dimensions, dates, measures, joins, and sensitive fields hidden by default.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-md border border-white/10 bg-slate-950/50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Tables</p>
+                <p className="mt-1 text-xl font-semibold">{guidedProfile?.tableCount ?? dataSources.reduce((total, source) => total + source.schemaTableCount, 0)}</p>
+              </div>
+              <div className="rounded-md border border-white/10 bg-slate-950/50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Columns</p>
+                <p className="mt-1 text-xl font-semibold">{guidedProfile?.columnCount ?? dataSources.reduce((total, source) => total + source.schemaColumnCount, 0)}</p>
+              </div>
+              <div className="rounded-md border border-[#a6e22e]/30 bg-[#a6e22e]/10 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-[#d7ff8f]">Likely measures</p>
+                <p className="mt-1 text-xl font-semibold">{guidedProfile?.measures.length ?? 'Review'}</p>
+              </div>
+              <div className="rounded-md border border-[#fd971f]/30 bg-[#fd971f]/10 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-[#ffd866]">Needs review</p>
+                <p className="mt-1 text-xl font-semibold">{guidedProfile?.reviewItems.length ?? 'After scan'}</p>
+              </div>
             </div>
+            {guidedProfile ? (
+              <div className="rounded-md border border-white/10 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">
+                Suggested area: {guidedProfile.businessAreas[0]?.label ?? 'Review schema'} · sensitive fields hidden: {guidedProfile.sensitive.length}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </section>
+
+      <Card className="border-white/10 bg-white/[0.03] text-slate-100">
+        <CardHeader>
+          <CardTitle className="text-sm">How a scanned table becomes a chart</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-5">
+          {SCAN_TO_CHART_FLOW.map((step) => (
+            <div key={step.title} className="rounded-lg border border-white/10 bg-slate-950/50 p-3">
+              <p className="text-xs font-semibold text-[#a6e22e]">{step.title}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{step.body}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-white/[0.03] text-slate-100">
+        <CardHeader>
+          <CardTitle className="text-sm">Advanced guardrails</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-3">
+          {REQUIREMENTS.map((item) => (
+            <div key={item} className="rounded-md border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-300">
+              {item}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <Dialog open={createOpen} onOpenChange={(open) => {
         setCreateOpen(open)
@@ -389,13 +578,21 @@ export function DataSourcesAdminPanel() {
           <DialogHeader>
             <DialogTitle>Add Postgres source</DialogTitle>
             <DialogDescription>
-              Credentials are encrypted server-side. Use a read-only database user.
+              Credentials are encrypted server-side. Use the demo SQL read-only user or a least-privilege database user.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 pt-2 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label>Project</Label>
-              <Select value={projectId} onValueChange={setProjectId} disabled={projectsLoading || projects.length === 0}>
+              <Select
+                value={projectId}
+                onValueChange={(value) => {
+                  const selected = projects.find(project => project.id === value)
+                  setProjectId(value)
+                  if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'data_source')
+                }}
+                disabled={projectsLoading || projects.length === 0}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder={projectsLoading ? 'Loading projects' : 'Select a tenant project'} />
                 </SelectTrigger>

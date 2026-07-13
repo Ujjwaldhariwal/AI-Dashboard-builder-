@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Play, Plus, ShieldCheck } from 'lucide-react'
+import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { demoDataset, demoDatasetPlan, demoEntities, demoMetrics, demoModel, demoProjects, demoRelationships, demoChartRows, DEMO_MODEL_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
+import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
+import { buildGuidedDatasetRecipes, type GuidedDatasetRecipe } from '@/lib/dashboardos/guided-review'
 import type { ChartCompatibilityResult, DatasetShape } from '@/types/chart-template'
 import type { BusinessFieldRole, BusinessMetric, BusinessModel, BusinessRelationship } from '@/types/semantic-model'
 import type { SemanticDataset } from '@/types/semantic-dataset'
@@ -83,6 +87,10 @@ function errorToText(value: unknown) {
 }
 
 export function DatasetsAdminPanel() {
+  const builderScope = useScopedBuilderStore(state => state.scope)
+  const builderSemanticModelId = useScopedBuilderStore(state => state.semanticModelId)
+  const setBuilderScope = useScopedBuilderStore(state => state.setScope)
+  const setBuilderSemanticModelId = useScopedBuilderStore(state => state.setSemanticModelId)
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [models, setModels] = useState<BusinessModel[]>([])
   const [datasets, setDatasets] = useState<SemanticDataset[]>([])
@@ -99,8 +107,11 @@ export function DatasetsAdminPanel() {
   const [saving, setSaving] = useState(false)
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [runningId, setRunningId] = useState<string | null>(null)
+  const [deletingDatasetId, setDeletingDatasetId] = useState<string | null>(null)
   const [plan, setPlan] = useState<DatasetPlan | null>(null)
   const [runResult, setRunResult] = useState<DatasetRunResult | null>(null)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
   const approvedModels = models.filter(model => model.status === 'approved')
@@ -109,18 +120,40 @@ export function DatasetsAdminPanel() {
       .filter(field => field.role !== 'hidden')
       .map(field => ({ ...field, entityName: entity.name }))
   )), [entities])
+  const guidedRecipes = useMemo(() => buildGuidedDatasetRecipes({
+    fields: fieldOptions,
+    metrics,
+    relationships,
+  }), [fieldOptions, metrics, relationships])
 
   const fetchProjects = useCallback(async () => {
+    if (demoMode) {
+      setProjects(demoProjects)
+      setProjectId(DEMO_PROJECT_ID)
+      if (!builderScope || builderScope.tenantId !== DEMO_TENANT_ID || builderScope.projectId !== DEMO_PROJECT_ID) {
+        setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'charts')
+      }
+      return
+    }
     const response = await fetch('/api/admin/projects', { cache: 'no-store' })
     const payload = await response.json().catch(() => null)
     if (!response.ok) throw new Error(errorToText(payload))
     const nextProjects = Array.isArray(payload?.projects) ? payload.projects as ProjectOption[] : []
     setProjects(nextProjects)
-    if (!projectId && nextProjects[0]) setProjectId(nextProjects[0].id)
-  }, [projectId])
+    if (builderScope && nextProjects.some(project => project.id === builderScope.projectId)) {
+      setProjectId(builderScope.projectId)
+    }
+  }, [builderScope, demoMode, setBuilderScope])
 
   const fetchProjectData = async (nextProjectId: string) => {
     if (!nextProjectId) return
+    if (demoMode) {
+      setModels([demoModel])
+      setDatasets([demoDataset])
+      setModelId(DEMO_MODEL_ID)
+      setBuilderSemanticModelId(DEMO_MODEL_ID)
+      return
+    }
     const [modelsResponse, datasetsResponse] = await Promise.all([
       fetch(`/api/admin/semantic-models?projectId=${nextProjectId}`, { cache: 'no-store' }),
       fetch(`/api/admin/datasets?projectId=${nextProjectId}`, { cache: 'no-store' }),
@@ -132,7 +165,13 @@ export function DatasetsAdminPanel() {
     const nextModels = Array.isArray(modelsPayload?.models) ? modelsPayload.models as BusinessModel[] : []
     setModels(nextModels)
     setDatasets(Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets : [])
-    setModelId(current => nextModels.some(model => model.id === current && model.status === 'approved') ? current : nextModels.find(model => model.status === 'approved')?.id ?? '')
+    setModelId(current => {
+      if (nextModels.some(model => model.id === current && model.status === 'approved')) return current
+      if (builderSemanticModelId && nextModels.some(model => model.id === builderSemanticModelId && model.status === 'approved')) {
+        return builderSemanticModelId
+      }
+      return ''
+    })
   }
 
   const fetchModelAssets = async (nextModelId: string) => {
@@ -140,6 +179,15 @@ export function DatasetsAdminPanel() {
       setEntities([])
       setMetrics([])
       setRelationships([])
+      return
+    }
+    if (demoMode) {
+      setEntities(demoEntities)
+      setMetrics(demoMetrics)
+      setRelationships(demoRelationships)
+      setFieldIds(['demo-field-month', 'demo-field-region', 'demo-field-segment'])
+      setMetricIds(['demo-metric-revenue', 'demo-metric-orders', 'demo-metric-customers'])
+      setRelationshipIds([])
       return
     }
     const [fieldsResponse, metricsResponse, relationshipsResponse] = await Promise.all([
@@ -180,6 +228,20 @@ export function DatasetsAdminPanel() {
     setValues(values.includes(value) ? values.filter(item => item !== value) : [...values, value])
   }
 
+  const applyRecipe = (recipe: GuidedDatasetRecipe) => {
+    const recipeFieldIds = fieldOptions
+      .filter(field => recipe.suggestedFieldLabels.includes(field.name))
+      .map(field => field.id)
+    const recipeMetricIds = metrics
+      .filter(metric => recipe.suggestedMetricLabels.includes(metric.name))
+      .map(metric => metric.id)
+    setName(recipe.title)
+    setFieldIds(recipeFieldIds)
+    setMetricIds(recipeMetricIds)
+    setRelationshipIds(relationships.slice(0, 2).map(relationship => relationship.id))
+    toast.success(`Recipe selected: ${recipe.title}`)
+  }
+
   const handleCreate = async () => {
     if (!selectedProject || !modelId || !name.trim()) {
       toast.error('Select project, approved model, and dataset name')
@@ -187,6 +249,21 @@ export function DatasetsAdminPanel() {
     }
     setSaving(true)
     try {
+      if (demoMode) {
+        const dataset: SemanticDataset = {
+          ...demoDataset,
+          id: `demo-dataset-${Date.now()}`,
+          name: name.trim() || demoDataset.name,
+          selection: { fieldIds, metricIds, relationshipIds },
+          status: 'published',
+          updatedAt: new Date().toISOString(),
+        }
+        setDatasets(current => [dataset, ...current])
+        setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'charts')
+        setBuilderSemanticModelId(DEMO_MODEL_ID)
+        toast.success('Demo dataset created')
+        return
+      }
       const response = await fetch('/api/admin/datasets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -203,6 +280,8 @@ export function DatasetsAdminPanel() {
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
       if (payload?.dataset) setDatasets(current => [payload.dataset as SemanticDataset, ...current])
+      setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'charts')
+      setBuilderSemanticModelId(modelId)
       setName('')
       setFieldIds([])
       setMetricIds([])
@@ -218,6 +297,11 @@ export function DatasetsAdminPanel() {
   const handleStatus = async (datasetId: string, status: SemanticDataset['status']) => {
     setSaving(true)
     try {
+      if (demoMode) {
+        setDatasets(current => current.map(dataset => dataset.id === datasetId ? { ...dataset, status } : dataset))
+        toast.success(`Demo dataset ${status}`)
+        return
+      }
       const response = await fetch(`/api/admin/datasets/${datasetId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -240,6 +324,12 @@ export function DatasetsAdminPanel() {
   const handlePreview = async (datasetId: string) => {
     setPreviewingId(datasetId)
     try {
+      if (demoMode) {
+        setPlan(demoDatasetPlan)
+        setRunResult(null)
+        toast.success('Demo dataset plan ready')
+        return
+      }
       const response = await fetch(`/api/admin/datasets/${datasetId}/plan`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
@@ -256,6 +346,17 @@ export function DatasetsAdminPanel() {
   const handleRun = async (datasetId: string) => {
     setRunningId(datasetId)
     try {
+      if (demoMode) {
+        setRunResult({
+          dataset: { id: demoDataset.id, name: demoDataset.name, status: demoDataset.status },
+          rowCount: demoChartRows.length,
+          elapsedMs: 38,
+          fields: [{ name: 'Month', dataTypeId: 1082 }, { name: 'Revenue', dataTypeId: 1700 }, { name: 'Orders', dataTypeId: 23 }, { name: 'Customers', dataTypeId: 23 }],
+          rows: demoChartRows,
+        })
+        toast.success('Demo dataset preview executed')
+        return
+      }
       const response = await fetch(`/api/admin/datasets/${datasetId}/run`, { method: 'POST' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
@@ -268,25 +369,104 @@ export function DatasetsAdminPanel() {
     }
   }
 
+  const handleDeleteDataset = async (dataset: SemanticDataset) => {
+    if (!window.confirm(`Delete "${dataset.name}" and its chart configs from this project? This cannot be undone.`)) return
+
+    setDeletingDatasetId(dataset.id)
+    try {
+      if (demoMode) {
+        setDatasets(current => current.filter(item => item.id !== dataset.id))
+        if (plan?.dataset.id === dataset.id) setPlan(null)
+        if (runResult?.dataset.id === dataset.id) setRunResult(null)
+        toast.success('Demo dataset deleted')
+        return
+      }
+
+      const response = await fetch(`/api/admin/datasets/${dataset.id}`, { method: 'DELETE' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+
+      setDatasets(current => current.filter(item => item.id !== dataset.id))
+      if (plan?.dataset.id === dataset.id) setPlan(null)
+      if (runResult?.dataset.id === dataset.id) setRunResult(null)
+      const deletedChartCount = typeof payload?.deletedChartCount === 'number' ? payload.deletedChartCount : 0
+      toast.success(deletedChartCount > 0
+        ? `Dataset deleted with ${deletedChartCount} chart config${deletedChartCount === 1 ? '' : 's'}`
+        : 'Dataset deleted')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDeletingDatasetId(null)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-6">
-        <Badge className="bg-cyan-400 text-slate-950 hover:bg-cyan-400">Sprint 5</Badge>
-        <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white">Semantic Datasets</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-white">Semantic Datasets</h2>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
-          Datasets bind approved business models into reusable chart contracts before any query compiler or widget touches them.
+          Start from suggested dataset recipes, then customize only when the recommendation needs adjustment.
         </p>
       </section>
 
+      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 text-slate-100">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Badge className="bg-[#a6e22e]/20 text-[#d7ff8f] hover:bg-[#a6e22e]/20">Guided mode</Badge>
+            <h3 className="mt-3 text-lg font-semibold">Suggested dataset recipes</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+              Recipes use approved semantic fields and metrics. Pick one to prefill the dataset, or open advanced selection for manual control.
+            </p>
+          </div>
+          <Button variant="outline" className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10" onClick={() => setAdvancedOpen(open => !open)}>
+            {advancedOpen ? 'Hide advanced' : 'Customize manually'}
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {guidedRecipes.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-white/15 bg-slate-950/50 p-5 text-sm text-slate-400 lg:col-span-3">
+              Approve a semantic model with at least one metric to generate recipes.
+            </div>
+          ) : guidedRecipes.map(recipe => (
+            <button
+              key={recipe.id}
+              type="button"
+              onClick={() => applyRecipe(recipe)}
+              className="rounded-lg border border-white/10 bg-slate-950/50 p-4 text-left transition-colors hover:border-[#a6e22e]/45 hover:bg-[#a6e22e]/10"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-100">{recipe.title}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-400">{recipe.description}</p>
+                </div>
+                <Badge variant="outline" className="border-white/15 text-slate-300">{recipe.confidence}%</Badge>
+              </div>
+              <p className="mt-3 text-[11px] text-slate-500">
+                {recipe.suggestedMetricLabels.slice(0, 3).join(', ') || 'Metrics pending'}
+              </p>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
+        <Card className={advancedOpen ? 'border-white/10 bg-white/[0.03] text-slate-100' : 'border-white/10 bg-white/[0.03] text-slate-100 opacity-90'}>
           <CardHeader>
-            <CardTitle className="text-sm">Create dataset</CardTitle>
+            <CardTitle className="text-sm">{advancedOpen ? 'Advanced dataset customization' : 'Review selected recipe'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Project</Label>
-              <Select value={projectId} onValueChange={setProjectId} disabled={loading || projects.length === 0}>
+              <Select
+                value={projectId}
+                onValueChange={(value) => {
+                  const selected = projects.find(project => project.id === value)
+                  setProjectId(value)
+                  setModelId('')
+                  if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'charts')
+                }}
+                disabled={loading || projects.length === 0}
+              >
                 <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                 <SelectContent>
                   {projects.map(project => (
@@ -297,7 +477,14 @@ export function DatasetsAdminPanel() {
             </div>
             <div className="space-y-2">
               <Label>Approved model</Label>
-              <Select value={modelId} onValueChange={setModelId} disabled={approvedModels.length === 0}>
+              <Select
+                value={modelId}
+                onValueChange={(value) => {
+                  setModelId(value)
+                  setBuilderSemanticModelId(value || null)
+                }}
+                disabled={approvedModels.length === 0}
+              >
                 <SelectTrigger><SelectValue placeholder="Select approved model" /></SelectTrigger>
                 <SelectContent>
                   {approvedModels.map(model => (
@@ -310,7 +497,7 @@ export function DatasetsAdminPanel() {
               <Label>Name</Label>
               <Input value={name} onChange={event => setName(event.target.value)} placeholder="Executive Revenue Dataset" />
             </div>
-            <div className="space-y-2">
+            <div className={advancedOpen ? 'space-y-2' : 'hidden'}>
               <Label>Fields</Label>
               <div className="grid max-h-40 gap-2 overflow-auto rounded-md border border-white/10 bg-slate-950/50 p-2">
                 {fieldOptions.length === 0 ? (
@@ -330,7 +517,7 @@ export function DatasetsAdminPanel() {
                 ))}
               </div>
             </div>
-            <div className="space-y-2">
+            <div className={advancedOpen ? 'space-y-2' : 'hidden'}>
               <Label>Metrics</Label>
               <div className="grid max-h-36 gap-2 overflow-auto rounded-md border border-white/10 bg-slate-950/50 p-2">
                 {metrics.length === 0 ? (
@@ -350,7 +537,7 @@ export function DatasetsAdminPanel() {
                 ))}
               </div>
             </div>
-            <div className="space-y-2">
+            <div className={advancedOpen ? 'space-y-2' : 'hidden'}>
               <Label>Relationships</Label>
               <div className="grid max-h-32 gap-2 overflow-auto rounded-md border border-white/10 bg-slate-950/50 p-2">
                 {relationships.length === 0 ? (
@@ -373,8 +560,13 @@ export function DatasetsAdminPanel() {
             </div>
             <Button onClick={handleCreate} disabled={saving || !modelId || !name.trim() || (fieldIds.length === 0 && metricIds.length === 0)}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Create dataset
+              Create reviewed dataset
             </Button>
+            {!advancedOpen ? (
+              <div className="rounded-md border border-white/10 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">
+                Current draft: {fieldIds.length} fields, {metricIds.length} metrics, {relationshipIds.length} joins. Use Customize manually for raw field selection.
+              </div>
+            ) : null}
             {approvedModels.length === 0 ? (
               <div className="rounded-md border border-amber-400/20 bg-amber-400/10 p-3 text-xs text-amber-100">
                 Approve a semantic model before creating datasets.
@@ -415,6 +607,18 @@ export function DatasetsAdminPanel() {
                     </Button>
                     <Button size="icon" variant="outline" title="Archive dataset" onClick={() => void handleStatus(dataset.id, 'archived')} disabled={saving || dataset.status === 'archived'}>
                       <Archive className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      title="Delete dataset"
+                      className="border-rose-300/20 bg-rose-500/10 text-rose-200 hover:border-rose-300/35 hover:bg-rose-500/15 hover:text-rose-100"
+                      onClick={() => void handleDeleteDataset(dataset)}
+                      disabled={deletingDatasetId === dataset.id}
+                    >
+                      {deletingDatasetId === dataset.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Trash2 className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>

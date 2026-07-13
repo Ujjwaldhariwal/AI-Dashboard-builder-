@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Clock3, Eye, FileStack, LayoutDashboard, Loader2, Plus, Rocket, Send, SquareStack, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, Clock3, ExternalLink, Eye, FileStack, LayoutDashboard, Loader2, Plus, Rocket, Send, SquareStack, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +11,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { demoChart, demoDashboard, demoDashboardHealthAudit, demoPage, demoProjects, demoSlot, demoVersion, DEMO_DASHBOARD_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID, DEMO_VERSION_ID } from '@/lib/dashboardos/demo-data'
+import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 import type { DashboardChartSlot, DashboardHealthAudit, DashboardPage, DashboardVersion, PublishedDashboard } from '@/types/dashboard-publishing'
 
@@ -19,6 +22,7 @@ interface ProjectOption {
   tenantId: string
   name: string
   tenantName?: string | null
+  tenantSlug?: string | null
 }
 
 interface VersionHistory {
@@ -60,6 +64,10 @@ function chartSize(chart: DashboardChartConfig) {
 }
 
 export function PublishedDashboardsAdminPanel() {
+  const builderScope = useScopedBuilderStore(state => state.scope)
+  const setBuilderScope = useScopedBuilderStore(state => state.setScope)
+  const setBuilderDashboardId = useScopedBuilderStore(state => state.setDashboardId)
+  const setBuilderPublishedVersionId = useScopedBuilderStore(state => state.setPublishedVersionId)
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [dashboards, setDashboards] = useState<PublishedDashboard[]>([])
   const [charts, setCharts] = useState<DashboardChartConfig[]>([])
@@ -77,9 +85,15 @@ export function PublishedDashboardsAdminPanel() {
   const [healthAudit, setHealthAudit] = useState<DashboardHealthAudit | null>(null)
   const [healthLoading, setHealthLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedDashboard = dashboards.find(dashboard => dashboard.id === dashboardId)
+  const clientDashboardUrl = selectedProject?.tenantSlug
+    ? `/client/${encodeURIComponent(selectedProject.tenantSlug)}`
+    : demoMode
+      ? '/client/northstar-retail'
+      : null
   const publishableCharts = useMemo(() => charts.filter(chart => (
     chart.status === 'published' && ['valid', 'warning'].includes(chart.validationState)
   )), [charts])
@@ -99,16 +113,35 @@ export function PublishedDashboardsAdminPanel() {
   }, [history.slots])
 
   const fetchProjects = useCallback(async () => {
+    if (demoMode) {
+      setProjects(demoProjects)
+      setProjectId(DEMO_PROJECT_ID)
+      if (!builderScope || builderScope.tenantId !== DEMO_TENANT_ID || builderScope.projectId !== DEMO_PROJECT_ID) {
+        setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'dashboard')
+      }
+      return
+    }
     const response = await fetch('/api/admin/projects', { cache: 'no-store' })
     const payload = await response.json().catch(() => null)
     if (!response.ok) throw new Error(errorToText(payload))
     const nextProjects = Array.isArray(payload?.projects) ? payload.projects as ProjectOption[] : []
     setProjects(nextProjects)
-    setProjectId(current => current || nextProjects[0]?.id || '')
-  }, [])
+    setProjectId(current => {
+      if (current) return current
+      if (builderScope && nextProjects.some(project => project.id === builderScope.projectId)) return builderScope.projectId
+      return ''
+    })
+  }, [builderScope, demoMode, setBuilderScope])
 
   const fetchProjectAssets = useCallback(async (nextProjectId: string) => {
     if (!nextProjectId) return
+    if (demoMode) {
+      setDashboards([demoDashboard])
+      setCharts([demoChart])
+      setDashboardId(DEMO_DASHBOARD_ID)
+      setSelectedChartIds([demoChart.id])
+      return
+    }
     const [dashboardsResponse, chartsResponse] = await Promise.all([
       fetch(`/api/admin/published-dashboards?projectId=${nextProjectId}`, { cache: 'no-store' }),
       fetch(`/api/admin/dashboard-charts?projectId=${nextProjectId}`, { cache: 'no-store' }),
@@ -123,11 +156,15 @@ export function PublishedDashboardsAdminPanel() {
     setCharts(nextCharts)
     setDashboardId(current => nextDashboards.some(dashboard => dashboard.id === current) ? current : nextDashboards[0]?.id ?? '')
     setSelectedChartIds(current => current.filter(chartId => nextCharts.some(chart => chart.id === chartId)))
-  }, [])
+  }, [demoMode])
 
   const fetchVersionHistory = useCallback(async (nextDashboardId: string) => {
     if (!nextDashboardId) {
       setHistory({ versions: [], pages: [], slots: [] })
+      return
+    }
+    if (demoMode) {
+      setHistory({ versions: [demoVersion], pages: [demoPage], slots: [demoSlot] })
       return
     }
     const response = await fetch(`/api/admin/published-dashboards/${nextDashboardId}/versions`, { cache: 'no-store' })
@@ -138,7 +175,7 @@ export function PublishedDashboardsAdminPanel() {
       pages: Array.isArray(payload?.pages) ? payload.pages as DashboardPage[] : [],
       slots: Array.isArray(payload?.slots) ? payload.slots as DashboardChartSlot[] : [],
     })
-  }, [])
+  }, [demoMode])
 
   useEffect(() => {
     void fetchProjects().catch(error => toast.error(errorToText(error))).finally(() => setLoading(false))
@@ -161,6 +198,14 @@ export function PublishedDashboardsAdminPanel() {
     if (!selectedProject) return
     setSavingDashboard(true)
     try {
+      if (demoMode) {
+        setDashboards([demoDashboard])
+        setDashboardId(DEMO_DASHBOARD_ID)
+        setBuilderScope({ tenantId: DEMO_TENANT_ID, projectId: DEMO_PROJECT_ID }, 'dashboard')
+        setBuilderDashboardId(DEMO_DASHBOARD_ID)
+        toast.success('Demo dashboard shell ready')
+        return
+      }
       const response = await fetch('/api/admin/published-dashboards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -178,7 +223,12 @@ export function PublishedDashboardsAdminPanel() {
       setDashboardName('')
       setDashboardDescription('')
       await fetchProjectAssets(selectedProject.id)
-      if (payload?.dashboard?.id) setDashboardId(String(payload.dashboard.id))
+      if (payload?.dashboard?.id) {
+        const nextDashboardId = String(payload.dashboard.id)
+        setDashboardId(nextDashboardId)
+        setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'dashboard')
+        setBuilderDashboardId(nextDashboardId)
+      }
     } catch (error) {
       toast.error(errorToText(error))
     } finally {
@@ -190,6 +240,12 @@ export function PublishedDashboardsAdminPanel() {
     if (!selectedDashboard || selectedCharts.length === 0) return
     setSavingVersion(true)
     try {
+      if (demoMode) {
+        setHistory({ versions: [demoVersion], pages: [demoPage], slots: [demoSlot] })
+        setBuilderPublishedVersionId(DEMO_VERSION_ID)
+        toast.success('Demo draft version created')
+        return
+      }
       const response = await fetch(`/api/admin/published-dashboards/${selectedDashboard.id}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,6 +292,12 @@ export function PublishedDashboardsAdminPanel() {
     if (!selectedDashboard) return
     setPublishingId(versionId)
     try {
+      if (demoMode) {
+        setDashboards([{ ...demoDashboard, currentVersionId: versionId, publishedAt: new Date().toISOString() }])
+        setBuilderPublishedVersionId(versionId)
+        toast.success('Demo dashboard version published')
+        return
+      }
       const response = await fetch(`/api/admin/published-dashboards/${selectedDashboard.id}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -244,6 +306,7 @@ export function PublishedDashboardsAdminPanel() {
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
       toast.success('Dashboard version published')
+      setBuilderPublishedVersionId(versionId)
       await Promise.all([
         fetchProjectAssets(projectId),
         fetchVersionHistory(selectedDashboard.id),
@@ -259,6 +322,11 @@ export function PublishedDashboardsAdminPanel() {
     if (!projectId) return
     setHealthLoading(true)
     try {
+      if (demoMode) {
+        setHealthAudit(demoDashboardHealthAudit)
+        toast.success('Demo dashboard health check recorded')
+        return
+      }
       const response = await fetch(`/api/admin/published-dashboards/health?projectId=${projectId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -281,6 +349,14 @@ export function PublishedDashboardsAdminPanel() {
         ? current.filter(id => id !== chartId)
         : [...current, chartId]
     ))
+  }
+
+  function openClientDashboard() {
+    if (!clientDashboardUrl) {
+      toast.info('Select a project with a tenant slug before opening the client runtime.')
+      return
+    }
+    window.open(clientDashboardUrl, '_blank', 'noopener,noreferrer')
   }
 
   if (loading) {
@@ -307,7 +383,16 @@ export function PublishedDashboardsAdminPanel() {
         </div>
         <div className="w-full max-w-xs">
           <Label className="text-xs text-slate-400">Project</Label>
-          <Select value={projectId} onValueChange={setProjectId}>
+          <Select
+            value={projectId}
+            onValueChange={(value) => {
+              const selected = projects.find(project => project.id === value)
+              setProjectId(value)
+              setDashboardId('')
+              setSelectedChartIds([])
+              if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'dashboard')
+            }}
+          >
             <SelectTrigger className="mt-2 border-white/10 bg-slate-950 text-slate-100">
               <SelectValue placeholder="Select project" />
             </SelectTrigger>
@@ -318,10 +403,16 @@ export function PublishedDashboardsAdminPanel() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={runDashboardHealthCheck} disabled={!projectId || healthLoading} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
-          {healthLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
-          Run health check
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={openClientDashboard} disabled={!clientDashboardUrl} className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10">
+            <ExternalLink className="mr-2 h-4 w-4" />
+            View as client
+          </Button>
+          <Button onClick={runDashboardHealthCheck} disabled={!projectId || healthLoading} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
+            {healthLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
+            Run health check
+          </Button>
+        </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-4">
@@ -402,7 +493,13 @@ export function PublishedDashboardsAdminPanel() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Select value={dashboardId} onValueChange={setDashboardId}>
+              <Select
+                value={dashboardId}
+                onValueChange={(value) => {
+                  setDashboardId(value)
+                  setBuilderDashboardId(value || null)
+                }}
+              >
                 <SelectTrigger className="border-white/10 bg-slate-950 text-slate-100">
                   <SelectValue placeholder="Select dashboard" />
                 </SelectTrigger>
@@ -420,6 +517,17 @@ export function PublishedDashboardsAdminPanel() {
                       <p className="mt-1 text-xs text-slate-500">/{selectedDashboard.slug}</p>
                     </div>
                     <Badge variant="outline" className={statusClassName(selectedDashboard.status)}>{selectedDashboard.status}</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={openClientDashboard} disabled={!clientDashboardUrl} className="h-8 border-white/10 bg-transparent text-slate-300 hover:bg-white/10">
+                      <Eye className="mr-2 h-3.5 w-3.5" />
+                      Preview published dashboard
+                    </Button>
+                    {clientDashboardUrl ? (
+                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5 font-mono text-[11px] text-slate-500">
+                        {clientDashboardUrl}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -522,6 +630,12 @@ export function PublishedDashboardsAdminPanel() {
                         {publishingId === version.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
                         Publish
                       </Button>
+                      {version.status === 'published' ? (
+                        <Button size="sm" variant="outline" onClick={openClientDashboard} disabled={!clientDashboardUrl} className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10">
+                          <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                          Open dashboard
+                        </Button>
+                      ) : null}
                     </div>
                     {version.publishedAt ? (
                       <p className="mt-3 flex items-center gap-2 text-xs text-slate-500">

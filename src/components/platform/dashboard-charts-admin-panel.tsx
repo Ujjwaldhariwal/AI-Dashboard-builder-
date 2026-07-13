@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { demoChart, demoChartAudit, demoDataset, demoDatasetPlan, demoProjects, DEMO_TENANT_ID, DEMO_PROJECT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
+import { buildGuidedChartRecommendations } from '@/lib/dashboardos/guided-review'
 import type { DashboardChartAudit, DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
 import type { ChartCompatibilityResult, ChartTemplateId, DatasetShape } from '@/types/chart-template'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -195,6 +196,7 @@ export function DashboardChartsAdminPanel() {
   const [aiRefinementSummary, setAiRefinementSummary] = useState<AiRefinementSummaryState | null>(null)
   const [aiRefinementRollout, setAiRefinementRollout] = useState<AiRefinementRolloutState | null>(null)
   const [savingRolloutScope, setSavingRolloutScope] = useState<AiRolloutScopeType | null>(null)
+  const [advancedComposerOpen, setAdvancedComposerOpen] = useState(false)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -203,6 +205,12 @@ export function DashboardChartsAdminPanel() {
     plan?.chartOptions?.compatibility.filter(option => option.status !== 'blocked') ?? []
   ), [plan])
   const recommendedOption = allowedOptions.find(option => option.status === 'recommended') ?? allowedOptions[0]
+  const guidedChartRecommendations = useMemo(() => buildGuidedChartRecommendations({
+    shape: plan?.chartOptions?.shape,
+    compatibility: plan?.chartOptions?.compatibility,
+    fields: plan?.fields,
+    metrics: plan?.metrics,
+  }), [plan])
   const auditByChartId = useMemo(() => new Map(
     chartAudit?.items.map(item => [item.chart.id, item]) ?? [],
   ), [chartAudit])
@@ -507,7 +515,7 @@ export function DashboardChartsAdminPanel() {
           <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--dos-chart-success)]">Chart Composer</p>
           <h1 className="mt-1 text-2xl font-semibold text-[color:var(--dos-text-primary)]">Validated dashboard charts</h1>
           <p className="mt-2 max-w-2xl text-sm text-[color:var(--dos-text-muted)]">
-            Convert published semantic datasets into guarded chart configs with axis, tooltip, sizing, and template validation.
+            Review suggested dashboard blocks from governed datasets, then customize only when the default needs adjustment.
           </p>
         </div>
         <Badge className="bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)] hover:bg-[var(--dos-info-soft)]">
@@ -515,12 +523,53 @@ export function DashboardChartsAdminPanel() {
         </Badge>
       </div>
 
+      <section className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 text-[color:var(--dos-text-primary)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Guided mode</Badge>
+            <h2 className="mt-3 text-lg font-semibold">Review suggested dashboard</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--dos-text-muted)]">
+              Recommendations come from dataset shape only: time plus metric becomes a trend, category plus metric becomes comparison, and metrics can become KPI cards.
+            </p>
+          </div>
+          <Button variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]" onClick={() => setAdvancedComposerOpen(open => !open)}>
+            {advancedComposerOpen ? 'Hide advanced composer' : 'Customize chart manually'}
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {guidedChartRecommendations.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-5 text-sm text-[color:var(--dos-text-muted)] md:col-span-2 xl:col-span-4">
+              Select a published dataset to see chart recommendations.
+            </div>
+          ) : guidedChartRecommendations.map(recommendation => (
+            <button
+              key={recommendation.id}
+              type="button"
+              onClick={() => {
+                if (allowedOptions.some(option => option.template.id === recommendation.chartType)) {
+                  setTemplateId(recommendation.chartType as ChartTemplateId)
+                }
+                setName(current => current || recommendation.title)
+              }}
+              className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4 text-left transition-colors hover:border-[color:var(--dos-chart-success)] hover:bg-[var(--dos-success-soft)]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold text-[color:var(--dos-text-primary)]">{recommendation.title}</p>
+                <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]">{recommendation.confidence}%</Badge>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-[color:var(--dos-text-muted)]">{recommendation.reason}</p>
+              <p className="mt-3 text-[11px] uppercase tracking-wide text-[color:var(--dos-chart-info)]">{recommendation.chartType}</p>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]" data-testid="dashboard-chart-composer">
+        <Card className={advancedComposerOpen ? 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]' : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] opacity-90'} data-testid="dashboard-chart-composer">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-slate-100">
               <SlidersHorizontal className="h-4 w-4 text-[color:var(--dos-chart-warning)]" />
-              Draft chart setup
+              {advancedComposerOpen ? 'Advanced chart setup' : 'Review selected chart'}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -618,7 +667,7 @@ export function DashboardChartsAdminPanel() {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className={advancedComposerOpen ? 'grid gap-4 md:grid-cols-2' : 'hidden'}>
               <div className="space-y-2">
                 <Label className="text-[color:var(--dos-text-secondary)]" style={{ color: 'var(--dos-text-secondary)' }}>X axis</Label>
                 <Select value={encoding.xAxisFieldId ?? ''} onValueChange={(value) => setEncoding(current => ({ ...current, xAxisFieldId: value }))}>
@@ -690,8 +739,13 @@ export function DashboardChartsAdminPanel() {
 
             <Button onClick={() => void handleSave()} disabled={saving || !templateId || !datasetId} className="bg-[var(--dos-chart-success)] text-[color:var(--dos-background-deep)] hover:bg-[var(--dos-chart-success)]">
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Save validated draft
+              Save reviewed draft
             </Button>
+            {!advancedComposerOpen ? (
+              <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3 text-xs leading-5 text-[color:var(--dos-text-muted)]">
+                Current draft uses {templateId || 'no'} template, {encoding.yMetricIds.length} metrics, and {encoding.tooltipFieldIds.length} tooltip fields. Open advanced composer to change bindings.
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
