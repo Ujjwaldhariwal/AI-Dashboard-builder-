@@ -48,9 +48,12 @@ interface GuidedLandingSnapshot {
   charts: DashboardChartConfig[]
   dashboards: PublishedDashboard[]
   preflight: GuidedPublishReadinessResult | null
+  localReadinessEvaluatedAt: string
   error: string | null
   loading: boolean
 }
+
+const INITIAL_LOCAL_READINESS_EVALUATED_AT = '2026-07-13T00:00:00.000Z'
 
 function errorToText(value: unknown) {
   if (value instanceof Error) return value.message
@@ -149,6 +152,7 @@ export function GuidedWorkflowLanding() {
     charts: [],
     dashboards: [],
     preflight: null,
+    localReadinessEvaluatedAt: INITIAL_LOCAL_READINESS_EVALUATED_AT,
     error: null,
     loading: true,
   })
@@ -166,6 +170,7 @@ export function GuidedWorkflowLanding() {
           charts: [demoChart],
           dashboards: [demoDashboard],
           preflight: null,
+          localReadinessEvaluatedAt: '2026-07-13T00:05:00.000Z',
           error: null,
           loading: false,
         })
@@ -199,6 +204,7 @@ export function GuidedWorkflowLanding() {
         charts: Array.isArray(chartsPayload.charts) ? chartsPayload.charts as GuidedLandingSnapshot['charts'] : [],
         dashboards: Array.isArray(dashboardsPayload.dashboards) ? dashboardsPayload.dashboards as GuidedLandingSnapshot['dashboards'] : [],
         preflight: preflightPayload.readiness as GuidedPublishReadinessResult | null,
+        localReadinessEvaluatedAt: new Date().toISOString(),
         error: null,
         loading: false,
       })
@@ -233,7 +239,8 @@ export function GuidedWorkflowLanding() {
     dashboards: snapshot.dashboards,
     selectedDashboardId: snapshot.dashboards[0]?.id ?? null,
     clientUrl: clientHref,
-  }), [clientHref, profileState, semanticAsset?.modelId, snapshot.charts, snapshot.dashboards, snapshot.datasets, snapshot.models])
+    evaluatedAt: snapshot.localReadinessEvaluatedAt,
+  }), [clientHref, profileState, semanticAsset?.modelId, snapshot.charts, snapshot.dashboards, snapshot.datasets, snapshot.localReadinessEvaluatedAt, snapshot.models])
   const readiness = snapshot.preflight ?? localReadiness
   const steps = useMemo(() => buildGuidedProgress({
     hasDataSource: snapshot.dataSources.some(source => source.schemaLastStatus === 'ok' || Number(source.schemaColumnCount ?? 0) > 0),
