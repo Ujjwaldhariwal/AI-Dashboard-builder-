@@ -23,9 +23,11 @@ function statusClassName(status: GuidedPublishReadinessResult['status']) {
 export function GuidedPublishReadinessPanel({
   readiness,
   compact = false,
+  source = 'local',
 }: {
   readiness: GuidedPublishReadinessResult
   compact?: boolean
+  source?: 'local' | 'server-preflight'
 }) {
   const visibleReadyItems = compact ? readiness.readyItems.slice(0, 3) : readiness.readyItems
   const visibleWarnings = compact ? readiness.warnings.slice(0, 2) : readiness.warnings
@@ -49,6 +51,11 @@ export function GuidedPublishReadinessPanel({
           </div>
           <h3 className="mt-2 text-sm font-semibold">Publish readiness</h3>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-[color:var(--dos-text-muted)]">{readiness.summary}</p>
+          <p className="mt-1 max-w-2xl text-[11px] leading-4 text-[color:var(--dos-text-muted)]" data-testid="guided-readiness-source">
+            {source === 'server-preflight'
+              ? 'Server preflight was recomputed from current project data. Publish still revalidates before release.'
+              : 'Local readiness preview. Run server preflight before publishing real project data.'}
+          </p>
         </div>
         {readiness.nextFixAction ? (
           <Button asChild size="sm" variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface)]">

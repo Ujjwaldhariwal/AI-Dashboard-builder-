@@ -15,6 +15,7 @@ import {
   buildGuidedProgress,
   buildGuidedReviewState,
   type GuidedContinueAction,
+  type GuidedPublishReadinessResult,
   type GuidedProgressStepId,
   type GuidedReviewState,
 } from '@/lib/dashboardos/guided-review'
@@ -46,6 +47,7 @@ interface GuidedLandingSnapshot {
   datasets: SemanticDataset[]
   charts: DashboardChartConfig[]
   dashboards: PublishedDashboard[]
+  preflight: GuidedPublishReadinessResult | null
   error: string | null
   loading: boolean
 }
@@ -146,6 +148,7 @@ export function GuidedWorkflowLanding() {
     datasets: [],
     charts: [],
     dashboards: [],
+    preflight: null,
     error: null,
     loading: true,
   })
@@ -162,6 +165,7 @@ export function GuidedWorkflowLanding() {
           datasets: [demoDataset],
           charts: [demoChart],
           dashboards: [demoDashboard],
+          preflight: null,
           error: null,
           loading: false,
         })
@@ -176,13 +180,14 @@ export function GuidedWorkflowLanding() {
         return
       }
 
-      const [sourcesPayload, profilePayload, modelsPayload, datasetsPayload, chartsPayload, dashboardsPayload] = await Promise.all([
+      const [sourcesPayload, profilePayload, modelsPayload, datasetsPayload, chartsPayload, dashboardsPayload, preflightPayload] = await Promise.all([
         fetchJson(`/api/admin/data-sources?projectId=${encodeURIComponent(project.id)}`),
         fetchJson(`/api/admin/guided-review/profile?projectId=${encodeURIComponent(project.id)}`),
         fetchJson(`/api/admin/semantic-models?projectId=${encodeURIComponent(project.id)}`),
         fetchJson(`/api/admin/datasets?projectId=${encodeURIComponent(project.id)}`),
         fetchJson(`/api/admin/dashboard-charts?projectId=${encodeURIComponent(project.id)}`),
         fetchJson(`/api/admin/published-dashboards?projectId=${encodeURIComponent(project.id)}`),
+        fetchJson(`/api/admin/guided-review/publish-readiness?projectId=${encodeURIComponent(project.id)}`),
       ])
 
       setSnapshot({
@@ -193,6 +198,7 @@ export function GuidedWorkflowLanding() {
         datasets: Array.isArray(datasetsPayload.datasets) ? datasetsPayload.datasets as GuidedLandingSnapshot['datasets'] : [],
         charts: Array.isArray(chartsPayload.charts) ? chartsPayload.charts as GuidedLandingSnapshot['charts'] : [],
         dashboards: Array.isArray(dashboardsPayload.dashboards) ? dashboardsPayload.dashboards as GuidedLandingSnapshot['dashboards'] : [],
+        preflight: preflightPayload.readiness as GuidedPublishReadinessResult | null,
         error: null,
         loading: false,
       })
@@ -218,7 +224,7 @@ export function GuidedWorkflowLanding() {
 
   const profileState = snapshot.profile?.state
   const semanticAsset = profileState?.semanticAsset
-  const readiness = useMemo(() => buildGuidedPublishReadiness({
+  const localReadiness = useMemo(() => buildGuidedPublishReadiness({
     profileState,
     models: snapshot.models,
     activeSemanticModelId: semanticAsset?.modelId ?? null,
@@ -228,6 +234,7 @@ export function GuidedWorkflowLanding() {
     selectedDashboardId: snapshot.dashboards[0]?.id ?? null,
     clientUrl: clientHref,
   }), [clientHref, profileState, semanticAsset?.modelId, snapshot.charts, snapshot.dashboards, snapshot.datasets, snapshot.models])
+  const readiness = snapshot.preflight ?? localReadiness
   const steps = useMemo(() => buildGuidedProgress({
     hasDataSource: snapshot.dataSources.some(source => source.schemaLastStatus === 'ok' || Number(source.schemaColumnCount ?? 0) > 0),
     hasProfile: Boolean(snapshot.profile),
@@ -361,7 +368,7 @@ export function GuidedWorkflowLanding() {
       </div>
 
       <div className="mt-5">
-        <GuidedPublishReadinessPanel readiness={readiness} compact />
+        <GuidedPublishReadinessPanel readiness={readiness} compact source={snapshot.preflight ? 'server-preflight' : 'local'} />
       </div>
 
       <div className="mt-5">

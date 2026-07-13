@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, Clock3, ExternalLink, Eye, FileStack, LayoutDashboard, Loader2, Plus, Rocket, Send, SquareStack, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, Clock3, ExternalLink, Eye, FileStack, LayoutDashboard, Loader2, Plus, Rocket, Send, ShieldCheck, SquareStack, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +38,7 @@ import {
   type GuidedPublishReadinessResult,
   type GuidedReviewState,
 } from '@/lib/dashboardos/guided-review'
+import type { GuidedPublishPreflightMetadata } from '@/lib/dashboardos/guided-publish-readiness-server'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 import type { DashboardChartSlot, DashboardHealthAudit, DashboardPage, DashboardVersion, PublishedDashboard } from '@/types/dashboard-publishing'
 import type { SemanticDataset } from '@/types/semantic-dataset'
@@ -137,6 +138,8 @@ export function PublishedDashboardsAdminPanel() {
   const [savingDashboard, setSavingDashboard] = useState(false)
   const [savingVersion, setSavingVersion] = useState(false)
   const [publishingId, setPublishingId] = useState<string | null>(null)
+  const [serverPreflight, setServerPreflight] = useState<{ readiness: GuidedPublishReadinessResult; metadata: GuidedPublishPreflightMetadata } | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
   const [healthAudit, setHealthAudit] = useState<DashboardHealthAudit | null>(null)
   const [healthLoading, setHealthLoading] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -170,7 +173,8 @@ export function PublishedDashboardsAdminPanel() {
     selectedVersionId: versionId ?? selectedDashboard?.currentVersionId ?? history.versions[0]?.id ?? null,
     clientUrl: clientDashboardUrl,
   }), [charts, clientDashboardUrl, dashboardId, dashboards, datasets, guidedProfile?.state, history.pages, history.slots, history.versions, models, selectedDashboard?.currentVersionId, selectedDashboard?.id])
-  const publishReadiness = useMemo(() => buildReadinessForVersion(selectedDashboard?.currentVersionId ?? history.versions[0]?.id ?? null), [buildReadinessForVersion, history.versions, selectedDashboard?.currentVersionId])
+  const localPublishReadiness = useMemo(() => buildReadinessForVersion(selectedDashboard?.currentVersionId ?? history.versions[0]?.id ?? null), [buildReadinessForVersion, history.versions, selectedDashboard?.currentVersionId])
+  const publishReadiness = serverPreflight?.readiness ?? localPublishReadiness
   const pagesByVersion = useMemo(() => {
     const map = new Map<string, DashboardPage[]>()
     for (const page of history.pages) map.set(page.versionId, [...(map.get(page.versionId) ?? []), page])
@@ -196,6 +200,7 @@ export function PublishedDashboardsAdminPanel() {
     if (!response.ok) throw new Error(errorToText(payload))
     const nextProjects = Array.isArray(payload?.projects) ? payload.projects as ProjectOption[] : []
     setProjects(nextProjects)
+    setServerPreflight(null)
     setProjectId(current => {
       if (current) return current
       if (builderScope && nextProjects.some(project => project.id === builderScope.projectId)) return builderScope.projectId
@@ -241,6 +246,7 @@ export function PublishedDashboardsAdminPanel() {
     setDatasets(Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets as SemanticDataset[] : [])
     setDashboardId(current => nextDashboards.some(dashboard => dashboard.id === current) ? current : nextDashboards[0]?.id ?? '')
     setSelectedChartIds(current => current.filter(chartId => nextCharts.some(chart => chart.id === chartId)))
+    setServerPreflight(null)
   }, [demoMode])
 
   const fetchVersionHistory = useCallback(async (nextDashboardId: string) => {
@@ -420,6 +426,53 @@ export function PublishedDashboardsAdminPanel() {
     }
   }
 
+  async function runReadinessPreflight() {
+    if (!projectId) return
+    setPreflightLoading(true)
+    try {
+      if (demoMode) {
+        setServerPreflight({
+          readiness: localPublishReadiness,
+          metadata: {
+            strategy: 'recomputed',
+            projectId: DEMO_PROJECT_ID,
+            tenantId: DEMO_TENANT_ID,
+            tenantSlug: 'northstar-retail',
+            selectedDashboardId: DEMO_DASHBOARD_ID,
+            selectedVersionId: DEMO_VERSION_ID,
+            semanticModelId: demoModel.id,
+            semanticDraftVersion: 1,
+            datasetCount: 1,
+            chartCount: 1,
+            dashboardCount: 1,
+            versionCount: 1,
+            pageCount: 1,
+            slotCount: 1,
+          },
+        })
+        toast.success('Demo readiness preflight recomputed')
+        return
+      }
+
+      const params = new URLSearchParams({ projectId })
+      if (selectedDashboard?.id) params.set('dashboardId', selectedDashboard.id)
+      const candidateVersionId = selectedDashboard?.currentVersionId ?? history.versions[0]?.id
+      if (candidateVersionId) params.set('versionId', candidateVersionId)
+      const response = await fetch(`/api/admin/guided-review/publish-readiness?${params.toString()}`, { cache: 'no-store' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      setServerPreflight({
+        readiness: payload.readiness as GuidedPublishReadinessResult,
+        metadata: payload.metadata as GuidedPublishPreflightMetadata,
+      })
+      toast.success('Readiness preflight recomputed from server data')
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setPreflightLoading(false)
+    }
+  }
+
   async function runDashboardHealthCheck() {
     if (!projectId) return
     setHealthLoading(true)
@@ -514,6 +567,10 @@ export function PublishedDashboardsAdminPanel() {
             {healthLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
             Run health check
           </Button>
+          <Button onClick={runReadinessPreflight} disabled={!projectId || preflightLoading} className="bg-[#66d9ef] text-slate-950 hover:bg-[#9beeff]" data-testid="run-readiness-preflight">
+            {preflightLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+            Run readiness check
+          </Button>
         </div>
       </section>
 
@@ -544,7 +601,12 @@ export function PublishedDashboardsAdminPanel() {
         </Card>
       </section>
 
-      <GuidedPublishReadinessPanel readiness={publishReadiness} />
+      <GuidedPublishReadinessPanel readiness={publishReadiness} source={serverPreflight ? 'server-preflight' : 'local'} />
+      {serverPreflight ? (
+        <p className="text-xs text-slate-500" data-testid="guided-preflight-metadata">
+          Server preflight evaluated {serverPreflight.metadata.datasetCount} datasets, {serverPreflight.metadata.chartCount} charts, and {serverPreflight.metadata.slotCount} dashboard slots for this project.
+        </p>
+      ) : null}
 
       {healthAudit ? (
         <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-slate-100">
