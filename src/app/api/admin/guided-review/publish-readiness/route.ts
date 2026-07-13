@@ -3,7 +3,7 @@ import { z } from 'zod'
 
 import { evaluateGuidedPublishReadinessForProject } from '@/lib/dashboardos/guided-publish-readiness-server'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
-import { getAuthedSupabase } from '@/lib/supabase/server'
+import { getAuthedSupabase, type AuthedSupabaseContext } from '@/lib/supabase/server'
 
 const QuerySchema = z.object({
   projectId: z.string().uuid(),
@@ -11,9 +11,12 @@ const QuerySchema = z.object({
   versionId: z.string().uuid().optional().nullable(),
 }).strict()
 
-export async function GET(req: NextRequest) {
+type AuthProvider = () => Promise<AuthedSupabaseContext | null>
+
+export function createGuidedPublishReadinessGetHandler(authProvider: AuthProvider = getAuthedSupabase) {
+  return async function GET(req: NextRequest) {
   try {
-    const auth = await getAuthedSupabase()
+    const auth = await authProvider()
     if (!auth) return NextResponse.json({ readiness: null, metadata: null, error: 'Unauthorized' }, { status: 401 })
 
     const parsed = QuerySchema.safeParse({
@@ -53,3 +56,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ readiness: null, metadata: null, error: message }, { status: 500 })
   }
 }
+}
+
+export const GET = createGuidedPublishReadinessGetHandler()

@@ -6,21 +6,24 @@ import { auditDashboardVersion, recordDashboardHealthRuns } from '@/lib/publishi
 import { mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
 import { createDefaultDashboardEntitlement } from '@/lib/security/entitlements'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
-import { getAuthedSupabase } from '@/lib/supabase/server'
+import { getAuthedSupabase, type AuthedSupabaseContext } from '@/lib/supabase/server'
 
 const PublishSchema = z.object({
   versionId: z.string().uuid(),
   notes: z.string().max(1000).optional().or(z.literal('')),
 }).strict()
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
+type AuthProvider = () => Promise<AuthedSupabaseContext | null>
+
+export function createPublishedDashboardPublishPostHandler(authProvider: AuthProvider = getAuthedSupabase) {
+  return async function POST(
+    request: Request,
+    context: { params: Promise<{ id: string }> },
+  ) {
   const { id } = await context.params
 
   try {
-    const auth = await getAuthedSupabase()
+    const auth = await authProvider()
     if (!auth) return NextResponse.json({ dashboard: null, version: null, error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json().catch(() => null)
@@ -255,3 +258,6 @@ export async function POST(
     return NextResponse.json({ dashboard: null, version: null, error: message }, { status: 500 })
   }
 }
+}
+
+export const POST = createPublishedDashboardPublishPostHandler()
