@@ -27,3 +27,18 @@ npx playwright test e2e/guided-publish-live-auth.spec.ts --workers=1
 The fixture creates a real Supabase auth user whose email matches the app's employee-id login convention, seeds one tenant-scoped guided project plus one unassigned project, signs in through the anon client for handler-level tests, and signs in through `/login` for the live HTTP test. Seed data is deleted after each serial suite by removing the tenant cascade and deleting the auth user.
 
 Publish-time validation remains authoritative. The preflight route is checked first, then the publish route re-evaluates readiness and records the persisted publish event metadata.
+
+## GitHub Actions
+
+The `Guided Publish Integration` workflow runs on manual dispatch and on PRs that touch guided publish integration files. It exits successfully without running mutating tests when Supabase secrets are not configured.
+
+Configure these repository secrets to enable it:
+
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Optional repository variable:
+
+- `NEXT_PUBLIC_EMAIL_DOMAIN`, defaulting to `company.com`
+
+The workflow runs the route-handler DB integration first, then builds the app, starts `next start` on `127.0.0.1:3000`, and runs the live browser-cookie integration. Use a disposable Supabase project for this workflow because the fixture creates and deletes auth users plus tenant-scoped records.

@@ -1,0 +1,101 @@
+name: Guided Publish Integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/guided-publish-integration.yml'
+      - 'docs/guided-publish-db-integration.md'
+      - 'e2e/guided-publish-live-auth.spec.ts'
+      - 'tests/guided-publish-db-integration.spec.ts'
+      - 'tests/support/guided-publish-supabase-fixture.ts'
+      - 'src/app/api/admin/guided-review/publish-readiness/route.ts'
+      - 'src/app/api/admin/published-dashboards/[id]/publish/route.ts'
+      - 'src/lib/dashboardos/guided-publish-readiness-server.ts'
+      - 'src/lib/dashboardos/guided-review.ts'
+
+concurrency:
+  group: guided-publish-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guided-publish-integration:
+    name: Guided publish preflight and live auth
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_EMAIL_DOMAIN: ${{ vars.NEXT_PUBLIC_EMAIL_DOMAIN || 'company.com' }}
+      DASHBOARDOS_BASE_URL: http://127.0.0.1:3000
+      CI: true
+
+    steps:
+      - name: Check integration secrets
+        id: integration
+        shell: bash
+        run: |
+          if [[ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" && -n "$SUPABASE_SERVICE_ROLE_KEY" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Guided publish integration skipped because Supabase secrets are not configured."
+          fi
+
+      - name: Checkout
+        if: steps.integration.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: steps.integration.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.integration.outputs.enabled == 'true'
+        run: npm ci
+
+      - name: Install Playwright browser
+        if: steps.integration.outputs.enabled == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: TypeScript check
+        if: steps.integration.outputs.enabled == 'true'
+        run: npx tsc --noEmit
+
+      - name: Route-handler DB integration
+        if: steps.integration.outputs.enabled == 'true'
+        env:
+          DASHBOARDOS_INTEGRATION_SUPABASE: '1'
+        run: npx playwright test tests/guided-publish-db-integration.spec.ts --workers=1
+
+      - name: Build app for live HTTP integration
+        if: steps.integration.outputs.enabled == 'true'
+        run: npm run build
+
+      - name: Start app server
+        if: steps.integration.outputs.enabled == 'true'
+        env:
+          PORT: 3000
+        run: |
+          npm run start -- --hostname 127.0.0.1 --port 3000 > next-guided-publish.log 2>&1 &
+          echo $! > next-guided-publish.pid
+          node -e "const url='http://127.0.0.1:3000/login'; const started=Date.now(); (async function wait(){ try { const res=await fetch(url); if (res.status < 500) process.exit(0); } catch {} if (Date.now()-started>60000) process.exit(1); setTimeout(wait,1000); })();"
+
+      - name: Live HTTP cookie-auth integration
+        if: steps.integration.outputs.enabled == 'true'
+        env:
+          DASHBOARDOS_INTEGRATION_SUPABASE: '1'
+          DASHBOARDOS_LIVE_HTTP_GUIDED_PUBLISH: '1'
+        run: npx playwright test e2e/guided-publish-live-auth.spec.ts --workers=1
+
+      - name: Upload server log on failure
+        if: failure() && steps.integration.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: guided-publish-next-log
+          path: next-guided-publish.log
+          if-no-files-found: ignore
