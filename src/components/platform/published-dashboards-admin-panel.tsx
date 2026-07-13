@@ -7,15 +7,40 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { GuidedPublishReadinessPanel } from '@/components/platform/guided-publish-readiness-panel'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
-import { demoChart, demoDashboard, demoDashboardHealthAudit, demoPage, demoProjects, demoSlot, demoVersion, DEMO_DASHBOARD_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID, DEMO_VERSION_ID } from '@/lib/dashboardos/demo-data'
+import {
+  demoChart,
+  demoColumns,
+  demoDashboard,
+  demoDashboardHealthAudit,
+  demoDataset,
+  demoModel,
+  demoPage,
+  demoProjects,
+  demoSlot,
+  demoVersion,
+  DEMO_DASHBOARD_ID,
+  DEMO_DATA_SOURCE_ID,
+  DEMO_PROJECT_ID,
+  DEMO_TENANT_ID,
+  DEMO_VERSION_ID,
+} from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
+import {
+  approveGuidedSemanticDraft,
+  buildGuidedPublishReadiness,
+  buildGuidedReviewState,
+  type GuidedPublishReadinessResult,
+  type GuidedReviewState,
+} from '@/lib/dashboardos/guided-review'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 import type { DashboardChartSlot, DashboardHealthAudit, DashboardPage, DashboardVersion, PublishedDashboard } from '@/types/dashboard-publishing'
+import type { SemanticDataset } from '@/types/semantic-dataset'
 
 interface ProjectOption {
   id: string
@@ -29,6 +54,11 @@ interface VersionHistory {
   versions: DashboardVersion[]
   pages: DashboardPage[]
   slots: DashboardChartSlot[]
+}
+
+interface GuidedProfileApiRecord {
+  id: string
+  state: GuidedReviewState
 }
 
 function errorToText(value: unknown) {
@@ -63,6 +93,28 @@ function chartSize(chart: DashboardChartConfig) {
   return { width: 6, height: 4 }
 }
 
+function buildDemoGuidedProfile(): GuidedProfileApiRecord {
+  const approved = approveGuidedSemanticDraft(
+    buildGuidedReviewState(demoColumns, {
+      dataSourceId: DEMO_DATA_SOURCE_ID,
+      schemaHash: 'demo-electricity-schema',
+      generatedAt: '2026-07-13T00:00:00.000Z',
+    }),
+    null,
+    '2026-07-13T00:05:00.000Z',
+    {
+      modelId: demoModel.id,
+      modelName: demoModel.name,
+      modelVersion: demoModel.version,
+      materializedAt: '2026-07-13T00:05:00.000Z',
+      fieldCount: demoColumns.length,
+      metricCount: 3,
+      relationshipCount: 0,
+    },
+  )
+  return { id: 'demo-guided-profile', state: approved }
+}
+
 export function PublishedDashboardsAdminPanel() {
   const builderScope = useScopedBuilderStore(state => state.scope)
   const setBuilderScope = useScopedBuilderStore(state => state.setScope)
@@ -71,6 +123,9 @@ export function PublishedDashboardsAdminPanel() {
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [dashboards, setDashboards] = useState<PublishedDashboard[]>([])
   const [charts, setCharts] = useState<DashboardChartConfig[]>([])
+  const [guidedProfile, setGuidedProfile] = useState<GuidedProfileApiRecord | null>(null)
+  const [models, setModels] = useState<Array<{ id: string; status?: string | null; version?: number | null }>>([])
+  const [datasets, setDatasets] = useState<SemanticDataset[]>([])
   const [history, setHistory] = useState<VersionHistory>({ versions: [], pages: [], slots: [] })
   const [projectId, setProjectId] = useState('')
   const [dashboardId, setDashboardId] = useState('')
@@ -101,6 +156,21 @@ export function PublishedDashboardsAdminPanel() {
     const selected = new Set(selectedChartIds)
     return publishableCharts.filter(chart => selected.has(chart.id))
   }, [publishableCharts, selectedChartIds])
+  const buildReadinessForVersion = useCallback((versionId?: string | null): GuidedPublishReadinessResult => buildGuidedPublishReadiness({
+    profileState: guidedProfile?.state ?? null,
+    models,
+    activeSemanticModelId: guidedProfile?.state.semanticAsset?.modelId ?? null,
+    datasets,
+    charts,
+    dashboards,
+    versions: history.versions,
+    pages: history.pages,
+    slots: history.slots,
+    selectedDashboardId: dashboardId || selectedDashboard?.id || null,
+    selectedVersionId: versionId ?? selectedDashboard?.currentVersionId ?? history.versions[0]?.id ?? null,
+    clientUrl: clientDashboardUrl,
+  }), [charts, clientDashboardUrl, dashboardId, dashboards, datasets, guidedProfile?.state, history.pages, history.slots, history.versions, models, selectedDashboard?.currentVersionId, selectedDashboard?.id])
+  const publishReadiness = useMemo(() => buildReadinessForVersion(selectedDashboard?.currentVersionId ?? history.versions[0]?.id ?? null), [buildReadinessForVersion, history.versions, selectedDashboard?.currentVersionId])
   const pagesByVersion = useMemo(() => {
     const map = new Map<string, DashboardPage[]>()
     for (const page of history.pages) map.set(page.versionId, [...(map.get(page.versionId) ?? []), page])
@@ -138,22 +208,37 @@ export function PublishedDashboardsAdminPanel() {
     if (demoMode) {
       setDashboards([demoDashboard])
       setCharts([demoChart])
+      setGuidedProfile(buildDemoGuidedProfile())
+      setModels([demoModel])
+      setDatasets([demoDataset])
       setDashboardId(DEMO_DASHBOARD_ID)
       setSelectedChartIds([demoChart.id])
       return
     }
-    const [dashboardsResponse, chartsResponse] = await Promise.all([
+    const [dashboardsResponse, chartsResponse, profileResponse, modelsResponse, datasetsResponse] = await Promise.all([
       fetch(`/api/admin/published-dashboards?projectId=${nextProjectId}`, { cache: 'no-store' }),
       fetch(`/api/admin/dashboard-charts?projectId=${nextProjectId}`, { cache: 'no-store' }),
+      fetch(`/api/admin/guided-review/profile?projectId=${nextProjectId}`, { cache: 'no-store' }),
+      fetch(`/api/admin/semantic-models?projectId=${nextProjectId}`, { cache: 'no-store' }),
+      fetch(`/api/admin/datasets?projectId=${nextProjectId}`, { cache: 'no-store' }),
     ])
     const dashboardsPayload = await dashboardsResponse.json().catch(() => null)
     const chartsPayload = await chartsResponse.json().catch(() => null)
+    const profilePayload = await profileResponse.json().catch(() => null)
+    const modelsPayload = await modelsResponse.json().catch(() => null)
+    const datasetsPayload = await datasetsResponse.json().catch(() => null)
     if (!dashboardsResponse.ok) throw new Error(errorToText(dashboardsPayload))
     if (!chartsResponse.ok) throw new Error(errorToText(chartsPayload))
+    if (!profileResponse.ok) throw new Error(errorToText(profilePayload))
+    if (!modelsResponse.ok) throw new Error(errorToText(modelsPayload))
+    if (!datasetsResponse.ok) throw new Error(errorToText(datasetsPayload))
     const nextDashboards = Array.isArray(dashboardsPayload?.dashboards) ? dashboardsPayload.dashboards as PublishedDashboard[] : []
     const nextCharts = Array.isArray(chartsPayload?.charts) ? chartsPayload.charts as DashboardChartConfig[] : []
     setDashboards(nextDashboards)
     setCharts(nextCharts)
+    setGuidedProfile(profilePayload?.profile as GuidedProfileApiRecord | null)
+    setModels(Array.isArray(modelsPayload?.models) ? modelsPayload.models as Array<{ id: string; status?: string | null; version?: number | null }> : [])
+    setDatasets(Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets as SemanticDataset[] : [])
     setDashboardId(current => nextDashboards.some(dashboard => dashboard.id === current) ? current : nextDashboards[0]?.id ?? '')
     setSelectedChartIds(current => current.filter(chartId => nextCharts.some(chart => chart.id === chartId)))
   }, [demoMode])
@@ -251,8 +336,17 @@ export function PublishedDashboardsAdminPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: versionTitle.trim() || `${selectedDashboard.name} release`,
-          notes: versionNotes.trim(),
-          layout: { mode: 'responsive-grid' },
+          notes: versionNotes.trim() || publishReadiness.summary,
+          layout: {
+            mode: 'responsive-grid',
+            guidedReadiness: {
+              status: publishReadiness.status,
+              publishEligible: publishReadiness.publishEligible,
+              evaluatedAt: publishReadiness.evaluatedAt,
+              blockers: publishReadiness.blockers.map(check => check.message),
+              warnings: publishReadiness.warnings.map(check => check.message),
+            },
+          },
           pages: [{
             title: 'Overview',
             slug: 'overview',
@@ -290,6 +384,11 @@ export function PublishedDashboardsAdminPanel() {
 
   async function publishVersion(versionId: string) {
     if (!selectedDashboard) return
+    const versionReadiness = buildReadinessForVersion(versionId)
+    if (!versionReadiness.publishEligible) {
+      toast.error(versionReadiness.summary)
+      return
+    }
     setPublishingId(versionId)
     try {
       if (demoMode) {
@@ -301,7 +400,10 @@ export function PublishedDashboardsAdminPanel() {
       const response = await fetch(`/api/admin/published-dashboards/${selectedDashboard.id}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ versionId, notes: 'Published from admin publishing panel' }),
+        body: JSON.stringify({
+          versionId,
+          notes: `Published from admin publishing panel. ${versionReadiness.summary}`,
+        }),
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
@@ -441,6 +543,8 @@ export function PublishedDashboardsAdminPanel() {
           </CardContent>
         </Card>
       </section>
+
+      <GuidedPublishReadinessPanel readiness={publishReadiness} />
 
       {healthAudit ? (
         <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-slate-100">
@@ -613,7 +717,8 @@ export function PublishedDashboardsAdminPanel() {
               ) : history.versions.map(version => {
                 const pageCount = pagesByVersion.get(version.id)?.length ?? 0
                 const slotCount = slotsByVersion.get(version.id)?.length ?? 0
-                const publishDisabled = version.status === 'published' || slotCount === 0 || pageCount === 0
+                const versionReadiness = buildReadinessForVersion(version.id)
+                const publishDisabled = version.status === 'published' || slotCount === 0 || pageCount === 0 || !versionReadiness.publishEligible
                 return (
                   <div key={version.id} className="rounded-md border border-white/10 bg-slate-950/50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -630,6 +735,9 @@ export function PublishedDashboardsAdminPanel() {
                             {version.notes}
                           </p>
                         ) : null}
+                        <p className="mt-2 text-[11px] leading-4 text-slate-500">
+                          Readiness: {versionReadiness.summary}
+                        </p>
                       </div>
                       <Button size="sm" onClick={() => publishVersion(version.id)} disabled={publishDisabled || publishingId === version.id} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
                         {publishingId === version.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}

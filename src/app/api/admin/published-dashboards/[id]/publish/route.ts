@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { auditDashboardVersion, recordDashboardHealthRuns } from '@/lib/publishing/dashboard-health-auditor'
+import { buildGuidedPublishReadiness } from '@/lib/dashboardos/guided-review'
 import { mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
+import { createDefaultDashboardEntitlement } from '@/lib/security/entitlements'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
@@ -93,6 +95,154 @@ export async function POST(
       version,
     })
     const candidateHealth = healthAudit.dashboards[0]
+
+    const readinessEvaluatedAt = new Date().toISOString()
+    const [pagesResult, slotsResult] = await Promise.all([
+      auth.supabase
+        .from('dashboard_pages')
+        .select('*')
+        .eq('version_id', version.id)
+        .eq('dashboard_id', dashboard.id)
+        .eq('tenant_id', dashboard.tenantId)
+        .eq('project_id', dashboard.projectId),
+      auth.supabase
+        .from('dashboard_chart_slots')
+        .select('*')
+        .eq('version_id', version.id)
+        .eq('dashboard_id', dashboard.id)
+        .eq('tenant_id', dashboard.tenantId)
+        .eq('project_id', dashboard.projectId),
+    ])
+    if (pagesResult.error) return NextResponse.json({ dashboard: null, version, error: pagesResult.error.message }, { status: 500 })
+    if (slotsResult.error) return NextResponse.json({ dashboard: null, version, error: slotsResult.error.message }, { status: 500 })
+
+    const slotRows = (slotsResult.data ?? []) as Record<string, unknown>[]
+    const chartIds = [...new Set(slotRows.map(slot => String(slot.chart_config_id)).filter(Boolean))]
+    const chartsResult = chartIds.length > 0
+      ? await auth.supabase
+        .from('dashboard_chart_configs')
+        .select('id, dataset_id, status, validation_state, encoding, template_id')
+        .eq('tenant_id', dashboard.tenantId)
+        .eq('project_id', dashboard.projectId)
+        .in('id', chartIds)
+      : { data: [], error: null }
+    if (chartsResult.error) return NextResponse.json({ dashboard: null, version, error: chartsResult.error.message }, { status: 500 })
+
+    const chartRows = (chartsResult.data ?? []) as Record<string, unknown>[]
+    const datasetIds = [...new Set(chartRows.map(chart => String(chart.dataset_id)).filter(Boolean))]
+    const [datasetsResult, modelsResult, profileResult, tenantResult] = await Promise.all([
+      datasetIds.length > 0
+        ? auth.supabase
+          .from('semantic_datasets')
+          .select('id, model_id, status, selection, description')
+          .eq('tenant_id', dashboard.tenantId)
+          .eq('project_id', dashboard.projectId)
+          .in('id', datasetIds)
+        : Promise.resolve({ data: [], error: null }),
+      auth.supabase
+        .from('business_models')
+        .select('id, status, version')
+        .eq('tenant_id', dashboard.tenantId)
+        .eq('project_id', dashboard.projectId),
+      auth.supabase
+        .from('guided_schema_profiles')
+        .select('state')
+        .eq('tenant_id', dashboard.tenantId)
+        .eq('project_id', dashboard.projectId)
+        .order('updated_at', { ascending: false })
+        .limit(1),
+      auth.supabase
+        .from('tenants')
+        .select('slug')
+        .eq('id', dashboard.tenantId)
+        .single(),
+    ])
+    if (datasetsResult.error) return NextResponse.json({ dashboard: null, version, error: datasetsResult.error.message }, { status: 500 })
+    if (modelsResult.error) return NextResponse.json({ dashboard: null, version, error: modelsResult.error.message }, { status: 500 })
+    if (profileResult.error) return NextResponse.json({ dashboard: null, version, error: profileResult.error.message }, { status: 500 })
+    if (tenantResult.error) return NextResponse.json({ dashboard: null, version, error: tenantResult.error.message }, { status: 500 })
+
+    const profileState = (profileResult.data?.[0]?.state && typeof profileResult.data[0].state === 'object')
+      ? profileResult.data[0].state as Parameters<typeof buildGuidedPublishReadiness>[0]['profileState']
+      : null
+    const readiness = buildGuidedPublishReadiness({
+      evaluatedAt: readinessEvaluatedAt,
+      profileState,
+      models: (modelsResult.data ?? []).map(row => ({
+        id: String(row.id),
+        status: typeof row.status === 'string' ? row.status : null,
+        version: typeof row.version === 'number' ? row.version : Number(row.version ?? 0),
+      })),
+      activeSemanticModelId: profileState?.semanticAsset?.modelId ?? null,
+      datasets: ((datasetsResult.data ?? []) as Record<string, unknown>[]).map(row => {
+        const selection = row.selection && typeof row.selection === 'object'
+          ? row.selection as { fieldIds?: string[]; metricIds?: string[]; relationshipIds?: string[] }
+          : {}
+        return {
+          id: String(row.id),
+          modelId: String(row.model_id),
+          status: String(row.status ?? 'draft') as 'draft' | 'published' | 'archived',
+          description: typeof row.description === 'string' ? row.description : null,
+          selection: {
+            fieldIds: Array.isArray(selection.fieldIds) ? selection.fieldIds : [],
+            metricIds: Array.isArray(selection.metricIds) ? selection.metricIds : [],
+            relationshipIds: Array.isArray(selection.relationshipIds) ? selection.relationshipIds : [],
+          },
+        }
+      }),
+      charts: chartRows.map(row => ({
+        id: String(row.id),
+        datasetId: String(row.dataset_id),
+        status: String(row.status ?? 'draft') as 'draft' | 'published' | 'archived',
+        validationState: String(row.validation_state ?? 'unknown') as 'unknown' | 'valid' | 'warning' | 'invalid',
+        templateId: String(row.template_id) as never,
+        encoding: row.encoding && typeof row.encoding === 'object'
+          ? row.encoding as never
+          : { yMetricIds: [], tooltipFieldIds: [], labelById: {}, colorById: {} },
+      })),
+      dashboards: [dashboard],
+      versions: [version],
+      pages: ((pagesResult.data ?? []) as Record<string, unknown>[]).map(row => ({
+        id: String(row.id),
+        versionId: String(row.version_id),
+        slug: String(row.slug ?? ''),
+      })),
+      slots: slotRows.map(row => ({
+        id: String(row.id),
+        versionId: String(row.version_id),
+        chartConfigId: String(row.chart_config_id),
+      })),
+      selectedDashboardId: dashboard.id,
+      selectedVersionId: version.id,
+      clientUrl: typeof tenantResult.data?.slug === 'string' ? `/client/${tenantResult.data.slug}` : null,
+    })
+
+    if (!readiness.publishEligible) {
+      await auth.supabase.from('audit_logs').insert({
+        tenant_id: dashboard.tenantId,
+        project_id: dashboard.projectId,
+        actor_user_id: auth.userId,
+        action: 'published_dashboard.publish_blocked',
+        target_type: 'published_dashboard',
+        target_id: dashboard.id,
+        metadata: {
+          versionId: version.id,
+          readinessStatus: readiness.status,
+          blockers: readiness.blockers.map(check => check.message),
+          warnings: readiness.warnings.map(check => check.message),
+          evaluatedAt: readiness.evaluatedAt,
+        },
+        created_at: readinessEvaluatedAt,
+      })
+      return NextResponse.json({
+        dashboard: null,
+        version,
+        healthAudit,
+        readiness,
+        error: readiness.summary,
+      }, { status: 422 })
+    }
+
     if (!candidateHealth || candidateHealth.healthState === 'blocked') {
       return NextResponse.json({
         dashboard: null,
@@ -160,6 +310,13 @@ export async function POST(
     }
 
     await Promise.all([
+      createDefaultDashboardEntitlement({
+        supabase: auth.supabase,
+        tenantId: publishedDashboard.tenantId,
+        projectId: publishedDashboard.projectId,
+        dashboardId: publishedDashboard.id,
+        createdBy: auth.userId,
+      }),
       auth.supabase.from('dashboard_publish_events').insert({
         dashboard_id: publishedDashboard.id,
         version_id: publishedVersion.id,
@@ -168,7 +325,13 @@ export async function POST(
         actor_user_id: auth.userId,
         event_type: 'published',
         notes: parsed.data.notes?.trim() || null,
-        metadata: { versionNumber: publishedVersion.versionNumber },
+        metadata: {
+          versionNumber: publishedVersion.versionNumber,
+          readinessStatus: readiness.status,
+          blockers: readiness.blockers.map(check => check.message),
+          warnings: readiness.warnings.map(check => check.message),
+          evaluatedAt: readiness.evaluatedAt,
+        },
         created_at: nowIso,
       }),
       auth.supabase.from('audit_logs').insert({
@@ -178,7 +341,14 @@ export async function POST(
         action: 'published_dashboard.published',
         target_type: 'published_dashboard',
         target_id: publishedDashboard.id,
-        metadata: { versionId: publishedVersion.id, versionNumber: publishedVersion.versionNumber },
+        metadata: {
+          versionId: publishedVersion.id,
+          versionNumber: publishedVersion.versionNumber,
+          readinessStatus: readiness.status,
+          blockers: readiness.blockers.map(check => check.message),
+          warnings: readiness.warnings.map(check => check.message),
+          evaluatedAt: readiness.evaluatedAt,
+        },
         created_at: nowIso,
       }),
       recordDashboardHealthRuns({

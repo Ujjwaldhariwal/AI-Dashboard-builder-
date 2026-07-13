@@ -10,12 +10,14 @@ import {
   buildGuidedDraftLineage,
   buildGuidedDatasetRecipes,
   buildGuidedProgress,
+  buildGuidedPublishReadiness,
   buildGuidedReviewState,
   buildGuidedSchemaProfile,
   buildGuidedSemanticDraft,
   guidedLineageLabel,
 } from '../src/lib/dashboardos/guided-review'
 import type { DataSourceColumnMetadata } from '../src/types/data-source'
+import type { DashboardChartConfig } from '../src/types/dashboard-chart'
 
 function column(tableName: string, columnName: string, dataType: string, index: number): DataSourceColumnMetadata {
   return {
@@ -277,4 +279,171 @@ test.describe('guided review foundation', () => {
     expect(continueState.completedSteps.map(step => step.id)).toContain('connect_db')
     expect(continueState.blockerSteps.map(step => step.id)).toContain('approve_model')
   })
+
+  test('marks real guided handoff ready when assets, version, route, and charts validate', () => {
+    const approved = approveGuidedSemanticDraft(buildGuidedReviewState(columns), 'admin-user', '2026-07-13T01:00:00.000Z', {
+      modelId: 'model-1',
+      modelName: 'Guided Semantic Model',
+      modelVersion: 1,
+      materializedAt: '2026-07-13T01:00:00.000Z',
+      fieldCount: 3,
+      metricCount: 1,
+      relationshipCount: 0,
+    })
+    const chart = chartConfig({ validationState: 'valid' })
+    const readiness = buildGuidedPublishReadiness({
+      evaluatedAt: '2026-07-13T02:00:00.000Z',
+      profileState: approved,
+      models: [{ id: 'model-1', status: 'approved', version: 1 }],
+      activeSemanticModelId: 'model-1',
+      datasets: [dataset()],
+      charts: [chart],
+      dashboards: [{ id: 'dashboard-1', slug: 'executive', status: 'draft', currentVersionId: null, publishedAt: null }],
+      versions: [{ id: 'version-1', dashboardId: 'dashboard-1', status: 'draft', versionNumber: 1, notes: null }],
+      pages: [{ id: 'page-1', versionId: 'version-1', slug: 'overview' }],
+      slots: [{ id: 'slot-1', versionId: 'version-1', chartConfigId: chart.id }],
+      selectedDashboardId: 'dashboard-1',
+      selectedVersionId: 'version-1',
+      clientUrl: '/client/northstar',
+    })
+
+    expect(readiness.status).toBe('ready_to_publish')
+    expect(readiness.publishEligible).toBe(true)
+    expect(readiness.blockers).toEqual([])
+    expect(readiness.readyItems.map(check => check.id)).toEqual(expect.arrayContaining([
+      'semantic_asset',
+      'dataset_draft',
+      'dashboard_draft',
+      'publish_target',
+      'runtime_validation',
+    ]))
+  })
+
+  test('distinguishes warnings from blockers in publish readiness', () => {
+    const approved = approveGuidedSemanticDraft(buildGuidedReviewState(columns), 'admin-user', '2026-07-13T01:00:00.000Z', {
+      modelId: 'model-1',
+      modelName: 'Guided Semantic Model',
+      modelVersion: 1,
+      materializedAt: '2026-07-13T01:00:00.000Z',
+      fieldCount: 3,
+      metricCount: 1,
+      relationshipCount: 0,
+    })
+    const chart = chartConfig({ validationState: 'warning' })
+    const readiness = buildGuidedPublishReadiness({
+      profileState: approved,
+      models: [{ id: 'model-1', status: 'approved', version: 1 }],
+      activeSemanticModelId: 'model-1',
+      datasets: [dataset()],
+      charts: [chart],
+      dashboards: [{ id: 'dashboard-1', slug: 'executive', status: 'draft', currentVersionId: null, publishedAt: null }],
+      versions: [{ id: 'version-1', dashboardId: 'dashboard-1', status: 'draft', versionNumber: 1, notes: null }],
+      pages: [{ id: 'page-1', versionId: 'version-1', slug: 'overview' }],
+      slots: [{ id: 'slot-1', versionId: 'version-1', chartConfigId: chart.id }],
+      selectedDashboardId: 'dashboard-1',
+      selectedVersionId: 'version-1',
+      clientUrl: '/client/northstar',
+    })
+
+    expect(readiness.publishEligible).toBe(true)
+    expect(readiness.status).toBe('ready_to_publish')
+    expect(readiness.warnings.map(check => check.id)).toContain('runtime_validation')
+    expect(readiness.blockers).toEqual([])
+  })
+
+  test('blocks publish when draft is previewable but runtime validation is invalid', () => {
+    const approved = approveGuidedSemanticDraft(buildGuidedReviewState(columns), 'admin-user', '2026-07-13T01:00:00.000Z', {
+      modelId: 'model-1',
+      modelName: 'Guided Semantic Model',
+      modelVersion: 1,
+      materializedAt: '2026-07-13T01:00:00.000Z',
+      fieldCount: 3,
+      metricCount: 1,
+      relationshipCount: 0,
+    })
+    const invalidChart = chartConfig({ validationState: 'invalid' })
+    const readiness = buildGuidedPublishReadiness({
+      profileState: approved,
+      models: [{ id: 'model-1', status: 'approved', version: 1 }],
+      activeSemanticModelId: 'model-1',
+      datasets: [dataset()],
+      charts: [invalidChart],
+      dashboards: [{ id: 'dashboard-1', slug: 'executive', status: 'draft', currentVersionId: null, publishedAt: null }],
+      versions: [{ id: 'version-1', dashboardId: 'dashboard-1', status: 'draft', versionNumber: 1, notes: null }],
+      pages: [{ id: 'page-1', versionId: 'version-1', slug: 'overview' }],
+      slots: [{ id: 'slot-1', versionId: 'version-1', chartConfigId: invalidChart.id }],
+      selectedDashboardId: 'dashboard-1',
+      selectedVersionId: 'version-1',
+      clientUrl: '/client/northstar',
+    })
+
+    expect(readiness.publishEligible).toBe(false)
+    expect(readiness.status).toBe('blocked_by_validation')
+    expect(readiness.blockers.map(check => check.id)).toContain('runtime_validation')
+    expect(readiness.nextFixAction?.href).toBe('/admin/charts')
+  })
+
+  test('feeds readiness blockers into guided landing publish state', () => {
+    const steps = buildGuidedProgress({
+      hasDataSource: true,
+      hasProfile: true,
+      openReviewCount: 0,
+      semanticDraftApproved: true,
+      hasDatasetDraft: true,
+      hasDashboardDraft: true,
+      hasPreview: true,
+      hasPublishedDashboard: false,
+      publishReadiness: {
+        status: 'previewable_not_publishable',
+        publishEligible: false,
+        summary: 'Previewable, but not publishable yet.',
+      },
+    })
+
+    expect(steps.find(step => step.id === 'publish')?.status).toBe('blocked')
+    expect(steps.find(step => step.id === 'publish')?.detail).toBe('Previewable, but not publishable yet.')
+  })
 })
+
+function dataset() {
+  return {
+    id: 'dataset-1',
+    modelId: 'model-1',
+    status: 'draft' as const,
+    description: 'Generated from approved semantic draft v1',
+    selection: {
+      fieldIds: ['field-date'],
+      metricIds: ['metric-revenue'],
+      relationshipIds: [],
+    },
+  }
+}
+
+function chartConfig(overrides: Partial<DashboardChartConfig> = {}): DashboardChartConfig {
+  return {
+    id: 'chart-1',
+    tenantId: 'tenant-1',
+    projectId: 'project-1',
+    datasetId: 'dataset-1',
+    name: 'Revenue trend',
+    description: null,
+    status: 'published',
+    templateId: 'line',
+    encoding: {
+      xAxisFieldId: 'field-date',
+      yMetricIds: ['metric-revenue'],
+      tooltipFieldIds: [],
+      labelById: {},
+      colorById: {},
+      filters: [],
+      limit: 100,
+    },
+    presentation: { size: 'standard', showLegend: true, showLabels: false, valueFormat: null },
+    interactions: {},
+    layout: { order: 0, gridSpan: 2 },
+    validationState: 'valid',
+    createdAt: '2026-07-13T00:00:00.000Z',
+    updatedAt: '2026-07-13T00:00:00.000Z',
+    ...overrides,
+  }
+}

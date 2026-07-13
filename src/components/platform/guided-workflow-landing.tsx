@@ -5,11 +5,13 @@ import { ArrowRight, CheckCircle2, Clock3, Database, GitBranch, LayoutDashboard,
 import Link from 'next/link'
 
 import { GuidedProgressStepper } from '@/components/platform/guided-progress-stepper'
+import { GuidedPublishReadinessPanel } from '@/components/platform/guided-publish-readiness-panel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   approveGuidedSemanticDraft,
   buildGuidedContinueState,
+  buildGuidedPublishReadiness,
   buildGuidedProgress,
   buildGuidedReviewState,
   type GuidedContinueAction,
@@ -19,6 +21,9 @@ import {
 import { demoChart, demoDashboard, demoDataSource, demoDataset, demoModel, demoColumns, DEMO_DATA_SOURCE_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import type { DashboardChartConfig } from '@/types/dashboard-chart'
+import type { PublishedDashboard } from '@/types/dashboard-publishing'
+import type { SemanticDataset } from '@/types/semantic-dataset'
 
 interface ProjectOption {
   id: string
@@ -37,10 +42,10 @@ interface GuidedLandingSnapshot {
   project: ProjectOption | null
   dataSources: Array<{ id: string; schemaLastStatus?: string | null; schemaColumnCount?: number | null }>
   profile: GuidedProfileApiRecord | null
-  models: Array<{ id: string; status: string }>
-  datasets: Array<{ id: string; status: string; description?: string | null }>
-  charts: Array<{ id: string; status: string; validationState?: string | null }>
-  dashboards: Array<{ id: string; status: string; currentVersionId?: string | null; publishedAt?: string | null }>
+  models: Array<{ id: string; status: string; version?: number | null }>
+  datasets: SemanticDataset[]
+  charts: DashboardChartConfig[]
+  dashboards: PublishedDashboard[]
   error: string | null
   loading: boolean
 }
@@ -154,9 +159,9 @@ export function GuidedWorkflowLanding() {
           dataSources: [{ id: demoDataSource.id, schemaLastStatus: 'ok', schemaColumnCount: demoColumns.length }],
           profile: buildDemoProfile(),
           models: [{ id: demoModel.id, status: demoModel.status }],
-          datasets: [{ id: demoDataset.id, status: demoDataset.status, description: demoDataset.description }],
-          charts: [{ id: demoChart.id, status: demoChart.status, validationState: demoChart.validationState }],
-          dashboards: [{ id: demoDashboard.id, status: demoDashboard.status, currentVersionId: demoDashboard.currentVersionId, publishedAt: demoDashboard.publishedAt }],
+          datasets: [demoDataset],
+          charts: [demoChart],
+          dashboards: [demoDashboard],
           error: null,
           loading: false,
         })
@@ -213,6 +218,16 @@ export function GuidedWorkflowLanding() {
 
   const profileState = snapshot.profile?.state
   const semanticAsset = profileState?.semanticAsset
+  const readiness = useMemo(() => buildGuidedPublishReadiness({
+    profileState,
+    models: snapshot.models,
+    activeSemanticModelId: semanticAsset?.modelId ?? null,
+    datasets: snapshot.datasets,
+    charts: snapshot.charts,
+    dashboards: snapshot.dashboards,
+    selectedDashboardId: snapshot.dashboards[0]?.id ?? null,
+    clientUrl: clientHref,
+  }), [clientHref, profileState, semanticAsset?.modelId, snapshot.charts, snapshot.dashboards, snapshot.datasets, snapshot.models])
   const steps = useMemo(() => buildGuidedProgress({
     hasDataSource: snapshot.dataSources.some(source => source.schemaLastStatus === 'ok' || Number(source.schemaColumnCount ?? 0) > 0),
     hasProfile: Boolean(snapshot.profile),
@@ -223,7 +238,8 @@ export function GuidedWorkflowLanding() {
     hasPreview: snapshot.charts.some(chart => chart.validationState === 'valid' || chart.validationState === 'warning') || snapshot.dashboards.length > 0,
     hasPublishedDashboard: snapshot.dashboards.some(dashboard => dashboard.status === 'published' || Boolean(dashboard.currentVersionId) || Boolean(dashboard.publishedAt)),
     clientUrl: clientHref,
-  }), [clientHref, profileState?.semanticDraft.needsReview.length, profileState?.semanticDraftStatus, snapshot])
+    publishReadiness: readiness,
+  }), [clientHref, profileState?.semanticDraft.needsReview.length, profileState?.semanticDraftStatus, readiness, snapshot])
   const continueState = useMemo(() => buildGuidedContinueState(steps, actions), [actions, steps])
   const lineageItems = [
     {
@@ -342,6 +358,10 @@ export function GuidedWorkflowLanding() {
             )
           })}
         </div>
+      </div>
+
+      <div className="mt-5">
+        <GuidedPublishReadinessPanel readiness={readiness} compact />
       </div>
 
       <div className="mt-5">
