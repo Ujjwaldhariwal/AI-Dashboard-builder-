@@ -19,7 +19,7 @@ import {
   type GuidedProgressStepId,
   type GuidedReviewState,
 } from '@/lib/dashboardos/guided-review'
-import { demoChart, demoDashboard, demoDataSource, demoDataset, demoModel, demoColumns, DEMO_DATA_SOURCE_ID } from '@/lib/dashboardos/demo-data'
+import { demoCharts, demoDashboard, demoDataSource, demoDataset, demoModel, demoColumns, DEMO_DATA_SOURCE_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
@@ -167,7 +167,7 @@ export function GuidedWorkflowLanding() {
           profile: buildDemoProfile(),
           models: [{ id: demoModel.id, status: demoModel.status }],
           datasets: [demoDataset],
-          charts: [demoChart],
+          charts: demoCharts,
           dashboards: [demoDashboard],
           preflight: null,
           localReadinessEvaluatedAt: '2026-07-13T00:05:00.000Z',

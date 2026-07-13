@@ -14,6 +14,14 @@ export const DEMO_DATA_SOURCE_ID = 'demo-source-warehouse'
 export const DEMO_MODEL_ID = 'demo-model-retail-revenue'
 export const DEMO_DATASET_ID = 'demo-dataset-executive-revenue'
 export const DEMO_CHART_ID = 'demo-chart-revenue-trend'
+export const DEMO_CHART_IDS = {
+  revenueTrend: DEMO_CHART_ID,
+  channelMix: 'demo-chart-channel-mix',
+  regionalVelocity: 'demo-chart-regional-velocity',
+  segmentMargin: 'demo-chart-segment-margin',
+  executiveKpis: 'demo-chart-executive-kpis',
+  riskTable: 'demo-chart-risk-table',
+} as const
 export const DEMO_DASHBOARD_ID = 'demo-dashboard-executive'
 export const DEMO_VERSION_ID = 'demo-version-executive-v1'
 export const DEMO_PAGE_ID = 'demo-page-overview'
@@ -198,38 +206,140 @@ export const demoDatasetPlan = {
   chartOptions: { shape: demoShape, compatibility },
 }
 
-export const demoChart: DashboardChartConfig = {
-  id: DEMO_CHART_ID,
-  tenantId: DEMO_TENANT_ID,
-  projectId: DEMO_PROJECT_ID,
-  datasetId: DEMO_DATASET_ID,
-  name: 'Revenue, Orders, and Customers',
-  status: 'published',
-  templateId: 'trend-composed',
-  encoding: {
+const demoLabelById = {
+  'demo-field-month': 'Month',
+  'demo-field-region': 'Region',
+  'demo-field-segment': 'Segment',
+  'demo-metric-revenue': 'Revenue',
+  'demo-metric-orders': 'Orders',
+  'demo-metric-customers': 'Customers',
+}
+
+function demoChartConfig({
+  id,
+  name,
+  templateId,
+  xAxisFieldId,
+  yMetricIds,
+  tooltipFieldIds = ['demo-metric-revenue', 'demo-metric-orders', 'demo-metric-customers'],
+  presentationSize,
+  valueFormat,
+  order,
+  gridSpan,
+  limit = 12,
+}: {
+  id: string
+  name: string
+  templateId: DashboardChartConfig['templateId']
+  xAxisFieldId?: string
+  yMetricIds: string[]
+  tooltipFieldIds?: string[]
+  presentationSize: DashboardChartConfig['presentation']['size']
+  valueFormat?: string | null
+  order: number
+  gridSpan: number
+  limit?: number
+}): DashboardChartConfig {
+  return {
+    id,
+    tenantId: DEMO_TENANT_ID,
+    projectId: DEMO_PROJECT_ID,
+    datasetId: DEMO_DATASET_ID,
+    name,
+    status: 'published',
+    templateId,
+    encoding: {
+      xAxisFieldId,
+      yMetricIds,
+      tooltipFieldIds,
+      labelById: demoLabelById,
+      colorById: {},
+      sort: null,
+      limit,
+    },
+    presentation: { size: presentationSize, showLegend: true, showLabels: false, valueFormat: valueFormat ?? null },
+    interactions: { filterOnClick: true },
+    layout: { order, gridSpan },
+    validationState: 'valid',
+    createdAt: now,
+    updatedAt: now,
+    publishedAt: now,
+  }
+}
+
+export const demoCharts: DashboardChartConfig[] = [
+  demoChartConfig({
+    id: DEMO_CHART_IDS.revenueTrend,
+    name: 'Revenue, Orders, and Customers',
+    templateId: 'trend-composed',
     xAxisFieldId: 'demo-field-month',
     yMetricIds: ['demo-metric-revenue', 'demo-metric-orders', 'demo-metric-customers'],
-    tooltipFieldIds: ['demo-field-region', 'demo-metric-revenue', 'demo-metric-orders'],
-    labelById: {
-      'demo-field-month': 'Month',
-      'demo-field-region': 'Region',
-      'demo-field-segment': 'Segment',
-      'demo-metric-revenue': 'Revenue',
-      'demo-metric-orders': 'Orders',
-      'demo-metric-customers': 'Customers',
-    },
-    colorById: {},
-    sort: null,
-    limit: 12,
-  },
-  presentation: { size: 'wide', showLegend: true, showLabels: false, valueFormat: 'currency' },
-  interactions: { filterOnClick: true },
-  layout: { order: 0, gridSpan: 3 },
-  validationState: 'valid',
-  createdAt: now,
-  updatedAt: now,
-  publishedAt: now,
-}
+    presentationSize: 'wide',
+    valueFormat: 'currency',
+    order: 0,
+    gridSpan: 3,
+  }),
+  demoChartConfig({
+    id: DEMO_CHART_IDS.executiveKpis,
+    name: 'Executive KPI Pulse',
+    templateId: 'kpi-grid',
+    yMetricIds: ['demo-metric-revenue', 'demo-metric-orders', 'demo-metric-customers'],
+    presentationSize: 'standard',
+    valueFormat: 'currency',
+    order: 1,
+    gridSpan: 1,
+    limit: 1,
+  }),
+  demoChartConfig({
+    id: DEMO_CHART_IDS.regionalVelocity,
+    name: 'Regional Revenue Velocity',
+    templateId: 'horizontal-bar',
+    xAxisFieldId: 'demo-field-region',
+    yMetricIds: ['demo-metric-revenue'],
+    presentationSize: 'standard',
+    valueFormat: 'currency',
+    order: 2,
+    gridSpan: 2,
+    limit: 8,
+  }),
+  demoChartConfig({
+    id: DEMO_CHART_IDS.channelMix,
+    name: 'Segment Mix',
+    templateId: 'pie',
+    xAxisFieldId: 'demo-field-segment',
+    yMetricIds: ['demo-metric-orders'],
+    presentationSize: 'standard',
+    order: 3,
+    gridSpan: 2,
+    limit: 8,
+  }),
+  demoChartConfig({
+    id: DEMO_CHART_IDS.segmentMargin,
+    name: 'Segment Revenue, Orders, Customers',
+    templateId: 'grouped-bar',
+    xAxisFieldId: 'demo-field-segment',
+    yMetricIds: ['demo-metric-revenue', 'demo-metric-orders', 'demo-metric-customers'],
+    presentationSize: 'wide',
+    valueFormat: 'currency',
+    order: 4,
+    gridSpan: 3,
+    limit: 8,
+  }),
+  demoChartConfig({
+    id: DEMO_CHART_IDS.riskTable,
+    name: 'Retail Command Table',
+    templateId: 'table-grid',
+    xAxisFieldId: 'demo-field-region',
+    yMetricIds: ['demo-metric-revenue', 'demo-metric-orders', 'demo-metric-customers'],
+    presentationSize: 'standard',
+    valueFormat: 'currency',
+    order: 5,
+    gridSpan: 1,
+    limit: 8,
+  }),
+]
+
+export const demoChart = demoCharts[0]
 
 export const demoDashboard: PublishedDashboard = {
   id: DEMO_DASHBOARD_ID,
@@ -253,7 +363,7 @@ export const demoVersion: DashboardVersion = {
   versionNumber: 1,
   status: 'published',
   title: 'Executive demo release',
-  notes: 'Seeded demo-safe release.',
+  notes: 'Seeded demo-safe multi-chart executive release.',
   layout: { mode: 'responsive-grid' },
   publishedAt: now,
   createdAt: now,
@@ -272,41 +382,43 @@ export const demoPage: DashboardPage = {
   createdAt: now,
 }
 
-export const demoSlot: DashboardChartSlot = {
-  id: DEMO_SLOT_ID,
+export const demoSlots: DashboardChartSlot[] = demoCharts.map((chart, index) => ({
+  id: index === 0 ? DEMO_SLOT_ID : `demo-slot-${chart.id.replace(/^demo-chart-/, '')}`,
   pageId: DEMO_PAGE_ID,
   versionId: DEMO_VERSION_ID,
   dashboardId: DEMO_DASHBOARD_ID,
   tenantId: DEMO_TENANT_ID,
   projectId: DEMO_PROJECT_ID,
-  chartConfigId: DEMO_CHART_ID,
-  title: demoChart.name,
-  slotKey: 'revenue-trend',
-  rowIndex: 0,
-  columnIndex: 0,
-  width: 8,
-  height: 4,
+  chartConfigId: chart.id,
+  title: chart.name,
+  slotKey: chart.id.replace(/^demo-chart-/, ''),
+  rowIndex: index < 2 ? 0 : index < 4 ? 1 : 2,
+  columnIndex: index === 0 ? 0 : index === 1 ? 9 : index % 2 === 0 ? 0 : 6,
+  width: chart.layout.gridSpan >= 3 ? 8 : chart.layout.gridSpan === 2 ? 6 : 4,
+  height: chart.presentation.size === 'wide' ? 5 : 4,
   settings: {},
   createdAt: now,
-}
+}))
+
+export const demoSlot = demoSlots[0]
 
 export const demoChartAudit: DashboardChartAudit = {
   checkedAt: now,
-  summary: { total: 1, healthy: 1, stale: 0, blocked: 0 },
-  items: [{
+  summary: { total: demoCharts.length, healthy: demoCharts.length, stale: 0, blocked: 0 },
+  items: demoCharts.map(chart => ({
     chart: {
-      id: demoChart.id,
-      name: demoChart.name,
-      status: demoChart.status,
-      templateId: demoChart.templateId,
-      validationState: demoChart.validationState,
-      updatedAt: demoChart.updatedAt,
-      publishedAt: demoChart.publishedAt,
+      id: chart.id,
+      name: chart.name,
+      status: chart.status,
+      templateId: chart.templateId,
+      validationState: chart.validationState,
+      updatedAt: chart.updatedAt,
+      publishedAt: chart.publishedAt,
     },
     dataset: { id: demoDataset.id, status: demoDataset.status },
     healthState: 'healthy',
     validation: { state: 'valid', issues: [] },
-  }],
+  })),
 }
 
 export const demoDashboardHealthAudit: DashboardHealthAudit = {
@@ -315,17 +427,90 @@ export const demoDashboardHealthAudit: DashboardHealthAudit = {
   dashboards: [{
     dashboard: { id: demoDashboard.id, name: demoDashboard.name, slug: demoDashboard.slug, status: demoDashboard.status, publishedAt: demoDashboard.publishedAt },
     version: { id: demoVersion.id, versionNumber: demoVersion.versionNumber, title: demoVersion.title, status: demoVersion.status, publishedAt: demoVersion.publishedAt },
-    summary: { totalSlots: 1, healthySlots: 1, staleSlots: 0, blockedSlots: 0, pageCount: 1 },
+    summary: { totalSlots: demoSlots.length, healthySlots: demoSlots.length, staleSlots: 0, blockedSlots: 0, pageCount: 1 },
     healthState: 'healthy',
-    items: [],
+    items: demoSlots.map(slot => {
+      const chart = demoCharts.find(item => item.id === slot.chartConfigId) ?? demoChart
+      return {
+        slot: {
+          id: slot.id,
+          pageId: slot.pageId,
+          chartConfigId: slot.chartConfigId,
+          slotKey: slot.slotKey,
+          title: slot.title,
+        },
+        chart: {
+          id: chart.id,
+          name: chart.name,
+          status: chart.status,
+          templateId: chart.templateId,
+          validationState: chart.validationState,
+        },
+        healthState: 'healthy' as const,
+        issues: [],
+      }
+    }),
   }],
 }
 
 export const demoChartRows = [
-  { Month: 'Jan', Revenue: 128400, Orders: 1260, Customers: 812 },
-  { Month: 'Feb', Revenue: 137900, Orders: 1328, Customers: 846 },
-  { Month: 'Mar', Revenue: 149200, Orders: 1414, Customers: 911 },
-  { Month: 'Apr', Revenue: 158600, Orders: 1502, Customers: 944 },
-  { Month: 'May', Revenue: 171300, Orders: 1608, Customers: 1008 },
-  { Month: 'Jun', Revenue: 186750, Orders: 1740, Customers: 1089 },
+  { Month: 'Jan', Region: 'Northeast', Segment: 'Loyalists', Revenue: 128400, Orders: 1260, Customers: 812 },
+  { Month: 'Feb', Region: 'West', Segment: 'Premium', Revenue: 137900, Orders: 1328, Customers: 846 },
+  { Month: 'Mar', Region: 'South', Segment: 'New Buyers', Revenue: 149200, Orders: 1414, Customers: 911 },
+  { Month: 'Apr', Region: 'Midwest', Segment: 'Marketplace', Revenue: 158600, Orders: 1502, Customers: 944 },
+  { Month: 'May', Region: 'Northeast', Segment: 'Premium', Revenue: 171300, Orders: 1608, Customers: 1008 },
+  { Month: 'Jun', Region: 'West', Segment: 'Loyalists', Revenue: 186750, Orders: 1740, Customers: 1089 },
+  { Month: 'Jul', Region: 'South', Segment: 'Marketplace', Revenue: 202100, Orders: 1886, Customers: 1164 },
+  { Month: 'Aug', Region: 'Midwest', Segment: 'New Buyers', Revenue: 218450, Orders: 2028, Customers: 1242 },
 ]
+
+export const demoKpiRows = [{
+  Revenue: 1352650,
+  Orders: 12766,
+  Customers: 8016,
+}]
+
+export const demoRegionRows = [
+  { Region: 'West', Revenue: 324650, Orders: 3068, Customers: 1935 },
+  { Region: 'Northeast', Revenue: 299700, Orders: 2868, Customers: 1820 },
+  { Region: 'South', Revenue: 351300, Orders: 3300, Customers: 2075 },
+  { Region: 'Midwest', Revenue: 377000, Orders: 3530, Customers: 2186 },
+]
+
+export const demoSegmentRows = [
+  { Segment: 'Premium', Revenue: 309200, Orders: 2936, Customers: 1854 },
+  { Segment: 'Loyalists', Revenue: 315150, Orders: 3000, Customers: 1901 },
+  { Segment: 'New Buyers', Revenue: 367650, Orders: 3442, Customers: 2153 },
+  { Segment: 'Marketplace', Revenue: 360650, Orders: 3388, Customers: 2108 },
+]
+
+export const demoRiskRows = [
+  { Region: 'Midwest', Segment: 'New Buyers', Revenue: 218450, Orders: 2028, Customers: 1242 },
+  { Region: 'South', Segment: 'Marketplace', Revenue: 202100, Orders: 1886, Customers: 1164 },
+  { Region: 'West', Segment: 'Loyalists', Revenue: 186750, Orders: 1740, Customers: 1089 },
+  { Region: 'Northeast', Segment: 'Premium', Revenue: 171300, Orders: 1608, Customers: 1008 },
+]
+
+export const demoChartRowsById: Record<string, Record<string, unknown>[]> = {
+  [DEMO_CHART_IDS.revenueTrend]: demoChartRows,
+  [DEMO_CHART_IDS.executiveKpis]: demoKpiRows,
+  [DEMO_CHART_IDS.regionalVelocity]: demoRegionRows,
+  [DEMO_CHART_IDS.channelMix]: demoSegmentRows,
+  [DEMO_CHART_IDS.segmentMargin]: demoSegmentRows,
+  [DEMO_CHART_IDS.riskTable]: demoRiskRows,
+}
+
+export function getDemoChartRows(chartId: string) {
+  return demoChartRowsById[chartId] ?? demoChartRows
+}
+
+export function getDemoChartFields(chartId: string) {
+  const rows = getDemoChartRows(chartId)
+  return Object.keys(rows[0] ?? {})
+}
+
+export function getDemoChartElapsedMs(chartId: string) {
+  if (chartId === DEMO_CHART_IDS.executiveKpis) return 14
+  if (chartId === DEMO_CHART_IDS.riskTable) return 31
+  return 24 + Math.max(0, getDemoChartRows(chartId).length - 4) * 3
+}

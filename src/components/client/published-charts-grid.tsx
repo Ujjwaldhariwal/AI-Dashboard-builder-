@@ -12,7 +12,7 @@ import { ModernPieChart } from '@/components/charts/modern-pie-chart'
 import { DASHBOARDOS_THEME_CHANGE_EVENT } from '@/components/client/client-theme-shell'
 import { Badge } from '@/components/ui/badge'
 import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
-import { demoChartRows } from '@/lib/dashboardos/demo-data'
+import { getDemoChartElapsedMs, getDemoChartFields, getDemoChartRows } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { getEnterpriseChartColors } from '@/lib/echarts/theme'
 import type { ChartTemplateId } from '@/types/chart-template'
@@ -307,6 +307,7 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
   const dark = useDashboardChartDarkMode()
   const demoMode = isDashboardOsDemoMode()
   const chartIds = useMemo(() => charts.map(chart => chart.id), [charts])
+  const chartById = useMemo(() => new Map(charts.map(chart => [chart.id, chart])), [charts])
 
   const chartKey = useMemo(() => chartIds.join('|'), [chartIds])
 
@@ -318,16 +319,16 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
       if (demoMode && tenantSlug === 'demo') {
         setChartRuns(Object.fromEntries(ids.map(id => [id, {
           status: 'ready' as const,
-          rows: demoChartRows,
-          fieldNames: ['Month', 'Revenue', 'Orders', 'Customers'],
+          rows: getDemoChartRows(id),
+          fieldNames: getDemoChartFields(id),
           resolved: {
-            xField: 'Month',
-            yFields: ['Revenue', 'Orders', 'Customers'],
-            tooltipFields: ['Revenue', 'Orders', 'Customers'],
-            sortField: 'Month',
+            xField: fieldNameFromId(chartById.get(id) ?? charts[0], chartById.get(id)?.encoding.xAxisFieldId) || getDemoChartFields(id)[0] || 'Month',
+            yFields: (chartById.get(id)?.encoding.yMetricIds ?? []).map(metricId => fieldNameFromId(chartById.get(id) ?? charts[0], metricId)).filter(Boolean),
+            tooltipFields: (chartById.get(id)?.encoding.tooltipFieldIds ?? []).map(fieldId => fieldNameFromId(chartById.get(id) ?? charts[0], fieldId)).filter(Boolean),
+            sortField: fieldNameFromId(chartById.get(id) ?? charts[0], chartById.get(id)?.encoding.sort?.byId) || '',
           },
-          rowCount: demoChartRows.length,
-          elapsedMs: 38,
+          rowCount: getDemoChartRows(id).length,
+          elapsedMs: getDemoChartElapsedMs(id),
         }])))
         return
       }
@@ -369,7 +370,7 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
 
     if (ids.length > 0) void loadCharts()
     return () => controller.abort()
-  }, [chartKey, demoMode, tenantSlug])
+  }, [chartById, chartKey, charts, demoMode, tenantSlug])
 
   if (charts.length === 0) return null
 

@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
-import { demoChart, demoChartAudit, demoDataset, demoDatasetPlan, demoProjects, DEMO_TENANT_ID, DEMO_PROJECT_ID } from '@/lib/dashboardos/demo-data'
+import { demoChart, demoChartAudit, demoCharts, demoDataset, demoDatasetPlan, demoProjects, DEMO_TENANT_ID, DEMO_PROJECT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { buildGuidedChartRecommendations } from '@/lib/dashboardos/guided-review'
 import type { DashboardChartAudit, DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
@@ -266,7 +266,7 @@ export function DashboardChartsAdminPanel() {
     if (!nextProjectId) return
     if (demoMode) {
       setDatasets([demoDataset])
-      setCharts([demoChart])
+      setCharts(demoCharts)
       setDatasetId(current => current || demoDataset.id)
       setChartAudit(demoChartAudit)
       setAiRefinementGate({ enabled: false, source: 'demo', reason: 'AI refinement uses real governed chart IDs outside browser-only demo mode.' })

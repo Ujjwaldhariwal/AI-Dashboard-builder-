@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import {
   demoChart,
+  demoCharts,
   demoColumns,
   demoDashboard,
   demoDashboardHealthAudit,
@@ -22,7 +23,7 @@ import {
   demoModel,
   demoPage,
   demoProjects,
-  demoSlot,
+  demoSlots,
   demoVersion,
   DEMO_DASHBOARD_ID,
   DEMO_DATA_SOURCE_ID,
@@ -212,12 +213,12 @@ export function PublishedDashboardsAdminPanel() {
     if (!nextProjectId) return
     if (demoMode) {
       setDashboards([demoDashboard])
-      setCharts([demoChart])
+      setCharts(demoCharts)
       setGuidedProfile(buildDemoGuidedProfile())
       setModels([demoModel])
       setDatasets([demoDataset])
       setDashboardId(DEMO_DASHBOARD_ID)
-      setSelectedChartIds([demoChart.id])
+      setSelectedChartIds(demoCharts.map(chart => chart.id))
       return
     }
     const [dashboardsResponse, chartsResponse, profileResponse, modelsResponse, datasetsResponse] = await Promise.all([
@@ -255,7 +256,7 @@ export function PublishedDashboardsAdminPanel() {
       return
     }
     if (demoMode) {
-      setHistory({ versions: [demoVersion], pages: [demoPage], slots: [demoSlot] })
+      setHistory({ versions: [demoVersion], pages: [demoPage], slots: demoSlots })
       return
     }
     const response = await fetch(`/api/admin/published-dashboards/${nextDashboardId}/versions`, { cache: 'no-store' })
@@ -332,7 +333,7 @@ export function PublishedDashboardsAdminPanel() {
     setSavingVersion(true)
     try {
       if (demoMode) {
-        setHistory({ versions: [demoVersion], pages: [demoPage], slots: [demoSlot] })
+        setHistory({ versions: [demoVersion], pages: [demoPage], slots: demoSlots })
         setBuilderPublishedVersionId(DEMO_VERSION_ID)
         toast.success('Demo draft version created')
         return
@@ -443,11 +444,11 @@ export function PublishedDashboardsAdminPanel() {
             semanticModelId: demoModel.id,
             semanticDraftVersion: 1,
             datasetCount: 1,
-            chartCount: 1,
+            chartCount: demoCharts.length,
             dashboardCount: 1,
             versionCount: 1,
             pageCount: 1,
-            slotCount: 1,
+            slotCount: demoSlots.length,
           },
         })
         toast.success('Demo readiness preflight recomputed')

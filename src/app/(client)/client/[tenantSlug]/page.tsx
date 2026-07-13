@@ -7,7 +7,7 @@ import { PublishedChartsGrid } from '@/components/client/published-charts-grid'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { DASHBOARDOS_DEMO_COOKIE, isLocalDemoHost } from '@/lib/dashboardos/demo-mode'
-import { demoChart, demoDashboard, demoDataset, demoPage, demoSlot, demoVersion } from '@/lib/dashboardos/demo-data'
+import { demoCharts, demoDashboard, demoDataset, demoPage, demoSlots, demoVersion } from '@/lib/dashboardos/demo-data'
 import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
 import { listEntitledDashboardIds, listEntitledDatasetIds } from '@/lib/security/entitlements'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -214,11 +214,11 @@ export default async function TenantClientPage({
       dashboard: demoDashboard,
       version: demoVersion,
       pages: [demoPage],
-      slots: [demoSlot],
+      slots: demoSlots,
       health: {
         health_state: 'healthy' as const,
-        total_slots: 1,
-        healthy_slots: 1,
+        total_slots: demoSlots.length,
+        healthy_slots: demoSlots.length,
         stale_slots: 0,
         blocked_slots: 0,
         checked_at: demoVersion.publishedAt ?? demoVersion.createdAt,
@@ -260,7 +260,7 @@ export default async function TenantClientPage({
           <section className="grid gap-4 md:grid-cols-3">
             <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]"><CardContent className="p-4"><p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Projects</p><p className="mt-2 text-2xl font-semibold">1</p></CardContent></Card>
             <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]"><CardContent className="p-4"><p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Published datasets</p><p className="mt-2 text-2xl font-semibold">1</p></CardContent></Card>
-            <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]"><CardContent className="p-4"><p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Published charts</p><p className="mt-2 text-2xl font-semibold">1</p></CardContent></Card>
+            <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]"><CardContent className="p-4"><p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Published charts</p><p className="mt-2 text-2xl font-semibold">{demoCharts.length}</p></CardContent></Card>
           </section>
 
           <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4 shadow-sm">
@@ -268,7 +268,7 @@ export default async function TenantClientPage({
               <div>
                 <h2 className="text-sm font-semibold">{runtimeDashboard.version.title}</h2>
                 <p className="mt-1 text-xs text-[var(--dos-text-muted)]">
-                  {runtimeDashboard.pages.length} page, {runtimeDashboard.slots.length} governed chart slot. Published {formatUpdatedAt(runtimeDashboard.version.publishedAt)}.
+                  {runtimeDashboard.pages.length} page, {runtimeDashboard.slots.length} governed chart slots. Published {formatUpdatedAt(runtimeDashboard.version.publishedAt)}.
                 </p>
               </div>
               <Badge variant="outline" className="border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[var(--dos-chart-info)]">
@@ -277,7 +277,7 @@ export default async function TenantClientPage({
             </div>
           </section>
 
-          <PublishedChartsGrid tenantSlug="demo" charts={[demoChart]} />
+          <PublishedChartsGrid tenantSlug="demo" charts={demoCharts} />
 
           <section className="space-y-4">
             {projectList.map(project => {
