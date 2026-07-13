@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { createHash } from 'node:crypto'
 
 import { introspectPostgresSchema, testPostgresConnection } from '@/lib/data-sources/postgres-runtime'
+import { columnsFromIntrospectionRows, persistGuidedProfileForColumns } from '@/lib/dashboardos/guided-review-store'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
+import { invalidateSemanticDependentsForDataSource } from '@/lib/semantic/semantic-hardening'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { PostgresTableMetadata } from '@/lib/data-sources/postgres-runtime'
 
@@ -128,6 +130,26 @@ export async function POST(
         })
         .eq('id', id)
 
+      await invalidateSemanticDependentsForDataSource({
+        supabase: auth.supabase,
+        tenantId: String(row.tenant_id),
+        projectId: String(row.project_id),
+        dataSourceId: id,
+        actorUserId: auth.userId,
+      })
+
+      const guidedProfile = await persistGuidedProfileForColumns({
+        supabase: auth.supabase,
+        tenantId: String(row.tenant_id),
+        projectId: String(row.project_id),
+        dataSourceId: id,
+        schemaHash,
+        columns: columnsFromIntrospectionRows({
+          dataSourceId: id,
+          columns: tables.flatMap(table => table.columns),
+        }),
+      })
+
       await Promise.all([
         auth.supabase
           .from('data_source_schema_runs')
@@ -172,6 +194,7 @@ export async function POST(
         columnCount: columns.length,
         schemaHash,
         refreshAfter,
+        guidedProfile,
       })
     } catch (introspectionError) {
       const message = introspectionError instanceof Error ? introspectionError.message : String(introspectionError)

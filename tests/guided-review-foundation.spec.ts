@@ -1,8 +1,14 @@
 import { expect, test } from '@playwright/test'
 
 import {
+  applyGuidedReviewDecision,
+  approveGuidedSemanticDraft,
   buildGuidedChartRecommendations,
+  buildGuidedDashboardDraftPlan,
+  buildGuidedDatasetDraftFromRecipe,
   buildGuidedDatasetRecipes,
+  buildGuidedProgress,
+  buildGuidedReviewState,
   buildGuidedSchemaProfile,
   buildGuidedSemanticDraft,
 } from '../src/lib/dashboardos/guided-review'
@@ -107,5 +113,104 @@ test.describe('guided review foundation', () => {
       'category-bar',
       'kpi-cards',
     ]))
+  })
+
+  test('persists review state transitions without exposing sensitive values', () => {
+    const state = buildGuidedReviewState(columns)
+    const sensitiveItem = state.semanticDraft.hiddenSensitiveFields[0]
+    expect(sensitiveItem).toBeTruthy()
+
+    const decided = applyGuidedReviewDecision(state, {
+      itemId: sensitiveItem.id,
+      action: 'keep_hidden',
+      decidedBy: 'user-1',
+      decidedAt: '2026-07-13T00:00:00.000Z',
+    })
+
+    expect(decided.decisions).toEqual([
+      expect.objectContaining({ itemId: sensitiveItem.id, action: 'keep_hidden' }),
+    ])
+    expect(decided.semanticDraft.needsReview.some(item => item.id === sensitiveItem.id)).toBe(false)
+    expect(JSON.stringify(decided)).not.toContain('raw_prompt')
+  })
+
+  test('approves semantic draft after review decisions are saved', () => {
+    const reviewed = buildGuidedReviewState(columns)
+    const approved = approveGuidedSemanticDraft(reviewed, 'admin-user', '2026-07-13T01:00:00.000Z')
+
+    expect(approved.semanticDraftStatus).toBe('approved')
+    expect(approved.approvedBy).toBe('admin-user')
+    expect(approved.decisions.length).toBeGreaterThanOrEqual(approved.semanticDraft.approvedFields.length)
+  })
+
+  test('builds deterministic dataset drafts from selected recipes', () => {
+    const fields = [
+      { id: 'date', name: 'Order Date', role: 'date' },
+      { id: 'region', name: 'Region', role: 'dimension' },
+      { id: 'status', name: 'Status', role: 'dimension' },
+    ]
+    const metrics = [
+      { id: 'revenue', name: 'Revenue Amount', aggregation: 'sum' as const },
+      { id: 'orders', name: 'Order Count', aggregation: 'count' as const },
+    ]
+    const recipe = buildGuidedDatasetRecipes({ fields, metrics })[0]
+    const draft = buildGuidedDatasetDraftFromRecipe({ recipe, fields, metrics })
+
+    expect(draft.name).toBe(recipe.title)
+    expect(draft.fieldIds).toEqual(expect.arrayContaining(['date']))
+    expect(draft.metricIds).toEqual(expect.arrayContaining(['revenue']))
+    expect(draft.reviewNotes).toEqual([])
+  })
+
+  test('builds a coherent dashboard draft layout from recommended chart types', () => {
+    const recommendations = buildGuidedChartRecommendations({
+      shape: {
+        kind: 'time_series_many_metrics',
+        fields: [],
+        metrics: [],
+        dimensions: [],
+        dateFields: [],
+        tooltipFields: [],
+        metricCount: 2,
+        dimensionCount: 1,
+        hasDateAxis: true,
+        hasMultipleMetrics: true,
+        warnings: [],
+      },
+      fields: [
+        { id: 'date', name: 'Order Date', role: 'date' },
+        { id: 'region', name: 'Region', role: 'dimension' },
+      ],
+      metrics: [{ id: 'revenue', name: 'Revenue Amount' }],
+    })
+    const dashboard = buildGuidedDashboardDraftPlan({
+      datasetName: 'Executive overview',
+      fields: [
+        { id: 'date', name: 'Order Date', role: 'date' },
+        { id: 'region', name: 'Region', role: 'dimension' },
+      ],
+      metrics: [{ id: 'revenue', name: 'Revenue Amount' }],
+      recommendations,
+    })
+
+    expect(dashboard.layout.mode).toBe('responsive-grid')
+    expect(dashboard.charts.map(chart => chart.templateId)).toEqual(expect.arrayContaining(['line', 'bar', 'kpi-card']))
+    expect(dashboard.charts.every(chart => chart.metricIds.length > 0)).toBe(true)
+  })
+
+  test('computes guided progress blockers and ready states', () => {
+    const steps = buildGuidedProgress({
+      hasDataSource: true,
+      hasProfile: true,
+      openReviewCount: 0,
+      semanticDraftApproved: true,
+      hasDatasetDraft: true,
+      hasDashboardDraft: false,
+      hasPreview: false,
+      hasPublishedDashboard: false,
+    })
+
+    expect(steps.find(step => step.id === 'generate_draft_dashboard')?.status).toBe('ready')
+    expect(steps.find(step => step.id === 'publish')?.status).toBe('blocked')
   })
 })

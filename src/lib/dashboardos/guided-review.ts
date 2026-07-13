@@ -65,6 +65,75 @@ export interface GuidedChartRecommendation {
   reason: string
 }
 
+export type GuidedReviewDecisionAction =
+  | 'approve'
+  | 'reject'
+  | 'edit_classification'
+  | 'confirm_relationship'
+  | 'reject_relationship'
+  | 'keep_hidden'
+  | 'unhide'
+
+export interface GuidedReviewDecision {
+  itemId: string
+  action: GuidedReviewDecisionAction
+  overrideKind?: GuidedInferenceKind
+  note?: string | null
+  decidedBy?: string | null
+  decidedAt: string
+}
+
+export interface GuidedReviewState {
+  profile: GuidedSchemaProfile
+  semanticDraft: GuidedSemanticDraft
+  decisions: GuidedReviewDecision[]
+  semanticDraftStatus: 'not_started' | 'reviewing' | 'approved'
+  approvedAt?: string | null
+  approvedBy?: string | null
+}
+
+export type GuidedProgressStepId =
+  | 'connect_db'
+  | 'review_findings'
+  | 'approve_model'
+  | 'generate_draft_dashboard'
+  | 'preview'
+  | 'publish'
+  | 'view_client_dashboard'
+
+export interface GuidedProgressStep {
+  id: GuidedProgressStepId
+  label: string
+  status: 'done' | 'ready' | 'blocked'
+  detail: string
+}
+
+export interface GuidedDatasetDraftPlan {
+  recipe: GuidedDatasetRecipe
+  name: string
+  fieldIds: string[]
+  metricIds: string[]
+  relationshipIds: string[]
+  reviewNotes: string[]
+}
+
+export interface GuidedDashboardDraftPlan {
+  title: string
+  charts: Array<{
+    title: string
+    templateId: string
+    fieldIds: string[]
+    metricIds: string[]
+    gridSpan: number
+    reviewNote?: string
+  }>
+  layout: {
+    mode: 'responsive-grid'
+    slotCount: number
+  }
+  reviewNotes: string[]
+}
+
 const MEASURE_RE = /(amount|revenue|sales|total|count|quantity|orders|customers|users|price|cost|profit|margin|duration|score|usage|units|kwh|consumed|outage|load|balance|rate)/i
 const DATE_RE = /(date|time|month|year|quarter|created|updated|posted|paid|billed)/i
 const CATEGORY_RE = /(type|status|segment|region|category|country|city|channel|provider|priority|plan|tier|connection|department|zone|state)/i
@@ -194,6 +263,63 @@ export function buildGuidedSemanticDraft(profile: GuidedSchemaProfile): GuidedSe
   }
 }
 
+export function buildGuidedReviewState(columns: DataSourceColumnMetadata[]): GuidedReviewState {
+  const profile = buildGuidedSchemaProfile(columns)
+  return {
+    profile,
+    semanticDraft: buildGuidedSemanticDraft(profile),
+    decisions: [],
+    semanticDraftStatus: profile.reviewItems.length > 0 ? 'reviewing' : 'not_started',
+    approvedAt: null,
+    approvedBy: null,
+  }
+}
+
+export function applyGuidedReviewDecision(state: GuidedReviewState, decision: GuidedReviewDecision): GuidedReviewState {
+  const nextDecisions = [
+    ...state.decisions.filter(item => item.itemId !== decision.itemId),
+    decision,
+  ]
+  const approvedOrRejected = new Set(nextDecisions
+    .filter(item => ['approve', 'reject', 'confirm_relationship', 'reject_relationship', 'keep_hidden', 'unhide'].includes(item.action))
+    .map(item => item.itemId))
+  const remainingReviewItems = state.semanticDraft.needsReview.filter(item => !approvedOrRejected.has(item.id))
+
+  return {
+    ...state,
+    decisions: nextDecisions,
+    semanticDraft: {
+      ...state.semanticDraft,
+      needsReview: remainingReviewItems,
+    },
+    semanticDraftStatus: remainingReviewItems.length === 0 && state.semanticDraftStatus !== 'approved'
+      ? 'reviewing'
+      : state.semanticDraftStatus,
+  }
+}
+
+export function approveGuidedSemanticDraft(state: GuidedReviewState, actorUserId: string | null, decidedAt: string): GuidedReviewState {
+  const autoApprovals = state.semanticDraft.approvedFields.map(field => ({
+    itemId: field.id,
+    action: 'approve' as const,
+    note: 'Accepted as high-confidence guided recommendation.',
+    decidedBy: actorUserId,
+    decidedAt,
+  }))
+  const decisionByItemId = new Map(state.decisions.map(decision => [decision.itemId, decision]))
+  for (const decision of autoApprovals) {
+    if (!decisionByItemId.has(decision.itemId)) decisionByItemId.set(decision.itemId, decision)
+  }
+
+  return {
+    ...state,
+    decisions: [...decisionByItemId.values()],
+    semanticDraftStatus: 'approved',
+    approvedAt: decidedAt,
+    approvedBy: actorUserId,
+  }
+}
+
 export function buildGuidedDatasetRecipes(input: {
   fields: Array<{ id: string; name: string; role?: string }>
   metrics: Array<Pick<BusinessMetric, 'id' | 'name' | 'aggregation'>>
@@ -265,6 +391,41 @@ export function buildGuidedDatasetRecipes(input: {
   return recipes.slice(0, 5)
 }
 
+export function buildGuidedDatasetDraftFromRecipe(input: {
+  recipe: GuidedDatasetRecipe
+  fields: Array<{ id: string; name: string; role?: string }>
+  metrics: Array<Pick<BusinessMetric, 'id' | 'name' | 'aggregation'>>
+  relationships?: BusinessRelationship[]
+}): GuidedDatasetDraftPlan {
+  const fieldIds = input.fields
+    .filter(field => input.recipe.suggestedFieldLabels.includes(field.name))
+    .map(field => field.id)
+  const metricIds = input.metrics
+    .filter(metric => input.recipe.suggestedMetricLabels.includes(metric.name))
+    .map(metric => metric.id)
+  const relationshipIds = (input.relationships ?? []).slice(0, 2).map(relationship => relationship.id)
+  const reviewNotes: string[] = []
+
+  if (fieldIds.length !== input.recipe.suggestedFieldLabels.length) {
+    reviewNotes.push('Some suggested fields were not available in the approved semantic model.')
+  }
+  if (metricIds.length !== input.recipe.suggestedMetricLabels.length) {
+    reviewNotes.push('Some suggested metrics were not available in the approved semantic model.')
+  }
+  if (metricIds.length === 0) {
+    reviewNotes.push('At least one approved metric is required before this recipe can become a dashboard dataset.')
+  }
+
+  return {
+    recipe: input.recipe,
+    name: input.recipe.title,
+    fieldIds,
+    metricIds,
+    relationshipIds,
+    reviewNotes,
+  }
+}
+
 export function buildGuidedChartRecommendations(input: {
   shape?: DatasetShape | null
   compatibility?: ChartCompatibilityResult[]
@@ -312,7 +473,7 @@ export function buildGuidedChartRecommendations(input: {
     recommendations.push({
       id: 'kpi-cards',
       title: 'KPI cards',
-      chartType: 'stat',
+      chartType: 'kpi-card',
       confidence: 74,
       reason: 'Metric set can produce executive summary cards.',
     })
@@ -323,4 +484,130 @@ export function buildGuidedChartRecommendations(input: {
     if (!unique.has(recommendation.id)) unique.set(recommendation.id, recommendation)
   }
   return [...unique.values()].slice(0, 4)
+}
+
+export function buildGuidedDashboardDraftPlan(input: {
+  datasetName: string
+  fields: Array<{ id: string; name: string; role?: string }>
+  metrics: Array<{ id: string; name: string }>
+  recommendations: GuidedChartRecommendation[]
+}): GuidedDashboardDraftPlan {
+  const dateField = input.fields.find(field => field.role === 'date')
+  const categoryField = input.fields.find(field => field.role === 'dimension' || field.role === 'attribute')
+  const primaryMetric = input.metrics[0]
+  const secondaryMetrics = input.metrics.slice(0, 4)
+  const reviewNotes: string[] = []
+  const charts: GuidedDashboardDraftPlan['charts'] = []
+
+  if (dateField && primaryMetric) {
+    charts.push({
+      title: `${primaryMetric.name} trend`,
+      templateId: secondaryMetrics.length > 1 ? 'trend-composed' : 'line',
+      fieldIds: [dateField.id],
+      metricIds: secondaryMetrics.length > 1 ? secondaryMetrics.map(metric => metric.id) : [primaryMetric.id],
+      gridSpan: 3,
+    })
+  }
+
+  if (categoryField && primaryMetric) {
+    charts.push({
+      title: `${primaryMetric.name} by ${categoryField.name}`,
+      templateId: 'bar',
+      fieldIds: [categoryField.id],
+      metricIds: [primaryMetric.id],
+      gridSpan: 2,
+    })
+  }
+
+  for (const metric of input.metrics.slice(0, 3)) {
+    charts.push({
+      title: metric.name,
+      templateId: 'kpi-card',
+      fieldIds: [],
+      metricIds: [metric.id],
+      gridSpan: 1,
+      reviewNote: 'KPI cards are draft recommendations and should be previewed before publishing.',
+    })
+  }
+
+  if (charts.length === 0) {
+    reviewNotes.push('No safe chart draft could be generated from the selected dataset shape.')
+  }
+  if (input.recommendations.length === 0) {
+    reviewNotes.push('No recommendation metadata was available; fallback chart rules were used.')
+  }
+
+  return {
+    title: `${input.datasetName} dashboard draft`,
+    charts: charts.slice(0, 5),
+    layout: {
+      mode: 'responsive-grid',
+      slotCount: Math.min(charts.length, 5),
+    },
+    reviewNotes,
+  }
+}
+
+export function buildGuidedProgress(input: {
+  hasDataSource: boolean
+  hasProfile: boolean
+  openReviewCount: number
+  semanticDraftApproved: boolean
+  hasDatasetDraft: boolean
+  hasDashboardDraft: boolean
+  hasPreview: boolean
+  hasPublishedDashboard: boolean
+  clientUrl?: string | null
+}): GuidedProgressStep[] {
+  const connectDone = input.hasDataSource
+  const reviewDone = input.hasProfile && input.openReviewCount === 0
+  const modelDone = input.semanticDraftApproved
+  const dashboardDone = input.hasDashboardDraft
+  const previewDone = input.hasPreview
+  const publishDone = input.hasPublishedDashboard
+
+  return [
+    {
+      id: 'connect_db',
+      label: 'Connect DB',
+      status: connectDone ? 'done' : 'ready',
+      detail: connectDone ? 'Source connected and ready for profiling.' : 'Add a read-only source to start.',
+    },
+    {
+      id: 'review_findings',
+      label: 'Review findings',
+      status: reviewDone ? 'done' : connectDone ? 'ready' : 'blocked',
+      detail: reviewDone ? 'Exceptions reviewed.' : input.hasProfile ? `${input.openReviewCount} items need review.` : 'Run schema introspection first.',
+    },
+    {
+      id: 'approve_model',
+      label: 'Approve model',
+      status: modelDone ? 'done' : reviewDone ? 'ready' : 'blocked',
+      detail: modelDone ? 'Semantic draft approved.' : 'Review exceptions before approval.',
+    },
+    {
+      id: 'generate_draft_dashboard',
+      label: 'Generate draft dashboard',
+      status: dashboardDone ? 'done' : modelDone && input.hasDatasetDraft ? 'ready' : 'blocked',
+      detail: dashboardDone ? 'Draft dashboard generated.' : input.hasDatasetDraft ? 'Dataset draft is ready.' : 'Generate a dataset draft from a recipe.',
+    },
+    {
+      id: 'preview',
+      label: 'Preview',
+      status: previewDone ? 'done' : dashboardDone ? 'ready' : 'blocked',
+      detail: previewDone ? 'Preview available.' : 'Generate a draft dashboard first.',
+    },
+    {
+      id: 'publish',
+      label: 'Publish',
+      status: publishDone ? 'done' : previewDone ? 'ready' : 'blocked',
+      detail: publishDone ? 'Published dashboard is live.' : 'Preview before publishing.',
+    },
+    {
+      id: 'view_client_dashboard',
+      label: 'View client dashboard',
+      status: input.clientUrl && publishDone ? 'ready' : 'blocked',
+      detail: input.clientUrl && publishDone ? 'Open the client-facing dashboard.' : 'Publish a dashboard to unlock client view.',
+    },
+  ]
 }

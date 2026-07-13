@@ -6,6 +6,8 @@ import {
   testPostgresConnection,
   type PostgresTableMetadata,
 } from '@/lib/data-sources/postgres-runtime'
+import { columnsFromIntrospectionRows, persistGuidedProfileForColumns } from '@/lib/dashboardos/guided-review-store'
+import { invalidateSemanticDependentsForDataSource } from '@/lib/semantic/semantic-hardening'
 
 const SCHEMA_REFRESH_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -125,6 +127,26 @@ export async function runDataSourceSchemaIntrospection({
         updated_at: nowIso,
       })
       .eq('id', dataSourceId)
+
+    await invalidateSemanticDependentsForDataSource({
+      supabase,
+      tenantId,
+      projectId,
+      dataSourceId,
+      actorUserId: triggeredBy,
+    })
+
+    await persistGuidedProfileForColumns({
+      supabase,
+      tenantId,
+      projectId,
+      dataSourceId,
+      schemaHash,
+      columns: columnsFromIntrospectionRows({
+        dataSourceId,
+        columns: tables.flatMap(table => table.columns),
+      }),
+    })
 
     const finishedAt = new Date().toISOString()
     await supabase

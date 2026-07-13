@@ -11,10 +11,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { GuidedProgressStepper } from '@/components/platform/guided-progress-stepper'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { demoColumns, demoEntities, demoMetrics, demoModel, demoProjects, demoRelationships, DEMO_MODEL_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
-import { buildGuidedSchemaProfile, buildGuidedSemanticDraft } from '@/lib/dashboardos/guided-review'
+import { buildGuidedProgress, buildGuidedSchemaProfile, buildGuidedSemanticDraft, type GuidedReviewDecisionAction, type GuidedReviewState } from '@/lib/dashboardos/guided-review'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
 import type { BusinessFieldRole, BusinessMetric, BusinessMetricAggregation, BusinessModel, BusinessModelStatus, BusinessRelationship, BusinessRelationshipType } from '@/types/semantic-model'
 
@@ -55,6 +56,11 @@ interface MappingSuggestion {
   reason: string
   metricName?: string
   aggregation?: BusinessMetricAggregation
+}
+
+interface GuidedProfileApiRecord {
+  id: string
+  state: GuidedReviewState
 }
 
 const FIELD_ROLES: BusinessFieldRole[] = ['identifier', 'dimension', 'metric_source', 'date', 'attribute', 'hidden']
@@ -195,13 +201,27 @@ export function SemanticModelAdminPanel() {
   const [suggestions, setSuggestions] = useState<MappingSuggestion[]>([])
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set())
   const [schemaScannedAt, setSchemaScannedAt] = useState<Date | null>(null)
+  const [guidedProfileRecord, setGuidedProfileRecord] = useState<GuidedProfileApiRecord | null>(null)
+  const [guidedSavingItemId, setGuidedSavingItemId] = useState<string | null>(null)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedModel = models.find(model => model.id === modelId)
   const selectedColumn = columns.find(column => column.id === selectedColumnId)
   const guidedProfile = useMemo(() => buildGuidedSchemaProfile(columns), [columns])
-  const semanticDraft = useMemo(() => buildGuidedSemanticDraft(guidedProfile), [guidedProfile])
+  const computedSemanticDraft = useMemo(() => buildGuidedSemanticDraft(guidedProfile), [guidedProfile])
+  const guidedState = guidedProfileRecord?.state
+  const semanticDraft = guidedState?.semanticDraft ?? computedSemanticDraft
+  const guidedProgress = useMemo(() => buildGuidedProgress({
+    hasDataSource: columns.length > 0,
+    hasProfile: Boolean(guidedProfileRecord) || columns.length > 0,
+    openReviewCount: semanticDraft.needsReview.length,
+    semanticDraftApproved: guidedState?.semanticDraftStatus === 'approved' || selectedModel?.status === 'approved',
+    hasDatasetDraft: false,
+    hasDashboardDraft: false,
+    hasPreview: false,
+    hasPublishedDashboard: false,
+  }), [columns.length, guidedProfileRecord, guidedState?.semanticDraftStatus, selectedModel?.status, semanticDraft.needsReview.length])
 
   const visibleColumns = useMemo(() => {
     const search = columnSearch.trim().toLowerCase()
@@ -357,6 +377,21 @@ export function SemanticModelAdminPanel() {
     setRelationships(Array.isArray(payload?.relationships) ? payload.relationships : [])
   }
 
+  const fetchGuidedProfile = async (nextProjectId: string) => {
+    if (!nextProjectId) {
+      setGuidedProfileRecord(null)
+      return
+    }
+    if (demoMode) {
+      setGuidedProfileRecord(null)
+      return
+    }
+    const response = await fetch(`/api/admin/guided-review/profile?projectId=${encodeURIComponent(nextProjectId)}`, { cache: 'no-store' })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(errorToText(payload))
+    setGuidedProfileRecord(payload?.profile ?? null)
+  }
+
   useEffect(() => {
     let mounted = true
     setLoading(true)
@@ -377,6 +412,7 @@ export function SemanticModelAdminPanel() {
     void Promise.all([
       fetchModels(projectId),
       fetchColumns(projectId, builderDataSourceId),
+      fetchGuidedProfile(projectId),
     ]).catch(error => toast.error(error instanceof Error ? error.message : String(error)))
   }, [builderDataSourceId, projectId])
 
@@ -467,6 +503,52 @@ export function SemanticModelAdminPanel() {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleGuidedDecision = async (itemId: string, action: GuidedReviewDecisionAction) => {
+    if (demoMode || !guidedProfileRecord) {
+      toast.success(`Demo review decision recorded: ${action}`)
+      return
+    }
+    setGuidedSavingItemId(itemId)
+    try {
+      const response = await fetch('/api/admin/guided-review/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: guidedProfileRecord.id, itemId, action }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      setGuidedProfileRecord(payload.profile as GuidedProfileApiRecord)
+      toast.success('Review decision saved')
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setGuidedSavingItemId(null)
+    }
+  }
+
+  const handleApproveGuidedDraft = async () => {
+    if (demoMode || !guidedProfileRecord) {
+      toast.success('Demo semantic draft approved')
+      return
+    }
+    setGuidedSavingItemId('semantic-draft')
+    try {
+      const response = await fetch('/api/admin/guided-review/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: guidedProfileRecord.id, action: 'approve_semantic_draft' }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      setGuidedProfileRecord(payload.profile as GuidedProfileApiRecord)
+      toast.success('Guided semantic draft approved')
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setGuidedSavingItemId(null)
     }
   }
 
@@ -911,6 +993,8 @@ export function SemanticModelAdminPanel() {
         })}
       </section>
 
+      <GuidedProgressStepper steps={guidedProgress} />
+
       <section className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 text-[var(--dos-text-primary)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -926,6 +1010,10 @@ export function SemanticModelAdminPanel() {
           <Button size="sm" variant="outline" className={SUGGESTION_BUTTON_CLASS} onClick={buildSuggestions} disabled={saving || !selectedModel || columns.length === 0}>
             <Sparkles className="mr-2 h-4 w-4" />
             Refresh draft
+          </Button>
+          <Button size="sm" onClick={handleApproveGuidedDraft} disabled={guidedSavingItemId === 'semantic-draft' || semanticDraft.needsReview.length > 0 || semanticDraft.approvedFields.length === 0}>
+            {guidedSavingItemId === 'semantic-draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+            Save approved draft
           </Button>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-5">
@@ -949,12 +1037,20 @@ export function SemanticModelAdminPanel() {
               {semanticDraft.needsReview.length === 0 ? (
                 <p className="text-xs text-[var(--dos-text-muted)]">No low-confidence schema items yet. Scan a source or generate suggestions to continue.</p>
               ) : semanticDraft.needsReview.slice(0, 5).map(entry => (
-                <div key={entry.id} className="flex items-start justify-between gap-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-3 py-2 text-xs">
+                <div key={entry.id} className="grid gap-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-3 py-2 text-xs sm:grid-cols-[1fr_auto]">
                   <span>
                     <span className="block font-medium text-[var(--dos-text-primary)]">{entry.label}</span>
                     <span className="mt-1 block text-[var(--dos-text-muted)]">{entry.reason}</span>
                   </span>
-                  <Badge variant="outline" className="shrink-0 border-[color:var(--dos-border-soft)] text-[var(--dos-text-muted)]">{entry.confidence}%</Badge>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="shrink-0 border-[color:var(--dos-border-soft)] text-[var(--dos-text-muted)]">{entry.confidence}%</Badge>
+                    <Button size="sm" variant="outline" className="h-7 border-[color:var(--dos-success)] bg-transparent px-2 text-[10px] text-[var(--dos-success-text)]" disabled={guidedSavingItemId === entry.id} onClick={() => void handleGuidedDecision(entry.id, entry.kind === 'relationship_candidate' ? 'confirm_relationship' : 'approve')}>
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 border-[color:var(--dos-warning)] bg-transparent px-2 text-[10px] text-[var(--dos-warning-text)]" disabled={guidedSavingItemId === entry.id} onClick={() => void handleGuidedDecision(entry.id, entry.kind === 'relationship_candidate' ? 'reject_relationship' : 'reject')}>
+                      Reject
+                    </Button>
+                  </span>
                 </div>
               ))}
             </div>
@@ -966,7 +1062,12 @@ export function SemanticModelAdminPanel() {
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {semanticDraft.hiddenSensitiveFields.slice(0, 4).map(entry => (
-                <Badge key={entry.id} variant="outline" className="border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] text-[var(--dos-warning-text)]">{entry.label}</Badge>
+                <span key={entry.id} className="inline-flex items-center gap-2 rounded-full border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] px-2 py-1 text-[11px] text-[var(--dos-warning-text)]">
+                  {entry.label}
+                  <button type="button" className="font-semibold underline-offset-2 hover:underline" disabled={guidedSavingItemId === entry.id} onClick={() => void handleGuidedDecision(entry.id, 'keep_hidden')}>
+                    keep hidden
+                  </button>
+                </span>
               ))}
               {semanticDraft.hiddenSensitiveFields.length === 0 ? (
                 <span className="text-xs text-[var(--dos-text-muted)]">No sensitive candidates detected in current scan.</span>

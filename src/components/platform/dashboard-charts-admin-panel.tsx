@@ -197,6 +197,7 @@ export function DashboardChartsAdminPanel() {
   const [aiRefinementRollout, setAiRefinementRollout] = useState<AiRefinementRolloutState | null>(null)
   const [savingRolloutScope, setSavingRolloutScope] = useState<AiRolloutScopeType | null>(null)
   const [advancedComposerOpen, setAdvancedComposerOpen] = useState(false)
+  const [draftingDashboard, setDraftingDashboard] = useState(false)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -464,6 +465,54 @@ export function DashboardChartsAdminPanel() {
     }
   }
 
+  async function handleGenerateDashboardDraft() {
+    if (!selectedProject || !selectedDataset) {
+      toast.error('Select a project and dataset before generating a dashboard draft')
+      return
+    }
+    setDraftingDashboard(true)
+    try {
+      if (demoMode) {
+        const chart: DashboardChartConfig = {
+          ...demoChart,
+          id: `demo-guided-chart-${Date.now()}`,
+          name: `${selectedDataset.name} guided overview`,
+          status: 'draft',
+          publishedAt: null,
+          updatedAt: new Date().toISOString(),
+        }
+        setCharts(current => [chart, ...current])
+        addBuilderChartId(chart.id)
+        setBuilderScope({ tenantId: chart.tenantId, projectId: chart.projectId }, 'dashboard')
+        toast.success('Demo guided dashboard draft created')
+        return
+      }
+      const response = await fetch('/api/admin/guided-review/dashboard-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: selectedProject.tenantId,
+          projectId: selectedProject.id,
+          datasetId: selectedDataset.id,
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      const nextCharts = Array.isArray(payload?.charts) ? payload.charts as DashboardChartConfig[] : []
+      if (nextCharts.length > 0) {
+        setCharts(current => [...nextCharts, ...current])
+        for (const chart of nextCharts) addBuilderChartId(chart.id)
+      }
+      setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'dashboard')
+      void fetchChartAudit(selectedProject.id)
+      toast.success('Guided dashboard draft created')
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setDraftingDashboard(false)
+    }
+  }
+
   async function handleStatus(chartId: string, status: 'draft' | 'published' | 'archived') {
     setUpdatingId(chartId)
     try {
@@ -534,6 +583,10 @@ export function DashboardChartsAdminPanel() {
           </div>
           <Button variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]" onClick={() => setAdvancedComposerOpen(open => !open)}>
             {advancedComposerOpen ? 'Hide advanced composer' : 'Customize chart manually'}
+          </Button>
+          <Button onClick={() => void handleGenerateDashboardDraft()} disabled={draftingDashboard || !selectedDataset || guidedChartRecommendations.length === 0}>
+            {draftingDashboard ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            Generate draft dashboard
           </Button>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

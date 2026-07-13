@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Play, Plus, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -111,6 +111,7 @@ export function DatasetsAdminPanel() {
   const [plan, setPlan] = useState<DatasetPlan | null>(null)
   const [runResult, setRunResult] = useState<DatasetRunResult | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [generatingRecipeId, setGeneratingRecipeId] = useState<string | null>(null)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -240,6 +241,52 @@ export function DatasetsAdminPanel() {
     setMetricIds(recipeMetricIds)
     setRelationshipIds(relationships.slice(0, 2).map(relationship => relationship.id))
     toast.success(`Recipe selected: ${recipe.title}`)
+  }
+
+  const handleGenerateRecipeDraft = async (recipe: GuidedDatasetRecipe) => {
+    if (!selectedProject || !modelId) {
+      toast.error('Select an approved model before generating a dataset draft')
+      return
+    }
+    setGeneratingRecipeId(recipe.id)
+    try {
+      if (demoMode) {
+        applyRecipe(recipe)
+        const dataset: SemanticDataset = {
+          ...demoDataset,
+          id: `demo-guided-dataset-${Date.now()}`,
+          name: recipe.title,
+          status: 'draft',
+          updatedAt: new Date().toISOString(),
+        }
+        setDatasets(current => [dataset, ...current])
+        toast.success('Demo guided dataset draft created')
+        return
+      }
+      const response = await fetch('/api/admin/guided-review/dataset-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: selectedProject.tenantId,
+          projectId: selectedProject.id,
+          modelId,
+          recipeId: recipe.id,
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload))
+      if (payload?.dataset) {
+        const dataset = payload.dataset as SemanticDataset
+        setDatasets(current => [dataset, ...current])
+        setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'charts')
+        setBuilderSemanticModelId(modelId)
+      }
+      toast.success('Guided dataset draft created')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setGeneratingRecipeId(null)
+    }
   }
 
   const handleCreate = async () => {
@@ -428,11 +475,9 @@ export function DatasetsAdminPanel() {
               Approve a semantic model with at least one metric to generate recipes.
             </div>
           ) : guidedRecipes.map(recipe => (
-            <button
+            <div
               key={recipe.id}
-              type="button"
-              onClick={() => applyRecipe(recipe)}
-              className="rounded-lg border border-white/10 bg-slate-950/50 p-4 text-left transition-colors hover:border-[#a6e22e]/45 hover:bg-[#a6e22e]/10"
+              className="rounded-lg border border-white/10 bg-slate-950/50 p-4 transition-colors hover:border-[#a6e22e]/45 hover:bg-[#a6e22e]/10"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -444,7 +489,16 @@ export function DatasetsAdminPanel() {
               <p className="mt-3 text-[11px] text-slate-500">
                 {recipe.suggestedMetricLabels.slice(0, 3).join(', ') || 'Metrics pending'}
               </p>
-            </button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => void handleGenerateRecipeDraft(recipe)} disabled={generatingRecipeId === recipe.id || !modelId}>
+                  {generatingRecipeId === recipe.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                  Generate draft
+                </Button>
+                <Button size="sm" variant="outline" className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10" onClick={() => applyRecipe(recipe)}>
+                  Review manually
+                </Button>
+              </div>
+            </div>
           ))}
         </div>
       </section>
