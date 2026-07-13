@@ -378,7 +378,7 @@ export function PublishedDashboardsAdminPanel() {
           </div>
           <h2 className="mt-3 text-2xl font-semibold text-white">Published dashboards</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Compose client-visible dashboard releases from governed chart configs. Legacy widgets stay out of this flow.
+            Compose client-visible dashboard releases from governed chart configs. Guided drafts keep their semantic and dataset lineage in version notes for review.
           </p>
         </div>
         <div className="w-full max-w-xs">
@@ -625,6 +625,11 @@ export function PublishedDashboardsAdminPanel() {
                         <p className="mt-1 text-xs text-slate-500">
                           Version {version.versionNumber} · {pageCount} pages · {slotCount} slots
                         </p>
+                        {version.notes ? (
+                          <p className="mt-2 max-w-2xl text-[11px] leading-4 text-slate-500" data-testid="guided-publish-lineage">
+                            {version.notes}
+                          </p>
+                        ) : null}
                       </div>
                       <Button size="sm" onClick={() => publishVersion(version.id)} disabled={publishDisabled || publishingId === version.id} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
                         {publishingId === version.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}

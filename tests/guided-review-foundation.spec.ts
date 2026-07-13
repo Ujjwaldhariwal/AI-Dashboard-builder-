@@ -2,15 +2,18 @@ import { expect, test } from '@playwright/test'
 
 import {
   applyGuidedReviewDecision,
+  buildGuidedContinueState,
   approveGuidedSemanticDraft,
   buildGuidedChartRecommendations,
   buildGuidedDashboardDraftPlan,
   buildGuidedDatasetDraftFromRecipe,
+  buildGuidedDraftLineage,
   buildGuidedDatasetRecipes,
   buildGuidedProgress,
   buildGuidedReviewState,
   buildGuidedSchemaProfile,
   buildGuidedSemanticDraft,
+  guidedLineageLabel,
 } from '../src/lib/dashboardos/guided-review'
 import type { DataSourceColumnMetadata } from '../src/types/data-source'
 
@@ -143,6 +146,32 @@ test.describe('guided review foundation', () => {
     expect(approved.decisions.length).toBeGreaterThanOrEqual(approved.semanticDraft.approvedFields.length)
   })
 
+  test('links approved semantic draft state to the materialized semantic asset', () => {
+    const reviewed = buildGuidedReviewState(columns, {
+      profileId: 'profile-1',
+      dataSourceId: 'source-1',
+      schemaHash: 'schema-v1',
+      generatedAt: '2026-07-13T00:00:00.000Z',
+    })
+    const approved = approveGuidedSemanticDraft(reviewed, 'admin-user', '2026-07-13T01:00:00.000Z', {
+      modelId: 'model-1',
+      modelName: 'Guided Semantic Model',
+      modelVersion: 3,
+      materializedAt: '2026-07-13T01:00:00.000Z',
+      fieldCount: 6,
+      metricCount: 2,
+      relationshipCount: 1,
+    })
+
+    expect(approved.semanticAsset).toEqual(expect.objectContaining({
+      modelId: 'model-1',
+      modelVersion: 3,
+      metricCount: 2,
+    }))
+    expect(approved.lineage?.semanticAsset?.modelId).toBe('model-1')
+    expect(approved.lineage?.semanticDraft.status).toBe('approved')
+  })
+
   test('builds deterministic dataset drafts from selected recipes', () => {
     const fields = [
       { id: 'date', name: 'Order Date', role: 'date' },
@@ -154,12 +183,28 @@ test.describe('guided review foundation', () => {
       { id: 'orders', name: 'Order Count', aggregation: 'count' as const },
     ]
     const recipe = buildGuidedDatasetRecipes({ fields, metrics })[0]
-    const draft = buildGuidedDatasetDraftFromRecipe({ recipe, fields, metrics })
+    const lineage = buildGuidedDraftLineage({
+      generatedAt: '2026-07-13T02:00:00.000Z',
+      profileId: 'profile-1',
+      schemaHash: 'schema-v1',
+      semanticDraftVersion: 2,
+      semanticAsset: {
+        modelId: 'model-1',
+        modelName: 'Guided Semantic Model',
+        modelVersion: 1,
+        materializedAt: '2026-07-13T01:00:00.000Z',
+        fieldCount: fields.length,
+        metricCount: metrics.length,
+        relationshipCount: 0,
+      },
+    })
+    const draft = buildGuidedDatasetDraftFromRecipe({ recipe, fields, metrics, lineage })
 
     expect(draft.name).toBe(recipe.title)
     expect(draft.fieldIds).toEqual(expect.arrayContaining(['date']))
     expect(draft.metricIds).toEqual(expect.arrayContaining(['revenue']))
     expect(draft.reviewNotes).toEqual([])
+    expect(guidedLineageLabel(draft.lineage)).toBe('Generated from approved semantic draft v2 / semantic model v1')
   })
 
   test('builds a coherent dashboard draft layout from recommended chart types', () => {
@@ -212,5 +257,24 @@ test.describe('guided review foundation', () => {
 
     expect(steps.find(step => step.id === 'generate_draft_dashboard')?.status).toBe('ready')
     expect(steps.find(step => step.id === 'publish')?.status).toBe('blocked')
+  })
+
+  test('selects one guided landing continuation action with blockers', () => {
+    const steps = buildGuidedProgress({
+      hasDataSource: true,
+      hasProfile: true,
+      openReviewCount: 2,
+      semanticDraftApproved: false,
+      hasDatasetDraft: false,
+      hasDashboardDraft: false,
+      hasPreview: false,
+      hasPublishedDashboard: false,
+    })
+    const continueState = buildGuidedContinueState(steps)
+
+    expect(continueState.currentStep.id).toBe('review_findings')
+    expect(continueState.nextAction.href).toBe('/admin/semantic-model')
+    expect(continueState.completedSteps.map(step => step.id)).toContain('connect_db')
+    expect(continueState.blockerSteps.map(step => step.id)).toContain('approve_model')
   })
 })

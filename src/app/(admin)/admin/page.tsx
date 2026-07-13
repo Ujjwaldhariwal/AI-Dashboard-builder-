@@ -14,33 +14,13 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { GuidedWorkflowLanding } from '@/components/platform/guided-workflow-landing'
 
 const METRICS = [
   { label: 'Tenants', value: '0', note: 'Tenant model planned', icon: Users },
   { label: 'Data Sources', value: '0', note: 'Postgres first', icon: Database },
   { label: 'Published Dashboards', value: '0', note: 'Read-only runtime', icon: Gauge },
   { label: 'Security Events', value: '0', note: 'Audit trail target', icon: ShieldCheck },
-]
-
-const SPRINTS = [
-  {
-    name: 'Sprint 1',
-    status: 'Complete',
-    title: 'Platform spine',
-    items: ['Admin shell', 'Client shell', 'Roadmap', 'Legacy quarantine'],
-  },
-  {
-    name: 'Sprint 2',
-    status: 'Complete',
-    title: 'Tenancy and access',
-    items: ['Tenant model', 'Engineer assignments', 'Client roles', 'RLS boundaries'],
-  },
-  {
-    name: 'Sprint 3',
-    status: 'Active',
-    title: 'Operating foundation',
-    items: ['Postgres source', 'Publishing', 'Jobs/alerts', 'Exports'],
-  },
 ]
 
 const PRINCIPLES = [
@@ -64,6 +44,8 @@ const PRINCIPLES = [
 export default function AdminOverviewPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
+      <GuidedWorkflowLanding />
+
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-6">
           <div className="flex flex-wrap items-center gap-2">
@@ -133,34 +115,7 @@ export default function AdminOverviewPage() {
         })}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardHeader>
-            <CardTitle className="text-sm">Refactor sprints</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {SPRINTS.map((sprint) => (
-              <div key={sprint.name} className="rounded-lg border border-white/10 bg-slate-950/50 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium text-cyan-200">{sprint.name}</p>
-                    <h3 className="mt-1 text-sm font-semibold">{sprint.title}</h3>
-                  </div>
-                  <Badge variant="outline" className="border-white/15 text-slate-300">{sprint.status}</Badge>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {sprint.items.map((item) => (
-                    <span key={item} className="rounded-md bg-white/8 px-2 py-1 text-[11px] text-slate-400">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-1">
+      <section className="grid gap-4 md:grid-cols-3">
           {PRINCIPLES.map((principle) => {
             const Icon = principle.icon
             return (
@@ -177,7 +132,6 @@ export default function AdminOverviewPage() {
               </Card>
             )
           })}
-        </div>
       </section>
     </div>
   )

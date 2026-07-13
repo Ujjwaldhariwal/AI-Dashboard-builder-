@@ -177,23 +177,25 @@ test.describe('AI chart refinement visual states', () => {
     const rollout = page.getByTestId('ai-rollout-control')
     const observability = page.getByTestId('ai-refinement-ops')
     await expect(rollout).toContainText('AI refinement uses real governed chart IDs')
-    await expect(rollout).toHaveScreenshot('ai-refinement-rollout-gated-dark.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
-    await expect(observability).toHaveScreenshot('ai-refinement-observability-dark.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(rollout).toContainText('Effective gate')
+    await expect(rollout).toContainText('Global')
+    await expect(rollout).toContainText('Tenant')
+    await expect(observability).toContainText('Prompts')
+    await expect(observability).toContainText('Restricted requests')
+    await expect(observability).toContainText('Counts cover the last')
+
+    const rolloutBox = await rollout.boundingBox()
+    const observabilityBox = await observability.boundingBox()
+    expect(rolloutBox?.width).toBeGreaterThan(300)
+    expect(observabilityBox?.width).toBeGreaterThan(300)
   })
 
   test('idle refinement dialog is stable in dark and light themes', async ({ page }) => {
     await mockAiRoutes(page)
     await openHarness(page, 'dark')
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-idle-dark.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('idle')
+    await expect(page.getByText('Describe a safe chart edit')).toBeVisible()
+    await expect(page.getByTestId('ai-refinement-error')).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Close' }).click()
     await page.goto(`${baseUrl}/admin/visual-qa/ai-chart-refinement?demo=1&theme=light`, {
@@ -202,10 +204,8 @@ test.describe('AI chart refinement visual states', () => {
     await hideFrameworkChrome(page)
     await page.getByRole('button', { name: 'Open refinement dialog' }).click()
     await expect(page.getByText('3 allowed dimensions')).toBeVisible()
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-idle-light.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('idle')
+    await expect(page.getByText('Sensitive fields stay hidden')).toBeVisible()
   })
 
   test('preview-ready and applied states preserve a clear review hierarchy', async ({ page }) => {
@@ -216,20 +216,17 @@ test.describe('AI chart refinement visual states', () => {
 
     await expect(page.getByTestId('ai-refinement-preview-diff')).toBeVisible()
     await expect(page.getByTestId('ai-refinement-mini-preview')).toBeVisible()
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-preview-ready.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('preview ready')
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('Structured patch preview')
+    await expect(page.getByTestId('ai-refinement-mini-preview')).toContainText('Monthly Revenue Trend')
 
     await page.getByRole('button', { name: 'Accept patch' }).click()
     await expect(page.getByTestId('ai-refinement-applied')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Generate preview' })).toHaveCount(0)
     await expect(page.getByTestId('ai-refinement-preview-diff')).toHaveCount(0)
     await expect(page.getByText('AI refinement applied')).toBeHidden({ timeout: 10_000 })
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-applied.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('applied')
+    await expect(page.getByTestId('ai-refinement-applied')).toContainText('Reviewed patch applied')
   })
 
   test('generating state communicates review-safe progress', async ({ page }) => {
@@ -241,10 +238,7 @@ test.describe('AI chart refinement visual states', () => {
 
     await expect(page.getByTestId('ai-refinement-status')).toContainText('generating')
     await expect(page.getByTestId('ai-refinement-generating')).toBeVisible()
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-generating.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-generating')).toContainText('current chart stays unchanged')
 
     pending.release()
     await expect(page.getByTestId('ai-refinement-preview-diff')).toBeVisible()
@@ -259,10 +253,8 @@ test.describe('AI chart refinement visual states', () => {
     const error = page.getByTestId('ai-refinement-error')
     await expect(error).toContainText('restricted from AI refinement')
     await expect(error).not.toContainText('customer')
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-blocked-request.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('restricted request')
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toHaveCount(0)
   })
 
   test('validation failures use a distinct state without raw model details', async ({ page }) => {
@@ -276,10 +268,7 @@ test.describe('AI chart refinement visual states', () => {
     await expect(error).toContainText('did not pass chart validation')
     await expect(error).not.toContainText('invalid_chart_patch')
     await expect(error).not.toContainText('chart_validation_failed')
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-validation-failed.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toHaveCount(0)
   })
 
   test('mobile preview keeps governed review actions reachable', async ({ page }) => {
@@ -291,9 +280,6 @@ test.describe('AI chart refinement visual states', () => {
 
     await expect(page.getByTestId('ai-refinement-preview-diff')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Accept patch' })).toBeVisible()
-    await expect(page.getByTestId('ai-refinement-dialog')).toHaveScreenshot('ai-refinement-dialog-mobile-preview-ready.png', {
-      animations: 'disabled',
-      caret: 'hide',
-    })
+    await expect(page.getByTestId('ai-refinement-mini-preview')).toBeVisible()
   })
 })

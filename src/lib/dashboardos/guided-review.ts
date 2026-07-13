@@ -48,6 +48,47 @@ export interface GuidedSemanticDraft {
   needsReview: GuidedInferenceItem[]
 }
 
+export interface GuidedSemanticAssetLink {
+  modelId: string
+  modelName: string
+  modelVersion: number
+  materializedAt: string
+  fieldCount: number
+  metricCount: number
+  relationshipCount: number
+}
+
+export interface GuidedWorkflowLineage {
+  schemaProfile: {
+    profileId?: string | null
+    dataSourceId?: string | null
+    schemaHash?: string | null
+    generatedAt: string
+  }
+  review: {
+    decisionCount: number
+    openItemCount: number
+    updatedAt: string
+  }
+  semanticDraft: {
+    version: number
+    status: GuidedReviewState['semanticDraftStatus']
+    approvedAt?: string | null
+    approvedBy?: string | null
+  }
+  semanticAsset?: GuidedSemanticAssetLink | null
+}
+
+export interface GuidedDraftLineage {
+  generatedAt: string
+  generatedFrom: string
+  schemaProfileId?: string | null
+  schemaHash?: string | null
+  semanticDraftVersion: number
+  semanticModelId?: string | null
+  semanticModelVersion?: number | null
+}
+
 export interface GuidedDatasetRecipe {
   id: string
   title: string
@@ -88,6 +129,9 @@ export interface GuidedReviewState {
   semanticDraft: GuidedSemanticDraft
   decisions: GuidedReviewDecision[]
   semanticDraftStatus: 'not_started' | 'reviewing' | 'approved'
+  semanticDraftVersion: number
+  semanticAsset?: GuidedSemanticAssetLink | null
+  lineage?: GuidedWorkflowLineage
   approvedAt?: string | null
   approvedBy?: string | null
 }
@@ -108,6 +152,21 @@ export interface GuidedProgressStep {
   detail: string
 }
 
+export interface GuidedContinueAction {
+  stepId: GuidedProgressStepId
+  label: string
+  href: string
+  detail: string
+}
+
+export interface GuidedContinueState {
+  currentStep: GuidedProgressStep
+  completedSteps: GuidedProgressStep[]
+  blockerSteps: GuidedProgressStep[]
+  nextAction: GuidedContinueAction
+  isComplete: boolean
+}
+
 export interface GuidedDatasetDraftPlan {
   recipe: GuidedDatasetRecipe
   name: string
@@ -115,6 +174,7 @@ export interface GuidedDatasetDraftPlan {
   metricIds: string[]
   relationshipIds: string[]
   reviewNotes: string[]
+  lineage?: GuidedDraftLineage
 }
 
 export interface GuidedDashboardDraftPlan {
@@ -132,6 +192,7 @@ export interface GuidedDashboardDraftPlan {
     slotCount: number
   }
   reviewNotes: string[]
+  lineage?: GuidedDraftLineage
 }
 
 const MEASURE_RE = /(amount|revenue|sales|total|count|quantity|orders|customers|users|price|cost|profit|margin|duration|score|usage|units|kwh|consumed|outage|load|balance|rate)/i
@@ -164,6 +225,61 @@ function tableKey(column: DataSourceColumnMetadata) {
 
 function item(id: string, kind: GuidedInferenceKind, label: string, confidence: number, reason: string, reviewRequired = false): GuidedInferenceItem {
   return { id, kind, label, confidence, reason, reviewRequired }
+}
+
+function buildLineage(input: {
+  state: Pick<GuidedReviewState, 'decisions' | 'semanticDraft' | 'semanticDraftStatus' | 'semanticDraftVersion' | 'approvedAt' | 'approvedBy'>
+  profileId?: string | null
+  dataSourceId?: string | null
+  schemaHash?: string | null
+  generatedAt: string
+  semanticAsset?: GuidedSemanticAssetLink | null
+}): GuidedWorkflowLineage {
+  return {
+    schemaProfile: {
+      profileId: input.profileId ?? null,
+      dataSourceId: input.dataSourceId ?? null,
+      schemaHash: input.schemaHash ?? null,
+      generatedAt: input.generatedAt,
+    },
+    review: {
+      decisionCount: input.state.decisions.length,
+      openItemCount: input.state.semanticDraft.needsReview.length,
+      updatedAt: input.generatedAt,
+    },
+    semanticDraft: {
+      version: input.state.semanticDraftVersion,
+      status: input.state.semanticDraftStatus,
+      approvedAt: input.state.approvedAt ?? null,
+      approvedBy: input.state.approvedBy ?? null,
+    },
+    semanticAsset: input.semanticAsset ?? null,
+  }
+}
+
+export function buildGuidedDraftLineage(input: {
+  generatedAt: string
+  profileId?: string | null
+  schemaHash?: string | null
+  semanticDraftVersion?: number | null
+  semanticAsset?: GuidedSemanticAssetLink | null
+}): GuidedDraftLineage {
+  return {
+    generatedAt: input.generatedAt,
+    generatedFrom: input.semanticAsset
+      ? `approved semantic draft v${input.semanticDraftVersion ?? 1} / semantic model v${input.semanticAsset.modelVersion}`
+      : `approved semantic draft v${input.semanticDraftVersion ?? 1}`,
+    schemaProfileId: input.profileId ?? null,
+    schemaHash: input.schemaHash ?? null,
+    semanticDraftVersion: input.semanticDraftVersion ?? 1,
+    semanticModelId: input.semanticAsset?.modelId ?? null,
+    semanticModelVersion: input.semanticAsset?.modelVersion ?? null,
+  }
+}
+
+export function guidedLineageLabel(lineage?: GuidedDraftLineage | null) {
+  if (!lineage) return 'Generated from guided review'
+  return `Generated from ${lineage.generatedFrom}`
 }
 
 export function buildGuidedSchemaProfile(columns: DataSourceColumnMetadata[]): GuidedSchemaProfile {
@@ -263,15 +379,35 @@ export function buildGuidedSemanticDraft(profile: GuidedSchemaProfile): GuidedSe
   }
 }
 
-export function buildGuidedReviewState(columns: DataSourceColumnMetadata[]): GuidedReviewState {
+export function buildGuidedReviewState(columns: DataSourceColumnMetadata[], context: {
+  profileId?: string | null
+  dataSourceId?: string | null
+  schemaHash?: string | null
+  generatedAt?: string
+} = {}): GuidedReviewState {
   const profile = buildGuidedSchemaProfile(columns)
-  return {
+  const semanticDraft = buildGuidedSemanticDraft(profile)
+  const generatedAt = context.generatedAt ?? new Date().toISOString()
+  const state: GuidedReviewState = {
     profile,
-    semanticDraft: buildGuidedSemanticDraft(profile),
+    semanticDraft,
     decisions: [],
     semanticDraftStatus: profile.reviewItems.length > 0 ? 'reviewing' : 'not_started',
+    semanticDraftVersion: 1,
+    semanticAsset: null,
     approvedAt: null,
     approvedBy: null,
+  }
+  return {
+    ...state,
+    lineage: buildLineage({
+      state,
+      profileId: context.profileId ?? null,
+      dataSourceId: context.dataSourceId ?? columns[0]?.dataSourceId ?? null,
+      schemaHash: context.schemaHash ?? null,
+      generatedAt,
+      semanticAsset: null,
+    }),
   }
 }
 
@@ -285,7 +421,7 @@ export function applyGuidedReviewDecision(state: GuidedReviewState, decision: Gu
     .map(item => item.itemId))
   const remainingReviewItems = state.semanticDraft.needsReview.filter(item => !approvedOrRejected.has(item.id))
 
-  return {
+  const nextState: GuidedReviewState = {
     ...state,
     decisions: nextDecisions,
     semanticDraft: {
@@ -295,10 +431,30 @@ export function applyGuidedReviewDecision(state: GuidedReviewState, decision: Gu
     semanticDraftStatus: remainingReviewItems.length === 0 && state.semanticDraftStatus !== 'approved'
       ? 'reviewing'
       : state.semanticDraftStatus,
+    semanticDraftVersion: (state.semanticDraftVersion ?? 1) + 1,
+    semanticAsset: state.semanticDraftStatus === 'approved' ? state.semanticAsset ?? null : null,
+    approvedAt: state.semanticDraftStatus === 'approved' ? state.approvedAt ?? null : null,
+    approvedBy: state.semanticDraftStatus === 'approved' ? state.approvedBy ?? null : null,
+  }
+  return {
+    ...nextState,
+    lineage: buildLineage({
+      state: nextState,
+      profileId: state.lineage?.schemaProfile.profileId ?? null,
+      dataSourceId: state.lineage?.schemaProfile.dataSourceId ?? null,
+      schemaHash: state.lineage?.schemaProfile.schemaHash ?? null,
+      generatedAt: decision.decidedAt,
+      semanticAsset: nextState.semanticAsset ?? null,
+    }),
   }
 }
 
-export function approveGuidedSemanticDraft(state: GuidedReviewState, actorUserId: string | null, decidedAt: string): GuidedReviewState {
+export function approveGuidedSemanticDraft(
+  state: GuidedReviewState,
+  actorUserId: string | null,
+  decidedAt: string,
+  semanticAsset: GuidedSemanticAssetLink | null = null,
+): GuidedReviewState {
   const autoApprovals = state.semanticDraft.approvedFields.map(field => ({
     itemId: field.id,
     action: 'approve' as const,
@@ -311,12 +467,29 @@ export function approveGuidedSemanticDraft(state: GuidedReviewState, actorUserId
     if (!decisionByItemId.has(decision.itemId)) decisionByItemId.set(decision.itemId, decision)
   }
 
-  return {
+  const nextState: GuidedReviewState = {
     ...state,
     decisions: [...decisionByItemId.values()],
+    semanticDraft: {
+      ...state.semanticDraft,
+      needsReview: [],
+    },
     semanticDraftStatus: 'approved',
+    semanticDraftVersion: state.semanticDraftVersion ?? 1,
+    semanticAsset,
     approvedAt: decidedAt,
     approvedBy: actorUserId,
+  }
+  return {
+    ...nextState,
+    lineage: buildLineage({
+      state: nextState,
+      profileId: state.lineage?.schemaProfile.profileId ?? null,
+      dataSourceId: state.lineage?.schemaProfile.dataSourceId ?? null,
+      schemaHash: state.lineage?.schemaProfile.schemaHash ?? null,
+      generatedAt: decidedAt,
+      semanticAsset,
+    }),
   }
 }
 
@@ -396,6 +569,7 @@ export function buildGuidedDatasetDraftFromRecipe(input: {
   fields: Array<{ id: string; name: string; role?: string }>
   metrics: Array<Pick<BusinessMetric, 'id' | 'name' | 'aggregation'>>
   relationships?: BusinessRelationship[]
+  lineage?: GuidedDraftLineage
 }): GuidedDatasetDraftPlan {
   const fieldIds = input.fields
     .filter(field => input.recipe.suggestedFieldLabels.includes(field.name))
@@ -423,6 +597,7 @@ export function buildGuidedDatasetDraftFromRecipe(input: {
     metricIds,
     relationshipIds,
     reviewNotes,
+    lineage: input.lineage,
   }
 }
 
@@ -491,6 +666,7 @@ export function buildGuidedDashboardDraftPlan(input: {
   fields: Array<{ id: string; name: string; role?: string }>
   metrics: Array<{ id: string; name: string }>
   recommendations: GuidedChartRecommendation[]
+  lineage?: GuidedDraftLineage
 }): GuidedDashboardDraftPlan {
   const dateField = input.fields.find(field => field.role === 'date')
   const categoryField = input.fields.find(field => field.role === 'dimension' || field.role === 'attribute')
@@ -545,6 +721,7 @@ export function buildGuidedDashboardDraftPlan(input: {
       slotCount: Math.min(charts.length, 5),
     },
     reviewNotes,
+    lineage: input.lineage,
   }
 }
 
@@ -610,4 +787,72 @@ export function buildGuidedProgress(input: {
       detail: input.clientUrl && publishDone ? 'Open the client-facing dashboard.' : 'Publish a dashboard to unlock client view.',
     },
   ]
+}
+
+const DEFAULT_GUIDED_ACTIONS: Record<GuidedProgressStepId, GuidedContinueAction> = {
+  connect_db: {
+    stepId: 'connect_db',
+    label: 'Connect database',
+    href: '/admin/data-sources',
+    detail: 'Add or scan a read-only Postgres source.',
+  },
+  review_findings: {
+    stepId: 'review_findings',
+    label: 'Review findings',
+    href: '/admin/semantic-model',
+    detail: 'Resolve schema findings and sensitive-field decisions.',
+  },
+  approve_model: {
+    stepId: 'approve_model',
+    label: 'Approve semantic model',
+    href: '/admin/semantic-model',
+    detail: 'Materialize the reviewed draft as an approved semantic model.',
+  },
+  generate_draft_dashboard: {
+    stepId: 'generate_draft_dashboard',
+    label: 'Generate draft dashboard',
+    href: '/admin/datasets',
+    detail: 'Create a dataset draft, then generate charts from it.',
+  },
+  preview: {
+    stepId: 'preview',
+    label: 'Preview draft',
+    href: '/admin/charts',
+    detail: 'Inspect generated chart drafts before publishing.',
+  },
+  publish: {
+    stepId: 'publish',
+    label: 'Publish dashboard',
+    href: '/admin/publishing',
+    detail: 'Create and publish a versioned client dashboard.',
+  },
+  view_client_dashboard: {
+    stepId: 'view_client_dashboard',
+    label: 'View client dashboard',
+    href: '/admin/publishing',
+    detail: 'Open the client-facing dashboard runtime.',
+  },
+}
+
+export function buildGuidedContinueState(
+  steps: GuidedProgressStep[],
+  actionOverrides: Partial<Record<GuidedProgressStepId, GuidedContinueAction>> = {},
+): GuidedContinueState {
+  const actionForStep = (step: GuidedProgressStep) => actionOverrides[step.id] ?? DEFAULT_GUIDED_ACTIONS[step.id]
+  const readyStep = steps.find(step => step.status === 'ready')
+  const firstBlockedStep = steps.find(step => step.status === 'blocked')
+  const lastStep = steps[steps.length - 1]
+  const currentStep = readyStep ?? firstBlockedStep ?? lastStep
+  if (!currentStep) throw new Error('Guided progress requires at least one step')
+  const completedSteps = steps.filter(step => step.status === 'done')
+  const blockerSteps = steps.filter(step => step.status === 'blocked')
+  const isComplete = steps.length > 0 && steps.every(step => step.status === 'done' || step.id === 'view_client_dashboard' && step.status === 'ready')
+
+  return {
+    currentStep,
+    completedSteps,
+    blockerSteps,
+    nextAction: actionForStep(currentStep),
+    isComplete,
+  }
 }

@@ -212,6 +212,7 @@ export function SemanticModelAdminPanel() {
   const computedSemanticDraft = useMemo(() => buildGuidedSemanticDraft(guidedProfile), [guidedProfile])
   const guidedState = guidedProfileRecord?.state
   const semanticDraft = guidedState?.semanticDraft ?? computedSemanticDraft
+  const semanticAsset = guidedState?.semanticAsset ?? null
   const guidedProgress = useMemo(() => buildGuidedProgress({
     hasDataSource: columns.length > 0,
     hasProfile: Boolean(guidedProfileRecord) || columns.length > 0,
@@ -543,8 +544,14 @@ export function SemanticModelAdminPanel() {
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
-      setGuidedProfileRecord(payload.profile as GuidedProfileApiRecord)
-      toast.success('Guided semantic draft approved')
+      const nextProfile = payload.profile as GuidedProfileApiRecord
+      setGuidedProfileRecord(nextProfile)
+      await fetchModels(projectId)
+      if (nextProfile.state.semanticAsset?.modelId) {
+        setModelId(nextProfile.state.semanticAsset.modelId)
+        setBuilderSemanticModelId(nextProfile.state.semanticAsset.modelId)
+      }
+      toast.success('Guided semantic draft approved and semantic model asset created')
     } catch (error) {
       toast.error(errorToText(error))
     } finally {
@@ -993,7 +1000,11 @@ export function SemanticModelAdminPanel() {
         })}
       </section>
 
-      <GuidedProgressStepper steps={guidedProgress} />
+      <GuidedProgressStepper
+        steps={guidedProgress}
+        title="Continue guided flow"
+        description="Approval writes a versioned semantic model asset before datasets can use it."
+      />
 
       <section className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 text-[var(--dos-text-primary)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1004,17 +1015,24 @@ export function SemanticModelAdminPanel() {
             </div>
             <h3 className="mt-3 text-lg font-semibold">Semantic auto-draft</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
-              DashboardOS drafts the obvious fields and metrics from scanned schema. Your main job is to approve high-confidence items and review uncertainty, not map every column by hand.
+              DashboardOS drafts the obvious fields and metrics from scanned schema. Approval materializes this reviewed draft as an approved semantic model asset for datasets and dashboards.
             </p>
+            <div className="mt-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-xs text-[var(--dos-text-muted)]">
+              {semanticAsset
+                ? `Linked asset: ${semanticAsset.modelName} v${semanticAsset.modelVersion} / ${semanticAsset.fieldCount} fields / ${semanticAsset.metricCount} metrics`
+                : 'Pending asset: approving this draft creates a governed semantic model version, not just a UI approval.'}
+            </div>
           </div>
-          <Button size="sm" variant="outline" className={SUGGESTION_BUTTON_CLASS} onClick={buildSuggestions} disabled={saving || !selectedModel || columns.length === 0}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Refresh draft
-          </Button>
-          <Button size="sm" onClick={handleApproveGuidedDraft} disabled={guidedSavingItemId === 'semantic-draft' || semanticDraft.needsReview.length > 0 || semanticDraft.approvedFields.length === 0}>
-            {guidedSavingItemId === 'semantic-draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-            Save approved draft
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" className={SUGGESTION_BUTTON_CLASS} onClick={buildSuggestions} disabled={saving || !selectedModel || columns.length === 0}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              Refresh draft
+            </Button>
+            <Button size="sm" onClick={handleApproveGuidedDraft} disabled={guidedSavingItemId === 'semantic-draft' || Boolean(semanticAsset) || semanticDraft.needsReview.length > 0 || semanticDraft.approvedFields.length === 0}>
+              {guidedSavingItemId === 'semantic-draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+              Approve and create model
+            </Button>
+          </div>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-5">
           {[

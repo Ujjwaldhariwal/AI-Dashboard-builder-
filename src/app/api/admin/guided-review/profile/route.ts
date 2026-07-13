@@ -137,7 +137,12 @@ export async function PATCH(req: NextRequest) {
       target_type: 'guided_schema_profile',
       target_id: profile.id,
       metadata: approval.success
-        ? { semanticDraftStatus: profile.state.semanticDraftStatus }
+        ? {
+          semanticDraftStatus: profile.state.semanticDraftStatus,
+          semanticDraftVersion: profile.state.semanticDraftVersion ?? 1,
+          semanticModelId: profile.state.semanticAsset?.modelId ?? null,
+          semanticModelVersion: profile.state.semanticAsset?.modelVersion ?? null,
+        }
         : { itemId: decisionData?.itemId, action: decisionData?.action, overrideKind: decisionData?.overrideKind ?? null },
       created_at: nowIso,
     })

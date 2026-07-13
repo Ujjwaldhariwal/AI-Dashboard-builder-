@@ -5,6 +5,8 @@ import { z } from 'zod'
 import {
   buildGuidedChartRecommendations,
   buildGuidedDashboardDraftPlan,
+  buildGuidedDraftLineage,
+  guidedLineageLabel,
 } from '@/lib/dashboardos/guided-review'
 import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard, slugifyDashboardName } from '@/lib/publishing/dashboard-publishing'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest) {
 
     const { data: datasetRow, error: datasetError } = await auth.supabase
       .from('semantic_datasets')
-      .select('id, tenant_id, project_id, model_id, name, selection')
+      .select('id, tenant_id, project_id, model_id, name, description, selection')
       .eq('id', parsed.data.datasetId)
       .eq('tenant_id', parsed.data.tenantId)
       .eq('project_id', parsed.data.projectId)
@@ -99,17 +101,30 @@ export async function POST(req: NextRequest) {
     const selection = dataset.selection && typeof dataset.selection === 'object' ? dataset.selection as Record<string, unknown> : {}
     const fieldIds = toStringArray(selection.fieldIds)
     const metricIds = toStringArray(selection.metricIds)
-    const [fieldsResult, metricsResult] = await Promise.all([
+    const [fieldsResult, metricsResult, modelResult, profileResult] = await Promise.all([
       fieldIds.length > 0
         ? auth.supabase.from('business_fields').select('*').in('id', fieldIds)
         : Promise.resolve({ data: [], error: null }),
       metricIds.length > 0
         ? auth.supabase.from('business_metrics').select('*').in('id', metricIds)
         : Promise.resolve({ data: [], error: null }),
+      auth.supabase
+        .from('business_models')
+        .select('id, version')
+        .eq('id', String(dataset.model_id ?? ''))
+        .maybeSingle(),
+      auth.supabase
+        .from('guided_schema_profiles')
+        .select('id, schema_hash, state, updated_at')
+        .eq('tenant_id', parsed.data.tenantId)
+        .eq('project_id', parsed.data.projectId)
+        .order('updated_at', { ascending: false })
+        .limit(1),
     ])
 
     if (fieldsResult.error) return NextResponse.json({ dashboard: null, version: null, charts: [], error: fieldsResult.error.message }, { status: 500 })
     if (metricsResult.error) return NextResponse.json({ dashboard: null, version: null, charts: [], error: metricsResult.error.message }, { status: 500 })
+    if (modelResult.error) return NextResponse.json({ dashboard: null, version: null, charts: [], error: modelResult.error.message }, { status: 500 })
 
     const fields = (fieldsResult.data ?? []) as Record<string, unknown>[]
     const metrics = (metricsResult.data ?? []) as Record<string, unknown>[]
@@ -122,18 +137,40 @@ export async function POST(req: NextRequest) {
       fields: simpleFields,
       metrics: simpleMetrics,
     })
+    const nowIso = new Date().toISOString()
+    const latestProfile = profileResult.data?.[0] as Record<string, unknown> | undefined
+    const profileState = latestProfile?.state && typeof latestProfile.state === 'object'
+      ? latestProfile.state as { semanticDraftVersion?: number; semanticAsset?: Parameters<typeof buildGuidedDraftLineage>[0]['semanticAsset'] }
+      : null
+    const modelVersion = Number((modelResult.data as Record<string, unknown> | null | undefined)?.version ?? 1)
+    const lineage = buildGuidedDraftLineage({
+      generatedAt: nowIso,
+      profileId: latestProfile ? String(latestProfile.id) : null,
+      schemaHash: typeof latestProfile?.schema_hash === 'string' ? latestProfile.schema_hash : null,
+      semanticDraftVersion: profileState?.semanticDraftVersion ?? 1,
+      semanticAsset: profileState?.semanticAsset ?? {
+        modelId: String(dataset.model_id ?? ''),
+        modelName: 'Approved semantic model',
+        modelVersion,
+        materializedAt: nowIso,
+        fieldCount: simpleFields.length,
+        metricCount: simpleMetrics.length,
+        relationshipCount: 0,
+      },
+    })
+    const lineageLabel = guidedLineageLabel(lineage)
     const draftPlan = buildGuidedDashboardDraftPlan({
       datasetName: String(dataset.name ?? 'Guided'),
       fields: simpleFields,
       metrics: simpleMetrics,
       recommendations,
+      lineage,
     })
 
     if (draftPlan.charts.length === 0) {
       return NextResponse.json({ dashboard: null, version: null, charts: [], plan: draftPlan, error: 'No safe draft charts could be generated' }, { status: 422 })
     }
 
-    const nowIso = new Date().toISOString()
     const dashboardName = parsed.data.name?.trim() || draftPlan.title
     const slugBase = slugifyDashboardName(dashboardName) || 'guided-dashboard'
     const { data: dashboardRow, error: dashboardError } = await auth.supabase
@@ -143,7 +180,7 @@ export async function POST(req: NextRequest) {
         project_id: parsed.data.projectId,
         name: dashboardName,
         slug: `${slugBase}-${Date.now().toString(36)}`.slice(0, 80),
-        description: 'Guided draft dashboard. Review and publish only after preview.',
+        description: `${lineageLabel}. Review and publish only after preview.`,
         status: 'draft',
         created_by: auth.userId,
         updated_by: auth.userId,
@@ -185,7 +222,7 @@ export async function POST(req: NextRequest) {
         project_id: parsed.data.projectId,
         dataset_id: parsed.data.datasetId,
         name: chart.title,
-        description: chart.reviewNote ?? null,
+        description: chart.reviewNote ? `${lineageLabel}. ${chart.reviewNote}` : lineageLabel,
         status: 'draft',
         template_id: chart.templateId as ChartTemplateId,
         encoding,
@@ -226,7 +263,7 @@ export async function POST(req: NextRequest) {
         version_number: versionNumber,
         status: 'draft',
         title: 'Guided dashboard draft',
-        notes: draftPlan.reviewNotes.join(' ') || null,
+        notes: `${lineageLabel}. ${draftPlan.reviewNotes.join(' ')}`.trim(),
         layout: draftPlan.layout,
         created_by: auth.userId,
         created_at: nowIso,
@@ -286,7 +323,7 @@ export async function POST(req: NextRequest) {
       action: 'guided_review.dashboard_draft_created',
       target_type: 'published_dashboard',
       target_id: dashboard.id,
-      metadata: { datasetId: parsed.data.datasetId, chartCount: charts.length, versionId: version.id },
+      metadata: { datasetId: parsed.data.datasetId, chartCount: charts.length, versionId: version.id, lineage },
       created_at: nowIso,
     })
 

@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import {
+  buildGuidedDraftLineage,
   buildGuidedDatasetDraftFromRecipe,
   buildGuidedDatasetRecipes,
+  guidedLineageLabel,
 } from '@/lib/dashboardos/guided-review'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { validateSemanticReferencesForModel } from '@/lib/semantic/semantic-hardening'
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     const { data: model, error: modelError } = await auth.supabase
       .from('business_models')
-      .select('id, tenant_id, project_id, status')
+      .select('id, tenant_id, project_id, status, version')
       .eq('id', parsed.data.modelId)
       .eq('tenant_id', parsed.data.tenantId)
       .eq('project_id', parsed.data.projectId)
@@ -107,7 +109,35 @@ export async function POST(req: NextRequest) {
     const recipe = buildGuidedDatasetRecipes({ fields, metrics, relationships }).find(item => item.id === parsed.data.recipeId)
     if (!recipe) return NextResponse.json({ dataset: null, plan: null, error: 'Recipe is not available for this semantic model' }, { status: 404 })
 
-    const plan = buildGuidedDatasetDraftFromRecipe({ recipe, fields, metrics, relationships })
+    const nowIso = new Date().toISOString()
+    const { data: profileRows } = await auth.supabase
+      .from('guided_schema_profiles')
+      .select('id, schema_hash, state, updated_at')
+      .eq('tenant_id', parsed.data.tenantId)
+      .eq('project_id', parsed.data.projectId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+
+    const latestProfile = profileRows?.[0] as Record<string, unknown> | undefined
+    const profileState = latestProfile?.state && typeof latestProfile.state === 'object'
+      ? latestProfile.state as { semanticDraftVersion?: number; semanticAsset?: Parameters<typeof buildGuidedDraftLineage>[0]['semanticAsset'] }
+      : null
+    const lineage = buildGuidedDraftLineage({
+      generatedAt: nowIso,
+      profileId: latestProfile ? String(latestProfile.id) : null,
+      schemaHash: typeof latestProfile?.schema_hash === 'string' ? latestProfile.schema_hash : null,
+      semanticDraftVersion: profileState?.semanticDraftVersion ?? 1,
+      semanticAsset: profileState?.semanticAsset ?? {
+        modelId: parsed.data.modelId,
+        modelName: 'Approved semantic model',
+        modelVersion: Number((model as Record<string, unknown>).version ?? 1),
+        materializedAt: nowIso,
+        fieldCount: fields.length,
+        metricCount: metrics.length,
+        relationshipCount: relationships.length,
+      },
+    })
+    const plan = buildGuidedDatasetDraftFromRecipe({ recipe, fields, metrics, relationships, lineage })
     if (plan.metricIds.length === 0) {
       return NextResponse.json({ dataset: null, plan, error: 'Recipe needs at least one approved metric' }, { status: 422 })
     }
@@ -126,7 +156,6 @@ export async function POST(req: NextRequest) {
     })
     if (!semanticValidation.ok) return NextResponse.json({ dataset: null, plan, error: semanticValidation.error }, { status: 422 })
 
-    const nowIso = new Date().toISOString()
     const { data: datasetRow, error: datasetError } = await auth.supabase
       .from('semantic_datasets')
       .insert({
@@ -134,7 +163,7 @@ export async function POST(req: NextRequest) {
         project_id: parsed.data.projectId,
         model_id: parsed.data.modelId,
         name: plan.name,
-        description: `Guided draft from ${recipe.title}. ${plan.reviewNotes.join(' ')}`.trim(),
+        description: `${guidedLineageLabel(lineage)}. Recipe: ${recipe.title}. ${plan.reviewNotes.join(' ')}`.trim(),
         status: 'draft',
         selection,
         cache_policy: { ttlSeconds: 300 },
@@ -154,7 +183,7 @@ export async function POST(req: NextRequest) {
       action: 'guided_review.dataset_draft_created',
       target_type: 'semantic_dataset',
       target_id: dataset.id,
-      metadata: { recipeId: recipe.id, reviewNoteCount: plan.reviewNotes.length, selection },
+      metadata: { recipeId: recipe.id, reviewNoteCount: plan.reviewNotes.length, selection, lineage },
       created_at: nowIso,
     })
 

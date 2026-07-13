@@ -578,8 +578,13 @@ export function DashboardChartsAdminPanel() {
             <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Guided mode</Badge>
             <h2 className="mt-3 text-lg font-semibold">Review suggested dashboard</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--dos-text-muted)]">
-              Recommendations come from dataset shape only: time plus metric becomes a trend, category plus metric becomes comparison, and metrics can become KPI cards.
+              Recommendations come from the selected dataset shape and keep the approved semantic lineage visible through dashboard draft creation.
             </p>
+            <div className="mt-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-xs leading-5 text-[color:var(--dos-text-muted)]" data-testid="guided-chart-lineage">
+              {selectedDataset
+                ? `${selectedDataset.name}: ${selectedDataset.description ?? 'Dataset lineage will be attached to generated dashboard drafts.'}`
+                : 'Select a governed dataset to preview dashboard recommendations.'}
+            </div>
           </div>
           <Button variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]" onClick={() => setAdvancedComposerOpen(open => !open)}>
             {advancedComposerOpen ? 'Hide advanced composer' : 'Customize chart manually'}
@@ -1048,6 +1053,9 @@ export function DashboardChartsAdminPanel() {
                     <div>
                       <p className="text-sm font-medium text-slate-100">{chart.name}</p>
                       <p className="mt-1 text-[11px] text-[color:var(--dos-text-muted)]">{chart.templateId} / {chart.status} / span {chart.layout.gridSpan}</p>
+                      {chart.description ? (
+                        <p className="mt-1 text-[11px] leading-4 text-[color:var(--dos-text-muted)]">{chart.description}</p>
+                      ) : null}
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <Badge variant="outline" className={chart.validationState === 'valid' ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]' : 'border-[color:var(--dos-chart-warning)] text-[color:var(--dos-chart-warning)]'}>

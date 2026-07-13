@@ -462,7 +462,7 @@ export function DatasetsAdminPanel() {
             <Badge className="bg-[#a6e22e]/20 text-[#d7ff8f] hover:bg-[#a6e22e]/20">Guided mode</Badge>
             <h3 className="mt-3 text-lg font-semibold">Suggested dataset recipes</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Recipes use approved semantic fields and metrics. Pick one to prefill the dataset, or open advanced selection for manual control.
+              Recipes use the approved semantic model asset. Generated drafts keep lineage back to the semantic draft version so reviewers know what the dataset came from.
             </p>
           </div>
           <Button variant="outline" className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10" onClick={() => setAdvancedOpen(open => !open)}>
@@ -647,6 +647,11 @@ export function DatasetsAdminPanel() {
                     <p className="mt-1 text-xs text-slate-500">
                       {dataset.selection.fieldIds.length} fields · {dataset.selection.metricIds.length} metrics · {dataset.cachePolicy.ttlSeconds}s cache
                     </p>
+                    {dataset.description ? (
+                      <p className="mt-2 max-w-2xl text-[11px] leading-4 text-slate-500" data-testid="guided-dataset-lineage">
+                        {dataset.description}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="border-white/15 text-slate-300">{dataset.status}</Badge>
