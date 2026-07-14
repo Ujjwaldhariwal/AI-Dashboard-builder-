@@ -2,10 +2,15 @@
 
 import * as echarts from 'echarts'
 
-export const ENTERPRISE_COLORS = [
-  '#3b82f6', '#8b5cf6', '#06b6d4', '#10b981',
-  '#f59e0b', '#ef4444', '#ec4899', '#14b8a6',
-]
+import { DASHBOARDOS_COLORS } from '@/lib/dashboardos/theme'
+
+export const ENTERPRISE_LIGHT_COLORS = [...DASHBOARDOS_COLORS.chartDefaults.light]
+export const ENTERPRISE_DARK_COLORS = [...DASHBOARDOS_COLORS.chartDefaults.dark]
+export const ENTERPRISE_COLORS = ENTERPRISE_LIGHT_COLORS
+
+export function getEnterpriseChartColors(dark = false) {
+  return dark ? [...ENTERPRISE_DARK_COLORS] : [...ENTERPRISE_LIGHT_COLORS]
+}
 
 export const BOSCH_COLORS = [
   '#E20015', '#007BC0', '#00A651', '#F5A623',
@@ -20,7 +25,12 @@ export function registerEnterpriseTheme() {
   if (enterpriseRegistered) return
   try {
     echarts.registerTheme('enterprise', {
-      color: ENTERPRISE_COLORS,
+      color: ENTERPRISE_LIGHT_COLORS,
+      backgroundColor: 'transparent',
+      textStyle: { fontFamily: 'inherit', fontSize: 11 },
+    })
+    echarts.registerTheme('enterprise-dark', {
+      color: ENTERPRISE_DARK_COLORS,
       backgroundColor: 'transparent',
       textStyle: { fontFamily: 'inherit', fontSize: 11 },
     })
