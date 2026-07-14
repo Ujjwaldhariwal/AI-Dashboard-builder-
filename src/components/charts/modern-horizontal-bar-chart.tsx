@@ -46,7 +46,7 @@ export function ModernHorizontalBarChart({
 }: ModernHorizontalBarChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
-  const s      = { ...DEFAULT_STYLE, ...style }
+  const s      = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const colors = s.colors
   const r      = s.barRadius ?? 6
   const margin = getChartMargin(sizePreset)
@@ -145,7 +145,21 @@ export function ModernHorizontalBarChart({
       },
     }],
   // deps are intentionally coarse — s/colors/axis/tt derive from listed deps
-  }), [chartData, colors, r, s, axis, tt, yField]) // ← Fix #7
+  }), [
+    axis.label,
+    axis.splitLine,
+    chartData,
+    colors,
+    displayLabels,
+    margin.bottom,
+    margin.left,
+    margin.right,
+    margin.top,
+    r,
+    s,
+    tt,
+    yField,
+  ])
 
   return (
     <ReactECharts

@@ -36,7 +36,7 @@ interface ModernLineChartProps {
 export function ModernLineChart({ data, xField, yField, style, sizePreset = 'medium' }: ModernLineChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
-  const s      = { ...DEFAULT_STYLE, ...style }
+  const s      = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const colors = s.colors
 
   const chartData = useMemo(() => data.map((item, i) => ({
@@ -153,8 +153,23 @@ export function ModernLineChart({ data, xField, yField, style, sizePreset = 'med
         },
       },
     }],
-  // deps are intentionally coarse — s/colors/axis/tt/avg derive from listed deps
-  }), [chartData, avg, colors, s, axis, tt, yField]) // ← Fix #6: proper deps
+  }), [
+    avg,
+    axis,
+    chartData,
+    colors,
+    displayLegend,
+    margin.bottom,
+    margin.left,
+    margin.right,
+    margin.top,
+    rotate,
+    s,
+    sizePreset,
+    tickInterval,
+    tt,
+    yField,
+  ])
 
   return (
     <ReactECharts

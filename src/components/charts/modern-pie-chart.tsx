@@ -296,14 +296,6 @@ export function ModernPieChart({
     [chartData],
   )
 
-  if (!chartData.length) {
-    return (
-      <div className="flex h-full min-h-0 items-center justify-center text-xs text-muted-foreground">
-        No chartable rows
-      </div>
-    )
-  }
-
   const showBottomLegend = displayLegend
   const shouldUseScrollableLegend = chartData.length > (sizePreset === 'small' ? 4 : 8)
   const legendLabelMaxChars = sizePreset === 'small' ? 14 : sizePreset === 'medium' ? 20 : 26
@@ -337,11 +329,11 @@ export function ModernPieChart({
       ? (needsCompactRadius ? '49%' : '51%')
       : (needsCompactRadius ? '50%' : '52%'))
     : '50%'
-  const center = ['50%', centerY]
-  const donutRadius: [string, string] = [
+  const center = useMemo(() => ['50%', centerY], [centerY])
+  const donutRadius = useMemo<[string, string]>(() => [
     `${donutInnerRadiusPercent}%`,
     `${donutOuterRadiusPercent}%`,
-  ]
+  ], [donutInnerRadiusPercent, donutOuterRadiusPercent])
   const pieOuterRadius = `${pieOuterRadiusPercent}%`
   const seriesBottom = showBottomLegend
     ? (sizePreset === 'small'
@@ -492,6 +484,14 @@ export function ModernPieChart({
     total,
     tt,
   ])
+
+  if (!chartData.length) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center text-xs text-muted-foreground">
+        No chartable rows
+      </div>
+    )
+  }
 
   return (
     <ReactECharts

@@ -67,7 +67,7 @@ export function ModernGroupedBarChart({
 }: ModernGroupedBarChartProps) {
   useEnterpriseTheme()
 
-  const s = { ...DEFAULT_STYLE, ...style }
+  const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
   const margin = getChartMargin(sizePreset)
@@ -197,7 +197,23 @@ export function ModernGroupedBarChart({
         shadowColor: withAlpha(meta.color, 0.3),
       },
     })),
-  }), [axis.label, axis.splitLine, labels, rows, s, seriesMeta, tt])
+  }), [
+    axis.label,
+    axis.splitLine,
+    displayLabels,
+    displayLegend,
+    labels,
+    margin.bottom,
+    margin.left,
+    margin.right,
+    margin.top,
+    rows,
+    s,
+    seriesMeta,
+    sizePreset,
+    tickInterval,
+    tt,
+  ])
 
   if (!seriesMeta.length) {
     return (

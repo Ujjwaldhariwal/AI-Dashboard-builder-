@@ -65,8 +65,8 @@ export function NotificationBell() {
         addNotification({
           type:    'error',
           title:   `${errorCount} widget error${errorCount > 1 ? 's' : ''} detected`,
-          message: 'Open Monitoring to view details',
-          link:    '/monitoring',
+          message: 'Open DashboardOS to review platform state',
+          link:    '/admin',
         })
       }
     }
@@ -79,8 +79,8 @@ export function NotificationBell() {
         addNotification({
           type:    'warning',
           title:   'No APIs connected',
-          message: 'Add a data source to start building widgets',
-          link:    '/api-config',
+          message: 'Add a data source from DashboardOS',
+          link:    '/admin/data-sources',
         })
       }
     }

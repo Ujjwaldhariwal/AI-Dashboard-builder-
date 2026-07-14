@@ -219,7 +219,7 @@ export function ModernBarChart({
 }: ModernBarChartProps) {
   useEnterpriseTheme()
 
-  const s = { ...DEFAULT_STYLE, ...style }
+  const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const colors = s.colors
   const r = s.barRadius ?? 5
 

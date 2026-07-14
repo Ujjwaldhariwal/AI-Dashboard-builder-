@@ -6,6 +6,7 @@ import { graphic } from 'echarts'
 import { Button } from '@/components/ui/button'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
+import { DASHBOARDOS_COLORS } from '@/lib/dashboardos/theme'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils'
@@ -101,7 +102,7 @@ export function ModernDrilldownBarChart({
 }: ModernDrilldownBarChartProps) {
   useEnterpriseTheme()
 
-  const s = { ...DEFAULT_STYLE, ...style }
+  const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
   const margin = getChartMargin(sizePreset)
@@ -194,15 +195,27 @@ export function ModernDrilldownBarChart({
         itemStyle: {
           borderRadius: [8, 8, 0, 0],
           color: new graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: withAlpha(s.colors[0] ?? '#3b82f6', 0.95) },
-            { offset: 1, color: withAlpha(s.colors[0] ?? '#3b82f6', 0.58) },
+            { offset: 0, color: withAlpha(s.colors[0] ?? DASHBOARDOS_COLORS.chartDefaults.dark[0], 0.95) },
+            { offset: 1, color: withAlpha(s.colors[0] ?? DASHBOARDOS_COLORS.chartDefaults.dark[0], 0.58) },
           ]),
           shadowBlur: 9,
-          shadowColor: withAlpha(s.colors[0] ?? '#3b82f6', 0.35),
+          shadowColor: withAlpha(s.colors[0] ?? DASHBOARDOS_COLORS.chartDefaults.dark[0], 0.35),
         },
       },
     ],
-  }), [axis.label, axis.splitLine, rows, s, tt])
+  }), [
+    axis.label,
+    axis.splitLine,
+    displayLabels,
+    margin.bottom,
+    margin.left,
+    margin.right,
+    margin.top,
+    rows,
+    s,
+    tickInterval,
+    tt,
+  ])
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-2">

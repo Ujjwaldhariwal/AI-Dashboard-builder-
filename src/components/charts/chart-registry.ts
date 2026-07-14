@@ -9,11 +9,9 @@ export type { ChartType as SupportedChartType } from '@/types/widget'
 // need colors without a full WidgetStyle (e.g. legacy imports).
 // New chart components should use DEFAULT_STYLE.colors directly.
 export { DEFAULT_STYLE } from '@/types/widget'
+import { DASHBOARDOS_COLORS } from '@/lib/dashboardos/theme'
 
-export const CHART_COLORS = [
-  '#3b82f6', '#8b5cf6', '#06b6d4', '#10b981',
-  '#f59e0b', '#ef4444', '#ec4899', '#14b8a6',
-]
+export const CHART_COLORS = [...DASHBOARDOS_COLORS.chartDefaults.dark]
 
 export function getChartHeight(dataLen: number): number {
   if (dataLen > 50) return 440

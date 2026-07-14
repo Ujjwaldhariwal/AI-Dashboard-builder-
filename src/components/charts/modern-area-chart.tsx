@@ -38,7 +38,7 @@ interface ModernAreaChartProps {
 export function ModernAreaChart({ data, xField, yField, style, sizePreset = 'medium' }: ModernAreaChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
-  const s      = { ...DEFAULT_STYLE, ...style }
+  const s      = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const colors = s.colors
 
   const chartData = useMemo(() => data.map((item, i) => ({
@@ -135,8 +135,22 @@ export function ModernAreaChart({ data, xField, yField, style, sizePreset = 'med
         ]),
       },
     }],
-  // deps are intentionally coarse — s/colors/axis/tt derive from listed deps
-  }), [chartData, colors, s, axis, tt, yField]) // ← Fix #7: removed eslint-disable
+  }), [
+    axis,
+    chartData,
+    colors,
+    displayLegend,
+    margin.bottom,
+    margin.left,
+    margin.right,
+    margin.top,
+    rotate,
+    s,
+    sizePreset,
+    tickInterval,
+    tt,
+    yField,
+  ])
 
   return (
     <ReactECharts

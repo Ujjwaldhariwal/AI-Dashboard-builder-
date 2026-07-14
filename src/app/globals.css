@@ -123,11 +123,275 @@
 
 @layer components {
   .dashboardos-admin {
-    background:
-      radial-gradient(circle at 18% 8%, rgba(249, 38, 114, 0.10), transparent 30rem),
-      radial-gradient(circle at 88% 18%, rgba(166, 226, 46, 0.08), transparent 28rem),
-      linear-gradient(135deg, #1f1f1c 0%, #272822 52%, #191915 100%);
-    color: #f8f8f2;
+    --dos-background-deep: #15171A;
+    --dos-background-base: #1D2025;
+    --dos-surface: #22272E;
+    --dos-surface-raised: #2A2D32;
+    --dos-surface-muted: #383B42;
+    --dos-text-primary: #E6EDF3;
+    --dos-text-secondary: #C9D1D9;
+    --dos-text-muted: #A7B1BC;
+    --dos-border-soft: rgba(230, 237, 243, 0.08);
+    --dos-border-mid: rgba(230, 237, 243, 0.14);
+    --dos-card-overlay: rgba(34, 39, 46, 0.72);
+    --dos-accent-primary: #818CF8;
+    --dos-accent-primary-hover: #A5B4FC;
+    --dos-accent-primary-soft: rgba(129, 140, 248, 0.12);
+    --dos-success: #34D399;
+    --dos-success-text: #34D399;
+    --dos-success-soft: rgba(52, 211, 153, 0.12);
+    --dos-warning: #FBBF24;
+    --dos-warning-text: #FBBF24;
+    --dos-warning-soft: rgba(251, 191, 36, 0.12);
+    --dos-danger: #FB7185;
+    --dos-danger-text: #FB7185;
+    --dos-danger-soft: rgba(251, 113, 133, 0.12);
+    --dos-info: #38BDF8;
+    --dos-info-text: #38BDF8;
+    --dos-info-soft: rgba(56, 189, 248, 0.12);
+    background: var(--dos-background-base);
+    color: var(--dos-text-primary);
+  }
+
+  .semantic-guide-orb {
+    animation: semantic-guide-pulse 2.8s ease-in-out infinite;
+  }
+
+  .semantic-flow-rail {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--dos-accent-primary),
+      var(--dos-info),
+      var(--dos-success),
+      transparent
+    );
+    opacity: 0.55;
+  }
+
+  .semantic-flow-rail::after {
+    position: absolute;
+    top: -3px;
+    left: 0;
+    height: 7px;
+    width: 7px;
+    border-radius: 999px;
+    background: var(--dos-accent-primary);
+    box-shadow: 0 0 18px var(--dos-accent-primary);
+    content: "";
+    animation: semantic-flow-dot 3.4s ease-in-out infinite;
+  }
+
+  .semantic-flow-rail-vertical {
+    background: linear-gradient(
+      180deg,
+      transparent,
+      var(--dos-accent-primary),
+      var(--dos-info),
+      var(--dos-success),
+      var(--dos-warning),
+      transparent
+    );
+    opacity: 0.46;
+  }
+
+  .semantic-flow-rail-vertical::after {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    height: 7px;
+    width: 7px;
+    border-radius: 999px;
+    background: var(--dos-accent-primary);
+    box-shadow: 0 0 18px var(--dos-accent-primary);
+    content: "";
+    animation: semantic-flow-dot-vertical 3.4s ease-in-out infinite;
+  }
+
+  .semantic-flow-node,
+  .semantic-mapping-row {
+    animation: semantic-guide-rise 420ms ease-out both;
+    transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  }
+
+  .semantic-flow-node:hover,
+  .semantic-mapping-row:hover {
+    transform: translateY(-2px);
+    border-color: var(--dos-border-mid);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
+  }
+
+  @keyframes semantic-guide-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes semantic-guide-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--dos-accent-primary) 26%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 8px color-mix(in srgb, var(--dos-accent-primary) 0%, transparent);
+    }
+  }
+
+  @keyframes semantic-flow-dot {
+    0% {
+      left: 0;
+      opacity: 0;
+    }
+    16%,
+    84% {
+      opacity: 1;
+    }
+    100% {
+      left: calc(100% - 7px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes semantic-flow-dot-vertical {
+    0% {
+      top: 0;
+      opacity: 0;
+    }
+    16%,
+    84% {
+      opacity: 1;
+    }
+    100% {
+      top: calc(100% - 7px);
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .semantic-guide-orb,
+    .semantic-flow-rail::after,
+    .semantic-flow-rail-vertical::after,
+    .semantic-flow-node,
+    .semantic-mapping-row {
+      animation: none;
+    }
+
+    .semantic-flow-node:hover,
+    .semantic-mapping-row:hover {
+      transform: none;
+    }
+  }
+
+  .dashboardos-client {
+    --dos-background-deep: #F7F8FA;
+    --dos-background-base: #F7F8FA;
+    --dos-surface: #FFFFFF;
+    --dos-surface-raised: #FFFFFF;
+    --dos-surface-muted: #F0F2F5;
+    --dos-text-primary: #111827;
+    --dos-text-secondary: #374151;
+    --dos-text-muted: #4B5563;
+    --dos-border-soft: #E5E7EB;
+    --dos-border-mid: #D1D5DB;
+    --dos-card-overlay: #FFFFFF;
+    --dos-accent-primary: #4F46E5;
+    --dos-accent-primary-hover: #4338CA;
+    --dos-accent-primary-soft: rgba(79, 70, 229, 0.10);
+    --dos-success: #059669;
+    --dos-success-text: #064E3B;
+    --dos-success-soft: rgba(5, 150, 105, 0.10);
+    --dos-warning: #D97706;
+    --dos-warning-text: #78350F;
+    --dos-warning-soft: rgba(217, 119, 6, 0.10);
+    --dos-danger: #E11D48;
+    --dos-danger-text: #881337;
+    --dos-danger-soft: rgba(225, 29, 72, 0.10);
+    --dos-info: #0284C7;
+    --dos-info-text: #0C4A6E;
+    --dos-info-soft: rgba(2, 132, 199, 0.10);
+    background: var(--dos-background-base);
+    color: var(--dos-text-primary);
+  }
+
+  .dashboardos-client .bg-white,
+  .dashboardos-client .bg-\[\#f8f8f2\] {
+    background-color: var(--dos-surface) !important;
+  }
+
+  .dashboardos-client .border-\[\#272822\]\/10,
+  .dashboardos-client .border-\[\#272822\]\/15 {
+    border-color: var(--dos-border-soft) !important;
+  }
+
+  .dashboardos-client .text-\[\#272822\],
+  .dashboardos-client .text-\[\#3e3d32\] {
+    color: var(--dos-text-primary) !important;
+  }
+
+  .dashboardos-client .text-\[\#75715e\] {
+    color: var(--dos-text-muted) !important;
+  }
+
+  .dashboardos-client .text-\[\#a6e22e\],
+  .dashboardos-client .text-\[\#3d520d\] {
+    color: var(--dos-accent-primary) !important;
+  }
+
+  .dashboardos-client .bg-\[\#a6e22e\]\/15 {
+    background-color: var(--dos-accent-primary-soft) !important;
+  }
+
+  .dashboardos-client .border-\[\#a6e22e\]\/40 {
+    border-color: var(--dos-accent-primary) !important;
+  }
+
+  .dashboardos-client .text-\[\#13515e\],
+  .dashboardos-client .text-\[\#0d5966\] {
+    color: var(--dos-info-text) !important;
+  }
+
+  .dashboardos-client .bg-\[\#66d9ef\]\/10 {
+    background-color: var(--dos-info-soft) !important;
+  }
+
+  .dashboardos-client .border-\[\#66d9ef\]\/30,
+  .dashboardos-client .border-\[\#66d9ef\]\/40 {
+    border-color: var(--dos-info) !important;
+  }
+
+  .dashboardos-client .text-\[\#8a4b00\] {
+    color: var(--dos-warning-text) !important;
+  }
+
+  .dashboardos-client .bg-\[\#fd971f\]\/10,
+  .dashboardos-client .bg-\[\#fd971f\]\/15 {
+    background-color: var(--dos-warning-soft) !important;
+  }
+
+  .dashboardos-client .border-\[\#fd971f\]\/20,
+  .dashboardos-client .border-\[\#fd971f\]\/30,
+  .dashboardos-client .border-\[\#fd971f\]\/40 {
+    border-color: var(--dos-warning) !important;
+  }
+
+  .dashboardos-client .text-\[\#8a0030\],
+  .dashboardos-client .text-\[\#b13d00\] {
+    color: var(--dos-danger-text) !important;
+  }
+
+  .dashboardos-client .bg-\[\#f92672\]\/10,
+  .dashboardos-client .bg-\[\#f92672\]\/15 {
+    background-color: var(--dos-danger-soft) !important;
+  }
+
+  .dashboardos-client .border-\[\#f92672\]\/20,
+  .dashboardos-client .border-\[\#f92672\]\/40 {
+    border-color: var(--dos-danger) !important;
   }
 
   .dashboardos-admin .bg-slate-950,
@@ -136,89 +400,229 @@
   .dashboardos-admin .bg-slate-950\/70,
   .dashboardos-admin .bg-slate-950\/60,
   .dashboardos-admin .bg-slate-950\/50 {
-    background-color: rgba(31, 31, 28, 0.88) !important;
+    background-color: var(--dos-card-overlay) !important;
+  }
+
+  .dashboardos-admin .bg-white,
+  .dashboardos-admin .bg-background {
+    background-color: var(--dos-surface) !important;
   }
 
   .dashboardos-admin .bg-white\/\[0\.03\],
   .dashboardos-admin .bg-white\/5 {
-    background-color: rgba(62, 61, 50, 0.54) !important;
+    background-color: var(--dos-card-overlay) !important;
   }
 
   .dashboardos-admin .bg-white\/8,
   .dashboardos-admin .hover\:bg-white\/8:hover,
   .dashboardos-admin .hover\:bg-white\/10:hover {
-    background-color: rgba(117, 113, 94, 0.18) !important;
+    background-color: var(--dos-surface-muted) !important;
   }
 
   .dashboardos-admin .border-white\/10,
   .dashboardos-admin .border-white\/15 {
-    border-color: rgba(248, 248, 242, 0.13) !important;
+    border-color: var(--dos-border-soft) !important;
   }
 
   .dashboardos-admin .text-slate-100,
-  .dashboardos-admin .text-slate-200 {
-    color: #f8f8f2 !important;
+  .dashboardos-admin .text-slate-200,
+  .dashboardos-admin .text-white {
+    color: var(--dos-text-primary) !important;
   }
 
-  .dashboardos-admin .text-slate-300 {
-    color: #e6dbb8 !important;
+  .dashboardos-admin .text-slate-300,
+  .dashboardos-admin .text-slate-400 {
+    color: var(--dos-text-secondary) !important;
   }
 
-  .dashboardos-admin .text-slate-400,
   .dashboardos-admin .text-slate-500 {
-    color: #a59f85 !important;
+    color: var(--dos-text-muted) !important;
+  }
+
+  .dashboardos-admin .text-gray-400,
+  .dashboardos-admin .text-gray-500,
+  .dashboardos-admin .text-muted-foreground {
+    color: var(--dos-text-muted) !important;
+  }
+
+  .dashboardos-admin label,
+  .dashboardos-admin .font-semibold,
+  .dashboardos-admin .font-medium {
+    color: inherit;
+  }
+
+  .dashboardos-admin input,
+  .dashboardos-admin textarea,
+  .dashboardos-admin button[role="combobox"] {
+    border-color: var(--dos-border-mid) !important;
+    background-color: var(--dos-surface) !important;
+    color: var(--dos-text-primary) !important;
+    opacity: 1 !important;
+  }
+
+  .dashboardos-admin input::placeholder,
+  .dashboardos-admin textarea::placeholder,
+  .dashboardos-admin button[role="combobox"] [data-placeholder] {
+    color: var(--dos-text-muted) !important;
+    opacity: 1 !important;
+  }
+
+  .dashboardos-admin input:disabled,
+  .dashboardos-admin textarea:disabled,
+  .dashboardos-admin button[role="combobox"]:disabled,
+  .dashboardos-admin button[role="combobox"][data-disabled] {
+    border-color: var(--dos-border-soft) !important;
+    background-color: var(--dos-surface-muted) !important;
+    color: var(--dos-text-secondary) !important;
+    opacity: 1 !important;
+  }
+
+  .dashboardos-admin button[role="combobox"]:disabled [data-placeholder],
+  .dashboardos-admin button[role="combobox"][data-disabled] [data-placeholder] {
+    color: var(--dos-text-secondary) !important;
+  }
+
+  .dashboardos-admin button:disabled {
+    opacity: 0.82 !important;
+  }
+
+  .dashboardos-admin button[role="combobox"]:disabled,
+  .dashboardos-admin button[role="combobox"][data-disabled] {
+    opacity: 1 !important;
   }
 
   .dashboardos-admin .bg-cyan-400,
   .dashboardos-admin .bg-cyan-500 {
-    background-color: #a6e22e !important;
+    background-color: var(--dos-accent-primary) !important;
   }
 
   .dashboardos-admin .bg-cyan-300\/10,
   .dashboardos-admin .bg-cyan-400\/10,
   .dashboardos-admin .bg-cyan-500\/10 {
-    background-color: rgba(166, 226, 46, 0.10) !important;
+    background-color: var(--dos-accent-primary-soft) !important;
   }
 
   .dashboardos-admin .border-cyan-300\/20,
   .dashboardos-admin .border-cyan-400\/20 {
-    border-color: rgba(166, 226, 46, 0.24) !important;
+    border-color: var(--dos-accent-primary) !important;
   }
 
   .dashboardos-admin .text-cyan-100,
   .dashboardos-admin .text-cyan-200,
   .dashboardos-admin .text-cyan-300 {
-    color: #a6e22e !important;
+    color: var(--dos-accent-primary) !important;
   }
 
   .dashboardos-admin .text-slate-950 {
-    color: #1f1f1c !important;
+    color: var(--dos-background-deep) !important;
   }
 
   .dashboardos-admin .bg-emerald-300\/10 {
-    background-color: rgba(166, 226, 46, 0.12) !important;
+    background-color: var(--dos-success-soft) !important;
   }
 
   .dashboardos-admin .border-emerald-300\/20 {
-    border-color: rgba(166, 226, 46, 0.24) !important;
+    border-color: var(--dos-success) !important;
   }
 
   .dashboardos-admin .text-emerald-100,
   .dashboardos-admin .text-emerald-300 {
-    color: #a6e22e !important;
+    color: var(--dos-success) !important;
   }
 
   .dashboardos-admin .bg-amber-300\/10,
   .dashboardos-admin .bg-amber-400\/10 {
-    background-color: rgba(253, 151, 31, 0.12) !important;
+    background-color: var(--dos-warning-soft) !important;
   }
 
   .dashboardos-admin .border-amber-300\/20,
   .dashboardos-admin .border-amber-400\/20 {
-    border-color: rgba(253, 151, 31, 0.28) !important;
+    border-color: var(--dos-warning) !important;
   }
 
-  .dashboardos-admin .text-amber-100 {
-    color: #ffd866 !important;
+  .dashboardos-admin .text-amber-100,
+  .dashboardos-admin .text-amber-400 {
+    color: var(--dos-warning-text) !important;
+  }
+
+  .dashboardos-admin .bg-\[\#a6e22e\],
+  .dashboardos-admin .hover\:bg-\[\#cfff55\]:hover,
+  .dashboardos-admin .bg-\[\#a6e22e\]\/10,
+  .dashboardos-admin .bg-\[\#a6e22e\]\/15,
+  .dashboardos-admin .bg-\[\#a6e22e\]\/\[0\.06\] {
+    background-color: var(--dos-accent-primary-soft) !important;
+  }
+
+  .dashboardos-admin .bg-\[\#a6e22e\] {
+    background-color: var(--dos-accent-primary) !important;
+  }
+
+  .dashboardos-admin .hover\:bg-\[\#cfff55\]:hover {
+    background-color: var(--dos-accent-primary-hover) !important;
+  }
+
+  .dashboardos-admin .border-\[\#a6e22e\]\/15,
+  .dashboardos-admin .border-\[\#a6e22e\]\/25,
+  .dashboardos-admin .border-\[\#a6e22e\]\/30,
+  .dashboardos-admin .border-\[\#a6e22e\]\/45,
+  .dashboardos-admin .hover\:border-\[\#a6e22e\]\/70:hover {
+    border-color: var(--dos-accent-primary) !important;
+  }
+
+  .dashboardos-admin .text-\[\#a6e22e\],
+  .dashboardos-admin .text-\[\#d8ff7a\],
+  .dashboardos-admin .hover\:text-\[\#d8ff7a\]:hover {
+    color: var(--dos-accent-primary) !important;
+  }
+
+  .dashboardos-admin .text-\[\#1f1f1c\] {
+    color: var(--dos-background-deep) !important;
+  }
+
+  .dashboardos-admin .bg-\[\#66d9ef\]\/10,
+  .dashboardos-admin .bg-\[\#66d9ef\]\/15 {
+    background-color: var(--dos-info-soft) !important;
+  }
+
+  .dashboardos-admin .border-\[\#66d9ef\]\/30 {
+    border-color: var(--dos-info) !important;
+  }
+
+  .dashboardos-admin .text-\[\#66d9ef\],
+  .dashboardos-admin .text-\[\#9beaff\],
+  .dashboardos-admin .text-\[\#aeefff\] {
+    color: var(--dos-info-text) !important;
+  }
+
+  .dashboardos-admin .bg-\[\#fd971f\]\/10,
+  .dashboardos-admin .bg-\[\#fd971f\]\/15 {
+    background-color: var(--dos-warning-soft) !important;
+  }
+
+  .dashboardos-admin .border-\[\#fd971f\]\/20,
+  .dashboardos-admin .border-\[\#fd971f\]\/25,
+  .dashboardos-admin .border-\[\#fd971f\]\/30,
+  .dashboardos-admin .border-\[\#fd971f\]\/40 {
+    border-color: var(--dos-warning) !important;
+  }
+
+  .dashboardos-admin .text-\[\#fd971f\],
+  .dashboardos-admin .text-\[\#ffd866\] {
+    color: var(--dos-warning-text) !important;
+  }
+
+  .dashboardos-admin .bg-\[\#f92672\]\/10,
+  .dashboardos-admin .bg-\[\#f92672\]\/15 {
+    background-color: var(--dos-danger-soft) !important;
+  }
+
+  .dashboardos-admin .border-\[\#f92672\]\/30,
+  .dashboardos-admin .border-\[\#f92672\]\/40 {
+    border-color: var(--dos-danger) !important;
+  }
+
+  .dashboardos-admin .text-\[\#f92672\],
+  .dashboardos-admin .text-\[\#ff79b2\] {
+    color: var(--dos-danger-text) !important;
   }
 }

@@ -1,6 +1,5 @@
 ﻿'use client'
 
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { ShieldCheck, Clock, XCircle } from 'lucide-react'
 import {
@@ -111,13 +110,12 @@ export function TokenSessionTimer() {
   return (
     <>
       {/* Mobile: icon-only square */}
-      <Link
-        href="/auth-flow"
+      <div
         className={`md:hidden w-[30px] h-[30px] rounded-md border flex items-center justify-center flex-shrink-0 ${cfg.border} ${cfg.bg} ${cfg.iconColor}`}
         title={tokenMeta.isExpired ? 'Session expired' : 'Token session'}
       >
         {cfg.icon}
-      </Link>
+      </div>
 
       {/* Desktop: full chip — fixed w-[152px] prevents any layout shift */}
       <div

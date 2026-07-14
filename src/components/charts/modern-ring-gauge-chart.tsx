@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
+import { DASHBOARDOS_COLORS } from '@/lib/dashboardos/theme'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 
@@ -31,7 +32,8 @@ export function ModernRingGaugeChart({
 }: ModernRingGaugeChartProps) {
   useEnterpriseTheme()
 
-  const s = { ...DEFAULT_STYLE, ...style }
+  const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
+  const semantic = DASHBOARDOS_COLORS.chartSemantic.dark
   const percent = toPercent(value)
 
   const option = useMemo(() => ({
@@ -54,13 +56,13 @@ export function ModernRingGaugeChart({
           show: true,
           roundCap: true,
           width: 18,
-          itemStyle: { color: s.colors[0] ?? '#3b82f6' },
+          itemStyle: { color: s.colors[0] ?? DASHBOARDOS_COLORS.chartDefaults.dark[0] },
         },
         axisLine: {
           roundCap: true,
           lineStyle: {
             width: 18,
-            color: [[1, 'rgba(148, 163, 184, 0.2)']],
+            color: [[1, semantic.grid]],
           },
         },
         axisTick: { show: false },
@@ -71,20 +73,20 @@ export function ModernRingGaugeChart({
           show: true,
           offsetCenter: [0, '68%'],
           fontSize: 11,
-          color: '#64748b',
+          color: semantic.axis,
         },
         detail: {
           valueAnimation: true,
           fontSize: 32,
           fontWeight: 'bold' as const,
-          color: s.colors[0] ?? '#3b82f6',
+          color: s.colors[0] ?? DASHBOARDOS_COLORS.chartDefaults.dark[0],
           offsetCenter: [0, '-2%'],
           formatter: '{value}%',
         },
         data: [{ value: percent, name: label }],
       },
     ],
-  }), [label, percent, s.colors])
+  }), [label, percent, s.colors, sizePreset])
 
   return (
     <ReactECharts

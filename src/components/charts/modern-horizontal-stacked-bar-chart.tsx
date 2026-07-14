@@ -69,7 +69,7 @@ export function ModernHorizontalStackedBarChart({
 }: ModernHorizontalStackedBarChartProps) {
   useEnterpriseTheme()
 
-  const s = { ...DEFAULT_STYLE, ...style }
+  const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
   const margin = getChartMargin(sizePreset)
@@ -194,7 +194,22 @@ export function ModernHorizontalStackedBarChart({
         borderColor: withAlpha(axis.border, 0.22),
       },
     })),
-  }), [axis.border, axis.label, axis.splitLine, rows, s, seriesMeta, tt])
+  }), [
+    axis.border,
+    axis.label,
+    axis.splitLine,
+    displayLabels,
+    displayLegend,
+    margin.bottom,
+    margin.left,
+    margin.right,
+    margin.top,
+    rows,
+    s,
+    seriesMeta,
+    sizePreset,
+    tt,
+  ])
 
   if (!seriesMeta.length) {
     return (

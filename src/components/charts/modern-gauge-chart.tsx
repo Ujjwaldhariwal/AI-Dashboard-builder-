@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
+import { DASHBOARDOS_COLORS } from '@/lib/dashboardos/theme'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 
@@ -41,17 +42,18 @@ export function ModernGaugeChart({
 }: ModernGaugeChartProps) {
   useEnterpriseTheme() // ← Fix #1
 
-  const s       = { ...DEFAULT_STYLE, ...style }
+  const s       = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const clamped = Math.min(100, Math.max(0, value))
   const dark    = useIsDarkMode() // ← Fix #3
+  const semantic = DASHBOARDOS_COLORS.chartSemantic[dark ? 'dark' : 'light']
 
   const gaugeColor =
-    clamped >= thresholds.danger ? (s.colors[5] ?? '#ef4444')
-    : clamped >= thresholds.warn ? (s.colors[4] ?? '#f59e0b')
-    :                               (s.colors[2] ?? '#10b981')
+    clamped >= thresholds.danger ? (s.colors[3] ?? semantic.risk)
+    : clamped >= thresholds.warn ? (s.colors[2] ?? semantic.warning)
+    :                               (s.colors[1] ?? semantic.success)
 
-  const trackColor = dark ? '#1e293b' : '#f1f5f9'
-  const labelColor = dark ? '#94a3b8' : '#64748b'
+  const trackColor = semantic.grid
+  const labelColor = semantic.axis
 
   const option = useMemo(() => ({
     animation:         true,
@@ -97,7 +99,7 @@ export function ModernGaugeChart({
       },
       data: [{ value: clamped, name: label }],
     }],
-  }), [clamped, gaugeColor, trackColor, labelColor, label])
+  }), [clamped, gaugeColor, trackColor, labelColor, label, sizePreset])
 
   return (
     <ReactECharts
