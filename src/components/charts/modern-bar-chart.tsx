@@ -15,19 +15,20 @@ import {
   showValueLabels,
 } from '@/lib/charts/chart-constants'
 
-// ── Fix #1 — guard against SSR, register only in browser ─────
 function useEnterpriseTheme() {
-  useEffect(() => { registerEnterpriseTheme() }, [])
+  useEffect(() => {
+    registerEnterpriseTheme()
+  }, [])
 }
 
-// ── Fix #3 — safe opacity via ECharts alpha helper ────────────
 function withAlpha(hex: string, alpha: number): string {
-  // handles 3-digit, 6-digit hex and gracefully skips non-hex
   const match = hex.replace('#', '').match(/^([a-f\d]{3}|[a-f\d]{6})$/i)
   if (!match) return hex
+
   const full = match[1].length === 3
-    ? match[1].split('').map(c => c + c).join('')
+    ? match[1].split('').map(ch => ch + ch).join('')
     : match[1]
+
   const r = parseInt(full.slice(0, 2), 16)
   const g = parseInt(full.slice(2, 4), 16)
   const b = parseInt(full.slice(4, 6), 16)
@@ -35,65 +36,247 @@ function withAlpha(hex: string, alpha: number): string {
 }
 
 interface TooltipParam {
-  name:       string
+  name: string
   seriesName: string
-  value:      number
-  dataIndex:  number
+  value: number
+  data?: {
+    rawValue?: number
+  }
 }
 
 interface ModernBarChartProps {
-  data:   Record<string, unknown>[]
+  data: Record<string, unknown>[]
   xField: string
   yField: string
   title?: string
   style?: WidgetStyle
   sizePreset?: WidgetSizePreset
+  logarithmic?: boolean
 }
 
-export function ModernBarChart({ data, xField, yField, style, sizePreset = 'medium' }: ModernBarChartProps) {
-  useEnterpriseTheme() // ← Fix #1
+type XAxisLayout = {
+  shouldRotate: boolean
+  angle: number
+  bottomPadding: number
+  maxCharsPerLine: number
+  maxLines: number
+}
 
-  const s      = { ...DEFAULT_STYLE, ...style }
+const ISO_DATE_PATTERN = /^\d{4}[-/]\d{2}[-/]\d{2}(?:[T\s].*)?$/
+
+function toCompactDateLabel(raw: string): string {
+  if (!ISO_DATE_PATTERN.test(raw)) return raw
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return raw
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(parsed)
+}
+
+function normalizeLabel(value: unknown, fallback: string): string {
+  const text = String(value ?? fallback).trim().replace(/\s+/g, ' ')
+  if (!text) return fallback
+  return toCompactDateLabel(text)
+}
+
+function parseNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/,/g, '').trim())
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
+}
+
+function breakLabelIntoLines(text: string, maxCharsPerLine: number, maxLines: number): string {
+  const source = text.trim().replace(/\s+/g, ' ')
+  if (!source) return ''
+  if (source.length <= maxCharsPerLine) return source
+
+  const separators = ['_', '-', ' ']
+  for (const sep of separators) {
+    const sepIndex = source.indexOf(sep, Math.floor(source.length / 2))
+    if (sepIndex > 0 && sepIndex < source.length - 3) {
+      const first = source.slice(0, sepIndex)
+      const second = source.slice(sepIndex + sep.length)
+      const lines = [first, second].slice(0, maxLines)
+      const lastIdx = lines.length - 1
+      if (second.length > maxCharsPerLine) {
+        lines[lastIdx] = second.slice(0, Math.max(6, maxCharsPerLine - 1)) + '...'
+      }
+      return lines.join('\n')
+    }
+  }
+
+  const words = source.split(' ')
+  const lines: string[] = []
+  let current = ''
+
+  const pushCurrent = () => {
+    if (!current) return
+    lines.push(current)
+    current = ''
+  }
+
+  words.forEach(word => {
+    const candidate = current ? `${current} ${word}` : word
+    if (candidate.length <= maxCharsPerLine) {
+      current = candidate
+      return
+    }
+
+    if (current) pushCurrent()
+
+    if (word.length <= maxCharsPerLine) {
+      current = word
+      return
+    }
+
+    lines.push(word.slice(0, Math.max(6, maxCharsPerLine - 1)) + '...')
+  })
+
+  pushCurrent()
+
+  if (lines.length <= maxLines) return lines.join('\n')
+
+  const visible = lines.slice(0, maxLines)
+  const lastIdx = visible.length - 1
+  visible[lastIdx] = visible[lastIdx].slice(0, Math.max(6, maxCharsPerLine - 1)) + '...'
+  return visible.join('\n')
+}
+
+function getXAxisLayout(labels: string[]): XAxisLayout {
+  if (!labels.length) {
+    return {
+      shouldRotate: false,
+      angle: 0,
+      bottomPadding: 14,
+      maxCharsPerLine: 12,
+      maxLines: 1,
+    }
+  }
+
+  const lengths = labels.map(label => label.length)
+  const maxLength = Math.max(...lengths)
+  const avgLength = lengths.reduce((sum, len) => sum + len, 0) / lengths.length
+  const shouldRotate = maxLength > 15 || avgLength > 10 || (labels.length > 8 && avgLength > 8)
+
+  if (!shouldRotate) {
+    return {
+      shouldRotate: false,
+      angle: 0,
+      bottomPadding: 14,
+      maxCharsPerLine: maxLength > 16 ? 14 : 12,
+      maxLines: 1,
+    }
+  }
+
+  if (maxLength > 25) {
+    return {
+      shouldRotate: true,
+      angle: -45,
+      bottomPadding: Math.min(78, Math.max(58, Math.round(maxLength * 1.4))),
+      maxCharsPerLine: 16,
+      maxLines: 2,
+    }
+  }
+
+  if (maxLength > 15) {
+    return {
+      shouldRotate: true,
+      angle: -35,
+      bottomPadding: Math.min(68, Math.max(52, Math.round(maxLength * 1.3))),
+      maxCharsPerLine: 16,
+      maxLines: 2,
+    }
+  }
+
+  return {
+    shouldRotate: true,
+    angle: -25,
+    bottomPadding: 46,
+    maxCharsPerLine: 14,
+    maxLines: 2,
+  }
+}
+
+function fmtAxisTick(v: number, format: WidgetStyle['labelFormat'], logarithmic: boolean): string {
+  if (logarithmic && v < 1) return v.toFixed(2)
+  return fmtValue(v, format)
+}
+
+export function ModernBarChart({
+  data,
+  xField,
+  yField,
+  style,
+  sizePreset = 'medium',
+  logarithmic = false,
+}: ModernBarChartProps) {
+  useEnterpriseTheme()
+
+  const s = { ...DEFAULT_STYLE, ...style }
   const colors = s.colors
-  const r      = s.barRadius ?? 5
+  const r = s.barRadius ?? 5
 
   const chartData = useMemo(() => {
-    const isNumeric = data.length > 0 && !isNaN(Number(data[0]?.[yField]))
+    const isNumeric = data.some(row => !isNaN(Number(row?.[yField])))
+
     if (isNumeric) {
       return data.slice(0, 30).map((item, i) => ({
-        name:  String(item[xField] ?? `#${i + 1}`).slice(0, 18),
-        value: parseFloat(String(item[yField])) || 0,
+        name: normalizeLabel(item[xField], `#${i + 1}`).slice(0, 72),
+        value: parseNumber(item[yField]),
       }))
     }
+
     const counts: Record<string, number> = {}
     data.forEach(item => {
-      const k = String(item[xField] ?? 'Unknown').slice(0, 18)
-      counts[k] = (counts[k] ?? 0) + 1
+      const key = normalizeLabel(item[xField], 'Unknown').slice(0, 72)
+      counts[key] = (counts[key] ?? 0) + 1
     })
+
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([name, value]) => ({ name, value }))
   }, [data, xField, yField])
 
+  const labelLayout = useMemo(
+    () => getXAxisLayout(chartData.map(point => point.name)),
+    [chartData],
+  )
+
+  const processedSeriesData = useMemo(
+    () => chartData.map(point => ({
+      ...point,
+      value: logarithmic && point.value <= 0 ? 0.1 : point.value,
+      rawValue: point.value,
+    })),
+    [chartData, logarithmic],
+  )
+
   const margin = getChartMargin(sizePreset)
-  const rotate = sizePreset === 'small' ? chartData.length > 5 : chartData.length > 8
   const tickInterval = getCategoryTickInterval(sizePreset, chartData.length)
   const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
   const displayLabels = showValueLabels(sizePreset, chartData.length)
-  const axis   = getAxisColors()
-  const tt     = getTooltipStyle(s)
+  const axis = getAxisColors()
+  const tt = getTooltipStyle(s)
+  const barMaxWidth = chartData.length <= 6 ? 34 : chartData.length <= 12 ? 28 : 22
 
   const option = useMemo(() => ({
-    animation:        true,
+    animation: true,
     animationDuration: 700,
-    animationEasing:  'cubicOut' as const,
-    backgroundColor:  'transparent',
+    animationEasing: 'cubicOut' as const,
+    backgroundColor: 'transparent',
     color: colors,
     grid: {
       top: margin.top + (displayLegend ? 18 : 0),
       right: margin.right,
-      bottom: margin.bottom + (rotate ? 28 : 14) + (displayLegend && sizePreset !== 'medium' ? 14 : 0),
+      bottom: margin.bottom + labelLayout.bottomPadding + (displayLegend && sizePreset !== 'medium' ? 14 : 0),
       left: margin.left,
       containLabel: true,
     },
@@ -101,35 +284,41 @@ export function ModernBarChart({ data, xField, yField, style, sizePreset = 'medi
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
-      // ── Fix #5 — typed formatter param ─────────────────────
       formatter: (params: TooltipParam[]) => {
-        const p = params[0]
-        return `<b style="font-size:12px">${p.name}</b><br/>${p.seriesName}: <strong>${fmtValue(p.value, s.labelFormat)}</strong>`
+        const first = params[0]
+        const rawValue = first?.data?.rawValue ?? first?.value ?? 0
+        return `<b style="font-size:12px">${first?.name ?? ''}</b><br/>${first?.seriesName ?? ''}: <strong>${fmtValue(Number(rawValue), s.labelFormat)}</strong>`
       },
     },
     xAxis: {
       type: 'category',
       data: chartData.map(d => d.name),
       axisLabel: {
-        color:     axis.label,
-        fontSize:  chartData.length > 15 ? 10 : 11,
-        rotate:    rotate ? -35 : 0,
-        interval:  tickInterval,
-        formatter: (v: string) => v.length > 14 ? v.slice(0, 12) + '…' : v,
+        color: axis.label,
+        fontSize: labelLayout.shouldRotate ? 10 : (chartData.length > 15 ? 10 : 11),
+        rotate: labelLayout.shouldRotate ? labelLayout.angle : 0,
+        interval: tickInterval,
+        hideOverlap: !labelLayout.shouldRotate,
+        lineHeight: labelLayout.shouldRotate ? 12 : 14,
+        margin: labelLayout.shouldRotate ? 18 : 10,
+        formatter: (value: string) =>
+          breakLabelIntoLines(value, labelLayout.maxCharsPerLine, labelLayout.maxLines),
       },
-      axisLine:  { show: false },
-      axisTick:  { show: false },
+      axisLine: { show: false },
+      axisTick: { show: false },
       splitLine: { show: false },
     },
     yAxis: {
-      type: 'value',
+      type: logarithmic ? 'log' : 'value',
+      min: logarithmic ? 0.1 : 0,
+      logBase: logarithmic ? 10 : undefined,
       axisLabel: {
-        color:    axis.label,
+        color: axis.label,
         fontSize: 11,
-        formatter: (v: number) => fmtValue(v, s.labelFormat),
+        formatter: (v: number) => fmtAxisTick(v, s.labelFormat, logarithmic),
       },
-      axisLine:  { show: false },
-      axisTick:  { show: false },
+      axisLine: { show: false },
+      axisTick: { show: false },
       splitLine: {
         show: s.showGrid,
         lineStyle: { type: 'dashed' as const, color: axis.splitLine },
@@ -150,24 +339,27 @@ export function ModernBarChart({ data, xField, yField, style, sizePreset = 'medi
           }
       : { show: false },
     series: [{
-      type:        'bar',
-      name:        yField,
-      barMaxWidth: 48,
+      type: 'bar',
+      name: yField,
+      barMaxWidth,
       label: displayLabels
         ? {
             show: true,
             position: 'top',
             fontSize: 10,
             color: axis.label,
-            formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
+            formatter: (p: { data?: { rawValue?: number }; value: number }) => {
+              const rawValue = p?.data?.rawValue ?? p.value
+              return fmtValue(Number(rawValue), s.labelFormat)
+            },
           }
         : { show: false },
-      data: chartData.map((d, i) => ({
-        value: d.value,
+      data: processedSeriesData.map((point, i) => ({
+        value: point.value,
+        rawValue: point.rawValue,
         itemStyle: {
-          // ── Fix #3 — safe gradient using rgba helper ────────
           color: new graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: withAlpha(colors[i % colors.length], 1)    },
+            { offset: 0, color: withAlpha(colors[i % colors.length], 1) },
             { offset: 1, color: withAlpha(colors[i % colors.length], 0.55) },
           ]),
           borderRadius: [r, r, 0, 0],
@@ -177,14 +369,30 @@ export function ModernBarChart({ data, xField, yField, style, sizePreset = 'medi
         itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' },
       },
     }],
-  // deps are intentionally coarse — s/colors/axis/tt derive from listed deps
-  }), [chartData, colors, r, s, axis, tt, yField]) // ← Fix #6: removed eslint-disable, proper deps
+  }), [
+    axis,
+    barMaxWidth,
+    chartData,
+    colors,
+    displayLabels,
+    displayLegend,
+    labelLayout,
+    logarithmic,
+    margin,
+    processedSeriesData,
+    r,
+    s,
+    sizePreset,
+    tickInterval,
+    tt,
+    yField,
+  ])
 
   return (
     <ReactECharts
       option={option}
       theme="enterprise"
-      notMerge={true}    // ← Fix #2
+      notMerge={true}
       style={{ height: '100%', width: '100%' }}
       opts={{ renderer: 'svg' }}
     />

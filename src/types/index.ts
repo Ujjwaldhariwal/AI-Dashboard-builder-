@@ -1,3 +1,12 @@
+import type { TransformOp } from '@/types/widget'
+export type * from '@/types/tenancy'
+export type * from '@/types/semantic-model'
+export type * from '@/types/data-source'
+export type * from '@/types/semantic-dataset'
+export type * from '@/types/chart-template'
+export type * from '@/types/dashboard-chart'
+export type * from '@/types/dashboard-publishing'
+
 // Module: Index
 //index.ts
 export interface ApiEndpoint {
@@ -8,6 +17,7 @@ export interface ApiEndpoint {
   headers?: Record<string, string>
   body?: any
   refreshInterval?: number
+  transforms?: TransformOp[]
 }
 
 export interface ChartConfig {

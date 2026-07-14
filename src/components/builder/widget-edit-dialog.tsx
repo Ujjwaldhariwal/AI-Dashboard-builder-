@@ -1,41 +1,52 @@
 'use client'
 
-// src/components/builder/widget-edit-dialog.tsx
-
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  Dialog, DialogContent, DialogDescription,
-  DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
 import {
-  Select, SelectContent, SelectItem,
-  SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/builder-store'
-import type {
-  Widget,
-  ChartType,
-  TransformOp,
-  TransformMathOperator,
-  TransformFilterOperator,
-} from '@/types/widget'
-import { toast } from 'sonner'
-import {
-  BarChart3, LineChart, PieChart, AreaChart,
-  Table2, Loader2, Gauge, TrendingUp,
-  AlignLeft, Circle, Wand2, ChevronDown, ChevronUp,
-  Plus, Trash2, ArrowUp, ArrowDown,
-} from 'lucide-react'
+import type { ChartType, LabelFormat, Widget } from '@/types/widget'
+import { DEFAULT_STYLE } from '@/types/widget'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
-import { askDataTransformer } from '@/lib/ai/agent-client'
 import { buildEndpointRequestInit } from '@/lib/api/request-utils'
 import { saveEndpointMappingFeedback } from '@/lib/training/profile-client'
+import {
+  getWidgetSizeFromPreset,
+  getWidgetSizePreset,
+  WIDGET_SIZE_LABEL,
+  type WidgetSizePreset,
+} from '@/lib/builder/widget-size'
+import { toast } from 'sonner'
+import {
+  AlignLeft,
+  AreaChart,
+  BarChart3,
+  Circle,
+  Gauge,
+  LineChart,
+  Loader2,
+  PieChart,
+  Table2,
+  TrendingUp,
+} from 'lucide-react'
 
 interface WidgetEditDialogProps {
   widget: Widget
@@ -43,148 +54,89 @@ interface WidgetEditDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-// ✅ All 9 types — matches ChartType exactly
 const chartIcons: Record<ChartType, LucideIcon> = {
-  bar:             BarChart3,
-  line:            LineChart,
-  area:            AreaChart,
-  pie:             PieChart,
-  donut:           Circle,
+  bar: BarChart3,
+  line: LineChart,
+  area: AreaChart,
+  pie: PieChart,
+  donut: Circle,
   'horizontal-bar': AlignLeft,
   'horizontal-stacked-bar': AlignLeft,
   'grouped-bar': BarChart3,
   'drilldown-bar': BarChart3,
-  gauge:           Gauge,
-  'ring-gauge':    Gauge,
-  'status-card':   TrendingUp,
-  table:           Table2,
+  gauge: Gauge,
+  'ring-gauge': Gauge,
+  'status-card': TrendingUp,
+  table: Table2,
 }
 
 const chartTypeLabel: Record<ChartType, string> = {
-  bar:             'Bar',
-  line:            'Line',
-  area:            'Area',
-  pie:             'Pie',
-  donut:           'Donut',
+  bar: 'Bar',
+  line: 'Line',
+  area: 'Area',
+  pie: 'Pie',
+  donut: 'Donut',
   'horizontal-bar': 'H-Bar',
   'horizontal-stacked-bar': 'Stacked H-Bar',
-  'grouped-bar':   'Grouped',
+  'grouped-bar': 'Grouped',
   'drilldown-bar': 'Drilldown',
-  gauge:           'Gauge',
-  'ring-gauge':    'Ring',
-  'status-card':   'KPI',
-  table:           'Table',
+  gauge: 'Gauge',
+  'ring-gauge': 'Ring',
+  'status-card': 'KPI',
+  table: 'Table',
 }
 
-// 2-row layout matching widget-config-dialog
 const CHART_TYPE_ROWS: ChartType[][] = [
   ['bar', 'line', 'area', 'pie', 'donut', 'grouped-bar'],
   ['horizontal-bar', 'horizontal-stacked-bar', 'drilldown-bar'],
   ['gauge', 'ring-gauge', 'status-card', 'table'],
 ]
 
-type TransformType = TransformOp['type']
-
-const TRANSFORM_TYPE_LABELS: Record<TransformType, string> = {
-  parse_number: 'Parse Number (strip units)',
-  concat: 'Combine Fields',
-  rename: 'Rename Field',
-  math: 'Math Operation',
-  percent_of_total: '% of Total',
-  filter_rows: 'Filter Rows',
-  sort: 'Sort By',
-  limit: 'Limit Rows',
-}
-
-const TRANSFORM_TYPE_ORDER: TransformType[] = [
-  'parse_number',
-  'concat',
-  'rename',
-  'math',
-  'percent_of_total',
-  'filter_rows',
-  'sort',
-  'limit',
+const FORMAT_OPTIONS: Array<{ value: 'number' | LabelFormat; label: string }> = [
+  { value: 'number', label: 'Number' },
+  { value: 'currency', label: 'Currency' },
+  { value: 'percent', label: 'Percent' },
 ]
+const SIZE_PRESETS: WidgetSizePreset[] = ['small', 'medium', 'large', 'full']
 
-const MATH_OPERATOR_LABELS: Record<TransformMathOperator, string> = {
-  '+': '+',
-  '-': '-',
-  '*': '×',
-  '/': '÷',
-}
-
-const FILTER_OPERATORS: TransformFilterOperator[] = ['>', '<', '=', '!=', '>=', '<=']
-
-const SORT_ORDERS = [
-  { value: 'asc' as const, label: 'Ascending' },
-  { value: 'desc' as const, label: 'Descending' },
-]
-
-const createDefaultTransform = (type: TransformType): TransformOp => {
-  switch (type) {
-    case 'parse_number':
-      return { type: 'parse_number', field: '' }
-    case 'concat':
-      return { type: 'concat', fields: [], separator: ' ', outputField: '' }
-    case 'rename':
-      return { type: 'rename', from: '', to: '' }
-    case 'math':
-      return { type: 'math', field: '', operator: '/', value: 1000, outputField: '' }
-    case 'percent_of_total':
-      return { type: 'percent_of_total', field: '', outputField: '' }
-    case 'filter_rows':
-      return { type: 'filter_rows', field: '', operator: '!=', value: '' }
-    case 'sort':
-      return { type: 'sort', field: '', order: 'asc' }
-    case 'limit':
-      return { type: 'limit', count: 10 }
-    default:
-      return { type: 'parse_number', field: '' }
+function normalizeColors(colors: string[] | undefined): string[] {
+  const fallback = DEFAULT_STYLE.colors
+  if (!colors || colors.length === 0) return [...fallback]
+  const base = [...colors]
+  while (base.length < fallback.length) {
+    base.push(fallback[base.length])
   }
+  return base.slice(0, fallback.length)
 }
 
 export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialogProps) {
   const { updateWidget, endpoints } = useDashboardStore()
 
-  const [title, setTitle]               = useState(widget.title)
-  const [type, setType]                 = useState<ChartType>(widget.type)
-  const [xAxis, setXAxis]               = useState(widget.dataMapping.xAxis)
-  const [yAxis, setYAxis]               = useState(widget.dataMapping.yAxis ?? '')
-  const [aliases, setAliases]           = useState<Record<string, string>>(widget.dataMapping.aliases ?? {})
-  const [fields, setFields]             = useState<Array<{ name: string; type: string }>>([])
+  const [title, setTitle] = useState(widget.title)
+  const [type, setType] = useState<ChartType>(widget.type)
+  const [xAxis, setXAxis] = useState(widget.dataMapping.xAxis)
+  const [yAxis, setYAxis] = useState(widget.dataMapping.yAxis ?? '')
+  const [fields, setFields] = useState<Array<{ name: string; type: string }>>([])
   const [loadingFields, setLoadingFields] = useState(false)
-  const [sampleRows, setSampleRows] = useState<Record<string, unknown>[]>([])
-  const [transforms, setTransforms] = useState<TransformOp[]>(widget.dataMapping.transforms ?? [])
-  const [transformsOpen, setTransformsOpen] = useState(
-    (widget.dataMapping.transforms?.length ?? 0) > 0,
+  const [showLegend, setShowLegend] = useState(widget.style.showLegend ?? true)
+  const [showGrid, setShowGrid] = useState(widget.style.showGrid ?? true)
+  const [barRadius, setBarRadius] = useState(widget.style.barRadius ?? 5)
+  const [colors, setColors] = useState<string[]>(normalizeColors(widget.style.colors))
+  const [sizePreset, setSizePreset] = useState<WidgetSizePreset>(getWidgetSizePreset(widget.position))
+  const [labelFormat, setLabelFormat] = useState<'number' | LabelFormat>(
+    widget.style.labelFormat ?? 'number',
   )
-  const [aiTransformPrompt, setAiTransformPrompt] = useState('')
-  const [aiTransformLoading, setAiTransformLoading] = useState(false)
 
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
+  const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(type)
+  const hasGrid = !['pie', 'donut', 'gauge', 'ring-gauge', 'status-card'].includes(type)
+  const supportsRadius = ['bar', 'horizontal-bar', 'grouped-bar', 'drilldown-bar'].includes(type)
 
-  // ── Reset on open ──────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!open) return
-    setTitle(widget.title)
-    setType(widget.type)
-    setXAxis(widget.dataMapping.xAxis)
-    setYAxis(widget.dataMapping.yAxis ?? '')
-    setAliases(widget.dataMapping.aliases ?? {})
-    const existingTransforms = widget.dataMapping.transforms ?? []
-    setTransforms(existingTransforms)
-    setTransformsOpen(existingTransforms.length > 0)
-    setAiTransformPrompt('')
-    void fetchFields()
-  }, [open, widget.id])
-
-  // ── Fetch fields from endpoint ─────────────────────────────────────────
   const fetchFields = async () => {
     if (!endpoint) return
     setLoadingFields(true)
     try {
-      const res = await fetch(
+      const response = await fetch(
         endpoint.url,
         buildEndpointRequestInit({
           method: endpoint.method,
@@ -192,50 +144,84 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
           body: endpoint.body,
         }),
       )
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const result = await res.json()
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
+      const payload = await response.json()
       const dataArray =
-        DataAnalyzer.extractDataArray(result) ??
-        (Array.isArray(result) ? result : [result])
-
+        DataAnalyzer.extractDataArray(payload) ??
+        (Array.isArray(payload) ? payload : [payload])
       const analysis = DataAnalyzer.analyzeArray(dataArray)
       setFields(analysis.fields)
-      const rows = dataArray.filter(
-        (row): row is Record<string, unknown> =>
-          Boolean(row) && typeof row === 'object' && !Array.isArray(row),
-      )
-      setSampleRows(rows.slice(0, 5))
     } catch {
-      // Fallback: show existing axes so user can still switch
       setFields([
         { name: widget.dataMapping.xAxis, type: 'string' },
-        ...(widget.dataMapping.yAxis
-          ? [{ name: widget.dataMapping.yAxis, type: 'number' }]
-          : []),
+        ...(widget.dataMapping.yAxis ? [{ name: widget.dataMapping.yAxis, type: 'number' }] : []),
       ])
-      setSampleRows([])
     } finally {
       setLoadingFields(false)
     }
   }
 
-  // ── Save ───────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!open) return
+    setTitle(widget.title)
+    setType(widget.type)
+    setXAxis(widget.dataMapping.xAxis)
+    setYAxis(widget.dataMapping.yAxis ?? '')
+    setShowLegend(widget.style.showLegend ?? true)
+    setShowGrid(widget.style.showGrid ?? true)
+    setBarRadius(widget.style.barRadius ?? 5)
+    setColors(normalizeColors(widget.style.colors))
+    setSizePreset(getWidgetSizePreset(widget.position))
+    setLabelFormat(widget.style.labelFormat ?? 'number')
+    void fetchFields()
+  }, [open, widget.id])
+
+  const setColorAt = (index: number, value: string) => {
+    setColors(prev => {
+      const next = [...prev]
+      next[index] = value
+      return next
+    })
+  }
+
+  const resolvedStyle = useMemo(() => ({
+    ...widget.style,
+    colors,
+    showLegend,
+    showGrid: hasGrid ? showGrid : false,
+    barRadius: supportsRadius ? barRadius : widget.style.barRadius,
+    labelFormat: labelFormat === 'number' ? undefined : labelFormat,
+  }), [barRadius, colors, hasGrid, labelFormat, showGrid, showLegend, supportsRadius, widget.style])
+
   const handleSave = () => {
     if (!title.trim()) {
       toast.error('Title is required')
       return
     }
+    if (needsXAxis && !xAxis.trim()) {
+      toast.error('X-axis is required for this chart type')
+      return
+    }
+
+    const nextDataMapping = {
+      ...widget.dataMapping,
+      xAxis: xAxis.trim(),
+      yAxis: yAxis.trim() || undefined,
+      transforms: undefined,
+    }
+    const nextSize = getWidgetSizeFromPreset(sizePreset)
+    const currentPosition = widget.position ?? { x: 0, y: 0, w: 6, h: 5 }
 
     updateWidget(widget.id, {
       title: title.trim(),
       type,
-      dataMapping: {
-        ...widget.dataMapping, // ✅ preserve yAxes multi-metric config
-        xAxis,
-        yAxis: yAxis || undefined,
-        aliases: Object.keys(aliases).length > 0 ? aliases : undefined,
-        transforms: transforms.length > 0 ? transforms : undefined,
+      dataMapping: nextDataMapping,
+      style: resolvedStyle,
+      position: {
+        ...currentPosition,
+        w: nextSize.w,
+        h: nextSize.h,
       },
     })
 
@@ -246,8 +232,8 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
       sourceAction: 'edit_widget',
       acceptedMapping: {
         type,
-        xAxis,
-        yAxis: yAxis || undefined,
+        xAxis: xAxis.trim(),
+        yAxis: yAxis.trim() || undefined,
         yAxes: widget.dataMapping.yAxes,
         reason: 'Manual widget edit action',
         confidence: 92,
@@ -263,151 +249,59 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
         source: 'manual',
       },
     }).catch(() => {
-      // non-blocking feedback write
+      // Non-blocking feedback write.
     })
 
     toast.success('Widget updated')
     onOpenChange(false)
   }
 
-  // Gauge + status-card only need Y field
-  const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(type)
-
-  const setAliasForField = (field: string, value: string) => {
-    if (!field) return
-    setAliases(prev => {
-      const next = { ...prev }
-      const trimmed = value.trim()
-      if (!trimmed) {
-        delete next[field]
-      } else {
-        next[field] = trimmed
-      }
-      return next
-    })
-  }
-
-  const addTransform = () => {
-    setTransformsOpen(true)
-    setTransforms(prev => [...prev, createDefaultTransform('parse_number')])
-  }
-
-  const removeTransform = (index: number) => {
-    setTransforms(prev => prev.filter((_, idx) => idx !== index))
-  }
-
-  const moveTransform = (index: number, direction: 'up' | 'down') => {
-    setTransforms(prev => {
-      const next = [...prev]
-      const swapIndex = direction === 'up' ? index - 1 : index + 1
-      if (swapIndex < 0 || swapIndex >= next.length) return prev
-      ;[next[index], next[swapIndex]] = [next[swapIndex], next[index]]
-      return next
-    })
-  }
-
-  const setTransformType = (index: number, nextType: TransformType) => {
-    setTransforms(prev => prev.map((op, idx) => (
-      idx === index ? createDefaultTransform(nextType) : op
-    )))
-  }
-
-  const handleAiTransform = async (mode: 'append' | 'replace') => {
-    const prompt = aiTransformPrompt.trim()
-    if (!prompt) {
-      toast.error('Describe the transform goal first')
-      return
-    }
-    if (!sampleRows.length) {
-      toast.error('No sample data available. Refresh fields first.')
-      return
-    }
-
-    setAiTransformLoading(true)
-    try {
-      const aiOperations = await askDataTransformer(prompt, sampleRows.slice(0, 5))
-      const nextTransforms = mode === 'append'
-        ? [...transforms, ...aiOperations]
-        : aiOperations
-
-      setTransforms(nextTransforms)
-      setTransformsOpen(true)
-      updateWidget(widget.id, {
-        dataMapping: {
-          ...widget.dataMapping,
-          transforms: nextTransforms.length > 0 ? nextTransforms : undefined,
-        },
-      })
-      toast.success(
-        mode === 'append'
-          ? `Appended ${aiOperations.length} AI transform${aiOperations.length === 1 ? '' : 's'}`
-          : `Replaced transforms with ${aiOperations.length} AI step${aiOperations.length === 1 ? '' : 's'}`,
-      )
-      setAiTransformPrompt('')
-    } catch {
-      // Error toast handled in askDataTransformer.
-    } finally {
-      setAiTransformLoading(false)
-    }
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg">Edit Widget</DialogTitle>
           <DialogDescription className="text-xs">
-            Update configuration for{' '}
-            <span className="font-mono font-medium">{widget.title}</span>
+            Configure chart type, axes, and style for{' '}
+            <span className="font-mono font-medium">{widget.title}</span>.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-
-          {/* Title */}
           <div className="space-y-1.5">
             <Label className="text-xs">Widget Title *</Label>
             <Input
               className="h-9 text-sm"
               value={title}
-              onChange={e => setTitle(e.target.value)}
+              onChange={event => setTitle(event.target.value)}
             />
           </div>
 
-          {/* Chart type picker — 2 rows, all 9 types */}
           <div className="space-y-1.5">
             <Label className="text-xs">Chart Type</Label>
             <div className="space-y-1.5">
-              {CHART_TYPE_ROWS.map((row, ri) => (
+              {CHART_TYPE_ROWS.map((row, rowIndex) => (
                 <div
-                  key={ri}
+                  key={rowIndex}
                   className="grid gap-1.5"
                   style={{ gridTemplateColumns: `repeat(${row.length}, 1fr)` }}
                 >
                   {row.map(chartType => {
                     const Icon = chartIcons[chartType]
-                    const isSelected = type === chartType
+                    const selected = type === chartType
                     return (
                       <button
                         key={chartType}
                         type="button"
                         onClick={() => setType(chartType)}
-                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all ${
-                          isSelected
+                        className={`flex flex-col items-center gap-1 rounded-lg border-2 p-2 transition-all ${
+                          selected
                             ? 'border-primary bg-primary/10'
                             : 'border-border hover:border-primary/50'
                         }`}
                       >
-                        <Icon
-                          className={`w-4 h-4 ${
-                            isSelected ? 'text-primary' : 'text-muted-foreground'
-                          }`}
-                        />
-                        <span
-                          className={`text-[10px] font-medium ${
-                            isSelected ? 'text-primary' : 'text-muted-foreground'
-                          }`}
-                        >
+                        <Icon className={`h-4 w-4 ${selected ? 'text-primary' : 'text-muted-foreground'}`} />
+                        <span className={`text-[10px] font-medium ${selected ? 'text-primary' : 'text-muted-foreground'}`}>
                           {chartTypeLabel[chartType]}
                         </span>
                       </button>
@@ -418,15 +312,12 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
             </div>
           </div>
 
-          {/* Axes — side by side or single for gauge/kpi */}
           <div className={`grid gap-3 ${needsXAxis ? 'grid-cols-2' : 'grid-cols-1'}`}>
-
-            {/* X axis */}
             {needsXAxis && (
               <div className="space-y-1.5">
-                <Label className="text-xs flex items-center gap-1">
+                <Label className="flex items-center gap-1 text-xs">
                   X-Axis
-                  {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {loadingFields && <Loader2 className="h-3 w-3 animate-spin" />}
                 </Label>
                 {fields.length > 0 ? (
                   <Select value={xAxis} onValueChange={setXAxis} disabled={loadingFields}>
@@ -434,12 +325,12 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
                       <SelectValue placeholder="Select field" />
                     </SelectTrigger>
                     <SelectContent>
-                      {fields.map(f => (
-                        <SelectItem key={f.name} value={f.name}>
+                      {fields.map(field => (
+                        <SelectItem key={field.name} value={field.name}>
                           <div className="flex items-center gap-2">
-                            <span>{f.name}</span>
-                            <Badge variant="outline" className="text-[9px] px-1 py-0">
-                              {f.type}
+                            <span>{field.name}</span>
+                            <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                              {field.type}
                             </Badge>
                           </div>
                         </SelectItem>
@@ -449,31 +340,19 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
                 ) : (
                   <Input
                     className="h-9 text-sm font-mono"
-                    placeholder={loadingFields ? 'Fetching...' : 'e.g., month'}
                     value={xAxis}
-                    onChange={e => setXAxis(e.target.value)}
+                    placeholder={loadingFields ? 'Fetching fields...' : 'e.g., month'}
+                    onChange={event => setXAxis(event.target.value)}
                     disabled={loadingFields}
                   />
-                )}
-                {xAxis && (
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">Field alias for X-axis</Label>
-                    <Input
-                      className="h-8 text-xs"
-                      placeholder={`Rename "${xAxis}" (optional)`}
-                      value={aliases[xAxis] ?? ''}
-                      onChange={e => setAliasForField(xAxis, e.target.value)}
-                    />
-                  </div>
                 )}
               </div>
             )}
 
-            {/* Y axis */}
             <div className="space-y-1.5">
-              <Label className="text-xs flex items-center gap-1">
-                {['gauge', 'ring-gauge', 'status-card'].includes(type) ? 'Value field' : 'Y-Axis'}
-                {loadingFields && <Loader2 className="w-3 h-3 animate-spin" />}
+              <Label className="flex items-center gap-1 text-xs">
+                {['gauge', 'ring-gauge', 'status-card'].includes(type) ? 'Value Field' : 'Y-Axis'}
+                {loadingFields && <Loader2 className="h-3 w-3 animate-spin" />}
               </Label>
               {fields.length > 0 ? (
                 <Select value={yAxis} onValueChange={setYAxis} disabled={loadingFields}>
@@ -481,12 +360,12 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
                     <SelectValue placeholder="Select field" />
                   </SelectTrigger>
                   <SelectContent>
-                    {fields.map(f => (
-                      <SelectItem key={f.name} value={f.name}>
+                    {fields.map(field => (
+                      <SelectItem key={field.name} value={field.name}>
                         <div className="flex items-center gap-2">
-                          <span>{f.name}</span>
-                          <Badge variant="outline" className="text-[9px] px-1 py-0">
-                            {f.type}
+                          <span>{field.name}</span>
+                          <Badge variant="outline" className="px-1 py-0 text-[9px]">
+                            {field.type}
                           </Badge>
                         </div>
                       </SelectItem>
@@ -496,565 +375,110 @@ export function WidgetEditDialog({ widget, open, onOpenChange }: WidgetEditDialo
               ) : (
                 <Input
                   className="h-9 text-sm font-mono"
-                  placeholder={loadingFields ? 'Fetching...' : 'e.g., revenue'}
                   value={yAxis}
-                  onChange={e => setYAxis(e.target.value)}
+                  placeholder={loadingFields ? 'Fetching fields...' : 'e.g., value'}
+                  onChange={event => setYAxis(event.target.value)}
                   disabled={loadingFields}
                 />
-              )}
-              {yAxis && (
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Field alias for Y-axis</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder={`Rename "${yAxis}" (optional)`}
-                    value={aliases[yAxis] ?? ''}
-                    onChange={e => setAliasForField(yAxis, e.target.value)}
-                  />
-                </div>
               )}
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Advanced aliases (optional)</Label>
-            <Textarea
-              className="min-h-[70px] text-xs font-mono"
-              placeholder={'count(9): Meter Count\nconn_comm: Connected'}
-              value={Object.entries(aliases).map(([k, v]) => `${k}: ${v}`).join('\n')}
-              onChange={e => {
-                const parsed: Record<string, string> = {}
-                e.target.value
-                  .split('\n')
-                  .map(line => line.trim())
-                  .filter(Boolean)
-                  .forEach(line => {
-                    const idx = line.indexOf(':')
-                    if (idx <= 0) return
-                    const key = line.slice(0, idx).trim()
-                    const val = line.slice(idx + 1).trim()
-                    if (key && val) parsed[key] = val
-                  })
-                setAliases(parsed)
-              }}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Format: <span className="font-mono">field_name: Display Label</span>
-            </p>
+            <Label className="text-xs">Widget Size</Label>
+            <Select
+              value={sizePreset}
+              onValueChange={(value) => setSizePreset(value as WidgetSizePreset)}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SIZE_PRESETS.map((preset) => (
+                  <SelectItem key={preset} value={preset}>
+                    {WIDGET_SIZE_LABEL[preset]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="space-y-2 rounded-lg border p-3">
-            <button
-              type="button"
-              className="w-full flex items-center justify-between gap-2"
-              onClick={() => setTransformsOpen(prev => !prev)}
-            >
-              <span className="flex items-center gap-2 text-xs font-medium">
-                <Wand2 className="w-3.5 h-3.5" />
-                Transform Data
-                {transforms.length > 0 && (
-                  <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
-                    {transforms.length}
-                  </Badge>
-                )}
-              </span>
-              {transformsOpen
-                ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-            </button>
+          <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold">Styling</Label>
+              <Badge variant="outline" className="text-[10px]">Widget Visuals</Badge>
+            </div>
 
-            {transformsOpen && (
-              <div className="space-y-2 pt-1">
-                <div className="rounded-md border border-dashed px-3 py-3 space-y-2 bg-muted/20">
-                  <Label className="text-[11px] font-medium">AI Transform</Label>
-                  <Input
-                    className="h-8 text-xs"
-                    placeholder='e.g., "parse amount, filter > 1000, sort desc, top 5"'
-                    value={aiTransformPrompt}
-                    onChange={e => setAiTransformPrompt(e.target.value)}
-                    disabled={aiTransformLoading}
+            <div className="grid grid-cols-6 gap-2">
+              {colors.slice(0, 6).map((color, index) => (
+                <label key={index} className="relative cursor-pointer" title={color}>
+                  <div className="h-8 w-8 rounded-md border" style={{ backgroundColor: color }} />
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={event => setColorAt(index, event.target.value)}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                   />
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      onClick={() => void handleAiTransform('replace')}
-                      disabled={aiTransformLoading}
-                    >
-                      {aiTransformLoading ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                          Running...
-                        </>
-                      ) : (
-                        'Replace with AI'
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 text-xs"
-                      onClick={() => void handleAiTransform('append')}
-                      disabled={aiTransformLoading}
-                    >
-                      Append AI Steps
-                    </Button>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Uses up to 5 sample rows from this endpoint.
-                  </p>
+                </label>
+              ))}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <Label className="text-xs">Show Legend</Label>
+                <Switch checked={showLegend} onCheckedChange={setShowLegend} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <Label className="text-xs">Show Grid</Label>
+                <Switch checked={showGrid} onCheckedChange={setShowGrid} disabled={!hasGrid} />
+              </div>
+            </div>
+
+            {supportsRadius && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Bar Radius</Label>
+                  <span className="text-xs text-muted-foreground">{barRadius}px</span>
                 </div>
-
-                {transforms.length === 0 && (
-                  <div className="rounded-md border border-dashed px-3 py-3 flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-muted-foreground">
-                      No transforms — data passes through as-is
-                    </p>
-                    <Button type="button" size="sm" variant="outline" onClick={addTransform}>
-                      <Plus className="w-3.5 h-3.5 mr-1" />
-                      Add Transform
-                    </Button>
-                  </div>
-                )}
-
-                {transforms.map((transform, index) => (
-                  <div key={`${transform.type}-${index}`} className="rounded-md border p-3 space-y-2 bg-muted/20">
-                    <div className="flex items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        <Select
-                          value={transform.type}
-                          onValueChange={(value: TransformType) => setTransformType(index, value)}
-                        >
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="Operation" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TRANSFORM_TYPE_ORDER.map(opType => (
-                              <SelectItem key={opType} value={opType}>
-                                {TRANSFORM_TYPE_LABELS[opType]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => moveTransform(index, 'up')}
-                          disabled={index === 0}
-                          title="Move up"
-                        >
-                          <ArrowUp className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => moveTransform(index, 'down')}
-                          disabled={index === transforms.length - 1}
-                          title="Move down"
-                        >
-                          <ArrowDown className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-600 hover:text-red-700"
-                          onClick={() => removeTransform(index)}
-                          title="Remove transform"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {transform.type === 'parse_number' && (
-                      <div className="space-y-1">
-                        <Label className="text-[11px]">Field</Label>
-                        <Input
-                          className="h-8 text-xs"
-                          placeholder="e.g. power"
-                          value={transform.field}
-                          onChange={e => {
-                            const field = e.target.value
-                            setTransforms(prev => prev.map((op, idx) => (
-                              idx === index && op.type === 'parse_number'
-                                ? { ...op, field }
-                                : op
-                            )))
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {transform.type === 'concat' && (
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <div className="space-y-1 sm:col-span-2">
-                          <Label className="text-[11px]">Fields (comma separated)</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="city, state"
-                            value={transform.fields.join(', ')}
-                            onChange={e => {
-                              const fieldsValue = e.target.value
-                                .split(',')
-                                .map(part => part.trim())
-                                .filter(Boolean)
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'concat'
-                                  ? { ...op, fields: fieldsValue }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Separator</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder=" - "
-                            value={transform.separator}
-                            onChange={e => {
-                              const separator = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'concat'
-                                  ? { ...op, separator }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1 sm:col-span-3">
-                          <Label className="text-[11px]">Output field</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="city_state"
-                            value={transform.outputField}
-                            onChange={e => {
-                              const outputField = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'concat'
-                                  ? { ...op, outputField }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {transform.type === 'rename' && (
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">From</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="old_field"
-                            value={transform.from}
-                            onChange={e => {
-                              const from = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'rename'
-                                  ? { ...op, from }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">To</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="new_field"
-                            value={transform.to}
-                            onChange={e => {
-                              const to = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'rename'
-                                  ? { ...op, to }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {transform.type === 'math' && (
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-                        <div className="space-y-1 sm:col-span-2">
-                          <Label className="text-[11px]">Field</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="watts"
-                            value={transform.field}
-                            onChange={e => {
-                              const field = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'math'
-                                  ? { ...op, field }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Operator</Label>
-                          <Select
-                            value={transform.operator}
-                            onValueChange={(operator: TransformMathOperator) => {
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'math'
-                                  ? { ...op, operator }
-                                  : op
-                              )))
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(Object.keys(MATH_OPERATOR_LABELS) as TransformMathOperator[]).map(op => (
-                                <SelectItem key={op} value={op}>
-                                  {MATH_OPERATOR_LABELS[op]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Value</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            type="number"
-                            value={transform.value}
-                            onChange={e => {
-                              const value = Number(e.target.value)
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'math'
-                                  ? { ...op, value: Number.isFinite(value) ? value : 0 }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1 sm:col-span-4">
-                          <Label className="text-[11px]">Output field</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="kilowatts"
-                            value={transform.outputField}
-                            onChange={e => {
-                              const outputField = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'math'
-                                  ? { ...op, outputField }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {transform.type === 'percent_of_total' && (
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Field</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="revenue"
-                            value={transform.field}
-                            onChange={e => {
-                              const field = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'percent_of_total'
-                                  ? { ...op, field }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Output field</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="revenue_pct"
-                            value={transform.outputField}
-                            onChange={e => {
-                              const outputField = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'percent_of_total'
-                                  ? { ...op, outputField }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {transform.type === 'filter_rows' && (
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Field</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="latency"
-                            value={transform.field}
-                            onChange={e => {
-                              const field = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'filter_rows'
-                                  ? { ...op, field }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Operator</Label>
-                          <Select
-                            value={transform.operator}
-                            onValueChange={(operator: TransformFilterOperator) => {
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'filter_rows'
-                                  ? { ...op, operator }
-                                  : op
-                              )))
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FILTER_OPERATORS.map(operator => (
-                                <SelectItem key={operator} value={operator}>
-                                  {operator}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Value</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="0"
-                            value={String(transform.value ?? '')}
-                            onChange={e => {
-                              const value = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'filter_rows'
-                                  ? { ...op, value }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {transform.type === 'sort' && (
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Field</Label>
-                          <Input
-                            className="h-8 text-xs"
-                            placeholder="timestamp"
-                            value={transform.field}
-                            onChange={e => {
-                              const field = e.target.value
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'sort'
-                                  ? { ...op, field }
-                                  : op
-                              )))
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px]">Order</Label>
-                          <Select
-                            value={transform.order}
-                            onValueChange={(order: 'asc' | 'desc') => {
-                              setTransforms(prev => prev.map((op, idx) => (
-                                idx === index && op.type === 'sort'
-                                  ? { ...op, order }
-                                  : op
-                              )))
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {SORT_ORDERS.map(option => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    )}
-
-                    {transform.type === 'limit' && (
-                      <div className="space-y-1">
-                        <Label className="text-[11px]">Count</Label>
-                        <Input
-                          className="h-8 text-xs"
-                          type="number"
-                          min={1}
-                          value={transform.count}
-                          onChange={e => {
-                            const count = Number(e.target.value)
-                            setTransforms(prev => prev.map((op, idx) => (
-                              idx === index && op.type === 'limit'
-                                ? { ...op, count: Number.isFinite(count) ? Math.trunc(count) : 1 }
-                                : op
-                            )))
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {transforms.length > 0 && (
-                  <Button type="button" size="sm" variant="outline" onClick={addTransform}>
-                    <Plus className="w-3.5 h-3.5 mr-1" />
-                    Add Transform
-                  </Button>
-                )}
+                <input
+                  type="range"
+                  min={0}
+                  max={20}
+                  value={barRadius}
+                  onChange={event => setBarRadius(Number(event.target.value))}
+                  className="w-full accent-primary"
+                />
               </div>
             )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Value Format</Label>
+              <Select
+                value={labelFormat}
+                onValueChange={(value: 'number' | LabelFormat) => setLabelFormat(value)}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FORMAT_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Endpoint info */}
-          <div className="p-2.5 rounded-lg bg-muted/50 border">
+          <div className="rounded-lg border bg-muted/40 p-2.5">
             <p className="text-[11px] text-muted-foreground">
               Data source:{' '}
-              <span className="font-medium text-foreground">
-                {endpoint?.name ?? 'Unknown'}
-              </span>
+              <span className="font-medium text-foreground">{endpoint?.name ?? 'Unknown'}</span>
               {' · '}
-              <span className="font-mono text-[10px] truncate">
-                {endpoint?.url}
-              </span>
+              <span className="font-mono text-[10px]">{endpoint?.url ?? 'N/A'}</span>
             </p>
           </div>
-
         </div>
 
         <DialogFooter>

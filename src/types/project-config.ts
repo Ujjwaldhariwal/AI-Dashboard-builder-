@@ -1,10 +1,27 @@
 // src/types/project-config.ts
 
+import type { TransformOp } from '@/types/widget'
+
 export type AuthStrategy  = 'basic' | 'bearer' | 'api-key' | 'none'
 export type LayoutType    = 'sidebar' | 'topnav'
 export type EncodingType  = 'btoa' | 'plain' | 'none'
 export type NavDensity    = 'compact' | 'comfortable'
 export type ChartTheme    = 'enterprise' | 'bosch-uppcl'
+export type EndpointAuthType = 'none' | 'api-key' | 'bearer' | 'basic' | 'custom-headers'
+
+export interface ApiEndpointConfig {
+  id: string
+  dashboardId?: string
+  name: string
+  url: string
+  method: 'GET' | 'POST'
+  authType: EndpointAuthType
+  headers?: Record<string, string>
+  body?: unknown
+  refreshInterval: number
+  status: 'active' | 'inactive'
+  transforms?: TransformOp[]
+}
 
 export interface AIExportConfig {
   enabled: boolean

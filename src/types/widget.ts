@@ -39,6 +39,15 @@ export interface YAxisConfig {
 export type TransformMathOperator = '+' | '-' | '*' | '/'
 export type TransformFilterOperator = '>' | '<' | '=' | '!=' | '>=' | '<='
 export type TransformSortOrder = 'asc' | 'desc'
+export type TransformAggregateReducer = 'sum' | 'avg' | 'min' | 'max' | 'count'
+export type TransformDateFormat =
+  | 'iso-date'
+  | 'iso-datetime'
+  | 'locale-date'
+  | 'locale-datetime'
+  | 'month-day'
+  | 'month-short'
+  | 'year-month'
 
 export type TransformOp =
   | { type: 'parse_number'; field: string }
@@ -49,6 +58,33 @@ export type TransformOp =
   | { type: 'filter_rows'; field: string; operator: TransformFilterOperator; value: unknown }
   | { type: 'sort'; field: string; order: TransformSortOrder }
   | { type: 'limit'; count: number }
+  | {
+    type: 'fields_to_rows'
+    fields: string[]
+    keyField: string
+    valueField: string
+    keyLabels?: Record<string, string>
+    keepOtherFields?: boolean
+  }
+  | {
+    type: 'group_aggregate'
+    groupBy: string[]
+    valueField: string
+    reducer: TransformAggregateReducer
+    outputField: string
+  }
+  | {
+    type: 'map_values'
+    field: string
+    mappings: Record<string, string>
+    defaultValue?: string
+  }
+  | {
+    type: 'date_format'
+    field: string
+    outputField: string
+    format: TransformDateFormat
+  }
 
 export interface DataMapping {
   xAxis:      string

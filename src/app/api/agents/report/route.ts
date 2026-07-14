@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { generateObject } from 'ai'
-import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { ReportInsightSchema } from '@/lib/ai/agent-schemas'
+import { getGoogleModel } from '@/lib/ai/google-model'
+import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const ReportAgentRequestSchema = z.object({
   dashboardTitle: z.string().min(1, 'dashboardTitle is required'),
@@ -14,8 +15,8 @@ const ReportAgentRequestSchema = z.object({
 async function hasValidSession() {
   const cookieStore = await cookies()
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    SUPABASE_URL,
+    getSupabaseAnonKey(),
     {
       cookies: {
         getAll() {
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
     const widgetsPreview = JSON.stringify(widgetsData.slice(0, 40), null, 2)
 
     const result = await generateObject({
-      model: google('gemini-2.5-flash'),
+      model: getGoogleModel('gemini-2.5-flash'),
       schema: ReportInsightSchema,
       system: `You are a Senior Data Analyst preparing a professional dashboard report.
 
@@ -97,4 +98,3 @@ Analyze this dashboard and produce executive summary, anomalies, and per-widget 
     )
   }
 }
-

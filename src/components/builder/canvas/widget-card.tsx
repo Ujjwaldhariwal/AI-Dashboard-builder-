@@ -28,7 +28,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -36,7 +35,7 @@ import {
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
   AlignLeft, Wifi, WifiOff, Circle,
-  Shrink, Sparkles, MoreHorizontal,
+  Sparkles, MoreHorizontal,
 } from 'lucide-react'
 import { useDashboardStore } from '@/store/builder-store'
 import { useMonitoringStore } from '@/store/monitoring-store'
@@ -61,12 +60,10 @@ import {
 } from '@/lib/api/endpoint-runtime-cache'
 import {
   getWidgetCardHeightClass,
-  getWidgetSizeFromPreset,
   getWidgetSizePreset,
-  WIDGET_SIZE_LABEL,
-  type WidgetSizePreset,
 } from '@/lib/builder/widget-size'
 import { applyTransforms } from '@/lib/builder/data-transformer'
+import { sortRowsByField } from '@/lib/charts/domain-order'
 
 // ── FIX P12: Import ChartWrapper ──
 import { ChartWrapper } from '@/components/charts/chart-wrapper'
@@ -119,6 +116,51 @@ function applyAliasesToRow(
   return renamed
 }
 
+function parseNumberSafe(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const parsed = Number(trimmed.replace(/,/g, ''))
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
+function inferNumericField(rows: Record<string, unknown>[], keys: string[]): string {
+  if (keys.length === 0) return ''
+  if (keys.includes('value')) return 'value'
+
+  const scores = new Map<string, number>()
+  keys.forEach(key => scores.set(key, 0))
+
+  rows.slice(0, 120).forEach(row => {
+    keys.forEach(key => {
+      if (parseNumberSafe(row[key]) !== null) {
+        scores.set(key, (scores.get(key) ?? 0) + 1)
+      }
+    })
+  })
+
+  const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1])
+  const [bestKey, bestScore] = ranked[0] ?? ['', 0]
+  return bestScore > 0 ? bestKey : ''
+}
+
+function inferCategoryField(rows: Record<string, unknown>[], keys: string[]): string {
+  if (keys.length === 0) return ''
+  if (keys.includes('name')) return 'name'
+
+  const preferred = ['label', 'category', 'type', 'title']
+  for (const key of preferred) {
+    if (keys.includes(key)) return key
+  }
+
+  const numericField = inferNumericField(rows, keys)
+  const nonNumeric = keys.filter(key => key !== numericField)
+  return nonNumeric[0] ?? keys[0] ?? ''
+}
+
 function WidgetSkeleton() {
   return (
     <div className="space-y-3 animate-pulse">
@@ -135,10 +177,12 @@ function WidgetSkeleton() {
 
 function DataTableView({
   rows,
+  sortField,
   limit = 50,
   maxHeight = 'max-h-[320px]',
 }: {
   rows: Record<string, unknown>[]
+  sortField?: string
   limit?: number
   maxHeight?: string
 }) {
@@ -151,6 +195,8 @@ function DataTableView({
   }
 
   const cols = Object.keys(rows[0]).slice(0, 8)
+  const orderingField = sortField && cols.includes(sortField) ? sortField : (cols[0] ?? '')
+  const orderedRows = orderingField ? sortRowsByField(rows, orderingField) : rows
   return (
     <div className={`overflow-auto ${maxHeight} rounded-lg border bg-background/80`}>
       <table className="w-full text-xs border-collapse">
@@ -164,7 +210,7 @@ function DataTableView({
           </tr>
         </thead>
         <tbody>
-          {rows.slice(0, limit).map((row, index) => (
+          {orderedRows.slice(0, limit).map((row, index) => (
             <tr key={index} className="border-b hover:bg-muted/40 transition-colors">
               {cols.map(col => (
                 <td key={col} className="p-2 text-[11px] max-w-[220px] truncate">
@@ -200,8 +246,6 @@ interface WidgetHeaderProps {
   onOpenInsights?: () => void
   onEditWidget: () => void
   onDeleteWidget: () => void
-  onSizeChange?: (size: 'small' | 'medium' | 'large' | 'full') => void
-  endpointMetaText: string
 }
 
 function WidgetHeader({
@@ -225,11 +269,8 @@ function WidgetHeader({
   onOpenInsights,
   onEditWidget,
   onDeleteWidget,
-  onSizeChange,
-  endpointMetaText,
 }: WidgetHeaderProps) {
   const Icon = chartTypeIcon[widget.type] ?? BarChart3
-  const sizePresets: WidgetSizePreset[] = ['small', 'medium', 'large', 'full']
 
   const isSmall = sizePreset === 'small'
   const isMedium = sizePreset === 'medium'
@@ -240,6 +281,7 @@ function WidgetHeader({
   const showHealth = !isSmall
   const showInsights = isDataValid && Boolean(onOpenInsights)
   const showRuntimeRow = !isSmall
+  const showEditButton = !viewOnly
   const showMediumActionMenu = !viewOnly && isMedium
   const showLargeActionButtons = !viewOnly && isLargeUp
   const showLatency = !isSmall
@@ -332,6 +374,18 @@ function WidgetHeader({
             }
           </Button>
 
+          {showEditButton && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={onEditWidget}
+              title="Edit widget"
+            >
+              <Pencil className="w-3 h-3" />
+            </Button>
+          )}
+
           {showMediumActionMenu && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -340,10 +394,6 @@ function WidgetHeader({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
-                <DropdownMenuItem onClick={onEditWidget} className="text-xs">
-                  Edit widget
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={onDeleteWidget}
                   className="text-xs text-red-600 focus:text-red-700"
@@ -356,38 +406,6 @@ function WidgetHeader({
 
           {showLargeActionButtons && (
             <>
-              {onSizeChange && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget size">
-                      <Shrink className="w-3 h-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-36">
-                    {sizePresets.map(preset => (
-                      <DropdownMenuItem
-                        key={preset}
-                        onClick={() => onSizeChange(preset)}
-                        className="text-xs"
-                      >
-                        {WIDGET_SIZE_LABEL[preset]}
-                        {sizePreset === preset ? '  (current)' : ''}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={onEditWidget}
-                title="Edit widget"
-              >
-                <Pencil className="w-3 h-3" />
-              </Button>
-
               <Button
                 variant="ghost"
                 size="icon"
@@ -404,11 +422,7 @@ function WidgetHeader({
 
       {showRuntimeRow && (
         <div className="flex items-center gap-2 mt-0.5">
-          <p className="text-[10px] text-muted-foreground truncate flex-1">
-            {endpointMetaText}
-          </p>
-
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
             {showLatency && (
               <span className="font-mono tabular-nums text-xs text-muted-foreground min-w-[4.5rem] text-right inline-block">
                 {latencyMs != null ? `${latencyMs} ms` : '— ms'}
@@ -436,7 +450,7 @@ function WidgetHeader({
 }
 
 export function WidgetCard({ widget, viewMode = false, isDragClone = false }: WidgetCardProps) {
-  const { endpoints, removeWidget, updateWidget } = useDashboardStore()
+  const { endpoints, removeWidget } = useDashboardStore()
   const { addLog, updateEndpointHealth } = useMonitoringStore()
 
   const [rawData, setRawData]         = useState<Record<string, unknown>[] | null>(null)
@@ -622,6 +636,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const style = { ...DEFAULT_STYLE, ...widget.style }
   const cardHeightClass = getWidgetCardHeightClass(widget.position)
+  const endpointTransforms = endpoint?.transforms ?? []
 
   const aliases = useMemo(() => {
     const entries = Object.entries(widget.dataMapping.aliases ?? {})
@@ -635,18 +650,22 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
     [aliases],
   )
 
-  const aliasedData = useMemo(
-    () => rawData?.map(row => applyAliasesToRow(row, aliases)) ?? null,
-    [aliases, rawData],
-  )
-  const transformedData = useMemo(() => {
-    if (!aliasedData) return null
-    return applyTransforms(aliasedData, widget.dataMapping.transforms ?? [])
-  }, [aliasedData, widget.dataMapping.transforms])
+  const endpointPreparedData = useMemo(() => {
+    if (!rawData) return null
+    if (endpointTransforms.length === 0) return rawData
+    return applyTransforms(rawData, endpointTransforms)
+  }, [endpointTransforms, rawData])
 
-  const xField = resolveField(widget.dataMapping.xAxis)
-  const yField = resolveField(widget.dataMapping.yAxis)
-  const yAxisConfig = useMemo<YAxisConfig[]>(
+  const aliasedData = useMemo(
+    () => endpointPreparedData?.map(row => applyAliasesToRow(row, aliases)) ?? null,
+    [aliases, endpointPreparedData],
+  )
+
+  const transformedData = aliasedData
+
+  const configuredXField = resolveField(widget.dataMapping.xAxis)
+  const configuredYField = resolveField(widget.dataMapping.yAxis)
+  const configuredYAxisConfig = useMemo<YAxisConfig[]>(
     () =>
       (widget.dataMapping.yAxes ?? []).flatMap(axisCfg => {
         const key = resolveField(axisCfg.key)
@@ -659,7 +678,55 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
       }),
     [resolveField, widget.dataMapping.yAxes],
   )
-  const yFields = useMemo(() => yAxisConfig.map(axis => axis.key), [yAxisConfig])
+
+  const resolvedFieldState = useMemo(() => {
+    const keys = transformedData?.length ? Object.keys(transformedData[0]) : []
+    const canUseXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(widget.type)
+
+    const hasConfiguredX = Boolean(configuredXField && keys.includes(configuredXField))
+    const hasConfiguredY = Boolean(configuredYField && keys.includes(configuredYField))
+
+    const inferredX = canUseXAxis ? inferCategoryField(transformedData ?? [], keys) : ''
+    const inferredY = inferNumericField(transformedData ?? [], keys)
+
+    const xField = canUseXAxis
+      ? (hasConfiguredX ? configuredXField : inferredX)
+      : ''
+    const yField = hasConfiguredY ? configuredYField : inferredY
+
+    const yAxisConfig = configuredYAxisConfig.filter(axisCfg => keys.includes(axisCfg.key))
+    const yFields = yAxisConfig.map(axis => axis.key)
+
+    const fallbackHint = (
+      transformedData?.length
+      && (
+        (canUseXAxis && configuredXField && !hasConfiguredX && xField)
+        || (configuredYField && !hasConfiguredY && yField)
+      )
+    )
+      ? `Configured field mapping not found after transforms; using "${xField || '-'} -> ${yField || '-'}"`
+      : null
+
+    return {
+      keys,
+      xField,
+      yField,
+      yAxisConfig,
+      yFields,
+      fallbackHint,
+    }
+  }, [
+    configuredXField,
+    configuredYField,
+    configuredYAxisConfig,
+    transformedData,
+    widget.type,
+  ])
+
+  const xField = resolvedFieldState.xField
+  const yField = resolvedFieldState.yField
+  const yAxisConfig = resolvedFieldState.yAxisConfig
+  const yFields = resolvedFieldState.yFields
 
   const insightData = useMemo(() => {
     if (!transformedData?.length || !xField || !yField) return null
@@ -685,31 +752,29 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
 
   const fieldWarning = useMemo(() => {
     if (!transformedData?.length) return null
+    if (resolvedFieldState.fallbackHint) {
+      if (
+        (widget.type === 'pie' || widget.type === 'donut')
+        && xField === 'name'
+        && yField === 'value'
+      ) {
+        return null
+      }
+      return resolvedFieldState.fallbackHint
+    }
+
     const needsXAxis = !['gauge', 'ring-gauge', 'status-card'].includes(widget.type)
-    const keys = Object.keys(transformedData[0])
-    if (needsXAxis && xField && !keys.includes(xField)) {
-      return `xAxis field "${xField}" not found in data. Available: ${keys.slice(0, 5).join(', ')}`
+    const keys = resolvedFieldState.keys
+
+    if (needsXAxis && !xField) {
+      return `No valid xAxis field found in transformed data. Available: ${keys.slice(0, 5).join(', ')}`
     }
-    if (yField && !keys.includes(yField)) {
-      return `yAxis field "${yField}" not found in data. Available: ${keys.slice(0, 5).join(', ')}`
+    if (!yField) {
+      return `No numeric yAxis field found in transformed data. Available: ${keys.slice(0, 5).join(', ')}`
     }
+
     return null
-  }, [transformedData, widget.type, xField, yField])
-
-  const handleSizeChange = (preset: WidgetSizePreset) => {
-    if (viewMode) return
-    const nextSize = getWidgetSizeFromPreset(preset)
-    const currentPosition = widget.position ?? { x: 0, y: 0, w: 6, h: 5 }
-    updateWidget(widget.id, {
-      position: {
-        ...currentPosition,
-        w: nextSize.w,
-        h: nextSize.h,
-      },
-    })
-    toast.success(`Widget size set to ${WIDGET_SIZE_LABEL[preset]}`)
-  }
-
+  }, [resolvedFieldState, transformedData, widget.type, xField, yField])
   // ── FIX P12: Every Recharts chart wrapped in <ChartWrapper> ──
   const renderChart = () => {
     if (!transformedData?.length) return null
@@ -807,7 +872,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
           </ChartWrapper>
         )
       case 'table':
-        return <DataTableView rows={transformedData} maxHeight="max-h-[340px]" />
+        return <DataTableView rows={transformedData} sortField={x} maxHeight="max-h-[340px]" />
       default:
         return (
           <p className="text-xs text-muted-foreground">
@@ -829,7 +894,6 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
   const cacheAgeText = cacheInfo.fromCache
     ? `cache ${Math.round(cacheInfo.cacheAgeMs / 1000)}s`
     : undefined
-  const endpointMetaText = `${endpoint?.name ?? 'Unknown'}${xField ? ` - ${xField}` : ''}${yField ? ` -> ${yField}` : ''}`
   const isDataValid = shouldShowInsights && Boolean(insightSummary) && !loading && !error
 
   return (
@@ -864,8 +928,6 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
           onOpenInsights={shouldShowInsights ? () => setInsightsOpen(true) : undefined}
           onEditWidget={() => setEditOpen(true)}
           onDeleteWidget={() => setDeleteOpen(true)}
-          onSizeChange={handleSizeChange}
-          endpointMetaText={endpointMetaText}
         />
 
         {/* ── FIX P8/P10: flex-1 min-h-0 overflow-hidden, pb-4 → pb-2 ── */}
@@ -905,7 +967,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
           {!loading && !error && rawData && (
             <div className="w-full h-full min-h-0">
               {activeView === 'table' && transformedData
-                ? <DataTableView rows={transformedData} />
+                ? <DataTableView rows={transformedData} sortField={xField} />
                 : renderChart()}
             </div>
           )}
@@ -984,5 +1046,6 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
     </>
   )
 }
+
 
 

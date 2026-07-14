@@ -199,6 +199,16 @@ export const WidgetStyleSchema = z.object({
 export const TransformMathOperatorSchema = z.enum(['+', '-', '*', '/'])
 export const TransformFilterOperatorSchema = z.enum(['>', '<', '=', '!=', '>=', '<='])
 export const TransformSortOrderSchema = z.enum(['asc', 'desc'])
+export const TransformAggregateReducerSchema = z.enum(['sum', 'avg', 'min', 'max', 'count'])
+export const TransformDateFormatSchema = z.enum([
+  'iso-date',
+  'iso-datetime',
+  'locale-date',
+  'locale-datetime',
+  'month-day',
+  'month-short',
+  'year-month',
+])
 
 export const TransformOpSchema = z.discriminatedUnion('type', [
   z.object({
@@ -242,6 +252,33 @@ export const TransformOpSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('limit'),
     count: z.number(),
+  }).strict(),
+  z.object({
+    type: z.literal('fields_to_rows'),
+    fields: z.array(z.string()),
+    keyField: z.string(),
+    valueField: z.string(),
+    keyLabels: z.record(z.string(), z.string()).optional(),
+    keepOtherFields: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    type: z.literal('group_aggregate'),
+    groupBy: z.array(z.string()),
+    valueField: z.string(),
+    reducer: TransformAggregateReducerSchema,
+    outputField: z.string(),
+  }).strict(),
+  z.object({
+    type: z.literal('map_values'),
+    field: z.string(),
+    mappings: z.record(z.string(), z.string()),
+    defaultValue: z.string().optional(),
+  }).strict(),
+  z.object({
+    type: z.literal('date_format'),
+    field: z.string(),
+    outputField: z.string(),
+    format: TransformDateFormatSchema,
   }).strict(),
 ])
 
@@ -390,7 +427,7 @@ Return only valid JSON matching the provided schema.
 Rules:
 - Output an ordered "operations" array of TransformOp objects.
 - Use only these operation types:
-  parse_number, concat, rename, math, percent_of_total, filter_rows, sort, limit.
+  parse_number, concat, rename, math, percent_of_total, filter_rows, sort, limit, fields_to_rows, group_aggregate, map_values, date_format.
 - Use exact field names from sample data when possible.
 - Keep operations minimal and deterministic.
 - Never include extra keys outside the schema.
