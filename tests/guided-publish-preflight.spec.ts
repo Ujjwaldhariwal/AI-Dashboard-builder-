@@ -68,7 +68,16 @@ function seededTables(overrides: {
     dashboard_projects: [{
       id: projectId,
       tenant_id: tenantId,
+      active_business_model_id: modelId,
       tenant: { slug: 'seeded-client' },
+    }],
+    data_sources: [{
+      id: 'seed-source',
+      tenant_id: tenantId,
+      project_id: projectId,
+      schema_last_status: 'ok',
+      schema_last_error: null,
+      schema_hash: 'seed-schema-v1',
     }],
     guided_schema_profiles: [{
       tenant_id: tenantId,
@@ -88,7 +97,7 @@ function seededTables(overrides: {
       tenant_id: tenantId,
       project_id: projectId,
       model_id: modelId,
-      status: 'draft',
+      status: 'published',
       description: 'Generated from approved semantic draft v2',
       selection: {
         fieldIds: ['field-month', 'field-region'],
@@ -229,7 +238,7 @@ test.describe('guided publish preflight', () => {
     expect(result.metadata.slotCount).toBe(1)
   })
 
-  test('returns warning readiness without blocking publish when chart validation warns', async () => {
+  test('blocks warning charts because the client runtime only serves valid charts', async () => {
     const result = await evaluateGuidedPublishReadinessForProject({
       supabase: createSupabase(seededTables({ chartValidationState: 'warning' })) as never,
       projectId,
@@ -238,10 +247,10 @@ test.describe('guided publish preflight', () => {
       evaluatedAt: '2026-07-13T02:00:00.000Z',
     })
 
-    expect(result.readiness.status).toBe('ready_to_publish')
-    expect(result.readiness.publishEligible).toBe(true)
-    expect(result.readiness.warnings.map(check => check.id)).toContain('runtime_validation')
-    expect(result.readiness.blockers).toEqual([])
+    expect(result.readiness.status).toBe('blocked_by_validation')
+    expect(result.readiness.publishEligible).toBe(false)
+    expect(result.readiness.blockers.map(check => check.id)).toContain('runtime_validation')
+    expect(result.readiness.checks.find(check => check.id === 'runtime_validation')?.message).toContain('preview-only')
   })
 
   test('blocks a seeded non-demo project when runtime validation fails', async () => {

@@ -14,6 +14,7 @@ const ProjectCreateSchema = z.object({
 interface ProjectWithTenant extends DashboardProject {
   tenantName?: string | null
   tenantSlug?: string | null
+  activeBusinessModelId?: string | null
 }
 
 function mapProject(row: Record<string, unknown>): ProjectWithTenant {
@@ -31,6 +32,7 @@ function mapProject(row: Record<string, unknown>): ProjectWithTenant {
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
     tenantName: typeof tenant.name === 'string' ? tenant.name : null,
     tenantSlug: typeof tenant.slug === 'string' ? tenant.slug : null,
+    activeBusinessModelId: typeof row.active_business_model_id === 'string' ? row.active_business_model_id : null,
   }
 }
 
@@ -55,7 +57,7 @@ export async function GET(req: NextRequest) {
 
     let query = auth.supabase
       .from('dashboard_projects')
-      .select('id, tenant_id, name, description, status, created_at, updated_at, tenant:tenants(name, slug)')
+      .select('id, tenant_id, name, description, status, active_business_model_id, created_at, updated_at, tenant:tenants(name, slug)')
       .order('updated_at', { ascending: false })
 
     if (tenantId) query = query.eq('tenant_id', tenantId)
@@ -108,7 +110,7 @@ export async function POST(req: NextRequest) {
         created_at: nowIso,
         updated_at: nowIso,
       })
-      .select('id, tenant_id, name, description, status, created_at, updated_at, tenant:tenants(name, slug)')
+      .select('id, tenant_id, name, description, status, active_business_model_id, created_at, updated_at, tenant:tenants(name, slug)')
       .single()
 
     if (error) {

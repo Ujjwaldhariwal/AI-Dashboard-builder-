@@ -180,6 +180,10 @@ async function seedGuidedProject(service: SupabaseClient, ids: GuidedPublishSeed
     credential_ciphertext: 'integration-fixture',
     credential_key_id: 'integration-test',
     last_test_status: 'success',
+    schema_last_status: 'ok',
+    schema_hash: 'integration-guided-schema-v1',
+    schema_table_count: 1,
+    schema_column_count: 3,
   }))
   await assertNoSupabaseError('seed model', await service.from('business_models').insert({
     id: ids.modelId,

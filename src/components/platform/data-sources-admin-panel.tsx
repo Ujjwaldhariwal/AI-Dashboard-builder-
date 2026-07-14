@@ -41,7 +41,7 @@ const SCAN_TO_CHART_FLOW = [
   },
   {
     title: '2. Scan',
-    body: 'Run schema introspection to import schemas, tables, columns, data types, keys, and scan freshness.',
+    body: 'Run schema introspection to import schemas, tables, columns, data types, and scan completeness.',
   },
   {
     title: '3. Map',
@@ -272,7 +272,10 @@ export function DataSourcesAdminPanel() {
       if (!response.ok) throw new Error(errorToText(payload) || `Introspection failed (${response.status})`)
       addBuilderDataSourceId(sourceId)
       await fetchDataSources(projectId)
-      toast.success(`Imported ${payload?.columnCount ?? 0} columns from ${payload?.tables?.length ?? 0} tables`)
+      const tableCount = Number(payload?.tableCount ?? payload?.tables?.length ?? 0)
+      toast.success(payload?.noOp
+        ? `Schema unchanged: ${payload?.columnCount ?? 0} columns across ${tableCount} tables`
+        : `Imported ${payload?.columnCount ?? 0} columns from ${tableCount} tables`)
     } catch (introspectError) {
       toast.error(introspectError instanceof Error ? introspectError.message : String(introspectError))
     } finally {
@@ -350,7 +353,7 @@ export function DataSourcesAdminPanel() {
       <section className="grid gap-4 md:grid-cols-3">
         {[
           { title: 'Connection vault', icon: LockKeyhole, body: 'Credentials never reach the browser and are decrypted only for server-side query execution.' },
-          { title: 'Schema scanner', icon: Server, body: 'Tables, columns, data types, keys, and sample rows become admin-visible metadata.' },
+          { title: 'Schema scanner', icon: Server, body: 'Tables, columns, and data types become admin-visible metadata; incomplete scans are blocked.' },
           { title: 'Query guardrails', icon: ShieldCheck, body: 'Every query needs tenant scope, parameters, row caps, timeout, and audit logging.' },
         ].map((item) => {
           const Icon = item.icon

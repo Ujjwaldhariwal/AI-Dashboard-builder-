@@ -54,6 +54,24 @@ export interface PostgresTableMetadata {
   columns: PostgresColumnMetadata[]
 }
 
+export type PostgresSchemaTruncationReason = 'column_limit' | 'table_limit'
+
+export interface PostgresSchemaIntrospectionResult {
+  tables: PostgresTableMetadata[]
+  completeness: {
+    complete: boolean
+    reasons: PostgresSchemaTruncationReason[]
+    observedColumnCount: number
+    acceptedColumnCount: number
+    maxColumns: number
+    maxTables: number
+  }
+}
+
+export interface PostgresSchemaRow extends PostgresColumnMetadata {
+  tableType: string
+}
+
 interface ManagedPostgresPool {
   pool: Pool
   activeQueries: number
@@ -226,11 +244,65 @@ export async function testPostgresConnection(ciphertext: string) {
   }
 }
 
-export async function introspectPostgresSchema(ciphertext: string): Promise<PostgresTableMetadata[]> {
+export function buildPostgresSchemaIntrospectionResult(
+  rows: PostgresSchemaRow[],
+  limits: { maxColumns?: number; maxTables?: number } = {},
+): PostgresSchemaIntrospectionResult {
+  const maxColumns = limits.maxColumns ?? MAX_SCHEMA_COLUMNS
+  const maxTables = limits.maxTables ?? MAX_SCHEMA_TABLES
+  const columnLimitExceeded = rows.length > maxColumns
+  const acceptedRows = rows.slice(0, maxColumns)
+  const reasons: PostgresSchemaTruncationReason[] = []
+  if (columnLimitExceeded) reasons.push('column_limit')
+
+  const tableMap = new Map<string, PostgresTableMetadata>()
+  let tableLimitExceeded = false
+  for (const row of acceptedRows) {
+    const key = `${row.schemaName}.${row.tableName}`
+    const existing = tableMap.get(key)
+    if (!existing && tableMap.size >= maxTables) {
+      tableLimitExceeded = true
+      continue
+    }
+    const table = existing ?? {
+      schemaName: row.schemaName,
+      tableName: row.tableName,
+      tableType: row.tableType,
+      columns: [],
+    }
+    table.columns.push({
+      schemaName: row.schemaName,
+      tableName: row.tableName,
+      columnName: row.columnName,
+      ordinalPosition: Number(row.ordinalPosition),
+      dataType: row.dataType,
+      udtName: row.udtName,
+      isNullable: Boolean(row.isNullable),
+      columnDefault: row.columnDefault,
+    })
+    tableMap.set(key, table)
+  }
+
+  if (tableLimitExceeded) reasons.push('table_limit')
+  const tables = Array.from(tableMap.values())
+  return {
+    tables,
+    completeness: {
+      complete: reasons.length === 0,
+      reasons,
+      observedColumnCount: rows.length,
+      acceptedColumnCount: tables.reduce((total, table) => total + table.columns.length, 0),
+      maxColumns,
+      maxTables,
+    },
+  }
+}
+
+export async function introspectPostgresSchema(ciphertext: string): Promise<PostgresSchemaIntrospectionResult> {
   const credential = decryptPostgresCredential(ciphertext)
 
   return withPostgresClient(credential, { queryTimeoutMs: 15_000, usePool: false }, async client => {
-    const result = await client.query<PostgresColumnMetadata & { tableType: string }>(
+    const result = await client.query<PostgresSchemaRow>(
       `
         select
           c.table_schema as "schemaName",
@@ -252,34 +324,9 @@ export async function introspectPostgresSchema(ciphertext: string): Promise<Post
         order by c.table_schema, c.table_name, c.ordinal_position
         limit $1
       `,
-      [MAX_SCHEMA_COLUMNS, DEFAULT_EXCLUDED_SCHEMAS],
+      [MAX_SCHEMA_COLUMNS + 1, DEFAULT_EXCLUDED_SCHEMAS],
     )
-
-    const tableMap = new Map<string, PostgresTableMetadata>()
-    for (const row of result.rows) {
-      const key = `${row.schemaName}.${row.tableName}`
-      const existing = tableMap.get(key)
-      const table = existing ?? {
-        schemaName: row.schemaName,
-        tableName: row.tableName,
-        tableType: row.tableType,
-        columns: [],
-      }
-      if (!existing && tableMap.size >= MAX_SCHEMA_TABLES) continue
-      table.columns.push({
-        schemaName: row.schemaName,
-        tableName: row.tableName,
-        columnName: row.columnName,
-        ordinalPosition: Number(row.ordinalPosition),
-        dataType: row.dataType,
-        udtName: row.udtName,
-        isNullable: Boolean(row.isNullable),
-        columnDefault: row.columnDefault,
-      })
-      tableMap.set(key, table)
-    }
-
-    return Array.from(tableMap.values())
+    return buildPostgresSchemaIntrospectionResult(result.rows)
   })
 }
 

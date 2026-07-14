@@ -23,15 +23,21 @@ export async function getAuthedSupabase(): Promise<AuthedSupabaseContext | null>
             value: cookie.value,
           }))
         },
-        setAll() {
-          // Route handlers use this helper for authenticated DB access, not cookie mutation.
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options)
+            })
+          } catch {
+            // Server Components cannot always mutate cookies; Route Handlers can.
+          }
         },
       },
     },
   )
 
-  const { data: { session } } = await supabase.auth.getSession()
-  const userId = session?.user?.id
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  const userId = userError ? null : user?.id
   if (!userId) return null
 
   const { data: employeeRow } = await supabase

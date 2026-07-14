@@ -83,6 +83,16 @@ export async function requireProjectAccess({
   tenantId,
   editor = false,
 }: ProjectAccessInput): Promise<AccessDecision> {
+  const { data: project, error: projectError } = await supabase
+    .from('dashboard_projects')
+    .select('tenant_id')
+    .eq('id', projectId)
+    .maybeSingle()
+
+  if (projectError) return deny(projectError.message)
+  if (!project) return notFound()
+  if (tenantId && project.tenant_id !== tenantId) return notFound()
+
   if (platformRole === 'admin') return allow('platform_admin')
 
   const { data: assignment, error: assignmentError } = await supabase
@@ -100,22 +110,12 @@ export async function requireProjectAccess({
     return deny('Project editor access is required')
   }
 
-  const { data: project, error: projectError } = await supabase
-    .from('dashboard_projects')
-    .select('tenant_id')
-    .eq('id', projectId)
-    .maybeSingle()
-
-  if (projectError) return deny(projectError.message)
-  if (!project) return notFound()
-  if (tenantId && project.tenant_id !== tenantId) return notFound()
-
   return requireTenantAccess({
     supabase,
     userId,
     platformRole,
     tenantId: String(project.tenant_id),
-    editor: true,
+    editor,
   })
 }
 

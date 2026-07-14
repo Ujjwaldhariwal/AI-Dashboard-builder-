@@ -257,7 +257,8 @@ test.describe('guided review foundation', () => {
       hasPublishedDashboard: false,
     })
 
-    expect(steps.find(step => step.id === 'generate_draft_dashboard')?.status).toBe('ready')
+    expect(steps.find(step => step.id === 'generate_draft_dashboard')?.status).toBe('blocked')
+    expect(steps.find(step => step.id === 'generate_draft_dashboard')?.detail).toContain('paused')
     expect(steps.find(step => step.id === 'publish')?.status).toBe('blocked')
   })
 
@@ -294,6 +295,7 @@ test.describe('guided review foundation', () => {
     const readiness = buildGuidedPublishReadiness({
       evaluatedAt: '2026-07-13T02:00:00.000Z',
       profileState: approved,
+      schemaIntrospection: completeSchemaIntrospection(),
       models: [{ id: 'model-1', status: 'approved', version: 1 }],
       activeSemanticModelId: 'model-1',
       datasets: [dataset()],
@@ -311,6 +313,7 @@ test.describe('guided review foundation', () => {
     expect(readiness.publishEligible).toBe(true)
     expect(readiness.blockers).toEqual([])
     expect(readiness.readyItems.map(check => check.id)).toEqual(expect.arrayContaining([
+      'schema_introspection',
       'semantic_asset',
       'dataset_draft',
       'dashboard_draft',
@@ -332,6 +335,7 @@ test.describe('guided review foundation', () => {
     const chart = chartConfig({ validationState: 'warning' })
     const readiness = buildGuidedPublishReadiness({
       profileState: approved,
+      schemaIntrospection: completeSchemaIntrospection(),
       models: [{ id: 'model-1', status: 'approved', version: 1 }],
       activeSemanticModelId: 'model-1',
       datasets: [dataset()],
@@ -345,10 +349,9 @@ test.describe('guided review foundation', () => {
       clientUrl: '/client/northstar',
     })
 
-    expect(readiness.publishEligible).toBe(true)
-    expect(readiness.status).toBe('ready_to_publish')
-    expect(readiness.warnings.map(check => check.id)).toContain('runtime_validation')
-    expect(readiness.blockers).toEqual([])
+    expect(readiness.publishEligible).toBe(false)
+    expect(readiness.status).toBe('blocked_by_validation')
+    expect(readiness.blockers.map(check => check.id)).toContain('runtime_validation')
   })
 
   test('blocks publish when draft is previewable but runtime validation is invalid', () => {
@@ -364,6 +367,7 @@ test.describe('guided review foundation', () => {
     const invalidChart = chartConfig({ validationState: 'invalid' })
     const readiness = buildGuidedPublishReadiness({
       profileState: approved,
+      schemaIntrospection: completeSchemaIntrospection(),
       models: [{ id: 'model-1', status: 'approved', version: 1 }],
       activeSemanticModelId: 'model-1',
       datasets: [dataset()],
@@ -409,13 +413,22 @@ function dataset() {
   return {
     id: 'dataset-1',
     modelId: 'model-1',
-    status: 'draft' as const,
+    status: 'published' as const,
     description: 'Generated from approved semantic draft v1',
     selection: {
       fieldIds: ['field-date'],
       metricIds: ['metric-revenue'],
       relationshipIds: [],
     },
+  }
+}
+
+function completeSchemaIntrospection() {
+  return {
+    dataSourceId: 'source-1',
+    status: 'ok',
+    error: null,
+    schemaHash: null,
   }
 }
 

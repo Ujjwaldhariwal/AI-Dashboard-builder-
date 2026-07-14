@@ -4,8 +4,10 @@ import { z } from 'zod'
 import {
   approveGuidedProfileDraft,
   getLatestGuidedProfile,
+  GuidedProfileConflictError,
   updateGuidedProfileDecision,
 } from '@/lib/dashboardos/guided-review-store'
+import { GuidedReviewStateConflictError } from '@/lib/dashboardos/guided-review'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
@@ -150,6 +152,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ profile })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return NextResponse.json({ profile: null, error: message }, { status: isMissingGuidedSchema(message) ? 503 : 500 })
+    const conflict = error instanceof GuidedProfileConflictError || error instanceof GuidedReviewStateConflictError
+    return NextResponse.json({ profile: null, error: message }, { status: conflict ? 409 : isMissingGuidedSchema(message) ? 503 : 500 })
   }
 }

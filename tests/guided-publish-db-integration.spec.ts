@@ -59,7 +59,7 @@ test.describe.serial('guided publish Supabase integration', () => {
     expect(body.persistence.strategy).toBe('recomputed')
   })
 
-  test('distinguishes warning readiness from blocking validation failures', async () => {
+  test('blocks warning and invalid chart states that the client runtime will not serve', async () => {
     const GET = createGuidedPublishReadinessGetHandler(async () => fixture!.authed)
 
     await assertNoSupabaseError('set warning chart validation', await fixture!.service
@@ -70,9 +70,9 @@ test.describe.serial('guided publish Supabase integration', () => {
     const warningBody = await warningResponse.json()
 
     expect(warningResponse.status).toBe(200)
-    expect(warningBody.readiness.status).toBe('ready_to_publish')
-    expect(warningBody.readiness.publishEligible).toBe(true)
-    expect(warningBody.readiness.warnings.map((check: { id: string }) => check.id)).toContain('runtime_validation')
+    expect(warningBody.readiness.status).toBe('blocked_by_validation')
+    expect(warningBody.readiness.publishEligible).toBe(false)
+    expect(warningBody.readiness.blockers.map((check: { id: string }) => check.id)).toContain('runtime_validation')
 
     await assertNoSupabaseError('set invalid chart validation', await fixture!.service
       .from('dashboard_chart_configs')

@@ -12,7 +12,6 @@ import {
   mapPublishedDashboard,
 } from '@/lib/publishing/dashboard-publishing'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
-import type { DashboardChartSlot, DashboardPage, DashboardVersion, PublishedDashboard } from '@/types/dashboard-publishing'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
 export interface GuidedPublishPreflightMetadata {
@@ -98,7 +97,7 @@ export async function evaluateGuidedPublishReadinessForProject({
 }): Promise<GuidedPublishPreflightResult> {
   const { data: projectRow, error: projectError } = await supabase
     .from('dashboard_projects')
-    .select('id, tenant_id, tenant:tenants(slug)')
+    .select('id, tenant_id, active_business_model_id, tenant:tenants(slug)')
     .eq('id', projectId)
     .single()
 
@@ -117,6 +116,7 @@ export async function evaluateGuidedPublishReadinessForProject({
     datasetsResult,
     chartsResult,
     dashboardsResult,
+    dataSourcesResult,
   ] = await Promise.all([
     supabase
       .from('guided_schema_profiles')
@@ -146,6 +146,11 @@ export async function evaluateGuidedPublishReadinessForProject({
       .eq('tenant_id', tenantId)
       .eq('project_id', projectId)
       .order('updated_at', { ascending: false }),
+    supabase
+      .from('data_sources')
+      .select('id, schema_last_status, schema_last_error, schema_hash')
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId),
   ])
 
   if (profileResult.error) throw new Error(profileResult.error.message)
@@ -153,8 +158,13 @@ export async function evaluateGuidedPublishReadinessForProject({
   if (datasetsResult.error) throw new Error(datasetsResult.error.message)
   if (chartsResult.error) throw new Error(chartsResult.error.message)
   if (dashboardsResult.error) throw new Error(dashboardsResult.error.message)
+  if (dataSourcesResult.error) throw new Error(dataSourcesResult.error.message)
 
   const profileState = profileStateFromRows(profileResult.data)
+  const profileDataSourceId = profileState?.lineage?.schemaProfile.dataSourceId ?? null
+  const schemaSource = ((dataSourcesResult.data ?? []) as Record<string, unknown>[])
+    .find(source => String(source.id) === profileDataSourceId)
+    ?? null
   const dashboards = ((dashboardsResult.data ?? []) as Record<string, unknown>[]).map(mapPublishedDashboard)
   const selectedDashboard = selectedDashboardId
     ? dashboards.find(dashboard => dashboard.id === selectedDashboardId) ?? null
@@ -181,27 +191,33 @@ export async function evaluateGuidedPublishReadinessForProject({
   const pages = ((pagesResult.data ?? []) as Record<string, unknown>[]).map(mapDashboardPage)
   const slots = ((slotsResult.data ?? []) as Record<string, unknown>[]).map(mapDashboardChartSlot)
   const selectedVersion = selectedVersionId
-    ? versions.find(version => version.id === selectedVersionId) ?? null
+    ? versions.find(version => version.id === selectedVersionId && version.dashboardId === selectedDashboard?.id) ?? null
     : selectedDashboard?.currentVersionId
       ? versions.find(version => version.id === selectedDashboard.currentVersionId) ?? null
       : versions.find(version => version.dashboardId === selectedDashboard?.id) ?? null
   const readiness = buildGuidedPublishReadiness({
     evaluatedAt,
     profileState,
+    schemaIntrospection: schemaSource ? {
+      dataSourceId: String(schemaSource.id),
+      status: typeof schemaSource.schema_last_status === 'string' ? schemaSource.schema_last_status : null,
+      error: typeof schemaSource.schema_last_error === 'string' ? schemaSource.schema_last_error : null,
+      schemaHash: typeof schemaSource.schema_hash === 'string' ? schemaSource.schema_hash : null,
+    } : null,
     models: (modelsResult.data ?? []).map(row => ({
       id: String(row.id),
       status: typeof row.status === 'string' ? row.status : null,
       version: typeof row.version === 'number' ? row.version : Number(row.version ?? 0),
     })),
-    activeSemanticModelId: profileState?.semanticAsset?.modelId ?? null,
+    activeSemanticModelId: typeof project.active_business_model_id === 'string' ? project.active_business_model_id : null,
     datasets: ((datasetsResult.data ?? []) as Record<string, unknown>[]).map(mapDataset),
     charts: ((chartsResult.data ?? []) as Record<string, unknown>[]).map(mapChart),
     dashboards,
     versions,
     pages,
     slots,
-    selectedDashboardId: selectedDashboard?.id ?? null,
-    selectedVersionId: selectedVersion?.id ?? null,
+    selectedDashboardId: selectedDashboardId ?? selectedDashboard?.id ?? null,
+    selectedVersionId: selectedVersionId ?? selectedVersion?.id ?? null,
     clientUrl: tenantSlug ? `/client/${tenantSlug}` : null,
   })
 

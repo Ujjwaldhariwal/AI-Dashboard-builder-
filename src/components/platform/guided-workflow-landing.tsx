@@ -19,11 +19,11 @@ import {
   type GuidedProgressStepId,
   type GuidedReviewState,
 } from '@/lib/dashboardos/guided-review'
-import { demoCharts, demoDashboard, demoDataSource, demoDataset, demoModel, demoColumns, DEMO_DATA_SOURCE_ID } from '@/lib/dashboardos/demo-data'
+import { demoCharts, demoDashboard, demoDataSource, demoDataset, demoModel, demoColumns, demoPage, demoSlots, demoVersion, DEMO_DATA_SOURCE_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
-import type { PublishedDashboard } from '@/types/dashboard-publishing'
+import type { DashboardChartSlot, DashboardPage, DashboardVersion, PublishedDashboard } from '@/types/dashboard-publishing'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
 interface ProjectOption {
@@ -32,6 +32,7 @@ interface ProjectOption {
   name: string
   tenantName?: string | null
   tenantSlug?: string | null
+  activeBusinessModelId?: string | null
 }
 
 interface GuidedProfileApiRecord {
@@ -41,12 +42,21 @@ interface GuidedProfileApiRecord {
 
 interface GuidedLandingSnapshot {
   project: ProjectOption | null
-  dataSources: Array<{ id: string; schemaLastStatus?: string | null; schemaColumnCount?: number | null }>
+  dataSources: Array<{
+    id: string
+    schemaLastStatus?: string | null
+    schemaLastError?: string | null
+    schemaHash?: string | null
+    schemaColumnCount?: number | null
+  }>
   profile: GuidedProfileApiRecord | null
   models: Array<{ id: string; status: string; version?: number | null }>
   datasets: SemanticDataset[]
   charts: DashboardChartConfig[]
   dashboards: PublishedDashboard[]
+  versions: DashboardVersion[]
+  pages: DashboardPage[]
+  slots: DashboardChartSlot[]
   preflight: GuidedPublishReadinessResult | null
   localReadinessEvaluatedAt: string
   error: string | null
@@ -76,7 +86,7 @@ function buildDemoProfile(): GuidedProfileApiRecord {
   const approved = approveGuidedSemanticDraft(
     buildGuidedReviewState(demoColumns, {
       dataSourceId: DEMO_DATA_SOURCE_ID,
-      schemaHash: 'demo-electricity-schema',
+      schemaHash: demoDataSource.schemaHash ?? 'demo-schema',
       generatedAt: '2026-07-13T00:00:00.000Z',
     }),
     null,
@@ -116,9 +126,9 @@ const baseActions: Record<GuidedProgressStepId, GuidedContinueAction> = {
   },
   generate_draft_dashboard: {
     stepId: 'generate_draft_dashboard',
-    label: 'Generate dataset',
-    href: '/admin/datasets',
-    detail: 'Create a governed dataset draft from approved fields.',
+    label: 'Review chart recommendations',
+    href: '/admin/charts',
+    detail: 'Automatic dashboard composition is paused until staged creation is transaction-safe.',
   },
   preview: {
     stepId: 'preview',
@@ -151,6 +161,9 @@ export function GuidedWorkflowLanding() {
     datasets: [],
     charts: [],
     dashboards: [],
+    versions: [],
+    pages: [],
+    slots: [],
     preflight: null,
     localReadinessEvaluatedAt: INITIAL_LOCAL_READINESS_EVALUATED_AT,
     error: null,
@@ -162,13 +175,16 @@ export function GuidedWorkflowLanding() {
     try {
       if (demoMode) {
         setSnapshot({
-          project: { id: demoDataset.projectId, tenantId: demoDataset.tenantId, name: 'Northstar Retail', tenantSlug: 'northstar-retail' },
-          dataSources: [{ id: demoDataSource.id, schemaLastStatus: 'ok', schemaColumnCount: demoColumns.length }],
+          project: { id: demoDataset.projectId, tenantId: demoDataset.tenantId, name: 'Northstar Retail', tenantSlug: 'northstar-retail', activeBusinessModelId: demoModel.id },
+          dataSources: [{ id: demoDataSource.id, schemaLastStatus: 'ok', schemaHash: demoDataSource.schemaHash, schemaColumnCount: demoColumns.length }],
           profile: buildDemoProfile(),
           models: [{ id: demoModel.id, status: demoModel.status }],
           datasets: [demoDataset],
           charts: demoCharts,
           dashboards: [demoDashboard],
+          versions: [demoVersion],
+          pages: [demoPage],
+          slots: demoSlots,
           preflight: null,
           localReadinessEvaluatedAt: '2026-07-13T00:05:00.000Z',
           error: null,
@@ -203,6 +219,9 @@ export function GuidedWorkflowLanding() {
         datasets: Array.isArray(datasetsPayload.datasets) ? datasetsPayload.datasets as GuidedLandingSnapshot['datasets'] : [],
         charts: Array.isArray(chartsPayload.charts) ? chartsPayload.charts as GuidedLandingSnapshot['charts'] : [],
         dashboards: Array.isArray(dashboardsPayload.dashboards) ? dashboardsPayload.dashboards as GuidedLandingSnapshot['dashboards'] : [],
+        versions: [],
+        pages: [],
+        slots: [],
         preflight: preflightPayload.readiness as GuidedPublishReadinessResult | null,
         localReadinessEvaluatedAt: new Date().toISOString(),
         error: null,
@@ -230,20 +249,31 @@ export function GuidedWorkflowLanding() {
 
   const profileState = snapshot.profile?.state
   const semanticAsset = profileState?.semanticAsset
+  const profileDataSourceId = profileState?.lineage?.schemaProfile.dataSourceId ?? null
+  const schemaSource = snapshot.dataSources.find(source => source.id === profileDataSourceId) ?? null
   const localReadiness = useMemo(() => buildGuidedPublishReadiness({
     profileState,
+    schemaIntrospection: schemaSource ? {
+      dataSourceId: schemaSource.id,
+      status: schemaSource.schemaLastStatus ?? null,
+      error: schemaSource.schemaLastError ?? null,
+      schemaHash: schemaSource.schemaHash ?? null,
+    } : null,
     models: snapshot.models,
-    activeSemanticModelId: semanticAsset?.modelId ?? null,
+    activeSemanticModelId: snapshot.project?.activeBusinessModelId ?? null,
     datasets: snapshot.datasets,
     charts: snapshot.charts,
     dashboards: snapshot.dashboards,
+    versions: snapshot.versions,
+    pages: snapshot.pages,
+    slots: snapshot.slots,
     selectedDashboardId: snapshot.dashboards[0]?.id ?? null,
     clientUrl: clientHref,
     evaluatedAt: snapshot.localReadinessEvaluatedAt,
-  }), [clientHref, profileState, semanticAsset?.modelId, snapshot.charts, snapshot.dashboards, snapshot.datasets, snapshot.localReadinessEvaluatedAt, snapshot.models])
+  }), [clientHref, profileState, schemaSource, snapshot.charts, snapshot.dashboards, snapshot.datasets, snapshot.localReadinessEvaluatedAt, snapshot.models, snapshot.pages, snapshot.project?.activeBusinessModelId, snapshot.slots, snapshot.versions])
   const readiness = snapshot.preflight ?? localReadiness
   const steps = useMemo(() => buildGuidedProgress({
-    hasDataSource: snapshot.dataSources.some(source => source.schemaLastStatus === 'ok' || Number(source.schemaColumnCount ?? 0) > 0),
+    hasDataSource: snapshot.dataSources.some(source => source.schemaLastStatus === 'ok'),
     hasProfile: Boolean(snapshot.profile),
     openReviewCount: profileState?.semanticDraft.needsReview.length ?? 0,
     semanticDraftApproved: profileState?.semanticDraftStatus === 'approved' || snapshot.models.some(model => model.status === 'approved'),

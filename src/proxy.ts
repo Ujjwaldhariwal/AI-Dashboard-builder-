@@ -180,20 +180,20 @@ export async function proxy(request: NextRequest) {
   )
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
   const cookieNames = request.cookies.getAll().map(cookie => cookie.name)
   const hasAuthCookieFootprint = hasSupabaseAuthCookieFootprint(cookieNames)
 
-  if (session) {
+  if (user) {
     clearSessionExpiredSignal(response)
   }
 
-  const tenantDomain = session && isTenantHost
+  const tenantDomain = user && isTenantHost
     ? await resolveTenantHostname(supabase, hostnamePolicy)
     : null
 
-  if (isTenantHost && session && !tenantDomain) {
+  if (isTenantHost && user && !tenantDomain) {
     return unknownTenantHostResponse(hostname)
   }
 
@@ -210,14 +210,14 @@ export async function proxy(request: NextRequest) {
     )
   }
 
-  if (isTenantHost && !session && pathname === '/') {
+  if (isTenantHost && !user && pathname === '/') {
     const url = new URL('/login', request.url)
     return clearSessionExpiredSignal(NextResponse.redirect(url))
   }
 
   // Root: authenticated -> DashboardOS admin, unauthenticated -> landing page.
   if (pathname === '/') {
-    if (session) {
+    if (user) {
       return clearSessionExpiredSignal(
         NextResponse.redirect(new URL(DASHBOARDOS_HOME_ROUTE, request.url)),
       )
@@ -227,7 +227,7 @@ export async function proxy(request: NextRequest) {
 
   // /login: authenticated -> DashboardOS admin, unauthenticated -> login page.
   if (pathname === '/login') {
-    if (session) {
+    if (user) {
       return clearSessionExpiredSignal(
         NextResponse.redirect(new URL(DASHBOARDOS_HOME_ROUTE, request.url)),
       )
@@ -236,7 +236,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // No session on any other route -> redirect to login.
-  if (!session) {
+  if (!user) {
     const isBuilderCanvasRoute = pathname.startsWith(BUILDER_CANVAS_ROUTE)
     if (isBuilderCanvasRoute && hasAuthCookieFootprint) {
       response.cookies.set(SESSION_EXPIRED_COOKIE_NAME, '1', {
@@ -256,7 +256,7 @@ export async function proxy(request: NextRequest) {
 
   // Admin-only routes.
   if (ADMIN_ONLY.some(route => pathname.startsWith(route))) {
-    const role = session.user.user_metadata?.role ?? 'employee'
+    const role = user.user_metadata?.role ?? 'employee'
     if (role !== 'admin') {
       return NextResponse.redirect(new URL(DASHBOARDOS_HOME_ROUTE, request.url))
     }

@@ -1050,10 +1050,17 @@ export function SemanticModelAdminPanel() {
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
-            <h4 className="text-sm font-semibold">Review queue</h4>
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold">Review queue</h4>
+              {semanticDraft.needsReview.length > 0 ? (
+                <span className="text-[11px] text-[var(--dos-text-muted)]">
+                  Next {Math.min(5, semanticDraft.needsReview.length)} of {semanticDraft.needsReview.length}
+                </span>
+              ) : null}
+            </div>
             <div className="mt-3 grid gap-2">
               {semanticDraft.needsReview.length === 0 ? (
-                <p className="text-xs text-[var(--dos-text-muted)]">No low-confidence schema items yet. Scan a source or generate suggestions to continue.</p>
+                <p className="text-xs text-[var(--dos-text-muted)]">No unresolved review items remain in the current profile.</p>
               ) : semanticDraft.needsReview.slice(0, 5).map(entry => (
                 <div key={entry.id} className="grid gap-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-3 py-2 text-xs sm:grid-cols-[1fr_auto]">
                   <span>

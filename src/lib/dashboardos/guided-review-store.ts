@@ -23,6 +23,15 @@ export interface GuidedProfileRecord {
   updatedAt: string
 }
 
+export class GuidedProfileConflictError extends Error {
+  readonly code = 'GUIDED_PROFILE_CONFLICT'
+
+  constructor(message = 'The guided profile changed while this decision was being saved. Refresh and retry.') {
+    super(message)
+    this.name = 'GuidedProfileConflictError'
+  }
+}
+
 function mapGuidedProfile(row: Record<string, unknown>): GuidedProfileRecord {
   return {
     id: String(row.id),
@@ -404,6 +413,16 @@ export async function persistGuidedProfileForColumns({
   columns: DataSourceColumnMetadata[]
 }) {
   const nowIso = new Date().toISOString()
+  const { data: existingRow, error: existingError } = await supabase
+    .from('guided_schema_profiles')
+    .select('*')
+    .eq('data_source_id', dataSourceId)
+    .eq('schema_hash', schemaHash)
+    .maybeSingle()
+
+  if (existingError) throw new Error(existingError.message)
+  if (existingRow) return mapGuidedProfile(existingRow as Record<string, unknown>)
+
   const state = buildGuidedReviewState(columns, {
     dataSourceId,
     schemaHash,
@@ -412,7 +431,7 @@ export async function persistGuidedProfileForColumns({
 
   const { data, error } = await supabase
     .from('guided_schema_profiles')
-    .upsert({
+    .insert({
       tenant_id: tenantId,
       project_id: projectId,
       data_source_id: dataSourceId,
@@ -420,10 +439,20 @@ export async function persistGuidedProfileForColumns({
       state,
       created_at: nowIso,
       updated_at: nowIso,
-    }, { onConflict: 'data_source_id,schema_hash' })
+    })
     .select('*')
     .single()
 
+  if (error?.code === '23505') {
+    const { data: racedRow, error: racedError } = await supabase
+      .from('guided_schema_profiles')
+      .select('*')
+      .eq('data_source_id', dataSourceId)
+      .eq('schema_hash', schemaHash)
+      .single()
+    if (racedError || !racedRow) throw new Error(racedError?.message ?? error.message)
+    return mapGuidedProfile(racedRow as Record<string, unknown>)
+  }
   if (error) throw new Error(error.message)
   const profile = mapGuidedProfile(data as Record<string, unknown>)
   if (!profile.state.lineage?.schemaProfile.profileId) {
@@ -500,10 +529,12 @@ export async function updateGuidedProfileDecision({
     .from('guided_schema_profiles')
     .update({ state: nextState, updated_at: nowIso })
     .eq('id', profileId)
+    .eq('updated_at', profile.updatedAt)
     .select('*')
-    .single()
+    .maybeSingle()
 
   if (error) throw new Error(error.message)
+  if (!data) throw new GuidedProfileConflictError()
   return mapGuidedProfile(data as Record<string, unknown>)
 }
 

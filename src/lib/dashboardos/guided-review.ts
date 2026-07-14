@@ -127,6 +127,15 @@ export interface GuidedReviewDecision {
   decidedAt: string
 }
 
+export class GuidedReviewStateConflictError extends Error {
+  readonly code = 'GUIDED_REVIEW_STATE_CONFLICT'
+
+  constructor(message = 'Approved guided review state is immutable. Create a new schema/review revision before changing decisions.') {
+    super(message)
+    this.name = 'GuidedReviewStateConflictError'
+  }
+}
+
 export interface GuidedReviewState {
   profile: GuidedSchemaProfile
   semanticDraft: GuidedSemanticDraft
@@ -147,6 +156,8 @@ export type GuidedProgressStepId =
   | 'preview'
   | 'publish'
   | 'view_client_dashboard'
+
+export const GUIDED_DASHBOARD_GENERATION_AVAILABLE = false
 
 export interface GuidedProgressStep {
   id: GuidedProgressStepId
@@ -180,6 +191,7 @@ export type GuidedPublishReadinessSeverity = 'ready' | 'warning' | 'blocker'
 
 export interface GuidedPublishReadinessCheck {
   id:
+    | 'schema_introspection'
     | 'semantic_asset'
     | 'review_exceptions'
     | 'dataset_draft'
@@ -235,6 +247,12 @@ export interface GuidedDashboardDraftPlan {
 export interface GuidedPublishReadinessInput {
   evaluatedAt?: string
   profileState?: GuidedReviewState | null
+  schemaIntrospection?: {
+    dataSourceId?: string | null
+    status?: string | null
+    error?: string | null
+    schemaHash?: string | null
+  } | null
   models?: Array<{ id: string; status?: string | null; version?: number | null }> | null
   activeSemanticModelId?: string | null
   datasets?: Array<Pick<SemanticDataset, 'id' | 'modelId' | 'status' | 'selection'> & { description?: string | null }> | null
@@ -363,43 +381,67 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
   const activeModel = semanticAsset ? firstById(input.models ?? [], semanticAsset.modelId) : null
   const hasActiveSemanticAsset = Boolean(
     semanticAsset
-    && (activeModel?.status === 'approved' || input.profileState?.semanticDraftStatus === 'approved')
-    && (!input.activeSemanticModelId || input.activeSemanticModelId === semanticAsset.modelId),
+    && activeModel?.status === 'approved'
+    && input.activeSemanticModelId === semanticAsset.modelId,
   )
   const datasets = input.datasets ?? []
   const linkedDatasets = semanticAsset
     ? datasets.filter(dataset => dataset.modelId === semanticAsset.modelId)
     : []
-  const dataset = linkedDatasets.find(item => ['draft', 'published'].includes(item.status)) ?? linkedDatasets[0] ?? null
+  const dataset = linkedDatasets.find(item => item.status === 'published')
+    ?? linkedDatasets.find(item => item.status === 'draft')
+    ?? linkedDatasets[0]
+    ?? null
   const charts = input.charts ?? []
-  const dashboard = firstById(input.dashboards ?? [], input.selectedDashboardId)
-    ?? (input.dashboards ?? []).find(item => item.status === 'published' || item.currentVersionId)
-    ?? (input.dashboards ?? [])[0]
-    ?? null
-  const version = firstById(input.versions ?? [], input.selectedVersionId)
-    ?? (dashboard?.currentVersionId ? firstById(input.versions ?? [], dashboard.currentVersionId) : null)
-    ?? (input.versions ?? []).find(item => item.dashboardId === dashboard?.id)
-    ?? null
-  const pages = (input.pages ?? []).filter(page => !version || page.versionId === version.id)
-  const slots = (input.slots ?? []).filter(slot => !version || slot.versionId === version.id)
+  const dashboard = input.selectedDashboardId
+    ? firstById(input.dashboards ?? [], input.selectedDashboardId)
+    : (input.dashboards ?? []).find(item => item.status === 'published' || item.currentVersionId)
+      ?? (input.dashboards ?? [])[0]
+      ?? null
+  const explicitlySelectedVersion = firstById(input.versions ?? [], input.selectedVersionId)
+  const version = input.selectedVersionId
+    ? explicitlySelectedVersion?.dashboardId === dashboard?.id ? explicitlySelectedVersion : null
+    : (dashboard?.currentVersionId ? firstById(input.versions ?? [], dashboard.currentVersionId) : null)
+      ?? (input.versions ?? []).find(item => item.dashboardId === dashboard?.id)
+      ?? null
+  const pages = version ? (input.pages ?? []).filter(page => page.versionId === version.id) : []
+  const slots = version ? (input.slots ?? []).filter(slot => slot.versionId === version.id) : []
   const slotChartIds = new Set(slots.map(slot => slot.chartConfigId))
-  const candidateCharts = slotChartIds.size > 0
-    ? charts.filter(chart => slotChartIds.has(chart.id))
-    : dataset
-      ? charts.filter(chart => chart.datasetId === dataset.id)
-      : charts
-  const linkedCharts = dataset
-    ? candidateCharts.filter(chart => chart.datasetId === dataset.id)
+  const candidateCharts = charts.filter(chart => slotChartIds.has(chart.id))
+  const mismatchedDatasetCharts = dataset
+    ? candidateCharts.filter(chart => chart.datasetId !== dataset.id)
     : candidateCharts
+  const linkedCharts = dataset ? candidateCharts.filter(chart => chart.datasetId === dataset.id) : []
   const validCharts = linkedCharts.filter(chart => (
     chart.status === 'published'
-    && ['valid', 'warning'].includes(chart.validationState)
+    && chart.validationState === 'valid'
     && hasSupportedChartRuntime(chart)
   ))
-  const warningCharts = validCharts.filter(chart => chart.validationState === 'warning')
-  const invalidCharts = linkedCharts.filter(chart => !hasSupportedChartRuntime(chart) || chart.status !== 'published')
+  const warningCharts = linkedCharts.filter(chart => chart.status === 'published' && chart.validationState === 'warning')
+  const invalidCharts = linkedCharts.filter(chart => (
+    !hasSupportedChartRuntime(chart)
+    || chart.status !== 'published'
+    || chart.validationState !== 'valid'
+  ))
   const reviewOpenCount = input.profileState?.semanticDraft.needsReview.length ?? 0
   const checks: GuidedPublishReadinessCheck[] = []
+
+  const expectedSchemaHash = input.profileState?.lineage?.schemaProfile.schemaHash ?? null
+  const schemaIntrospectionReady = Boolean(
+    input.schemaIntrospection?.status === 'ok'
+    && (!expectedSchemaHash || input.schemaIntrospection.schemaHash === expectedSchemaHash),
+  )
+  checks.push(schemaIntrospectionReady
+    ? readinessCheck('schema_introspection', 'Schema completeness', 'ready', 'The active guided profile is backed by a complete schema scan.')
+    : readinessCheck(
+      'schema_introspection',
+      'Schema completeness',
+      'blocker',
+      input.schemaIntrospection?.error
+        ? `Schema scan is not publish-safe: ${input.schemaIntrospection.error}`
+        : 'Publish requires a complete schema scan that matches the guided profile.',
+      DEFAULT_GUIDED_ACTIONS.connect_db,
+    ))
 
   checks.push(hasActiveSemanticAsset
     ? readinessCheck('semantic_asset', 'Semantic asset', 'ready', `${semanticAsset?.modelName ?? 'Semantic model'} is approved and active.`)
@@ -410,26 +452,40 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
     : readinessCheck('review_exceptions', 'Review exceptions', 'blocker', `${reviewOpenCount} guided review item${reviewOpenCount === 1 ? '' : 's'} still need a decision.`, DEFAULT_GUIDED_ACTIONS.review_findings))
 
   const datasetHasContent = Boolean(dataset && ((dataset.selection.fieldIds.length + dataset.selection.metricIds.length) > 0))
-  checks.push(datasetHasContent
-    ? readinessCheck('dataset_draft', 'Dataset draft', 'ready', `${dataset?.status ?? 'draft'} dataset is linked to the approved semantic model.`)
-    : readinessCheck('dataset_draft', 'Dataset draft', hasActiveSemanticAsset ? 'blocker' : 'warning', 'Create a dataset draft from the approved semantic model.', DEFAULT_GUIDED_ACTIONS.generate_draft_dashboard))
+  const datasetPublishable = Boolean(datasetHasContent && dataset?.status === 'published')
+  checks.push(datasetPublishable
+    ? readinessCheck('dataset_draft', 'Dataset release', 'ready', 'A published dataset is linked to the active semantic model.')
+    : readinessCheck(
+      'dataset_draft',
+      'Dataset release',
+      hasActiveSemanticAsset ? 'blocker' : 'warning',
+      datasetHasContent ? 'The linked dataset is previewable but must be published before dashboard release.' : 'Create and publish a dataset from the active semantic model.',
+      DEFAULT_GUIDED_ACTIONS.generate_draft_dashboard,
+    ))
 
-  const hasDashboardStructure = Boolean((pages.length > 0 && slots.length > 0) || validCharts.length > 0)
+  const hasDashboardStructure = Boolean(version && pages.length > 0 && slots.length > 0)
   checks.push(hasDashboardStructure
-    ? readinessCheck('dashboard_draft', 'Dashboard draft', 'ready', `${slots.length || validCharts.length} chart slot${(slots.length || validCharts.length) === 1 ? '' : 's'} ready for preview.`)
-    : readinessCheck('dashboard_draft', 'Dashboard draft', datasetHasContent ? 'blocker' : 'warning', 'Generate a dashboard draft with at least one chart slot.', DEFAULT_GUIDED_ACTIONS.preview))
+    ? readinessCheck('dashboard_draft', 'Dashboard structure', 'ready', `${slots.length} persisted chart slot${slots.length === 1 ? '' : 's'} belong to the selected dashboard version.`)
+    : readinessCheck('dashboard_draft', 'Dashboard structure', datasetHasContent ? 'blocker' : 'warning', 'Publish requires a selected dashboard version with at least one persisted page and chart slot.', DEFAULT_GUIDED_ACTIONS.preview))
 
-  const targetResolvable = Boolean(input.clientUrl && dashboard?.slug)
-  checks.push(targetResolvable
-    ? readinessCheck('publish_target', 'Client route', 'ready', `Client route is resolvable at ${input.clientUrl}.`)
-    : readinessCheck('publish_target', 'Client route', dashboard ? 'blocker' : 'warning', 'Select or create a dashboard with a tenant client route before publishing.', DEFAULT_GUIDED_ACTIONS.publish))
+  const targetIdentified = Boolean(input.clientUrl && dashboard?.slug && version && version.dashboardId === dashboard.id)
+  checks.push(targetIdentified
+    ? readinessCheck('publish_target', 'Publish target', 'ready', `The selected dashboard version has a client path at ${input.clientUrl}; runtime execution is validated separately.`)
+    : readinessCheck('publish_target', 'Publish target', dashboard ? 'blocker' : 'warning', 'Select a version that belongs to the target dashboard and has a tenant client path.', DEFAULT_GUIDED_ACTIONS.publish))
 
-  if (validCharts.length > 0 && invalidCharts.length === 0) {
-    checks.push(warningCharts.length > 0
-      ? readinessCheck('runtime_validation', 'Runtime validation', 'warning', `${warningCharts.length} chart config${warningCharts.length === 1 ? '' : 's'} can publish with warnings.`)
-      : readinessCheck('runtime_validation', 'Runtime validation', 'ready', 'Runtime filters and chart configs validate cleanly.'))
+  if (
+    hasDashboardStructure
+    && slots.every(slot => validCharts.some(chart => chart.id === slot.chartConfigId))
+    && invalidCharts.length === 0
+    && warningCharts.length === 0
+    && mismatchedDatasetCharts.length === 0
+  ) {
+    checks.push(readinessCheck('runtime_validation', 'Configuration validation', 'ready', 'Every persisted slot references a published, client-compatible chart configuration. Live query execution is not asserted by this check.'))
   } else {
-    checks.push(readinessCheck('runtime_validation', 'Runtime validation', 'blocker', 'Publish requires published chart configs with supported filters and valid runtime validation.', DEFAULT_GUIDED_ACTIONS.preview))
+    const warningDetail = warningCharts.length > 0
+      ? ` ${warningCharts.length} warning chart${warningCharts.length === 1 ? '' : 's'} remain preview-only because the client runtime serves valid charts only.`
+      : ''
+    checks.push(readinessCheck('runtime_validation', 'Configuration validation', 'blocker', `Publish requires every persisted slot to reference a published, valid, dataset-consistent chart.${warningDetail}`, DEFAULT_GUIDED_ACTIONS.preview))
   }
 
   const readyItems = checks.filter(check => check.severity === 'ready')
@@ -458,7 +514,7 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
         ? 'Ready to publish with warnings.'
         : 'Ready to publish.'
       : status === 'blocked_by_validation'
-        ? 'Blocked by runtime validation.'
+        ? 'Blocked by configuration validation.'
         : status === 'previewable_not_publishable'
           ? 'Previewable, but not publishable yet.'
           : 'Draft incomplete.',
@@ -532,7 +588,6 @@ export function buildGuidedSchemaProfile(columns: DataSourceColumnMetadata[]): G
 
   const reviewItems = [...identifiers, ...relationships, ...measures, ...categories, ...businessAreas, ...sensitive]
     .filter(entry => entry.reviewRequired || entry.confidence < 70)
-    .slice(0, 8)
 
   return {
     tableCount: groups.size,
@@ -595,6 +650,10 @@ export function buildGuidedReviewState(columns: DataSourceColumnMetadata[], cont
 }
 
 export function applyGuidedReviewDecision(state: GuidedReviewState, decision: GuidedReviewDecision): GuidedReviewState {
+  if (state.semanticDraftStatus === 'approved') {
+    throw new GuidedReviewStateConflictError()
+  }
+
   const nextDecisions = [
     ...state.decisions.filter(item => item.itemId !== decision.itemId),
     decision,
@@ -611,13 +670,11 @@ export function applyGuidedReviewDecision(state: GuidedReviewState, decision: Gu
       ...state.semanticDraft,
       needsReview: remainingReviewItems,
     },
-    semanticDraftStatus: remainingReviewItems.length === 0 && state.semanticDraftStatus !== 'approved'
-      ? 'reviewing'
-      : state.semanticDraftStatus,
+    semanticDraftStatus: remainingReviewItems.length === 0 ? 'reviewing' : state.semanticDraftStatus,
     semanticDraftVersion: (state.semanticDraftVersion ?? 1) + 1,
-    semanticAsset: state.semanticDraftStatus === 'approved' ? state.semanticAsset ?? null : null,
-    approvedAt: state.semanticDraftStatus === 'approved' ? state.approvedAt ?? null : null,
-    approvedBy: state.semanticDraftStatus === 'approved' ? state.approvedBy ?? null : null,
+    semanticAsset: null,
+    approvedAt: null,
+    approvedBy: null,
   }
   return {
     ...nextState,
@@ -949,9 +1006,17 @@ export function buildGuidedProgress(input: {
     },
     {
       id: 'generate_draft_dashboard',
-      label: 'Generate draft dashboard',
-      status: dashboardDone ? 'done' : modelDone && input.hasDatasetDraft ? 'ready' : 'blocked',
-      detail: dashboardDone ? 'Draft dashboard generated.' : input.hasDatasetDraft ? 'Dataset draft is ready.' : 'Generate a dataset draft from a recipe.',
+      label: 'Compose dashboard release',
+      status: dashboardDone
+        ? 'done'
+        : GUIDED_DASHBOARD_GENERATION_AVAILABLE && modelDone && input.hasDatasetDraft
+          ? 'ready'
+          : 'blocked',
+      detail: dashboardDone
+        ? 'A persisted dashboard draft exists.'
+        : input.hasDatasetDraft
+          ? 'Automatic dashboard composition is paused until draft staging is transaction-safe.'
+          : 'Generate and publish a governed dataset before dashboard composition.',
     },
     {
       id: 'preview',
@@ -995,9 +1060,9 @@ const DEFAULT_GUIDED_ACTIONS: Record<GuidedProgressStepId, GuidedContinueAction>
   },
   generate_draft_dashboard: {
     stepId: 'generate_draft_dashboard',
-    label: 'Generate draft dashboard',
+    label: 'Review dataset release',
     href: '/admin/datasets',
-    detail: 'Create a dataset draft, then generate charts from it.',
+    detail: 'Create and publish a governed dataset before dashboard composition.',
   },
   preview: {
     stepId: 'preview',
