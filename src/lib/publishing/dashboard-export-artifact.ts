@@ -267,7 +267,7 @@ async function loadExportTarget({
 }
 
 async function loadVersionBundle(supabase: SupabaseClient, versionId: string) {
-  const [pagesResult, slotsResult] = await Promise.all([
+  const [pagesResult, slotsResult, chartSnapshotsResult, datasetSnapshotsResult] = await Promise.all([
     supabase
       .from('dashboard_pages')
       .select('*')
@@ -279,39 +279,39 @@ async function loadVersionBundle(supabase: SupabaseClient, versionId: string) {
       .eq('version_id', versionId)
       .order('row_index', { ascending: true })
       .order('column_index', { ascending: true }),
+    supabase
+      .from('dashboard_release_chart_snapshots')
+      .select('*')
+      .eq('version_id', versionId),
+    supabase
+      .from('dashboard_release_dataset_snapshots')
+      .select('*')
+      .eq('version_id', versionId),
   ])
 
   if (pagesResult.error) throw new Error(pagesResult.error.message)
   if (slotsResult.error) throw new Error(slotsResult.error.message)
+  if (chartSnapshotsResult.error) throw new Error(chartSnapshotsResult.error.message)
+  if (datasetSnapshotsResult.error) throw new Error(datasetSnapshotsResult.error.message)
 
   const pages = ((pagesResult.data ?? []) as Record<string, unknown>[]).map(mapDashboardPage)
   const slots = ((slotsResult.data ?? []) as Record<string, unknown>[]).map(mapDashboardChartSlot)
-  const chartIds = Array.from(new Set(slots.map(slot => slot.chartConfigId)))
-
-  const { data: chartRows, error: chartError } = chartIds.length > 0
-    ? await supabase
-      .from('dashboard_chart_configs')
-      .select('id, tenant_id, project_id, dataset_id, name, description, status, template_id, encoding, presentation, interactions, layout, validation_state, last_validated_at, published_at, created_at, updated_at')
-      .in('id', chartIds)
-    : { data: [], error: null }
-
-  if (chartError) throw new Error(chartError.message)
-  const charts = (chartRows ?? []) as Record<string, unknown>[]
-  const datasetIds = Array.from(new Set(charts.map(chart => String(chart.dataset_id)).filter(Boolean)))
-
-  const { data: datasetRows, error: datasetError } = datasetIds.length > 0
-    ? await supabase
-      .from('semantic_datasets')
-      .select('id, tenant_id, project_id, model_id, name, description, status, selection, cache_policy, created_at, updated_at')
-      .in('id', datasetIds)
-    : { data: [], error: null }
-
-  if (datasetError) throw new Error(datasetError.message)
+  const charts = (chartSnapshotsResult.data ?? []) as Record<string, unknown>[]
+  const datasets = (datasetSnapshotsResult.data ?? []) as Record<string, unknown>[]
+  if (slots.length === 0 || charts.length !== slots.length) {
+    throw new Error('Dashboard export requires a complete immutable chart snapshot for every released slot')
+  }
+  const datasetSnapshotIds = new Set(datasets.map(dataset => String(dataset.id)))
+  if (charts.some(chart => !datasetSnapshotIds.has(String(chart.dataset_snapshot_id)))) {
+    throw new Error('Dashboard export requires an immutable dataset snapshot for every released chart')
+  }
+  const chartSnapshotIdBySlotId = new Map(charts.map(chart => [String(chart.slot_id), String(chart.id)]))
   return {
     pages,
     slots,
     charts,
-    datasets: (datasetRows ?? []) as Record<string, unknown>[],
+    datasets,
+    chartSnapshotIdBySlotId,
   }
 }
 
@@ -340,41 +340,51 @@ function buildDashboardExportManifest({
       ...page,
       slots: (slotsByPageId.get(page.id) ?? []).map(slot => ({
         ...slot,
-        chartConfigId: slot.chartConfigId,
+        chartConfigId: bundle.chartSnapshotIdBySlotId.get(slot.id),
+        sourceChartConfigId: slot.chartConfigId,
       })),
     })),
-    charts: bundle.charts.map(chart => ({
-      id: String(chart.id),
-      tenantId: String(chart.tenant_id),
-      projectId: String(chart.project_id),
-      datasetId: String(chart.dataset_id),
-      name: String(chart.name ?? ''),
-      description: typeof chart.description === 'string' ? chart.description : null,
-      status: String(chart.status ?? 'draft'),
-      templateId: String(chart.template_id ?? ''),
-      encoding: asRecord(chart.encoding),
-      presentation: asRecord(chart.presentation),
-      interactions: asRecord(chart.interactions),
-      layout: asRecord(chart.layout),
-      validationState: String(chart.validation_state ?? 'unknown'),
-      lastValidatedAt: typeof chart.last_validated_at === 'string' ? chart.last_validated_at : null,
-      publishedAt: typeof chart.published_at === 'string' ? chart.published_at : null,
-      createdAt: String(chart.created_at ?? ''),
-      updatedAt: String(chart.updated_at ?? ''),
-    })),
-    datasets: bundle.datasets.map(dataset => ({
-      id: String(dataset.id),
-      tenantId: String(dataset.tenant_id),
-      projectId: String(dataset.project_id),
-      modelId: String(dataset.model_id),
-      name: String(dataset.name ?? ''),
-      description: typeof dataset.description === 'string' ? dataset.description : null,
-      status: String(dataset.status ?? 'draft'),
-      selection: asRecord(dataset.selection),
-      cachePolicy: asRecord(dataset.cache_policy),
-      createdAt: String(dataset.created_at ?? ''),
-      updatedAt: String(dataset.updated_at ?? ''),
-    })),
+    charts: bundle.charts.map(chart => {
+      const config = asRecord(chart.chart_config)
+      return {
+        id: String(chart.id),
+        sourceChartConfigId: String(chart.source_chart_config_id),
+        slotId: String(chart.slot_id),
+        tenantId: String(chart.tenant_id),
+        projectId: String(chart.project_id),
+        datasetId: String(chart.dataset_snapshot_id),
+        name: String(config.name ?? ''),
+        description: typeof config.description === 'string' ? config.description : null,
+        status: 'released',
+        templateId: String(config.template_id ?? ''),
+        encoding: asRecord(config.encoding),
+        presentation: asRecord(config.presentation),
+        interactions: asRecord(config.interactions),
+        layout: asRecord(config.layout),
+        validationState: String(config.validation_state ?? 'unknown'),
+        snapshotOrigin: String(chart.snapshot_origin ?? 'publish'),
+        createdAt: String(chart.created_at ?? ''),
+      }
+    }),
+    datasets: bundle.datasets.map(dataset => {
+      const config = asRecord(dataset.dataset_config)
+      return {
+        id: String(dataset.id),
+        sourceDatasetId: String(dataset.source_dataset_id),
+        tenantId: String(dataset.tenant_id),
+        projectId: String(dataset.project_id),
+        modelId: String(dataset.source_model_id),
+        sourceModelVersion: Number(dataset.source_model_version ?? 0),
+        name: String(config.name ?? ''),
+        description: typeof config.description === 'string' ? config.description : null,
+        status: 'released',
+        selection: asRecord(config.selection),
+        cachePolicy: asRecord(config.cache_policy),
+        semanticSnapshot: asRecord(dataset.semantic_snapshot),
+        snapshotOrigin: String(dataset.snapshot_origin ?? 'publish'),
+        createdAt: String(dataset.created_at ?? ''),
+      }
+    }),
     runtime: {
       tenantId: dashboard.tenantId,
       projectId: dashboard.projectId,
@@ -428,6 +438,9 @@ export async function createDashboardExport({
   jobId = null,
 }: CreateDashboardExportInput): Promise<DashboardExportArtifact> {
   const { dashboard, version } = await loadExportTarget({ supabase, dashboardId, versionId })
+  if (version.releaseSnapshotStatus === 'pending') {
+    throw new Error('Dashboard exports require an immutable published release')
+  }
   const bundle = await loadVersionBundle(supabase, version.id)
   const manifest = buildDashboardExportManifest({ dashboard, version, bundle })
   const { artifact, storageBody } = await buildDashboardExportPayload(exportType, manifest)

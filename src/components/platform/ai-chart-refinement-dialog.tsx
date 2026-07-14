@@ -551,7 +551,7 @@ export function AiChartRefinementDialog({
       setResult(null)
       setPrompt('')
       setApplied(true)
-      toast.success('AI refinement applied')
+      toast.success('Source chart updated. Existing releases are unchanged; publish a new release to promote this edit.')
     } catch (caught) {
       setError(errorToText(caught))
     } finally {

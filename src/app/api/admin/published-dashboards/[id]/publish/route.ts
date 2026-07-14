@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { evaluateGuidedPublishReadinessForProject } from '@/lib/dashboardos/guided-publish-readiness-server'
 import { auditDashboardVersion, recordDashboardHealthRuns } from '@/lib/publishing/dashboard-health-auditor'
 import { mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
-import { createDefaultDashboardEntitlement } from '@/lib/security/entitlements'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase, type AuthedSupabaseContext } from '@/lib/supabase/server'
 
@@ -14,6 +13,12 @@ const PublishSchema = z.object({
 }).strict()
 
 type AuthProvider = () => Promise<AuthedSupabaseContext | null>
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
 
 export function createPublishedDashboardPublishPostHandler(authProvider: AuthProvider = getAuthedSupabase) {
   return async function POST(
@@ -71,6 +76,13 @@ export function createPublishedDashboardPublishPostHandler(authProvider: AuthPro
     }
 
     const version = mapDashboardVersion(versionRow as Record<string, unknown>)
+    if (version.status !== 'draft' || version.releaseSnapshotStatus !== 'pending') {
+      return NextResponse.json({
+        dashboard: null,
+        version,
+        error: 'Only an unsnapshotted draft version can be published. Use rollback for a prior immutable release.',
+      }, { status: 409 })
+    }
 
     const { count: pageCount, error: pageCountError } = await auth.supabase
       .from('dashboard_pages')
@@ -144,44 +156,50 @@ export function createPublishedDashboardPublishPostHandler(authProvider: AuthPro
       }, { status: 422 })
     }
 
-    const nowIso = new Date().toISOString()
-    const [retireResult, versionResult, dashboardResult] = await Promise.all([
-      auth.supabase
-        .from('dashboard_versions')
-        .update({ status: 'retired' })
-        .eq('dashboard_id', dashboard.id)
-        .eq('status', 'published')
-        .neq('id', version.id),
-      auth.supabase
-        .from('dashboard_versions')
-        .update({
-          status: 'published',
-          published_by: auth.userId,
-          published_at: nowIso,
-        })
-        .eq('id', version.id)
-        .select('*')
-        .single(),
-      auth.supabase
-        .from('published_dashboards')
-        .update({
-          status: 'published',
-          current_version_id: version.id,
-          updated_by: auth.userId,
-          published_at: nowIso,
-          updated_at: nowIso,
-        })
-        .eq('id', dashboard.id)
-        .select('*')
-        .single(),
-    ])
+    const transitionMetadata = {
+      readinessStatus: readiness.status,
+      blockers: readiness.blockers.map(check => check.message),
+      warnings: readiness.warnings.map(check => check.message),
+      evaluatedAt: readiness.evaluatedAt,
+      preflightStrategy: readinessPreflight.metadata.strategy,
+    }
+    const { data: transitionData, error: transitionError } = await auth.supabase.rpc(
+      'publish_dashboard_version_immutable',
+      {
+        p_dashboard_id: dashboard.id,
+        p_version_id: version.id,
+        p_tenant_id: dashboard.tenantId,
+        p_project_id: dashboard.projectId,
+        p_notes: parsed.data.notes?.trim() || '',
+        p_metadata: transitionMetadata,
+      },
+    )
 
-    if (retireResult.error) return NextResponse.json({ dashboard: null, version: null, error: retireResult.error.message }, { status: 400 })
-    if (versionResult.error) return NextResponse.json({ dashboard: null, version: null, error: versionResult.error.message }, { status: 400 })
-    if (dashboardResult.error) return NextResponse.json({ dashboard: null, version: null, error: dashboardResult.error.message }, { status: 400 })
+    if (transitionError) {
+      return NextResponse.json({
+        dashboard: null,
+        version,
+        healthAudit,
+        readiness,
+        error: `Immutable release creation failed: ${transitionError.message}`,
+      }, { status: 409 })
+    }
 
-    const publishedDashboard = mapPublishedDashboard(dashboardResult.data as Record<string, unknown>)
-    const publishedVersion = mapDashboardVersion(versionResult.data as Record<string, unknown>)
+    const transition = asRecord(transitionData)
+    const dashboardResult = asRecord(transition.dashboard)
+    const versionResult = asRecord(transition.version)
+    if (!dashboardResult.id || !versionResult.id) {
+      return NextResponse.json({
+        dashboard: null,
+        version,
+        healthAudit,
+        readiness,
+        error: 'Immutable release transaction returned an incomplete result',
+      }, { status: 500 })
+    }
+
+    const publishedDashboard = mapPublishedDashboard(dashboardResult)
+    const publishedVersion = mapDashboardVersion(versionResult)
     const publishedHealthAudit = {
       ...healthAudit,
       dashboards: healthAudit.dashboards.map(item => ({
@@ -201,58 +219,28 @@ export function createPublishedDashboardPublishPostHandler(authProvider: AuthPro
       })),
     }
 
-    await Promise.all([
-      createDefaultDashboardEntitlement({
-        supabase: auth.supabase,
-        tenantId: publishedDashboard.tenantId,
-        projectId: publishedDashboard.projectId,
-        dashboardId: publishedDashboard.id,
-        createdBy: auth.userId,
-      }),
-      auth.supabase.from('dashboard_publish_events').insert({
-        dashboard_id: publishedDashboard.id,
-        version_id: publishedVersion.id,
-        tenant_id: publishedDashboard.tenantId,
-        project_id: publishedDashboard.projectId,
-        actor_user_id: auth.userId,
-        event_type: 'published',
-        notes: parsed.data.notes?.trim() || null,
-        metadata: {
-          versionNumber: publishedVersion.versionNumber,
-          readinessStatus: readiness.status,
-          blockers: readiness.blockers.map(check => check.message),
-          warnings: readiness.warnings.map(check => check.message),
-          evaluatedAt: readiness.evaluatedAt,
-          preflightStrategy: readinessPreflight.metadata.strategy,
-        },
-        created_at: nowIso,
-      }),
-      auth.supabase.from('audit_logs').insert({
-        tenant_id: publishedDashboard.tenantId,
-        project_id: publishedDashboard.projectId,
-        actor_user_id: auth.userId,
-        action: 'published_dashboard.published',
-        target_type: 'published_dashboard',
-        target_id: publishedDashboard.id,
-        metadata: {
-          versionId: publishedVersion.id,
-          versionNumber: publishedVersion.versionNumber,
-          readinessStatus: readiness.status,
-          blockers: readiness.blockers.map(check => check.message),
-          warnings: readiness.warnings.map(check => check.message),
-          evaluatedAt: readiness.evaluatedAt,
-          preflightStrategy: readinessPreflight.metadata.strategy,
-        },
-        created_at: nowIso,
-      }),
-      recordDashboardHealthRuns({
+    const operationalWarnings: string[] = []
+    try {
+      await recordDashboardHealthRuns({
         supabase: auth.supabase,
         audit: publishedHealthAudit,
         checkedBy: auth.userId,
-      }),
-    ])
+      })
+    } catch (healthError) {
+      operationalWarnings.push(`Release published, but health telemetry failed: ${healthError instanceof Error ? healthError.message : String(healthError)}`)
+    }
 
-    return NextResponse.json({ dashboard: publishedDashboard, version: publishedVersion, healthAudit: publishedHealthAudit })
+    return NextResponse.json({
+      dashboard: publishedDashboard,
+      version: publishedVersion,
+      healthAudit: publishedHealthAudit,
+      release: {
+        immutable: true,
+        datasetSnapshotCount: Number(transition.releaseDatasetSnapshotCount ?? 0),
+        chartSnapshotCount: Number(transition.releaseChartSnapshotCount ?? 0),
+      },
+      operationalWarnings,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ dashboard: null, version: null, error: message }, { status: 500 })

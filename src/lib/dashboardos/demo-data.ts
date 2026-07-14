@@ -365,6 +365,8 @@ export const demoVersion: DashboardVersion = {
   title: 'Executive demo release',
   notes: 'Seeded demo-safe multi-chart executive release.',
   layout: { mode: 'responsive-grid' },
+  releaseSnapshotStatus: 'complete',
+  releaseSnapshotCreatedAt: now,
   publishedAt: now,
   createdAt: now,
 }

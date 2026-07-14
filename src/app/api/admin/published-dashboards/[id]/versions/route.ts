@@ -187,6 +187,8 @@ export async function POST(
         project_id: dashboard.projectId,
         version_number: versionNumber,
         status: 'draft',
+        release_snapshot_status: 'pending',
+        release_snapshot_created_at: null,
         title: parsed.data.title.trim(),
         notes: parsed.data.notes?.trim() || null,
         layout: parsed.data.layout,

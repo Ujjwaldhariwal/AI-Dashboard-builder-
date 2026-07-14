@@ -1,12 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { auditDashboardCharts, type ChartHealthState, type DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
+import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import {
   mapDashboardChartSlot,
   mapDashboardPage,
   mapDashboardVersion,
   mapPublishedDashboard,
 } from '@/lib/publishing/dashboard-publishing'
+import {
+  mapDashboardReleaseChartSnapshot,
+  mapDashboardReleaseDatasetSnapshot,
+  mapReleasedChartConfig,
+  releasedSourceSchemaContracts,
+  resolveReleasedSemanticReferences,
+  type DashboardReleaseChartSnapshot,
+  type DashboardReleaseDatasetSnapshot,
+} from '@/lib/publishing/dashboard-release-snapshots'
 import type {
   DashboardChartSlot,
   DashboardHealthAudit,
@@ -29,6 +39,55 @@ export interface AuditDashboardVersionInput {
   supabase: SupabaseClient
   dashboard: PublishedDashboard
   version: DashboardVersion
+}
+
+export interface ReleaseSourceState {
+  status: string
+  schemaHash: string | null
+}
+
+export function releasedSourceContractIssues(
+  snapshot: DashboardReleaseDatasetSnapshot,
+  sourceStatesById: Map<string, ReleaseSourceState>,
+): DashboardHealthAuditItem['issues'] {
+  return Object.entries(releasedSourceSchemaContracts(snapshot))
+    .flatMap(([sourceId, expectedSchemaHash]) => {
+      const source = sourceStatesById.get(sourceId)
+      if (!source) {
+        return [{ severity: 'error' as const, code: 'missing_release_data_source', message: `Released data source ${sourceId} is no longer available.` }]
+      }
+      if (source.status !== 'active') {
+        return [{ severity: 'error' as const, code: 'inactive_release_data_source', message: `Released data source ${sourceId} is not active.` }]
+      }
+      if (!source.schemaHash || source.schemaHash !== expectedSchemaHash) {
+        return [{ severity: 'error' as const, code: 'release_source_schema_mismatch', message: `Released data source ${sourceId} no longer matches the captured schema contract.` }]
+      }
+      return []
+    })
+}
+
+async function loadReleaseSourceStates(
+  supabase: SupabaseClient,
+  snapshots: DashboardReleaseDatasetSnapshot[],
+) {
+  const sourceIds = Array.from(new Set(snapshots.flatMap(snapshot => (
+    Object.keys(releasedSourceSchemaContracts(snapshot))
+  ))))
+  if (sourceIds.length === 0) return new Map<string, ReleaseSourceState>()
+
+  const { data, error } = await supabase
+    .from('data_sources')
+    .select('id, status, schema_hash')
+    .in('id', sourceIds)
+
+  if (error) throw new Error(error.message)
+  return new Map(((data ?? []) as Record<string, unknown>[]).map(row => [
+    String(row.id),
+    {
+      status: String(row.status ?? 'missing'),
+      schemaHash: typeof row.schema_hash === 'string' ? row.schema_hash : null,
+    },
+  ]))
 }
 
 function stateFromSlots(items: DashboardHealthAuditItem[]): DashboardHealthState {
@@ -112,6 +171,157 @@ function buildDashboardHealthItem({
   }
 }
 
+function buildReleasedDashboardHealthItem({
+  dashboard,
+  version,
+  pages,
+  slots,
+  chartSnapshotsBySlotId,
+  datasetSnapshotsById,
+  sourceStatesById,
+}: {
+  dashboard: PublishedDashboard
+  version: DashboardVersion
+  pages: DashboardPage[]
+  slots: DashboardChartSlot[]
+  chartSnapshotsBySlotId: Map<string, DashboardReleaseChartSnapshot>
+  datasetSnapshotsById: Map<string, DashboardReleaseDatasetSnapshot>
+  sourceStatesById: Map<string, ReleaseSourceState>
+}): DashboardHealthAuditDashboard {
+  const items: DashboardHealthAuditItem[] = slots.map(slot => {
+    const chartSnapshot = chartSnapshotsBySlotId.get(slot.id)
+    if (!chartSnapshot) {
+      return {
+        slot: {
+          id: slot.id,
+          pageId: slot.pageId,
+          chartConfigId: slot.chartConfigId,
+          slotKey: slot.slotKey,
+          title: slot.title,
+        },
+        chart: {
+          id: slot.chartConfigId,
+          name: slot.title ?? 'Missing release chart snapshot',
+          status: 'missing',
+          templateId: 'unknown',
+          validationState: 'invalid',
+        },
+        healthState: 'blocked',
+        issues: [{ severity: 'error', code: 'missing_release_chart_snapshot', message: 'The released slot has no immutable chart snapshot.' }],
+      }
+    }
+
+    const chart = mapReleasedChartConfig(chartSnapshot)
+    const datasetSnapshot = datasetSnapshotsById.get(chartSnapshot.datasetSnapshotId)
+    if (!datasetSnapshot) {
+      return {
+        slot: {
+          id: slot.id,
+          pageId: slot.pageId,
+          chartConfigId: chartSnapshot.id,
+          slotKey: slot.slotKey,
+          title: slot.title,
+        },
+        chart: {
+          id: chartSnapshot.id,
+          name: chart.name,
+          status: 'released',
+          templateId: chart.templateId,
+          validationState: 'invalid',
+        },
+        healthState: 'blocked',
+        issues: [{ severity: 'error', code: 'missing_release_dataset_snapshot', message: 'The released chart has no immutable dataset snapshot.' }],
+      }
+    }
+
+    const semantics = resolveReleasedSemanticReferences(datasetSnapshot)
+    if (!semantics.ok) {
+      return {
+        slot: {
+          id: slot.id,
+          pageId: slot.pageId,
+          chartConfigId: chartSnapshot.id,
+          slotKey: slot.slotKey,
+          title: slot.title,
+        },
+        chart: {
+          id: chartSnapshot.id,
+          name: chart.name,
+          status: 'released',
+          templateId: chart.templateId,
+          validationState: 'invalid',
+        },
+        healthState: 'blocked',
+        issues: [{ severity: 'error', code: 'invalid_release_semantic_snapshot', message: semantics.error ?? 'The released semantic snapshot is invalid.' }],
+      }
+    }
+
+    const validation = validateDashboardChartConfig({
+      templateId: chart.templateId,
+      encoding: chart.encoding,
+      fields: semantics.fields,
+      metrics: semantics.metrics,
+    })
+    const sourceIssues = releasedSourceContractIssues(datasetSnapshot, sourceStatesById)
+    const legacy = chartSnapshot.snapshotOrigin === 'legacy_backfill'
+      || datasetSnapshot.snapshotOrigin === 'legacy_backfill'
+      || version.releaseSnapshotStatus === 'legacy_backfill'
+    const issues = [...validation.issues, ...sourceIssues]
+    if (legacy) {
+      issues.push({
+        severity: 'warning',
+        code: 'legacy_release_backfill',
+        message: 'This release snapshot was reconstructed from the mutable state present during migration, not captured at its original publish time.',
+      })
+    }
+
+    return {
+      slot: {
+        id: slot.id,
+        pageId: slot.pageId,
+        chartConfigId: chartSnapshot.id,
+        slotKey: slot.slotKey,
+        title: slot.title,
+      },
+      chart: {
+        id: chartSnapshot.id,
+        name: chart.name,
+        status: 'released',
+        templateId: chart.templateId,
+        validationState: validation.state,
+      },
+      healthState: validation.state === 'valid' && sourceIssues.length === 0 ? (legacy ? 'stale' : 'healthy') : 'blocked',
+      issues,
+    }
+  })
+
+  return {
+    dashboard: {
+      id: dashboard.id,
+      name: dashboard.name,
+      slug: dashboard.slug,
+      status: dashboard.status,
+      publishedAt: dashboard.publishedAt,
+    },
+    version: {
+      id: version.id,
+      versionNumber: version.versionNumber,
+      title: version.title,
+      status: version.status,
+      publishedAt: version.publishedAt,
+    },
+    summary: {
+      totalSlots: items.length,
+      healthySlots: items.filter(item => item.healthState === 'healthy').length,
+      staleSlots: items.filter(item => item.healthState === 'stale').length,
+      blockedSlots: items.filter(item => item.healthState === 'blocked').length,
+      pageCount: pages.length,
+    },
+    healthState: stateFromSlots(items),
+    items,
+  }
+}
+
 function auditFromDashboards(checkedAt: string, dashboards: DashboardHealthAuditDashboard[]): DashboardHealthAudit {
   return {
     checkedAt,
@@ -148,7 +358,7 @@ export async function auditPublishedDashboards({
   const dashboards = (dashboardRows ?? []).map(row => mapPublishedDashboard(row as Record<string, unknown>))
   const versionIds = dashboards.map(dashboard => dashboard.currentVersionId).filter(Boolean) as string[]
 
-  const [versionsResult, pagesResult, slotsResult] = await Promise.all([
+  const [versionsResult, pagesResult, slotsResult, chartSnapshotsResult, datasetSnapshotsResult] = await Promise.all([
     versionIds.length > 0
       ? supabase.from('dashboard_versions').select('*').in('id', versionIds)
       : Promise.resolve({ data: [], error: null }),
@@ -158,11 +368,19 @@ export async function auditPublishedDashboards({
     versionIds.length > 0
       ? supabase.from('dashboard_chart_slots').select('*').in('version_id', versionIds)
       : Promise.resolve({ data: [], error: null }),
+    versionIds.length > 0
+      ? supabase.from('dashboard_release_chart_snapshots').select('*').in('version_id', versionIds)
+      : Promise.resolve({ data: [], error: null }),
+    versionIds.length > 0
+      ? supabase.from('dashboard_release_dataset_snapshots').select('*').in('version_id', versionIds)
+      : Promise.resolve({ data: [], error: null }),
   ])
 
   if (versionsResult.error) throw new Error(versionsResult.error.message)
   if (pagesResult.error) throw new Error(pagesResult.error.message)
   if (slotsResult.error) throw new Error(slotsResult.error.message)
+  if (chartSnapshotsResult.error) throw new Error(chartSnapshotsResult.error.message)
+  if (datasetSnapshotsResult.error) throw new Error(datasetSnapshotsResult.error.message)
 
   const versionsById = new Map(
     ((versionsResult.data ?? []) as Record<string, unknown>[]).map(row => {
@@ -181,19 +399,38 @@ export async function auditPublishedDashboards({
     slotsByVersionId.set(slot.versionId, [...(slotsByVersionId.get(slot.versionId) ?? []), slot])
   }
 
-  const chartAudit = await auditDashboardCharts({
-    supabase,
-    projectId,
-    tenantId,
-    status: 'published',
-  })
-  const chartItemsById = new Map(chartAudit.items.map(item => [item.chart.id, item]))
+  const chartSnapshotsByVersionId = new Map<string, Map<string, DashboardReleaseChartSnapshot>>()
+  for (const row of (chartSnapshotsResult.data ?? []) as Record<string, unknown>[]) {
+    const snapshot = mapDashboardReleaseChartSnapshot(row)
+    const snapshotsBySlot = chartSnapshotsByVersionId.get(snapshot.versionId) ?? new Map<string, DashboardReleaseChartSnapshot>()
+    snapshotsBySlot.set(snapshot.slotId, snapshot)
+    chartSnapshotsByVersionId.set(snapshot.versionId, snapshotsBySlot)
+  }
+  const datasetSnapshotsByVersionId = new Map<string, Map<string, DashboardReleaseDatasetSnapshot>>()
+  const allDatasetSnapshots: DashboardReleaseDatasetSnapshot[] = []
+  for (const row of (datasetSnapshotsResult.data ?? []) as Record<string, unknown>[]) {
+    const snapshot = mapDashboardReleaseDatasetSnapshot(row)
+    allDatasetSnapshots.push(snapshot)
+    const snapshotsById = datasetSnapshotsByVersionId.get(snapshot.versionId) ?? new Map<string, DashboardReleaseDatasetSnapshot>()
+    snapshotsById.set(snapshot.id, snapshot)
+    datasetSnapshotsByVersionId.set(snapshot.versionId, snapshotsById)
+  }
+  const sourceStatesById = await loadReleaseSourceStates(supabase, allDatasetSnapshots)
 
   const dashboardsHealth = dashboards.map(dashboard => {
     const version = dashboard.currentVersionId ? versionsById.get(dashboard.currentVersionId) : undefined
     const pages = version ? pagesByVersionId.get(version.id) ?? [] : []
     const slots = version ? slotsByVersionId.get(version.id) ?? [] : []
-    return buildDashboardHealthItem({ dashboard, version, pages, slots, chartItemsById })
+    if (!version) return buildDashboardHealthItem({ dashboard, version, pages, slots, chartItemsById: new Map() })
+    return buildReleasedDashboardHealthItem({
+      dashboard,
+      version,
+      pages,
+      slots,
+      chartSnapshotsBySlotId: chartSnapshotsByVersionId.get(version.id) ?? new Map(),
+      datasetSnapshotsById: datasetSnapshotsByVersionId.get(version.id) ?? new Map(),
+      sourceStatesById,
+    })
   })
 
   return auditFromDashboards(new Date().toISOString(), dashboardsHealth)
@@ -204,7 +441,8 @@ export async function auditDashboardVersion({
   dashboard,
   version,
 }: AuditDashboardVersionInput): Promise<DashboardHealthAudit> {
-  const [pagesResult, slotsResult, chartAudit] = await Promise.all([
+  const released = version.releaseSnapshotStatus !== 'pending'
+  const [pagesResult, slotsResult, chartSnapshotsResult, datasetSnapshotsResult, chartAudit] = await Promise.all([
     supabase
       .from('dashboard_pages')
       .select('*')
@@ -219,21 +457,63 @@ export async function auditDashboardVersion({
       .eq('dashboard_id', dashboard.id)
       .eq('tenant_id', dashboard.tenantId)
       .eq('project_id', dashboard.projectId),
-    auditDashboardCharts({
-      supabase,
-      projectId: dashboard.projectId,
-      tenantId: dashboard.tenantId,
-      status: 'published',
-    }),
+    released
+      ? supabase
+        .from('dashboard_release_chart_snapshots')
+        .select('*')
+        .eq('version_id', version.id)
+        .eq('dashboard_id', dashboard.id)
+        .eq('tenant_id', dashboard.tenantId)
+        .eq('project_id', dashboard.projectId)
+      : Promise.resolve({ data: [], error: null }),
+    released
+      ? supabase
+        .from('dashboard_release_dataset_snapshots')
+        .select('*')
+        .eq('version_id', version.id)
+        .eq('dashboard_id', dashboard.id)
+        .eq('tenant_id', dashboard.tenantId)
+        .eq('project_id', dashboard.projectId)
+      : Promise.resolve({ data: [], error: null }),
+    released
+      ? Promise.resolve(null)
+      : auditDashboardCharts({
+        supabase,
+        projectId: dashboard.projectId,
+        tenantId: dashboard.tenantId,
+        status: 'published',
+      }),
   ])
 
   if (pagesResult.error) throw new Error(pagesResult.error.message)
   if (slotsResult.error) throw new Error(slotsResult.error.message)
+  if (chartSnapshotsResult.error) throw new Error(chartSnapshotsResult.error.message)
+  if (datasetSnapshotsResult.error) throw new Error(datasetSnapshotsResult.error.message)
 
   const pages = ((pagesResult.data ?? []) as Record<string, unknown>[]).map(row => mapDashboardPage(row))
   const slots = ((slotsResult.data ?? []) as Record<string, unknown>[]).map(row => mapDashboardChartSlot(row))
-  const chartItemsById = new Map(chartAudit.items.map(item => [item.chart.id, item]))
-  const dashboardHealth = buildDashboardHealthItem({ dashboard, version, pages, slots, chartItemsById })
+  let dashboardHealth: DashboardHealthAuditDashboard
+  if (released) {
+    const chartSnapshotsBySlotId = new Map(((chartSnapshotsResult.data ?? []) as Record<string, unknown>[])
+      .map(row => mapDashboardReleaseChartSnapshot(row))
+      .map(snapshot => [snapshot.slotId, snapshot]))
+    const datasetSnapshotsById = new Map(((datasetSnapshotsResult.data ?? []) as Record<string, unknown>[])
+      .map(row => mapDashboardReleaseDatasetSnapshot(row))
+      .map(snapshot => [snapshot.id, snapshot]))
+    const sourceStatesById = await loadReleaseSourceStates(supabase, Array.from(datasetSnapshotsById.values()))
+    dashboardHealth = buildReleasedDashboardHealthItem({
+      dashboard,
+      version,
+      pages,
+      slots,
+      chartSnapshotsBySlotId,
+      datasetSnapshotsById,
+      sourceStatesById,
+    })
+  } else {
+    const chartItemsById = new Map((chartAudit?.items ?? []).map(item => [item.chart.id, item]))
+    dashboardHealth = buildDashboardHealthItem({ dashboard, version, pages, slots, chartItemsById })
+  }
 
   return auditFromDashboards(new Date().toISOString(), [dashboardHealth])
 }

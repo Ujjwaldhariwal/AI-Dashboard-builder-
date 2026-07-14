@@ -2,6 +2,8 @@ export type PublishedDashboardStatus = 'draft' | 'published' | 'archived'
 
 export type DashboardVersionStatus = 'draft' | 'published' | 'retired'
 
+export type DashboardReleaseSnapshotStatus = 'pending' | 'complete' | 'legacy_backfill'
+
 export type DashboardPublishEventType =
   | 'created'
   | 'version_created'
@@ -38,6 +40,8 @@ export interface DashboardVersion {
   createdBy?: string | null
   publishedBy?: string | null
   publishedAt?: string | null
+  releaseSnapshotStatus: DashboardReleaseSnapshotStatus
+  releaseSnapshotCreatedAt?: string | null
   createdAt: string
 }
 

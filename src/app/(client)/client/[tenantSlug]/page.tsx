@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { DASHBOARDOS_DEMO_COOKIE, isLocalDemoHost } from '@/lib/dashboardos/demo-mode'
 import { demoCharts, demoDashboard, demoDataset, demoPage, demoSlots, demoVersion } from '@/lib/dashboardos/demo-data'
 import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
+import { mapDashboardReleaseChartSnapshot, mapReleasedChartConfig } from '@/lib/publishing/dashboard-release-snapshots'
 import { listEntitledDashboardIds, listEntitledDatasetIds } from '@/lib/security/entitlements'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
@@ -61,35 +62,6 @@ interface DashboardHealthRunRecord {
   stale_slots: number
   blocked_slots: number
   checked_at: string
-}
-
-function mapChart(row: Record<string, unknown>): DashboardChartConfig {
-  return {
-    id: String(row.id),
-    tenantId: String(row.tenant_id),
-    projectId: String(row.project_id),
-    datasetId: String(row.dataset_id),
-    name: String(row.name ?? ''),
-    description: typeof row.description === 'string' ? row.description : null,
-    status: 'published',
-    templateId: String(row.template_id) as DashboardChartConfig['templateId'],
-    encoding: row.encoding && typeof row.encoding === 'object'
-      ? row.encoding as DashboardChartConfig['encoding']
-      : { yMetricIds: [], tooltipFieldIds: [], labelById: {}, colorById: {} },
-    presentation: row.presentation && typeof row.presentation === 'object'
-      ? row.presentation as DashboardChartConfig['presentation']
-      : { size: 'standard', showLegend: true, showLabels: false, valueFormat: null },
-    interactions: row.interactions && typeof row.interactions === 'object'
-      ? row.interactions as DashboardChartConfig['interactions']
-      : {},
-    layout: row.layout && typeof row.layout === 'object'
-      ? row.layout as DashboardChartConfig['layout']
-      : { order: 0, gridSpan: 1 },
-    validationState: 'valid',
-    createdAt: String(row.created_at ?? new Date().toISOString()),
-    updatedAt: String(row.updated_at ?? new Date().toISOString()),
-    publishedAt: typeof row.published_at === 'string' ? row.published_at : null,
-  }
 }
 
 function formatUpdatedAt(value?: string | null) {
@@ -391,6 +363,7 @@ export default async function TenantClientPage({
       { data: versionRow, error: versionError },
       { data: pages, error: pagesError },
       { data: slots, error: slotsError },
+      { data: releaseChartRows, error: releaseChartsError },
       { data: healthRows, error: healthError },
     ] = await Promise.all([
       auth.supabase
@@ -412,6 +385,13 @@ export default async function TenantClientPage({
         .order('row_index', { ascending: true })
         .order('column_index', { ascending: true }),
       auth.supabase
+        .from('dashboard_release_chart_snapshots')
+        .select('*')
+        .eq('version_id', dashboard.currentVersionId)
+        .eq('dashboard_id', dashboard.id)
+        .eq('tenant_id', activeTenant.id)
+        .eq('project_id', dashboard.projectId),
+      auth.supabase
         .from('dashboard_health_runs')
         .select('health_state, total_slots, healthy_slots, stale_slots, blocked_slots, checked_at')
         .eq('dashboard_id', dashboard.id)
@@ -419,33 +399,27 @@ export default async function TenantClientPage({
         .limit(1),
     ])
 
-    if (versionError || pagesError || slotsError || healthError) {
-      throw new Error(versionError?.message ?? pagesError?.message ?? slotsError?.message ?? healthError?.message ?? 'Failed to load published dashboard')
+    if (versionError || pagesError || slotsError || releaseChartsError || healthError) {
+      throw new Error(versionError?.message ?? pagesError?.message ?? slotsError?.message ?? releaseChartsError?.message ?? healthError?.message ?? 'Failed to load published dashboard')
     }
 
     const version = mapDashboardVersion(versionRow as Record<string, unknown>)
     const pageList = (pages ?? []).map(row => mapDashboardPage(row as Record<string, unknown>))
     const slotList = (slots ?? []).map(row => mapDashboardChartSlot(row as Record<string, unknown>))
-    const chartIds = [...new Set(slotList.map(slot => slot.chartConfigId))]
-    const { data: charts, error: chartsError } = chartIds.length > 0
-      ? await auth.supabase
-        .from('dashboard_chart_configs')
-        .select('*')
-        .eq('tenant_id', activeTenant.id)
-        .eq('status', 'published')
-        .eq('validation_state', 'valid')
-        .in('id', chartIds)
-      : { data: [], error: null }
-
-    if (chartsError) throw new Error(chartsError.message)
-    const chartsById = new Map((charts ?? []).map(row => {
-      const chart = mapChart(row as Record<string, unknown>)
-      return [chart.id, chart]
+    if (version.releaseSnapshotStatus === 'pending') {
+      throw new Error('The selected dashboard version does not have an immutable release snapshot')
+    }
+    const releaseChartsBySlotId = new Map((releaseChartRows ?? []).map(row => {
+      const snapshot = mapDashboardReleaseChartSnapshot(row as Record<string, unknown>)
+      return [snapshot.slotId, snapshot]
     }))
+    if (releaseChartsBySlotId.size !== slotList.length) {
+      throw new Error('The immutable release snapshot is incomplete for the selected dashboard version')
+    }
     chartList = slotList
       .map(slot => {
-        const chart = chartsById.get(slot.chartConfigId)
-        return chart ? chartWithSlotLayout(chart, slot) : null
+        const snapshot = releaseChartsBySlotId.get(slot.id)
+        return snapshot ? chartWithSlotLayout(mapReleasedChartConfig(snapshot), slot) : null
       })
       .filter((chart): chart is DashboardChartConfig => chart !== null)
       .sort((left, right) => left.layout.order - right.layout.order)

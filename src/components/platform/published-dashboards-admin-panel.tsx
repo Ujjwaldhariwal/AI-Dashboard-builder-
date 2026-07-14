@@ -14,7 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import {
-  demoChart,
   demoCharts,
   demoColumns,
   demoDashboard,
@@ -414,7 +413,7 @@ export function PublishedDashboardsAdminPanel() {
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload))
-      toast.success('Dashboard version published')
+      toast.success('Immutable dashboard release published')
       setBuilderPublishedVersionId(versionId)
       await Promise.all([
         fetchProjectAssets(projectId),
@@ -530,11 +529,11 @@ export function PublishedDashboardsAdminPanel() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge className="bg-[#a6e22e] text-[#1f1f1c] hover:bg-[#a6e22e]">Publishing</Badge>
-            <Badge variant="outline" className="border-white/15 text-slate-300">Versioned dashboard runtime</Badge>
+            <Badge variant="outline" className="border-white/15 text-slate-300">Immutable release runtime</Badge>
           </div>
           <h2 className="mt-3 text-2xl font-semibold text-white">Published dashboards</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-            Compose client-visible dashboard releases from governed chart configs. Guided drafts keep their semantic and dataset lineage in version notes for review.
+            Publishing captures release-owned chart, dataset, and semantic state. Later source edits stay in the editing workflow until a new release is published.
           </p>
         </div>
         <div className="w-full max-w-xs">
@@ -781,7 +780,17 @@ export function PublishedDashboardsAdminPanel() {
                 const pageCount = pagesByVersion.get(version.id)?.length ?? 0
                 const slotCount = slotsByVersion.get(version.id)?.length ?? 0
                 const versionReadiness = buildReadinessForVersion(version.id)
-                const publishDisabled = version.status === 'published' || slotCount === 0 || pageCount === 0 || !versionReadiness.publishEligible
+                const released = version.releaseSnapshotStatus !== 'pending'
+                const releaseLabel = version.releaseSnapshotStatus === 'complete'
+                  ? 'Immutable release'
+                  : version.releaseSnapshotStatus === 'legacy_backfill'
+                    ? 'Legacy baseline'
+                    : 'Draft inputs'
+                const publishDisabled = version.status !== 'draft'
+                  || version.releaseSnapshotStatus !== 'pending'
+                  || slotCount === 0
+                  || pageCount === 0
+                  || !versionReadiness.publishEligible
                 return (
                   <div key={version.id} className="rounded-md border border-white/10 bg-slate-950/50 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -789,6 +798,7 @@ export function PublishedDashboardsAdminPanel() {
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-semibold">{version.title}</p>
                           <Badge variant="outline" className={statusClassName(version.status)}>{version.status}</Badge>
+                          <Badge variant="outline" className="border-white/15 text-slate-300">{releaseLabel}</Badge>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">
                           Version {version.versionNumber} · {pageCount} pages · {slotCount} slots
@@ -798,9 +808,17 @@ export function PublishedDashboardsAdminPanel() {
                             {version.notes}
                           </p>
                         ) : null}
-                        <p className="mt-2 text-[11px] leading-4 text-slate-500">
-                          Readiness: {versionReadiness.summary}
-                        </p>
+                        {released ? (
+                          <p className="mt-2 text-[11px] leading-4 text-slate-500">
+                            {version.releaseSnapshotStatus === 'legacy_backfill'
+                              ? 'Reconstructed from state available during migration; it is isolated now, but does not prove original historical content.'
+                              : 'Chart, dataset configuration, and semantic inputs are frozen for this release. Source data remains live and schema-compatible.'}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-[11px] leading-4 text-slate-500">
+                            Draft readiness: {versionReadiness.summary}
+                          </p>
+                        )}
                       </div>
                       <Button size="sm" onClick={() => publishVersion(version.id)} disabled={publishDisabled || publishingId === version.id} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
                         {publishingId === version.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
@@ -813,10 +831,15 @@ export function PublishedDashboardsAdminPanel() {
                         </Button>
                       ) : null}
                     </div>
-                    {version.publishedAt ? (
+                    {version.releaseSnapshotCreatedAt ? (
                       <p className="mt-3 flex items-center gap-2 text-xs text-slate-500">
                         <Clock3 className="h-3.5 w-3.5" />
-                        Published {new Date(version.publishedAt).toLocaleString()}
+                        Release captured {new Date(version.releaseSnapshotCreatedAt).toLocaleString()}
+                      </p>
+                    ) : version.publishedAt ? (
+                      <p className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        Legacy publish recorded {new Date(version.publishedAt).toLocaleString()}
                       </p>
                     ) : null}
                   </div>

@@ -40,6 +40,8 @@ export function mapDashboardVersion(row: Record<string, unknown>): DashboardVers
     createdBy: typeof row.created_by === 'string' ? row.created_by : null,
     publishedBy: typeof row.published_by === 'string' ? row.published_by : null,
     publishedAt: typeof row.published_at === 'string' ? row.published_at : null,
+    releaseSnapshotStatus: String(row.release_snapshot_status ?? 'pending') as DashboardVersion['releaseSnapshotStatus'],
+    releaseSnapshotCreatedAt: typeof row.release_snapshot_created_at === 'string' ? row.release_snapshot_created_at : null,
     createdAt: String(row.created_at ?? new Date().toISOString()),
   }
 }
