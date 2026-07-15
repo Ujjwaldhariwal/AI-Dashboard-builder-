@@ -16,6 +16,10 @@ test.describe('prepared demo access boundary', () => {
     expect(isDashboardOsDemoHost('dashboardos.example.com', true)).toBe(true)
   })
 
+  test('allows the authoritative prepared-demo production host', () => {
+    expect(isDashboardOsDemoHost('ai-dashboard-builder-1hbh.vercel.app', false)).toBe(true)
+  })
+
   test('requires authentication, the demo cookie, and an allowed reference slug', () => {
     const request = {
       hostname: 'dashboardos.example.com',
