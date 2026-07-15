@@ -27,7 +27,7 @@ export function GuidedPublishReadinessPanel({
 }: {
   readiness: GuidedPublishReadinessResult
   compact?: boolean
-  source?: 'local' | 'server-preflight'
+  source?: 'local' | 'server-preflight' | 'prepared-reference'
 }) {
   const visibleReadyItems = compact ? readiness.readyItems.slice(0, 3) : readiness.readyItems
   const visibleWarnings = compact ? readiness.warnings.slice(0, 2) : readiness.warnings
@@ -54,7 +54,9 @@ export function GuidedPublishReadinessPanel({
           <p className="mt-1 max-w-2xl text-[11px] leading-4 text-[color:var(--dos-text-muted)]" data-testid="guided-readiness-source">
             {source === 'server-preflight'
               ? 'Server preflight was recomputed from current project data. Publish still revalidates before release.'
-              : 'Local readiness preview. Run server preflight before publishing real project data.'}
+              : source === 'prepared-reference'
+                ? 'Prepared readiness snapshot for this reference release. Real project publishing always runs server preflight and publish-time revalidation.'
+                : 'Local readiness preview. Run server preflight before publishing real project data.'}
           </p>
         </div>
         {readiness.nextFixAction ? (

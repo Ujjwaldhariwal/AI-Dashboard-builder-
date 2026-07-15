@@ -9,6 +9,7 @@ import { Label }   from '@/components/ui/label'
 import { BarChart3, Lock, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { toast }   from 'sonner'
 import { createClient }  from '@/lib/supabase/client'
+import { enableDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { useAuthStore }  from '@/store/auth-store'
 
 const supabase = createClient()
@@ -101,6 +102,7 @@ export default function LoginPage() {
       if (!signInError && signInData.session) {
         toast.success('Welcome back!', { id: 'auth' })
         await checkSession()
+        if (params.get('demo') === '1') enableDashboardOsDemoMode()
         router.push(redirectTo)                                       // ✅ uses redirectTo
         return
       }
@@ -188,6 +190,7 @@ export default function LoginPage() {
 
       toast.success('Account created & signed in!', { id: 'auth' })
       await checkSession()
+      if (params.get('demo') === '1') enableDashboardOsDemoMode()
       router.push(redirectTo)                                         // ✅ uses redirectTo
 
     } catch (err: unknown) {
@@ -212,12 +215,12 @@ export default function LoginPage() {
   return (
     <Card className="w-full border-white/10 bg-slate-900/65 shadow-2xl backdrop-blur-xl">
       <CardHeader className="space-y-3 pb-6 text-center">
-        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-red-600 to-cyan-500 shadow-lg">
+        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-lg">
           <BarChart3 className="w-6 h-6 text-white" />
         </div>
-        <CardTitle className="text-2xl font-bold tracking-tight text-slate-50">AI Dashboard Builder</CardTitle>
+        <CardTitle className="text-2xl font-bold tracking-tight text-slate-50">DashboardOS</CardTitle>
         <CardDescription className="text-base text-slate-300">
-          Sign in with your Employee ID
+          Sign in to the governed analytics workspace
         </CardDescription>
         <p className="text-[11px] text-slate-400">
           Login email format: <span className="font-mono">employee@{emailDomain}</span>
@@ -303,7 +306,7 @@ export default function LoginPage() {
           {/* ── Submit ───────────────────────────────────────── */}
           <Button
             type="submit"
-            className="h-11 w-full bg-gradient-to-r from-red-600 to-cyan-600 text-base font-medium shadow-md hover:from-red-700 hover:to-cyan-700"
+            className="h-11 w-full bg-gradient-to-r from-indigo-500 to-sky-500 text-base font-medium text-white shadow-md hover:from-indigo-400 hover:to-sky-400"
             disabled={isLoading || passShort}
           >
             {isLoading ? (
@@ -311,13 +314,13 @@ export default function LoginPage() {
             ) : (
               <>
                 <Lock className="w-4 h-4 mr-2" />
-                Sign In securely
+                Sign in securely
               </>
             )}
           </Button>
 
           <p className="pt-2 text-center text-xs text-slate-400">
-            New Employee IDs are automatically registered on first login.
+            Access is authenticated and scoped to assigned tenant projects.
           </p>
         </form>
       </CardContent>

@@ -24,8 +24,8 @@ const TENANT_FLOW = [
     icon: Globe2,
   },
   {
-    title: 'Assign engineers',
-    body: 'Give only selected engineers project-level lead/editor/viewer access.',
+    title: 'Assign project members',
+    body: 'Give only selected members project-level lead, editor, or viewer access.',
     icon: KeyRound,
   },
   {
@@ -37,7 +37,7 @@ const TENANT_FLOW = [
 
 const ACCESS_RULES = [
   'Platform admin can manage tenants and assignments.',
-  'Engineer sees only assigned projects.',
+  'Members see only assigned projects.',
   'Client viewer sees only published dashboards for their tenant.',
   'Builder APIs must check project assignment before writes.',
   'Client runtime must not expose database credentials or schemas.',

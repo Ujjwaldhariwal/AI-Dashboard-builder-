@@ -27,14 +27,14 @@ const STAGE_ORDER = new Map(STEPS.map((step, index) => [step.stage, index]))
 export function BuilderFlowIndicator() {
   const { scope, stage, dataSourceIds, semanticModelId, chartIds, dashboardId, publishedVersionId } = useScopedBuilderStore()
   const activeIndex = STAGE_ORDER.get(stage) ?? 0
-  const scopeLabel = scope ? `${scope.tenantId.slice(0, 8)} / ${scope.projectId.slice(0, 8)}` : 'No explicit scope'
+  const scopeLabel = scope ? 'Project scope active' : 'Select a project scope'
 
   return (
     <section className="mb-5 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-card-overlay)] px-4 py-3 text-[var(--dos-text-primary)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Builder flow</p>
-          <p className="mt-1 text-sm font-semibold">{'create tenant -> attach source -> model -> dataset -> chart -> publish'}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Governed delivery path</p>
+          <p className="mt-1 text-sm font-semibold">Tenant → source → semantic model → dataset → dashboard → release</p>
         </div>
         <Badge variant="outline" className="border-[color:var(--dos-border-mid)] text-[var(--dos-text-secondary)]">
           {scopeLabel}
@@ -66,9 +66,9 @@ export function BuilderFlowIndicator() {
         })}
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-[var(--dos-text-muted)]">
-        <span>{dataSourceIds.length} source</span>
+        <span>{dataSourceIds.length} source{dataSourceIds.length === 1 ? '' : 's'}</span>
         <span>{semanticModelId ? 'model selected' : 'no model'}</span>
-        <span>{chartIds.length} chart</span>
+        <span>{chartIds.length} chart{chartIds.length === 1 ? '' : 's'}</span>
         <span>{dashboardId ? 'dashboard ready' : 'no dashboard'}</span>
         <span>{publishedVersionId ? 'published' : 'not published'}</span>
       </div>

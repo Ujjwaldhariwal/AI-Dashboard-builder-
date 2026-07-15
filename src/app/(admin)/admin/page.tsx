@@ -41,22 +41,23 @@ export default function AdminOverviewPage() {
         <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[color:var(--dos-text-primary)]">
           <CardContent className="p-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-[var(--dos-info-soft)] text-[var(--dos-info-text)] hover:bg-[var(--dos-info-soft)]">Demo status</Badge>
-              <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]">Available locally</Badge>
+              <Badge className="bg-[var(--dos-info-soft)] text-[var(--dos-info-text)] hover:bg-[var(--dos-info-soft)]">Prepared workspace</Badge>
+              <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]">Read-only reference state</Badge>
             </div>
-            <h2 className="mt-3 text-base font-semibold">Northstar Retail guided demo is ready.</h2>
+            <h2 className="mt-3 text-base font-semibold">Explore the Northstar Retail release journey.</h2>
             <p className="mt-2 text-sm leading-6 text-[color:var(--dos-text-muted)]">
-              Use demo mode to preview the DB to dashboard flow without changing production project data.
+              This prepared walkthrough shows reviewed semantic assets, governed datasets, publish readiness,
+              and an immutable client release. Automatic dashboard assembly remains intentionally unavailable.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button asChild className="bg-[var(--dos-accent-primary)] text-white hover:bg-[var(--dos-accent-primary-hover)]">
-                <Link href="/admin?demo=1">
-                  Open demo mode
+                <Link href="/admin/data-sources?demo=1">
+                  Enter prepared workspace
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
               <Button asChild variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface)]">
-                <Link href="/client/northstar-retail?demo=1">View demo client</Link>
+                <Link href="/client/northstar-retail?demo=1">Open published dashboard</Link>
               </Button>
             </div>
           </CardContent>

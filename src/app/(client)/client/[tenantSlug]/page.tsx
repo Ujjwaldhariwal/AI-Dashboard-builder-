@@ -6,7 +6,7 @@ import { ClientThemeShell } from '@/components/client/client-theme-shell'
 import { PublishedChartsGrid } from '@/components/client/published-charts-grid'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { DASHBOARDOS_DEMO_COOKIE, isLocalDemoHost } from '@/lib/dashboardos/demo-mode'
+import { DASHBOARDOS_DEMO_COOKIE, shouldUseDashboardOsDemoRuntime } from '@/lib/dashboardos/demo-mode'
 import { demoCharts, demoDashboard, demoDataset, demoPage, demoSlots, demoVersion } from '@/lib/dashboardos/demo-data'
 import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
 import { mapDashboardReleaseChartSnapshot, mapReleasedChartConfig } from '@/lib/publishing/dashboard-release-snapshots'
@@ -158,13 +158,15 @@ export default async function TenantClientPage({
   const requestHeaders = await headers()
   const cookieStore = await cookies()
   const hostname = (requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host') ?? '').split(':')[0]
-  const demoRuntimeRequested = process.env.NODE_ENV !== 'production'
-    && isLocalDemoHost(hostname)
-    && cookieStore.get(DASHBOARDOS_DEMO_COOKIE)?.value === '1'
-    && ['demo', 'northstar-retail'].includes(tenantSlug)
   const auth = await getAuthedSupabase()
+  const demoRuntimeRequested = shouldUseDashboardOsDemoRuntime({
+    hostname,
+    cookieValue: cookieStore.get(DASHBOARDOS_DEMO_COOKIE)?.value,
+    tenantSlug,
+    isAuthenticated: Boolean(auth),
+  })
 
-  if (demoRuntimeRequested && !auth) {
+  if (demoRuntimeRequested) {
     const datasetList: DatasetRecord[] = [{
       id: demoDataset.id,
       project_id: demoDataset.projectId,
@@ -178,7 +180,7 @@ export default async function TenantClientPage({
     const projectList: ProjectRecord[] = [{
       id: demoDataset.projectId,
       name: 'Executive Analytics',
-      description: 'Seeded demo-safe runtime view.',
+      description: 'Prepared governed revenue reporting workspace.',
       status: 'active',
     }]
     const datasetsByProject = new Map([[demoDataset.projectId, datasetList]])
@@ -212,7 +214,7 @@ export default async function TenantClientPage({
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="hidden border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] text-[var(--dos-chart-success)] sm:inline-flex">
-                Read-only demo
+                Prepared release
               </Badge>
               <Badge variant="outline" className="border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] text-[var(--dos-chart-success)]">
                 Healthy

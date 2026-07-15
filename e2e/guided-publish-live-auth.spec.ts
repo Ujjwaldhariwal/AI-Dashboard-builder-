@@ -20,7 +20,7 @@ async function signIn(page: Page, fixture: GuidedPublishSupabaseFixture) {
 
   await page.locator('#empId').fill(fixture.credentials.employeeId)
   await page.locator('#password').fill(fixture.credentials.password)
-  await page.getByRole('button', { name: /continue to admin/i }).click()
+  await page.getByRole('button', { name: /sign in securely/i }).click()
   await expect(page).toHaveURL(/\/admin(?:\?|$)/, { timeout: 30_000 })
 }
 

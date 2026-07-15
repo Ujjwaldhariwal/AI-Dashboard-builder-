@@ -373,7 +373,7 @@ export function DataSourcesAdminPanel() {
         <Card className="border-white/10 bg-white/[0.03] text-slate-100">
           <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle className="text-sm">Postgres sources</CardTitle>
-            <Button size="sm" className="bg-cyan-500 text-slate-950 hover:bg-cyan-400" onClick={() => setCreateOpen(true)}>
+            <Button size="sm" className="bg-cyan-500 text-slate-950 hover:bg-cyan-400" onClick={() => setCreateOpen(true)} disabled={demoMode} title={demoMode ? 'Source creation is disabled in the prepared reference workspace' : undefined}>
               <Plus className="mr-2 h-4 w-4" />
               Add Source
             </Button>
@@ -416,7 +416,7 @@ export function DataSourcesAdminPanel() {
                         variant="outline"
                         className="h-8 w-8 border-rose-300/20 bg-rose-500/10 text-rose-200 hover:border-rose-300/35 hover:bg-rose-500/15 hover:text-rose-100"
                         onClick={() => void handleRemoveSource(source)}
-                        disabled={busySourceId === source.id}
+                        disabled={demoMode || busySourceId === source.id}
                         title="Remove data source"
                         aria-label={`Remove ${source.name}`}
                       >

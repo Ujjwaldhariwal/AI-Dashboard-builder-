@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BarChart3,
-  BookOpen,
   Database,
   LogOut,
   Menu,
@@ -13,21 +12,19 @@ import {
   LayoutDashboard,
   LockKeyhole,
   Network,
-  RotateCcw,
   SlidersHorizontal,
   Sun,
   UserRound,
   Users,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { BuilderFlowIndicator } from '@/components/platform/builder-flow-indicator'
+import { enableDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { DASHBOARDOS_THEME_STORAGE_KEY, getDashboardOsThemeVars, type DashboardOsThemeMode } from '@/lib/dashboardos/theme'
 import { useAuthStore } from '@/store/auth-store'
-import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
@@ -37,7 +34,6 @@ const NAV_ITEMS = [
   { href: '/admin/datasets', label: 'Datasets', icon: BarChart3 },
   { href: '/admin/charts', label: 'Charts', icon: SlidersHorizontal },
   { href: '/admin/publishing', label: 'Publishing', icon: PanelsTopLeft },
-  { href: '/admin/api-docs', label: 'API Docs', icon: BookOpen },
 ]
 
 function DashboardOsThemeToggle({
@@ -81,12 +77,12 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [themeMode, setThemeMode] = useState<DashboardOsThemeMode>('dark')
   const { user, logout } = useAuthStore()
-  const resetBuilderScope = useScopedBuilderStore(state => state.resetScope)
 
   useEffect(() => {
     const stored = window.localStorage.getItem(DASHBOARDOS_THEME_STORAGE_KEY)
     if (stored === 'dark' || stored === 'light') setThemeMode(stored)
-  }, [])
+    enableDashboardOsDemoMode()
+  }, [pathname])
 
   const updateThemeMode = (checked: boolean) => {
     const nextMode: DashboardOsThemeMode = checked ? 'light' : 'dark'
@@ -95,13 +91,6 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
   }
 
   const toggleThemeMode = () => updateThemeMode(themeMode !== 'light')
-
-  const clearLocalUiCache = () => {
-    resetBuilderScope()
-    window.localStorage.removeItem('dashboardos-scoped-builder-state')
-    window.localStorage.removeItem('dashboard-storage')
-    toast.success('Local UI cache cleared')
-  }
 
   const renderNavItems = (onNavigate?: () => void) => (
     NAV_ITEMS.map((item) => {
@@ -174,19 +163,9 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
               <LogOut className="mr-2 h-3.5 w-3.5" />
               Sign out
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="mt-1 h-8 w-full justify-start px-2 text-slate-400 hover:bg-[var(--dos-surface-muted)] hover:text-slate-100"
-              onClick={clearLocalUiCache}
-            >
-              <RotateCcw className="mr-2 h-3.5 w-3.5" />
-              Clear UI cache
-            </Button>
           </div>
           <Button asChild variant="outline" className="w-full border-[color:var(--dos-warning)] bg-transparent text-[var(--dos-text-primary)] hover:bg-[var(--dos-warning-soft)] hover:text-[var(--dos-warning-text)]">
-            <Link href="/admin/publishing">Publishing Control</Link>
+            <Link href="/admin/publishing">Review publishing readiness</Link>
           </Button>
         </div>
       </aside>
@@ -208,8 +187,8 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
               <span className="text-sm font-semibold text-[var(--dos-text-primary)]">DashboardOS</span>
             </div>
             <div className="hidden min-w-0 lg:block">
-              <p className="text-xs text-[var(--dos-text-secondary)]">Internal admin workspace</p>
-              <h1 className="text-base font-semibold text-[var(--dos-text-primary)]">Engineer Command Center</h1>
+              <p className="text-xs text-[var(--dos-text-secondary)]">Governed analytics workspace</p>
+              <h1 className="text-base font-semibold text-[var(--dos-text-primary)]">Analytics Control Center</h1>
             </div>
             <div className="flex items-center gap-2">
               <div className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300 md:flex">
@@ -262,16 +241,6 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
             >
               <LogOut className="mr-2 h-3.5 w-3.5" />
               Sign out
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2 w-full border-white/10 bg-transparent text-slate-100 hover:bg-white/[0.08]"
-              onClick={clearLocalUiCache}
-            >
-              <RotateCcw className="mr-2 h-3.5 w-3.5" />
-              Clear UI cache
             </Button>
           </div>
         </DialogContent>

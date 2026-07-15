@@ -529,7 +529,8 @@ export function DashboardChartsAdminPanel() {
             <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Guided mode</Badge>
             <h2 className="mt-3 text-lg font-semibold">Review suggested charts</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--dos-text-muted)]">
-              Recommendations come from the selected dataset shape. Automatic dashboard composition is paused until draft charts can be staged transactionally without weakening publish RLS.
+              Recommendations come from the selected governed dataset. Automatic dashboard assembly is intentionally
+              unavailable in this release; reviewed charts can still be composed manually and published only after readiness checks.
             </p>
             <div className="mt-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-xs leading-5 text-[color:var(--dos-text-muted)]" data-testid="guided-chart-lineage">
               {selectedDataset
@@ -540,9 +541,9 @@ export function DashboardChartsAdminPanel() {
           <Button variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]" onClick={() => setAdvancedComposerOpen(open => !open)}>
             {advancedComposerOpen ? 'Hide advanced composer' : 'Customize chart manually'}
           </Button>
-          <Button disabled title="Paused until chart staging and slot composition are transaction-safe">
+          <Button disabled title="Automatic assembly is intentionally unavailable in this release">
             <TriangleAlert className="mr-2 h-4 w-4" />
-            Generation paused
+            Automatic assembly unavailable
           </Button>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -846,7 +847,7 @@ export function DashboardChartsAdminPanel() {
               ) : null}
               {demoMode ? (
                 <div className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-2 text-[11px] leading-4">
-                  Rollout changes are disabled in browser demo mode. Real project scopes use the admin-managed policy controls here.
+                  Rollout changes are disabled in the prepared reference workspace. Real project scopes use the governed policy controls here.
                 </div>
               ) : null}
               <div className="space-y-2">

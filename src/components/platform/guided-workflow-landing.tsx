@@ -335,7 +335,8 @@ export function GuidedWorkflowLanding() {
           </div>
           <h2 className="mt-3 text-2xl font-semibold tracking-tight">Continue DB to dashboard</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--dos-text-muted)]">
-            Connect DB, review findings, approve the semantic model, preview a draft dashboard, then publish the client runtime.
+            Connect a read-only database, review findings, approve the semantic model, inspect governed chart
+            recommendations, validate readiness, then publish an immutable client release.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -356,6 +357,14 @@ export function GuidedWorkflowLanding() {
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] p-3 text-sm text-[color:var(--dos-warning-text)]">
           <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{snapshot.error}</span>
+        </div>
+      ) : null}
+
+      {demoMode ? (
+        <div className="mt-4 rounded-lg border border-[color:var(--dos-info)] bg-[var(--dos-info-soft)] px-4 py-3 text-xs leading-5 text-[var(--dos-info-text)]" data-testid="prepared-workspace-notice">
+          <span className="font-semibold">Prepared reference workspace.</span>{' '}
+          The approved assets and published release below are a stable walkthrough snapshot. No customer source,
+          semantic model, or release is changed; automatic dashboard assembly remains paused.
         </div>
       ) : null}
 
@@ -405,7 +414,7 @@ export function GuidedWorkflowLanding() {
       </div>
 
       <div className="mt-5">
-        <GuidedPublishReadinessPanel readiness={readiness} compact source={snapshot.preflight ? 'server-preflight' : 'local'} />
+        <GuidedPublishReadinessPanel readiness={readiness} compact source={demoMode ? 'prepared-reference' : snapshot.preflight ? 'server-preflight' : 'local'} />
       </div>
 
       <div className="mt-5">

@@ -900,7 +900,7 @@ export function SemanticModelAdminPanel() {
             </span>
             <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold text-[var(--dos-text-primary)]">Engineer guide</p>
+              <p className="text-sm font-semibold text-[var(--dos-text-primary)]">Review guide</p>
               <Badge variant="outline" className="border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)]">electricity flow</Badge>
             </div>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--dos-text-muted)]">

@@ -450,7 +450,7 @@ export function PublishedDashboardsAdminPanel() {
             slotCount: demoSlots.length,
           },
         })
-        toast.success('Demo readiness preflight recomputed')
+        toast.success('Prepared readiness snapshot loaded')
         return
       }
 
@@ -479,7 +479,7 @@ export function PublishedDashboardsAdminPanel() {
     try {
       if (demoMode) {
         setHealthAudit(demoDashboardHealthAudit)
-        toast.success('Demo dashboard health check recorded')
+        toast.success('Prepared health snapshot loaded')
         return
       }
       const response = await fetch(`/api/admin/published-dashboards/health?projectId=${projectId}`, {
@@ -565,14 +565,22 @@ export function PublishedDashboardsAdminPanel() {
           </Button>
           <Button onClick={runDashboardHealthCheck} disabled={!projectId || healthLoading} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
             {healthLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
-            Run health check
+            {demoMode ? 'Load health snapshot' : 'Run health check'}
           </Button>
           <Button onClick={runReadinessPreflight} disabled={!projectId || preflightLoading} className="bg-[#66d9ef] text-slate-950 hover:bg-[#9beeff]" data-testid="run-readiness-preflight">
             {preflightLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
-            Run readiness check
+            {demoMode ? 'Load readiness snapshot' : 'Run readiness check'}
           </Button>
         </div>
       </section>
+
+      {demoMode ? (
+        <section className="rounded-lg border border-[color:var(--dos-info)] bg-[var(--dos-info-soft)] px-4 py-3 text-xs leading-5 text-[var(--dos-info-text)]" data-testid="prepared-release-notice">
+          <span className="font-semibold">Prepared release walkthrough.</span>{' '}
+          Draft creation and publish mutations are disabled in this reference workspace. Readiness, health,
+          immutable release details, and the client view reflect the prepared Northstar release.
+        </section>
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-4">
         <Card className="border-white/10 bg-white/[0.03] text-slate-100">
@@ -601,10 +609,10 @@ export function PublishedDashboardsAdminPanel() {
         </Card>
       </section>
 
-      <GuidedPublishReadinessPanel readiness={publishReadiness} source={serverPreflight ? 'server-preflight' : 'local'} />
+      <GuidedPublishReadinessPanel readiness={publishReadiness} source={demoMode ? 'prepared-reference' : serverPreflight ? 'server-preflight' : 'local'} />
       {serverPreflight ? (
         <p className="text-xs text-slate-500" data-testid="guided-preflight-metadata">
-          Server preflight evaluated {serverPreflight.metadata.datasetCount} datasets, {serverPreflight.metadata.chartCount} charts, and {serverPreflight.metadata.slotCount} dashboard slots for this project.
+          {demoMode ? 'Prepared readiness covers' : 'Server preflight evaluated'} {serverPreflight.metadata.datasetCount} datasets, {serverPreflight.metadata.chartCount} charts, and {serverPreflight.metadata.slotCount} dashboard slots for this project.
         </p>
       ) : null}
 
@@ -638,13 +646,13 @@ export function PublishedDashboardsAdminPanel() {
             <CardContent className="space-y-3">
               <div>
                 <Label className="text-xs text-slate-400">Name</Label>
-                <Input value={dashboardName} onChange={event => setDashboardName(event.target.value)} className="mt-2 border-white/10 bg-slate-950 text-slate-100" placeholder="Executive revenue" />
+                <Input value={dashboardName} onChange={event => setDashboardName(event.target.value)} disabled={demoMode} className="mt-2 border-white/10 bg-slate-950 text-slate-100" placeholder="Executive revenue" />
               </div>
               <div>
                 <Label className="text-xs text-slate-400">Description</Label>
-                <Textarea value={dashboardDescription} onChange={event => setDashboardDescription(event.target.value)} className="mt-2 border-white/10 bg-slate-950 text-slate-100" placeholder="Read-only client dashboard purpose" />
+                <Textarea value={dashboardDescription} onChange={event => setDashboardDescription(event.target.value)} disabled={demoMode} className="mt-2 border-white/10 bg-slate-950 text-slate-100" placeholder="Read-only client dashboard purpose" />
               </div>
-              <Button onClick={createDashboard} disabled={!selectedProject || dashboardName.trim().length < 2 || savingDashboard} className="w-full bg-[#a6e22e] text-[#1f1f1c] hover:bg-[#cfff55]">
+              <Button onClick={createDashboard} disabled={demoMode || !selectedProject || dashboardName.trim().length < 2 || savingDashboard} title={demoMode ? 'Draft creation is disabled in the prepared reference workspace' : undefined} className="w-full bg-[#a6e22e] text-[#1f1f1c] hover:bg-[#cfff55]">
                 {savingDashboard ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
                 Create dashboard
               </Button>
@@ -756,7 +764,7 @@ export function PublishedDashboardsAdminPanel() {
                 })}
               </div>
 
-              <Button onClick={createVersion} disabled={!selectedDashboard || selectedCharts.length === 0 || savingVersion} className="bg-[#66d9ef] text-slate-950 hover:bg-[#9beeff]">
+              <Button onClick={createVersion} disabled={demoMode || !selectedDashboard || selectedCharts.length === 0 || savingVersion} title={demoMode ? 'Draft creation is disabled in the prepared reference workspace' : undefined} className="bg-[#66d9ef] text-slate-950 hover:bg-[#9beeff]">
                 {savingVersion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 Create draft version
               </Button>
