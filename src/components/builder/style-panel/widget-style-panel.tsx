@@ -1,6 +1,6 @@
 'use client'
 
-/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 
 // src/components/builder/style-panel/widget-style-panel.tsx
@@ -10,6 +10,7 @@ import { useDashboardStore } from '@/store/builder-store'
 import type { WidgetStyle, LabelFormat } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { BOSCH_COLORS, ENTERPRISE_COLORS } from '@/lib/echarts/theme'
+import { DASHBOARDOS_COLORS } from '@/lib/dashboardos/theme'
 import { askUiDesigner } from '@/lib/ai/agent-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,8 +35,8 @@ interface TooltipField {
   fallback: string
 }
 const TOOLTIP_FIELDS: TooltipField[] = [
-  { key: 'tooltipBg',     label: 'Background', fallback: '#ffffff' },
-  { key: 'tooltipBorder', label: 'Border',     fallback: '#e2e8f0' },
+  { key: 'tooltipBg',     label: 'Background', fallback: DASHBOARDOS_COLORS.light.cardBackground },
+  { key: 'tooltipBorder', label: 'Border',     fallback: DASHBOARDOS_COLORS.light.border },
 ]
 
 type LabelFormatOption = LabelFormat | 'number'
@@ -100,12 +101,10 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
   const applyPalette = (palette: Exclude<PaletteOption, 'custom'>) => {
     const nextColors = palette === 'bosch-uppcl' ? BOSCH_COLORS : ENTERPRISE_COLORS
     updateWidgetStyle(widget.id, { colors: [...nextColors] })
-    toast.success(`Applied ${palette === 'bosch-uppcl' ? 'Bosch UPPCL' : 'Enterprise'} palette`)
   }
 
   const handleReset = () => {
     resetWidgetStyle(widget.id)
-    toast.success(`"${widget.title}" reset to default style`)
   }
 
   const handleApplyAiStyle = async () => {
@@ -119,7 +118,6 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
     try {
       const nextStyle = await askUiDesigner(prompt, style)
       updateWidgetStyle(widget.id, nextStyle)
-      toast.success(`AI style applied to "${widget.title}"`)
       setAiPrompt('')
     } catch {
       // Error toast handled in askUiDesigner.
@@ -145,8 +143,8 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
             </p>
           </div>
           <Button
-            variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0"
-            onClick={handleReset} title="Reset to defaults"
+            variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0"
+            onClick={handleReset} aria-label="Reset widget style to defaults"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </Button>
@@ -184,16 +182,17 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
           </Select>
           <div className="grid grid-cols-6 gap-2">
             {resolvedColors.slice(0, 6).map((color, i) => (
-              <label key={i} className="relative cursor-pointer group" title={color}>
+              <label key={i} className="group relative cursor-pointer" title={color}>
                 <div
-                  className="h-9 w-9 rounded-md border ring-2 ring-transparent transition-colors group-hover:ring-foreground/20"
+                  className="h-9 w-9 rounded-md border ring-2 ring-transparent transition-colors group-hover:ring-foreground/20 group-focus-within:ring-primary"
                   style={{ backgroundColor: color }}
                 />
                 <input
                   type="color"
                   value={color}
                   onChange={e => updateColor(i, e.target.value)}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full rounded-lg"
+                  className="absolute inset-0 h-full w-full cursor-pointer rounded-md opacity-0"
+                  aria-label={`Chart color ${i + 1}`}
                 />
               </label>
             ))}
@@ -212,6 +211,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
               <div className="flex items-center justify-between px-3 py-2.5">
                 <Label className="text-xs cursor-pointer">Grid lines</Label>
                 <Switch
+                  aria-label="Show grid lines"
                   checked={style.showGrid ?? true}
                   onCheckedChange={v => updateWidgetStyle(widget.id, { showGrid: v })}
                 />
@@ -220,6 +220,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
             <div className="flex items-center justify-between px-3 py-2.5">
               <Label className="text-xs cursor-pointer">Legend</Label>
               <Switch
+                aria-label="Show legend"
                 checked={style.showLegend ?? true}
                 onCheckedChange={v => updateWidgetStyle(widget.id, { showLegend: v })}
               />
@@ -242,6 +243,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
               value={style.barRadius ?? 5}
               onChange={e => updateWidgetStyle(widget.id, { barRadius: Number(e.target.value) })}
               className="h-1.5 w-full cursor-pointer rounded-full accent-primary"
+              aria-label="Bar corner radius"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground">
               <span>Sharp</span><span>Rounded</span>
@@ -280,9 +282,9 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
             {TOOLTIP_FIELDS.map(({ key, label, fallback }) => (
               <div key={key} className="space-y-1.5">
                 <p className="text-[10px] text-muted-foreground">{label}</p>
-                <label className="relative flex items-center gap-2 cursor-pointer group">
+                <label className="group relative flex cursor-pointer items-center gap-2">
                   <div
-                    className="w-7 h-7 rounded-md border-2 border-border group-hover:border-primary/50 transition-colors flex-shrink-0"
+                    className="h-8 w-8 flex-shrink-0 rounded-md border-2 border-border transition-colors group-hover:border-primary/50 group-focus-within:ring-2 group-focus-within:ring-primary"
                     style={{ backgroundColor: (style as WidgetStyle)[key] ?? fallback }}
                   />
                   <span className="text-[10px] font-mono text-muted-foreground truncate">
@@ -293,6 +295,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
                     value={(style as WidgetStyle)[key] ?? fallback}
                     onChange={e => updateWidgetStyle(widget.id, { [key]: e.target.value })}
                     className="absolute inset-0 opacity-0 cursor-pointer"
+                    aria-label={`${label} tooltip color`}
                   />
                 </label>
               </div>
@@ -312,6 +315,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
             disabled={aiApplying}
+            aria-label="Describe the chart style"
           />
           <Button
             size="sm"

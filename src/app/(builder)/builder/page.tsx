@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -231,7 +231,7 @@ export default function BuilderPage() {
 
   const strictNavSelection = useMemo(
     () => resolveStrictNavSelection(navTree, navSelection),
-    [navTree, navSelection.groupId, navSelection.subgroupId],
+    [navTree, navSelection],
   );
 
   const visibleWidgets = useMemo(() => {
@@ -352,7 +352,7 @@ export default function BuilderPage() {
         await runApiScan({ silent: true });
       }
       dispatchDashboardWidgetRefresh({ scope: "all", force: false });
-      toast.success("All widgets refreshed", { id: "refresh" });
+      toast.dismiss("refresh");
     } catch (e) {
       toast.error(`Refresh failed: ${e instanceof Error ? e.message : e}`, { id: "refresh" });
     } finally {
@@ -411,7 +411,7 @@ export default function BuilderPage() {
           position: d.position,
         });
       }
-      toast.success(`Added ${drafts.length} widgets.`, { id: "auto-add" });
+      toast.dismiss("auto-add");
     } finally {
       setOps((p) => ({ ...p, autoAdding: false }));
     }
@@ -527,6 +527,7 @@ export default function BuilderPage() {
               ops={{ scanning: false, autoAdding: false, refreshing: false }}
               scanSummary={null}
               onAddWidget={() => setAddWidgetOpen(true)}
+              onOpenAssistant={openAi}
               onMagicOpen={() => setMagicOpen(true)}
               onExport={handleExport}
               onScanApis={handleScanApis}
@@ -605,6 +606,7 @@ export default function BuilderPage() {
             ops={ops}
             scanSummary={scanSummary}
             onAddWidget={() => setAddWidgetOpen(true)}
+            onOpenAssistant={openAi}
             onMagicOpen={() => setMagicOpen(true)}
             onExport={handleExport}
             onScanApis={handleScanApis}
@@ -624,9 +626,13 @@ export default function BuilderPage() {
         />
       )}
 
-      {/* The Canvas uses the rest of the page safely */}
-      <div className="mx-auto w-full max-w-[96rem] px-4 py-6 lg:px-6" onClick={handleCanvasClick}>
-        <section className="overflow-hidden rounded-lg border bg-background">
+      <div
+        className={cn(
+          "mx-auto grid w-full max-w-[96rem] gap-4 px-4 py-6 lg:px-6",
+          aiPanel.open && "xl:grid-cols-[minmax(0,1fr)_24rem]",
+        )}
+      >
+        <section className="min-w-0 overflow-hidden rounded-lg border bg-background" onClick={handleCanvasClick}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
             <div>
               <p className="text-sm font-medium">Canvas</p>
@@ -645,17 +651,15 @@ export default function BuilderPage() {
             />
           </div>
         </section>
+        <AiPanel
+          open={aiPanel.open}
+          minimized={aiPanel.minimized}
+          widgetId={selectedWidgetId}
+          dashId={currentDashboardId}
+          onClose={closeAi}
+          onMinToggle={toggleAiMin}
+        />
       </div>
-
-      {/* AI panel */}
-      <AiPanel
-        open={aiPanel.open}
-        minimized={aiPanel.minimized}
-        widgetId={selectedWidgetId}
-        dashId={currentDashboardId}
-        onClose={closeAi}
-        onMinToggle={toggleAiMin}
-      />
 
       {/* AI fab */}
       {!aiPanel.open && (
@@ -701,6 +705,7 @@ interface BuilderHeaderProps {
   ops: { scanning: boolean; autoAdding: boolean; refreshing: boolean };
   scanSummary: DashboardEndpointProbeSummary | null;
   onAddWidget: () => void;
+  onOpenAssistant: () => void;
   onMagicOpen: () => void;
   onExport: () => void;
   onScanApis: () => void;
@@ -719,6 +724,7 @@ function BuilderHeader({
   ops,
   scanSummary,
   onAddWidget,
+  onOpenAssistant,
   onMagicOpen,
   onExport,
   onScanApis,
@@ -728,103 +734,80 @@ function BuilderHeader({
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="max-w-[16rem] truncate text-lg font-semibold tracking-tight sm:max-w-none">
             {currentDash?.name ?? "Builder"}
           </h1>
-          <Badge variant="secondary" className="text-[10px]">
-            {widgetCount} widget{widgetCount !== 1 ? "s" : ""}
-          </Badge>
-          <Badge variant="outline" className="text-[10px]">
-            {endpointCount} API{endpointCount !== 1 ? "s" : ""}
-          </Badge>
-          {collectionCount > 0 && (
-            <Badge variant="outline" className="text-[10px] hidden sm:inline-flex">
-              {collectionCount} grp{collectionCount !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {sectionCount > 0 && (
-            <Badge variant="outline" className="text-[10px] hidden md:inline-flex">
-              {sectionCount} sec{sectionCount !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {scanSummary && (
-            <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-700 hidden lg:inline-flex">
-              {scanSummary.healthy} ready
-            </Badge>
-          )}
-          {scanSummary && scanSummary.unauthorized > 0 && (
-            <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 hidden lg:inline-flex">
-              {scanSummary.unauthorized} auth
-            </Badge>
-          )}
           {unsaved && (
-            <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
-              <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
+            <div className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+              <Circle className="h-2 w-2 fill-current" />
               Unsaved
             </div>
           )}
         </div>
         <p className="mt-1 truncate text-xs text-muted-foreground sm:text-sm">
-          {currentDash?.description || "Add widgets from your connected APIs"}
+          {currentDash?.description || "Compose governed charts from connected data sources."}
+        </p>
+        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+          {widgetCount} widgets · {endpointCount} sources · {collectionCount} groups · {sectionCount} sections
+          {scanSummary ? ` · ${scanSummary.healthy} ready` : ""}
+          {scanSummary?.unauthorized ? ` · ${scanSummary.unauthorized} need authorization` : ""}
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 lg:flex-shrink-0">
-        <Link href="/api-config" className="hidden sm:block">
-          <Button variant="outline" size="sm">
-            <Settings2 className="w-3.5 h-3.5 mr-1.5" />
-            APIs
-          </Button>
-        </Link>
         <Link href="/dashboard" className="hidden sm:block">
           <Button variant="outline" size="sm">
             <Eye className="w-3.5 h-3.5 mr-1.5" />
             Preview
           </Button>
         </Link>
-        <Button variant="outline" size="sm" onClick={onExport} disabled={exporting || widgetCount === 0}>
-          <Download className="w-3.5 h-3.5 sm:mr-1.5" />
-          <span className="hidden sm:inline">{exporting ? "Exporting..." : "Export"}</span>
-        </Button>
-        <Button variant="outline" size="sm" onClick={onMagicOpen}>
-          <Wand2 className="w-3.5 h-3.5 sm:mr-1.5" />
-          <span className="hidden sm:inline">Magic</span>
+        <Button variant="outline" size="sm" onClick={onOpenAssistant}>
+          <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+          Assistant
         </Button>
         <Button size="sm" onClick={onAddWidget} disabled={endpointCount === 0}>
-          <Plus className="w-3.5 h-3.5 sm:mr-1.5" />
-          <span className="hidden sm:inline">Add Widget</span>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          Add widget
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="h-8 w-8">
+            <Button variant="outline" size="icon" className="h-9 w-9" aria-label="More builder actions">
               <MoreHorizontal className="w-4 h-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
             <DropdownMenuItem onClick={onScanApis} disabled={ops.scanning || endpointCount === 0}>
               {ops.scanning ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Radar className="w-3.5 h-3.5 mr-2" />}
-              {ops.scanning ? "Scanning..." : "Scan APIs"}
+              {ops.scanning ? "Scanning..." : "Scan data sources"}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onRefreshAll} disabled={ops.refreshing || endpointCount === 0}>
               {ops.refreshing ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-2" />}
-              {ops.refreshing ? "Refreshing..." : "Refresh All"}
+              {ops.refreshing ? "Refreshing..." : "Refresh all charts"}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onAutoAdd} disabled={ops.autoAdding || !scanSummary || scanSummary.healthy === 0}>
               {ops.autoAdding ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-2" />}
-              {ops.autoAdding ? "Adding..." : "Auto Add Working"}
+              {ops.autoAdding ? "Adding..." : "Add recommended charts"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onMagicOpen}>
+              <Wand2 className="mr-2 h-3.5 w-3.5" />
+              Build with AI
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onExport} disabled={exporting || widgetCount === 0}>
+              <Download className="mr-2 h-3.5 w-3.5" />
+              {exporting ? "Exporting..." : "Export project"}
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/api-config" className="flex items-center">
+                <Settings2 className="mr-2 h-3.5 w-3.5" />
+                Data sources
+              </Link>
             </DropdownMenuItem>
             <div className="sm:hidden">
               <DropdownMenuItem asChild>
-                <Link href="/api-config" className="flex items-center">
-                  <Settings2 className="w-3.5 h-3.5 mr-2" />
-                  API Config
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
                 <Link href="/dashboard" className="flex items-center">
                   <Eye className="w-3.5 h-3.5 mr-2" />
-                  Preview
+                  Preview dashboard
                 </Link>
               </DropdownMenuItem>
             </div>
@@ -860,7 +843,7 @@ function AiPanel({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 12 }}
           transition={{ duration: 0.16 }}
-          className="fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-lg border bg-card shadow-lg sm:inset-x-auto sm:bottom-5 sm:right-5 sm:w-[460px]"
+          className="fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-lg border bg-card shadow-lg sm:inset-x-auto sm:bottom-5 sm:right-5 sm:w-[460px] xl:sticky xl:inset-auto xl:top-20 xl:z-20 xl:w-full xl:self-start xl:shadow-none"
           style={{ height: minimized ? "auto" : "min(680px, 82vh)" }}
         >
           <Tabs defaultValue="assist" className="flex h-full flex-col">
@@ -874,14 +857,14 @@ function AiPanel({
                     <span className="text-sm font-semibold truncate">Builder Assistant</span>
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                    Ask AI, style the selected chart, and configure dashboard settings in one place.
+                    Build, style, and configure the selected dashboard context.
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onMinToggle} title={minimized ? "Expand panel" : "Minimize panel"}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onMinToggle} aria-label={minimized ? "Expand inspector" : "Minimize inspector"}>
                     {minimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minimize2 className="h-3.5 w-3.5" />}
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} title="Close assistant">
+                  <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onClose} aria-label="Close inspector">
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>

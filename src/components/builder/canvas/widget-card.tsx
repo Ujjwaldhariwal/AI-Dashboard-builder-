@@ -9,7 +9,7 @@
 //  P12 — ChartWrapper wraps every Recharts return in renderChart()
 'use client'
 
-/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
@@ -34,7 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  Trash2, RefreshCw, Loader2, AlertCircle,
+  RefreshCw, Loader2, AlertCircle,
   BarChart3, LineChart, PieChart, AreaChart,
   Table2, Pencil, GripVertical, Gauge, TrendingUp,
   AlignLeft, Wifi, WifiOff, Circle,
@@ -46,7 +46,6 @@ import type { Widget, YAxisConfig } from '@/types/widget'
 import type { StatusLevel } from '@/components/ui/status-icon'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { WidgetEditDialog } from '@/components/builder/widget-edit-dialog'
-import { toast } from 'sonner'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
@@ -276,7 +275,6 @@ function WidgetHeader({
   const Icon = chartTypeIcon[widget.type] ?? BarChart3
 
   const isSmall = sizePreset === 'small'
-  const isMedium = sizePreset === 'medium'
   const isLargeUp = sizePreset === 'large' || sizePreset === 'full'
 
   const showDragHandle = isDragMode
@@ -284,9 +282,7 @@ function WidgetHeader({
   const showHealth = !isSmall
   const showInsights = isDataValid && Boolean(onOpenInsights)
   const showRuntimeRow = !isSmall
-  const showEditButton = !viewOnly
-  const showMediumActionMenu = !viewOnly && isMedium
-  const showLargeActionButtons = !viewOnly && isLargeUp
+  const showActionMenu = !viewOnly
   const showLatency = !isSmall
   const showCache = isLargeUp && Boolean(cacheAgeText)
   const showLastFetched = isLargeUp && Boolean(lastFetched)
@@ -330,16 +326,18 @@ function WidgetHeader({
               <Button
                 type="button"
                 variant="ghost"
-                className={`h-6 rounded-r-none px-2 text-[10px] ${activeView === 'chart' ? 'bg-muted font-medium' : ''}`}
+                className={`h-8 rounded-r-none px-2 text-xs ${activeView === 'chart' ? 'bg-muted font-medium' : ''}`}
                 onClick={onSetChartView}
+                aria-pressed={activeView === 'chart'}
               >
                 Chart
               </Button>
               <Button
                 type="button"
                 variant="ghost"
-                className={`h-6 rounded-l-none px-2 text-[10px] ${activeView === 'table' ? 'bg-muted font-medium' : ''}`}
+                className={`h-8 rounded-l-none px-2 text-xs ${activeView === 'table' ? 'bg-muted font-medium' : ''}`}
                 onClick={onSetTableView}
+                aria-pressed={activeView === 'table'}
               >
                 Table
               </Button>
@@ -347,29 +345,18 @@ function WidgetHeader({
           )}
 
           {showHealth && (
-            <HealthIcon className={`w-3 h-3 ${healthColorClass[healthStatus]} mr-1`} />
-          )}
-
-          {showInsights && onOpenInsights && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-[10px] gap-1"
-              onClick={onOpenInsights}
-              title="Open AI insights"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span className="hidden sm:inline">AI</span>
-            </Button>
+            <span className="mr-1 inline-flex" title={`Data status: ${healthStatus}`} aria-label={`Data status: ${healthStatus}`}>
+              <HealthIcon className={`h-3.5 w-3.5 ${healthColorClass[healthStatus]}`} />
+            </span>
           )}
 
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6"
+            className="h-9 w-9"
             onClick={onRefresh}
             disabled={isLoading}
-            title="Refresh this chart"
+            aria-label="Refresh this chart"
           >
             {isLoading
               ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -377,29 +364,27 @@ function WidgetHeader({
             }
           </Button>
 
-          {showEditButton && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={onEditWidget}
-              title="Edit widget"
-            >
-              <Pencil className="w-3 h-3" />
-            </Button>
-          )}
-
-          {showMediumActionMenu && (
+          {showActionMenu && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-6 w-6" title="Widget actions">
-                  <MoreHorizontal className="w-3 h-3" />
+                <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Widget actions">
+                  <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem onClick={onEditWidget}>
+                  <Pencil className="mr-2 h-3.5 w-3.5" />
+                  Edit widget
+                </DropdownMenuItem>
+                {showInsights && onOpenInsights && (
+                  <DropdownMenuItem onClick={onOpenInsights}>
+                    <Sparkles className="mr-2 h-3.5 w-3.5" />
+                    View AI insights
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={onDeleteWidget}
-                  className="text-xs text-red-600 focus:text-red-700"
+                  className="text-destructive focus:text-destructive"
                 >
                   Delete widget
                 </DropdownMenuItem>
@@ -407,19 +392,6 @@ function WidgetHeader({
             </DropdownMenu>
           )}
 
-          {showLargeActionButtons && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-red-500 hover:text-red-700"
-                onClick={onDeleteWidget}
-                title="Delete widget"
-              >
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </>
-          )}
         </div>
       </div>
 
@@ -639,7 +611,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
   const endpoint = endpoints.find(e => e.id === widget.endpointId)
   const style = { ...DEFAULT_STYLE, ...widget.style }
   const cardHeightClass = getWidgetCardHeightClass(widget.position)
-  const endpointTransforms = endpoint?.transforms ?? []
+  const endpointTransforms = useMemo(() => endpoint?.transforms ?? [], [endpoint?.transforms])
 
   const aliases = useMemo(() => {
     const entries = Object.entries(widget.dataMapping.aliases ?? {})
@@ -938,15 +910,15 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
           {loading && !rawData && <WidgetSkeleton />}
 
           {error && (
-            <div className="flex flex-col items-start gap-2 p-3 rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900 dark:bg-red-950/20">
+            <div className="flex flex-col items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
               <div className="flex items-start gap-2">
-                <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-[11px] text-red-700 dark:text-red-400">{error}</p>
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-destructive" />
+                <p className="text-[11px] text-destructive">{error}</p>
               </div>
               <Button
                 variant="outline"
                 size="sm"
-                className="h-6 text-[11px] border-red-300 text-red-600 hover:bg-red-50"
+                className="h-8 border-destructive/30 text-[11px] text-destructive hover:bg-destructive/5"
                 onClick={() => void fetchData({ force: true })}
                 disabled={loading}
               >
@@ -1033,7 +1005,6 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
               className="bg-red-600 hover:bg-red-700 text-white"
               onClick={() => {
                 removeWidget(widget.id)
-                toast.success('Widget removed')
                 setDeleteOpen(false)
               }}
             >

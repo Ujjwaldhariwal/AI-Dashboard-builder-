@@ -60,15 +60,29 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) => {
-    const Comp = asChild ? Slot : 'button'
     const state = isLoading ? 'loading' : status
+
+    if (asChild) {
+      return (
+        <Slot
+          className={cn(buttonVariants({ variant, size, className }))}
+          ref={ref}
+          aria-busy={isLoading || undefined}
+          data-state={state}
+          {...props}
+        >
+          {children}
+        </Slot>
+      )
+    }
+
     return (
-      <Comp
+      <button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         aria-busy={isLoading || undefined}
         data-state={state}
-        disabled={asChild ? undefined : disabled || isLoading}
+        disabled={disabled || isLoading}
         {...props}
       >
         {!asChild && isLoading ? (
@@ -81,7 +95,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           <Check className="h-4 w-4" aria-hidden="true" />
         ) : null}
         {children}
-      </Comp>
+      </button>
     )
   },
 )
