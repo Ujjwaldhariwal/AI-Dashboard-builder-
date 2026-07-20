@@ -56,14 +56,14 @@ const config: Config = {
           foreground: 'hsl(var(--card-foreground))',
         },
         glass: {
-          light: 'rgba(255, 255, 255, 0.1)',
-          dark: 'rgba(0, 0, 0, 0.2)',
+          light: 'var(--color-surface)',
+          dark: 'var(--color-graphite)',
         },
         neon: {
-          blue: '#00D9FF',
-          purple: '#B74FFF',
-          pink: '#FF006E',
-          green: '#00FF94',
+          blue: 'var(--color-accent)',
+          purple: 'var(--color-accent)',
+          pink: 'var(--color-danger)',
+          green: 'var(--color-success)',
         },
       },
       borderRadius: {
@@ -90,8 +90,8 @@ const config: Config = {
         },
       },
       boxShadow: {
-        glass: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
-        neon: '0 0 10px rgba(0, 217, 255, 0.5), 0 0 20px rgba(0, 217, 255, 0.3)',
+        glass: 'var(--shadow-float)',
+        neon: '0 0 0 1px var(--color-accent)',
       },
     },
   },

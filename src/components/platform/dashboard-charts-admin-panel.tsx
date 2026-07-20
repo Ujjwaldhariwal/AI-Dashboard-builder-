@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, Archive, CheckCircle2, Loader2, Palette, Plus, RefreshCw, Send, ShieldCheck, SlidersHorizontal, Sparkles, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
@@ -509,21 +512,19 @@ export function DashboardChartsAdminPanel() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-6">
+      <section className="flex flex-col gap-4 border-b border-[color:var(--dos-border-soft)] pb-5 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-[color:var(--dos-chart-success)]">Chart Composer</p>
-          <h1 className="mt-1 text-2xl font-semibold text-[color:var(--dos-text-primary)]">Validated dashboard charts</h1>
+          <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Chart registry</p>
+          <h1 className="mt-2 text-xl font-semibold tracking-tight text-[color:var(--dos-text-primary)]">Validated chart workbench</h1>
           <p className="mt-2 max-w-2xl text-sm text-[color:var(--dos-text-muted)]">
             Review suggested dashboard blocks from governed datasets, then customize only when the default needs adjustment.
           </p>
         </div>
-        <Badge className="bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)] hover:bg-[var(--dos-info-soft)]">
-          {charts.length} saved configs
-        </Badge>
-      </div>
+        <div className="text-xs text-[var(--dos-text-muted)]"><strong className="font-mono text-lg text-[var(--dos-text-primary)]">{charts.length}</strong> saved configurations</div>
+      </section>
 
-      <section className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 text-[color:var(--dos-text-primary)]">
+      <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[color:var(--dos-text-primary)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Guided mode</Badge>
@@ -568,16 +569,16 @@ export function DashboardChartsAdminPanel() {
                 <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]">{recommendation.confidence}%</Badge>
               </div>
               <p className="mt-2 text-xs leading-5 text-[color:var(--dos-text-muted)]">{recommendation.reason}</p>
-              <p className="mt-3 text-[11px] uppercase tracking-wide text-[color:var(--dos-chart-info)]">{recommendation.chartType}</p>
+              <p className="mt-3 font-mono text-[11px] text-[color:var(--dos-chart-info)]">{recommendation.chartType}</p>
             </button>
           ))}
         </div>
       </section>
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className={advancedComposerOpen ? 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]' : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] opacity-90'} data-testid="dashboard-chart-composer">
+        <Card className={advancedComposerOpen ? 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]' : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] opacity-90'} data-testid="dashboard-chart-composer">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+            <CardTitle className="flex items-center gap-2 text-base text-[var(--dos-text-primary)]">
               <SlidersHorizontal className="h-4 w-4 text-[color:var(--dos-chart-warning)]" />
               {advancedComposerOpen ? 'Advanced chart setup' : 'Review selected chart'}
             </CardTitle>
@@ -1019,7 +1020,7 @@ export function DashboardChartsAdminPanel() {
                     </div>
                   </div>
                   {auditItem?.validation.issues.length ? (
-                    <div className="mt-2 flex items-start gap-1 text-[11px] text-[#ffd866]">
+                    <div className="mt-2 flex items-start gap-1 text-[11px] text-[var(--dos-warning-text)]">
                       <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
                       <span>{auditItem.validation.issues[0]?.message}</span>
                     </div>

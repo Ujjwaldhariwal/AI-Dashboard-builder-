@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Archive, BrainCircuit, CheckCircle2, ChevronDown, ChevronRight, Database, GitBranch, Loader2, Network, Plus, Send, Sparkles, Trash2, Zap } from 'lucide-react'
 import { toast } from 'sonner'
@@ -68,7 +71,7 @@ const CONTROL_CLASS = 'border-white/10 bg-slate-950/70 text-slate-100 placeholde
 const SELECT_TRIGGER_CLASS = `${CONTROL_CLASS} [&>span]:truncate [&>span]:text-slate-100 [&>span[data-placeholder]]:text-slate-500`
 const OUTLINE_BUTTON_CLASS = '!border-white/10 !bg-slate-950/70 !text-slate-200 hover:!border-white/20 hover:!bg-slate-900 hover:!text-white [&_svg]:!text-current'
 const DISABLED_BUTTON_CLASS = `${OUTLINE_BUTTON_CLASS} disabled:!border-white/10 disabled:!bg-slate-950/60 disabled:!text-slate-600 disabled:!opacity-100`
-const SUGGESTION_BUTTON_CLASS = '!border-[#a6e22e]/45 !bg-[#a6e22e]/10 !text-[#a6e22e] hover:!border-[#a6e22e]/70 hover:!bg-[#a6e22e]/15 hover:!text-[#d8ff7a] disabled:!border-white/10 disabled:!bg-slate-950/60 disabled:!text-slate-600 disabled:!opacity-100 [&_svg]:!text-current'
+const SUGGESTION_BUTTON_CLASS = '!border-[color:var(--dos-accent-primary)] !bg-[var(--dos-accent-primary-soft)] !text-[var(--dos-accent-primary)] hover:!bg-[var(--dos-accent-primary-soft)] disabled:!border-[color:var(--dos-border-soft)] disabled:!bg-[var(--dos-background-deep)] disabled:!text-[var(--dos-text-muted)] disabled:!opacity-100 [&_svg]:!text-current'
 
 const SEMANTIC_GUIDE_STEPS = [
   {
@@ -878,24 +881,25 @@ export function SemanticModelAdminPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-6">
-        <h2 className="max-w-4xl text-2xl font-semibold tracking-tight text-white">
+    <div className="mx-auto max-w-[1600px] space-y-6">
+      <section className="border-b border-[color:var(--dos-border-soft)] pb-5">
+        <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Governed vocabulary</p>
+        <h2 className="mt-2 max-w-4xl text-xl font-semibold text-[var(--dos-text-primary)]">
           Semantic Business Model
         </h2>
-        <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-400">
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--dos-text-muted)]">
           Map scanned database columns into approved business language before datasets, widgets, reports, or AI touch them.
         </p>
       </section>
 
-      <section className="overflow-hidden rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)] shadow-[0_18px_55px_rgba(0,0,0,0.18)]">
+      <section className="overflow-hidden rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]">
         <button
           type="button"
           className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-[var(--dos-surface-muted)]"
           onClick={() => setGuideOpen(open => !open)}
         >
           <div className="flex min-w-0 items-start gap-3">
-            <span className="semantic-guide-orb mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)]">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)]">
               <Zap className="h-4 w-4" />
             </span>
             <div className="min-w-0">
@@ -912,34 +916,27 @@ export function SemanticModelAdminPanel() {
         </button>
 
         {guideOpen ? (
-          <div className="grid gap-5 border-t border-[color:var(--dos-border-soft)] bg-[linear-gradient(135deg,var(--dos-accent-primary-soft),transparent_38%,var(--dos-info-soft))] p-5 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="grid gap-5 border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 xl:grid-cols-[1.05fr_0.95fr]">
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold text-[var(--dos-text-primary)]">Semantic model flow chart</h3>
-                <span className="rounded-full border border-[color:var(--dos-success)] bg-[var(--dos-success-soft)] px-3 py-1 text-[11px] font-medium text-[var(--dos-success-text)]">
+                <span className="rounded-md border border-[color:var(--dos-success)] bg-[var(--dos-success-soft)] px-3 py-1 text-[11px] font-medium text-[var(--dos-success-text)]">
                   Start here
                 </span>
               </div>
               <div className="relative grid gap-3">
-                <span className="semantic-flow-rail-vertical pointer-events-none absolute bottom-8 left-4 top-8 hidden w-px md:block" />
                 {SEMANTIC_GUIDE_STEPS.map((step, index) => (
                   <div
                     key={step.title}
-                    className="semantic-flow-node relative grid gap-3 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3 shadow-sm sm:grid-cols-[auto_1fr_auto]"
-                    style={{ animationDelay: `${index * 90}ms` }}
+                    className="relative grid gap-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3 sm:grid-cols-[auto_1fr_auto]"
                   >
                     <div className="flex items-center gap-2">
                       <span
-                        className="flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold"
-                        style={{
-                          borderColor: step.accent,
-                          backgroundColor: `color-mix(in srgb, ${step.accent} 18%, transparent)`,
-                          color: step.accent,
-                        }}
+                        className="flex h-8 w-8 items-center justify-center rounded-md border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] font-mono text-[11px] font-semibold text-[var(--dos-accent-primary)]"
                       >
                       {index + 1}
                     </span>
-                      <step.icon className="h-4 w-4" style={{ color: step.accent }} />
+                      <step.icon className="h-4 w-4 text-[var(--dos-accent-primary)]" />
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-[var(--dos-text-primary)]">{step.title}</p>
@@ -965,8 +962,7 @@ export function SemanticModelAdminPanel() {
                 {ELECTRICITY_MAPPING_PLAN.map((item, index) => (
                   <div
                     key={item.raw}
-                    className="semantic-mapping-row grid gap-2 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3 text-xs sm:grid-cols-[1fr_auto]"
-                    style={{ animationDelay: `${120 + index * 45}ms` }}
+                    className="grid gap-2 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3 text-xs sm:grid-cols-[1fr_auto]"
                   >
                     <div>
                       <p className="break-all font-mono text-[var(--dos-text-primary)]">{item.raw}</p>
@@ -981,23 +977,25 @@ export function SemanticModelAdminPanel() {
         ) : null}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3">
-        {[
-          { title: 'Raw schema', icon: Database, value: `${columns.length} columns scanned` },
-          { title: 'Business entities', icon: Network, value: `${entities.length} entities, ${relationships.length} relationships` },
-          { title: 'Mapped fields', icon: BrainCircuit, value: `${entities.reduce((total, entity) => total + entity.fields.length, 0)} fields, ${metrics.length} metrics` },
-        ].map((item) => {
-          const Icon = item.icon
-          return (
-            <Card key={item.title} className="border-white/10 bg-white/[0.03] text-slate-100">
-              <CardContent className="p-5">
-                <Icon className="h-5 w-5 text-cyan-300" />
-                <h3 className="mt-4 text-sm font-semibold">{item.title}</h3>
-                <p className="mt-2 text-xs text-slate-500">{item.value}</p>
-              </CardContent>
-            </Card>
-          )
-        })}
+      <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-5 text-[var(--dos-text-primary)]">
+        <dl className="grid md:grid-cols-3 md:divide-x md:divide-[color:var(--dos-border-soft)]">
+          {[
+            { title: 'Raw schema', icon: Database, value: `${columns.length} columns scanned` },
+            { title: 'Business entities', icon: Network, value: `${entities.length} entities, ${relationships.length} relationships` },
+            { title: 'Mapped fields', icon: BrainCircuit, value: `${entities.reduce((total, entity) => total + entity.fields.length, 0)} fields, ${metrics.length} metrics` },
+          ].map((item) => {
+            const Icon = item.icon
+            return (
+              <div key={item.title} className="flex items-center gap-3 border-b border-[color:var(--dos-border-soft)] py-4 last:border-b-0 md:border-b-0 md:px-5 md:first:pl-0 md:last:pr-0">
+                <Icon className="h-4 w-4 shrink-0 text-[var(--dos-accent-primary)]" />
+                <div>
+                  <dt className="text-xs text-[var(--dos-text-muted)]">{item.title}</dt>
+                  <dd className="mt-1 font-mono text-sm font-semibold">{item.value}</dd>
+                </div>
+              </div>
+            )
+          })}
+        </dl>
       </section>
 
       <GuidedProgressStepper
@@ -1006,7 +1004,7 @@ export function SemanticModelAdminPanel() {
         description="Approval writes a versioned semantic model asset before datasets can use it."
       />
 
-      <section className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 text-[var(--dos-text-primary)]">
+      <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[var(--dos-text-primary)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1034,20 +1032,20 @@ export function SemanticModelAdminPanel() {
             </Button>
           </div>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <dl className="mt-5 grid border-y border-[color:var(--dos-border-soft)] md:grid-cols-5 md:divide-x md:divide-[color:var(--dos-border-soft)]">
           {[
-            ['Approved fields', semanticDraft.approvedFields.length, 'border-[color:var(--dos-success)] bg-[var(--dos-success-soft)] text-[var(--dos-success-text)]'],
-            ['Suggested metrics', semanticDraft.suggestedMetrics.length, 'border-[color:var(--dos-info)] bg-[var(--dos-info-soft)] text-[var(--dos-info-text)]'],
-            ['Suggested joins', semanticDraft.suggestedRelationships.length, 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)]'],
-            ['Hidden sensitive', semanticDraft.hiddenSensitiveFields.length, 'border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] text-[var(--dos-warning-text)]'],
-            ['Needs review', semanticDraft.needsReview.length, 'border-[color:var(--dos-chart-risk)] bg-[var(--dos-danger-soft)] text-[var(--dos-chart-risk)]'],
-          ].map(([label, value, className]) => (
-            <div key={String(label)} className={`rounded-lg border p-3 ${className}`}>
-              <p className="text-[11px] font-semibold uppercase tracking-wide">{label}</p>
-              <p className="mt-2 text-2xl font-semibold">{value}</p>
+            ['Approved fields', semanticDraft.approvedFields.length],
+            ['Suggested metrics', semanticDraft.suggestedMetrics.length],
+            ['Suggested joins', semanticDraft.suggestedRelationships.length],
+            ['Hidden sensitive', semanticDraft.hiddenSensitiveFields.length],
+            ['Needs review', semanticDraft.needsReview.length],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="flex items-center justify-between gap-4 border-b border-[color:var(--dos-border-soft)] py-3 last:border-b-0 md:block md:border-b-0 md:px-4 md:first:pl-0 md:last:pr-0">
+              <dt className="text-xs text-[var(--dos-text-muted)]">{label}</dt>
+              <dd className="font-mono text-lg font-semibold text-[var(--dos-text-primary)] md:mt-2">{value}</dd>
             </div>
           ))}
-        </div>
+        </dl>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
             <div className="flex items-center justify-between gap-3">
@@ -1102,13 +1100,13 @@ export function SemanticModelAdminPanel() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
+      <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(19rem,0.75fr)]">
+        <Card className="min-w-0 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]">
           <CardHeader className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-sm">Project and model</CardTitle>
-                {selectedModel ? <Badge variant="outline" className="border-white/15 text-slate-300">{selectedModel.status}</Badge> : null}
+                {selectedModel ? <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">{selectedModel.status}</Badge> : null}
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" className={SUGGESTION_BUTTON_CLASS} onClick={buildSuggestions} disabled={saving || !selectedModel || columns.length === 0}>
@@ -1187,11 +1185,11 @@ export function SemanticModelAdminPanel() {
           </CardHeader>
           <CardContent className="space-y-3">
             {suggestions.length > 0 ? (
-              <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
+              <div className="rounded-md border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-cyan-100">Smart mapping suggestions</h3>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <h3 className="text-sm font-semibold text-[var(--dos-text-primary)]">Smart mapping suggestions</h3>
+                    <p className="mt-1 text-xs text-[var(--dos-text-muted)]">
                       Review the generated fields, uncheck anything wrong, then apply. Starter metrics are created for selected metric sources.
                     </p>
                   </div>
@@ -1202,23 +1200,23 @@ export function SemanticModelAdminPanel() {
                 </div>
                 <div className="mt-4 grid gap-2">
                   {suggestions.map(suggestion => (
-                    <label key={suggestion.id} className="grid cursor-pointer gap-3 rounded-md border border-white/10 bg-slate-950/55 p-3 text-xs sm:grid-cols-[auto_1fr_auto]">
+                    <label key={suggestion.id} className="grid cursor-pointer gap-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3 text-xs sm:grid-cols-[auto_1fr_auto]">
                       <input
                         type="checkbox"
-                        className="mt-1 h-4 w-4 accent-cyan-300"
+                        className="mt-1 h-4 w-4 accent-[var(--dos-accent-primary)]"
                         checked={selectedSuggestionIds.has(suggestion.id)}
                         onChange={() => toggleSuggestion(suggestion.id)}
                       />
                       <span>
-                        <span className="block font-medium text-slate-100">{suggestion.entityName} / {suggestion.fieldName}</span>
-                        <span className="mt-1 block font-mono text-slate-500">
+                        <span className="block font-medium text-[var(--dos-text-primary)]">{suggestion.entityName} / {suggestion.fieldName}</span>
+                        <span className="mt-1 block font-mono text-[var(--dos-text-muted)]">
                           {suggestion.column.schemaName}.{suggestion.column.tableName}.{suggestion.column.columnName}
                         </span>
-                        <span className="mt-1 block text-slate-400">{suggestion.reason}</span>
+                        <span className="mt-1 block text-[var(--dos-text-muted)]">{suggestion.reason}</span>
                       </span>
                       <span className="flex flex-wrap items-start gap-2">
-                        <Badge variant="outline" className="border-cyan-300/30 text-cyan-100">{suggestion.role}</Badge>
-                        <Badge variant="outline" className="border-white/15 text-slate-300">{suggestion.confidence}%</Badge>
+                        <Badge variant="outline" className="border-[color:var(--dos-accent-primary)] text-[var(--dos-accent-primary)]">{suggestion.role}</Badge>
+                        <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">{suggestion.confidence}%</Badge>
                       </span>
                     </label>
                   ))}
@@ -1294,11 +1292,11 @@ export function SemanticModelAdminPanel() {
           </CardContent>
         </Card>
 
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
+        <Card className="min-w-0 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)] xl:sticky xl:top-20 xl:self-start">
           <CardHeader className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <CardTitle className="text-sm">Scanned schema columns</CardTitle>
-              <Badge variant="outline" className="border-white/15 text-slate-300">
+              <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">
                 {visibleColumns.length} visible
               </Badge>
             </div>
@@ -1320,30 +1318,30 @@ export function SemanticModelAdminPanel() {
           </CardHeader>
           <CardContent className="max-h-[620px] space-y-4 overflow-auto">
             {columns.length === 0 ? (
-              <div className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
+              <div className="rounded-md border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] p-4 text-sm text-[var(--dos-warning-text)]">
                 <div className="flex gap-3">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>Run schema introspection from Data Sources before mapping fields.</span>
                 </div>
               </div>
             ) : groupedColumns.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-white/15 bg-slate-950/50 p-6 text-sm text-slate-400">
+              <div className="border-t border-[color:var(--dos-border-soft)] py-6 text-sm text-[var(--dos-text-muted)]">
                 No scanned columns match this search.
               </div>
             ) : (
               groupedColumns.map(([tableName, tableColumns]) => (
-                <div key={tableName} className="rounded-lg border border-white/10 bg-slate-950/50 p-4">
+                <div key={tableName} className="border-t border-[color:var(--dos-border-soft)] pt-4 first:border-t-0 first:pt-0">
                   <h3 className="text-sm font-semibold">{tableName}</h3>
                   <div className="mt-3 grid gap-2">
                     {tableColumns.map(column => (
                       <button
                         key={column.id}
                         type="button"
-                        className="flex w-full items-center justify-between gap-3 rounded-md bg-white/[0.03] px-3 py-2 text-left text-xs text-slate-400 hover:bg-white/[0.07]"
+                        className="flex min-h-10 w-full items-center justify-between gap-3 rounded-md border border-transparent px-3 py-2 text-left text-xs text-[var(--dos-text-muted)] transition-colors duration-150 hover:border-[color:var(--dos-border-soft)] hover:bg-[var(--dos-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] disabled:cursor-not-allowed disabled:text-[var(--dos-text-muted)]"
                         onClick={() => openMapping(column)}
                         disabled={!selectedModel}
                       >
-                        <span className="font-medium text-slate-200">{column.columnName}</span>
+                        <span className="font-medium text-[var(--dos-text-primary)]">{column.columnName}</span>
                         <span>{column.dataType}</span>
                       </button>
                     ))}

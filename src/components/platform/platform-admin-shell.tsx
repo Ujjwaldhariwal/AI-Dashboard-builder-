@@ -51,12 +51,12 @@ function DashboardOsThemeToggle({
       onClick={onToggle}
       aria-label={`Switch to ${mode === 'light' ? 'dark' : 'light'} theme`}
       aria-pressed={mode === 'light'}
-      className="group inline-flex h-10 items-center gap-2 rounded-full border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] px-1.5 text-xs text-[var(--dos-text-secondary)] shadow-sm transition-all duration-300 hover:border-[color:var(--dos-border-mid)] hover:text-[var(--dos-text-primary)]"
+      className="group inline-flex h-10 items-center gap-2 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] px-1.5 text-xs text-[var(--dos-text-secondary)] transition-[border-color,color] duration-150 hover:border-[color:var(--dos-border-mid)] hover:text-[var(--dos-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--dos-background-base)] active:translate-y-px"
     >
       <span className="relative grid h-7 w-16 grid-cols-2 rounded-full bg-[var(--dos-background-deep)] p-1">
         <span
           className={[
-            'absolute left-1 top-1 h-5 w-7 rounded-full bg-[var(--dos-accent-primary)] shadow-[0_8px_18px_var(--dos-accent-primary-soft)] transition-transform duration-300 ease-out',
+            'absolute left-1 top-1 h-5 w-7 rounded-full bg-[var(--dos-accent-primary)] transition-transform duration-150 ease-out',
             mode === 'light' ? 'translate-x-7' : 'translate-x-0',
           ].join(' ')}
         />
@@ -104,10 +104,10 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
           href={item.href}
           onClick={onNavigate}
           className={[
-            'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+            'flex min-h-10 items-center gap-3 rounded-md border px-3 py-2 text-sm font-medium transition-[background-color,border-color,color] duration-150',
             active
-              ? 'bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)] shadow-[0_0_20px_var(--dos-accent-primary-soft)]'
-              : 'text-slate-400 hover:bg-[var(--dos-surface-muted)] hover:text-slate-100',
+              ? 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)]'
+              : 'border-transparent text-[var(--dos-text-secondary)] hover:border-[color:var(--dos-border-soft)] hover:bg-[var(--dos-surface-muted)] hover:text-[var(--dos-text-primary)]',
           ].join(' ')}
         >
           <Icon className="h-4 w-4" />
@@ -119,10 +119,10 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="dashboardos-admin min-h-screen bg-[var(--dos-background-base)] text-[var(--dos-text-primary)]" data-dashboardos-theme={themeMode} style={getDashboardOsThemeVars(themeMode)}>
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-white/10 bg-slate-950/95 px-4 py-5 lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-4 py-5 lg:flex">
         <div className="shrink-0">
           <Link href="/admin" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)] shadow-[0_0_24px_var(--dos-accent-primary-soft)]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)]">
               <LayoutDashboard className="h-5 w-5" />
             </div>
             <div className="min-w-0">
@@ -131,7 +131,7 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
             </div>
           </Link>
 
-          <div className="mt-7 rounded-lg border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] p-3">
+          <div className="mt-7 rounded-md border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] p-3">
             <div className="flex items-center gap-2 text-xs font-medium text-[var(--dos-warning-text)]">
               <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
               Tenant isolation first
@@ -146,8 +146,8 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
           {renderNavItems()}
         </nav>
 
-        <div className="mt-4 shrink-0 border-t border-white/10 pt-4">
-          <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+        <div className="mt-4 shrink-0 border-t border-[color:var(--dos-border-soft)] pt-4">
+          <div className="mb-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-card-overlay)] p-3">
             <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
               <UserRound className="h-3.5 w-3.5 shrink-0 text-[var(--dos-accent-primary)]" />
               <span className="truncate">{user?.name ?? 'Signed in'}</span>
@@ -171,7 +171,7 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-30 border-b border-white/10 bg-slate-950/85 px-4 py-3 backdrop-blur lg:px-8">
+        <header className="sticky top-0 z-30 border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-4 py-3 lg:px-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 lg:hidden">
               <Button
@@ -191,7 +191,7 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
               <h1 className="text-base font-semibold text-[var(--dos-text-primary)]">Analytics Control Center</h1>
             </div>
             <div className="flex items-center gap-2">
-              <div className="hidden items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-slate-300 md:flex">
+              <div className="hidden items-center gap-2 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] px-2.5 py-1.5 text-xs text-[var(--dos-text-secondary)] md:flex">
                 <UserRound className="h-3.5 w-3.5 text-[var(--dos-accent-primary)]" />
                 <span className="max-w-40 truncate">{user?.name ?? 'Admin'}</span>
               </div>
@@ -205,7 +205,7 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
           </div>
         </header>
 
-        <main className="px-4 py-6 lg:px-8">
+        <main className="mx-auto w-full max-w-[1600px] px-4 py-6 lg:px-8">
           <BuilderFlowIndicator />
           {children}
         </main>

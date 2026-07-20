@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { AlertTriangle, Database, Loader2, Play, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 
@@ -66,13 +69,13 @@ export function PublishedDatasetPreview({ tenantSlug, datasetId }: PublishedData
   const warnings = data?.warnings ?? []
 
   return (
-    <div className="mt-4 rounded-md border border-[#272822]/10 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#272822]/10 px-3 py-2">
+    <div className="mt-4 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--dos-border-soft)] px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Database className="h-4 w-4 text-[#66d9ef]" />
+          <Database className="h-4 w-4 text-[var(--dos-accent-primary)]" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-[#272822]">Live preview</p>
-            <p className="truncate text-[11px] text-[#75715e]">
+            <p className="text-xs font-semibold text-[var(--dos-text-primary)]">Live preview</p>
+            <p className="truncate text-[11px] text-[var(--dos-text-muted)]">
               {data ? `${data.rowCount ?? rows.length} rows / ${data.elapsedMs ?? 0}ms` : 'Run a read-only dataset query'}
             </p>
           </div>
@@ -81,7 +84,7 @@ export function PublishedDatasetPreview({ tenantSlug, datasetId }: PublishedData
           type="button"
           size="sm"
           variant="outline"
-          className="h-8 border-[#66d9ef]/40 bg-[#66d9ef]/10 px-2 text-xs text-[#13515e] hover:bg-[#66d9ef]/20"
+          className="h-8 px-2 text-xs"
           onClick={loadPreview}
           disabled={isLoading}
         >
@@ -97,14 +100,14 @@ export function PublishedDatasetPreview({ tenantSlug, datasetId }: PublishedData
       </div>
 
       {error ? (
-        <div className="flex gap-2 px-3 py-3 text-xs text-[#b13d00]">
+        <div className="flex gap-2 px-3 py-3 text-xs text-[var(--dos-danger-text)]">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       ) : null}
 
       {warnings.length > 0 ? (
-        <div className="border-b border-[#fd971f]/20 bg-[#fd971f]/10 px-3 py-2 text-[11px] text-[#8a4b00]">
+        <div className="border-b border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] px-3 py-2 text-[11px] text-[var(--dos-warning-text)]">
           {warnings.slice(0, 2).join(' / ')}
         </div>
       ) : null}
@@ -112,7 +115,7 @@ export function PublishedDatasetPreview({ tenantSlug, datasetId }: PublishedData
       {data && fields.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[420px] table-fixed text-left text-xs">
-            <thead className="bg-[#f8f8f2] text-[11px] uppercase text-[#75715e]">
+            <thead className="bg-[var(--dos-surface-muted)] text-[11px] text-[var(--dos-text-muted)]">
               <tr>
                 {fields.map(field => (
                   <th key={field} className="w-36 truncate px-3 py-2 font-medium">
@@ -121,18 +124,18 @@ export function PublishedDatasetPreview({ tenantSlug, datasetId }: PublishedData
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#272822]/10">
+            <tbody className="divide-y divide-[color:var(--dos-border-soft)]">
               {rows.length > 0 ? rows.map((row, index) => (
                 <tr key={`${datasetId}-${index}`}>
                   {fields.map(field => (
-                    <td key={field} className="truncate px-3 py-2 text-[#3e3d32]">
+                    <td key={field} className="truncate px-3 py-2 text-[var(--dos-text-secondary)]">
                       {formatCellValue(row[field])}
                     </td>
                   ))}
                 </tr>
               )) : (
                 <tr>
-                  <td className="px-3 py-3 text-[#75715e]" colSpan={fields.length}>
+                  <td className="px-3 py-3 text-[var(--dos-text-muted)]" colSpan={fields.length}>
                     Query returned no rows.
                   </td>
                 </tr>
@@ -141,9 +144,9 @@ export function PublishedDatasetPreview({ tenantSlug, datasetId }: PublishedData
           </table>
         </div>
       ) : data ? (
-        <div className="px-3 py-3 text-xs text-[#75715e]">No preview columns returned.</div>
+        <div className="px-3 py-3 text-xs text-[var(--dos-text-muted)]">No preview columns returned.</div>
       ) : (
-        <div className="px-3 py-3 text-xs text-[#75715e]">
+        <div className="px-3 py-3 text-xs text-[var(--dos-text-muted)]">
           Preview is loaded only when requested.
         </div>
       )}

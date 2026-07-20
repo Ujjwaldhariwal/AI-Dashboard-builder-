@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Long Document · design-system: design.md · designed-as-app */
+
 // src/app/(viewer)/pdf-export/page.tsx
 // ─────────────────────────────────────────────────────────
 // Fixed: responsive toolbar, proper spacing, optimized
@@ -71,10 +74,11 @@ function PdfExportContent() {
 
   if (!dashboard) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <LayoutGrid className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">Dashboard not found</p>
+      <div className="min-h-screen bg-muted/20 p-6">
+        <div className="mx-auto mt-16 max-w-xl rounded-lg border bg-background p-6">
+          <LayoutGrid className="h-6 w-6 text-muted-foreground" />
+          <p className="mt-6 font-medium">Dashboard not found</p>
+          <p className="mt-1 text-sm text-muted-foreground">Return to the dashboard preview and select a valid dashboard before preparing a report.</p>
           <Button variant="outline" size="sm" className="mt-4" onClick={() => window.close()}>Close</Button>
         </div>
       </div>
@@ -102,7 +106,7 @@ function PdfExportContent() {
       `}</style>
 
       {/* ── Fixed toolbar — responsive ─────────────────── */}
-      <div className="no-print fixed top-0 left-0 right-0 z-50 border-b bg-white/95 backdrop-blur shadow-sm">
+      <div className="no-print fixed left-0 right-0 top-0 z-50 border-b bg-white shadow-sm">
         {/* Top row */}
         <div className="h-12 flex items-center px-4 sm:px-6 gap-2 sm:gap-3">
           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => window.close()}>
@@ -147,8 +151,8 @@ function PdfExportContent() {
         {/* Report header */}
         <div className="px-4 sm:px-8 py-4 sm:py-6 border-b">
           <div className="flex items-center gap-3 mb-1">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shrink-0">
-              <LayoutGrid className="w-4 h-4 text-white" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-gray-50">
+              <LayoutGrid className="h-4 w-4 text-gray-700" />
             </div>
             <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{dashboard.name}</h1>
           </div>
@@ -176,10 +180,10 @@ function PdfExportContent() {
         {/* No selection */}
         {ready && selectedWidgets.length === 0 && (
           <div className="no-print px-4 sm:px-8 py-10 sm:py-14">
-            <div className="rounded-xl border border-dashed p-8 sm:p-10 text-center">
-              <FileDown className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-sm font-medium">No charts selected</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+            <div className="rounded-lg border border-dashed p-6 sm:p-8">
+              <FileDown className="h-6 w-6 text-muted-foreground" />
+              <p className="mt-5 text-sm font-medium">No charts selected</p>
+              <p className="mt-1 max-w-lg text-xs text-muted-foreground">
                 Select charts from the bar above to include in your PDF.
               </p>
             </div>

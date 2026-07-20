@@ -1,0 +1,127 @@
+[
+  {
+    "date": "2026-07-19",
+    "scope": "app",
+    "project": "DashboardOS",
+    "genre": "modern-minimal",
+    "theme": "Cobalt adapted for DashboardOS",
+    "macrostructure": "Workbench",
+    "designSystem": "design.md",
+    "files": [
+      "src/app/layout.tsx",
+      "src/app/globals.css",
+      "tailwind.config.ts",
+      "src/components/ui/button.tsx",
+      "src/components/ui/input.tsx",
+      "src/components/ui/card.tsx",
+      "src/components/ui/dialog.tsx",
+      "src/components/layout/app-layout.tsx",
+      "src/components/platform/platform-admin-shell.tsx"
+    ],
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 4,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-07-20",
+    "scope": "app",
+    "sprint": "H2",
+    "project": "DashboardOS",
+    "genre": "modern-minimal",
+    "theme": "Cobalt adapted for DashboardOS",
+    "macrostructure": "Workbench",
+    "designSystem": "design.md",
+    "files": [
+      "src/components/platform/data-sources-admin-panel.tsx",
+      "src/components/platform/semantic-model-admin-panel.tsx"
+    ],
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-07-20",
+    "scope": "app",
+    "sprint": "H3",
+    "project": "DashboardOS",
+    "genre": "modern-minimal",
+    "theme": "Cobalt adapted for DashboardOS",
+    "macrostructure": "Workbench",
+    "designSystem": "design.md",
+    "files": [
+      "src/app/(builder)/builder/page.tsx",
+      "src/components/builder/canvas/drag-drop-canvas.tsx",
+      "src/components/builder/canvas/widget-card.tsx",
+      "src/components/builder/style-panel/widget-style-panel.tsx"
+    ],
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-07-20",
+    "scope": "app",
+    "sprint": "H4",
+    "project": "DashboardOS",
+    "genre": "modern-minimal",
+    "theme": "Cobalt adapted for DashboardOS",
+    "macrostructure": "Workbench",
+    "designSystem": "design.md",
+    "files": [
+      "src/components/platform/tenants-admin-panel.tsx",
+      "src/components/platform/datasets-admin-panel.tsx",
+      "src/components/platform/dashboard-charts-admin-panel.tsx",
+      "src/components/platform/published-dashboards-admin-panel.tsx",
+      "src/components/platform/guided-workflow-landing.tsx"
+    ],
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-07-20",
+    "scope": "app",
+    "sprint": "H5",
+    "project": "DashboardOS",
+    "genre": "modern-minimal",
+    "theme": "Cobalt adapted for DashboardOS",
+    "macrostructure": "Workbench and Long Document",
+    "designSystem": "design.md",
+    "files": [
+      "src/app/(viewer)/dashboard/page.tsx",
+      "src/app/(viewer)/pdf-export/page.tsx",
+      "src/app/(client)/client/[tenantSlug]/page.tsx",
+      "src/components/viewer/shared-dashboard-viewer.tsx",
+      "src/components/client/published-charts-grid.tsx",
+      "src/components/client/published-dataset-preview.tsx"
+    ],
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  }
+]

@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Clock3, ExternalLink, Eye, FileStack, LayoutDashboard, Loader2, Plus, Rocket, Send, ShieldCheck, SquareStack, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
@@ -82,9 +85,9 @@ function slugify(value: string) {
 }
 
 function statusClassName(status: string) {
-  if (status === 'published') return 'border-[#a6e22e]/30 bg-[#a6e22e]/10 text-[#d7ff8f]'
-  if (status === 'archived' || status === 'retired') return 'border-[#f92672]/30 bg-[#f92672]/10 text-[#ff8db9]'
-  return 'border-[#66d9ef]/30 bg-[#66d9ef]/10 text-[#9beeff]'
+  if (status === 'published') return 'border-[color:var(--dos-success)] bg-[var(--dos-success-soft)] text-[var(--dos-success-text)]'
+  if (status === 'archived' || status === 'retired') return 'border-[color:var(--dos-danger)] bg-[var(--dos-danger-soft)] text-[var(--dos-danger-text)]'
+  return 'border-[color:var(--dos-info)] bg-[var(--dos-info-soft)] text-[var(--dos-info-text)]'
 }
 
 function chartSize(chart: DashboardChartConfig) {
@@ -516,7 +519,7 @@ export function PublishedDashboardsAdminPanel() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[360px] items-center justify-center text-sm text-slate-400">
+      <div className="flex min-h-[360px] items-center text-sm text-[var(--dos-text-muted)]">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         Loading publishing workspace
       </div>
@@ -524,20 +527,20 @@ export function PublishedDashboardsAdminPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5">
-      <section className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-6">
+      <section className="grid gap-5 border-b border-[color:var(--dos-border-soft)] pb-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge className="bg-[#a6e22e] text-[#1f1f1c] hover:bg-[#a6e22e]">Publishing</Badge>
-            <Badge variant="outline" className="border-white/15 text-slate-300">Immutable release runtime</Badge>
+            <Badge className="bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)] hover:bg-[var(--dos-accent-primary-soft)]">Publishing</Badge>
+            <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">Immutable releases</Badge>
           </div>
-          <h2 className="mt-3 text-2xl font-semibold text-white">Published dashboards</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+          <h2 className="mt-3 text-xl font-semibold tracking-tight text-[var(--dos-text-primary)]">Release governance workbench</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
             Publishing captures release-owned chart, dataset, and semantic state. Later source edits stay in the editing workflow until a new release is published.
           </p>
         </div>
         <div className="w-full max-w-xs">
-          <Label className="text-xs text-slate-400">Project</Label>
+          <Label className="text-xs text-[var(--dos-text-muted)]">Project</Label>
           <Select
             value={projectId}
             onValueChange={(value) => {
@@ -548,7 +551,7 @@ export function PublishedDashboardsAdminPanel() {
               if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'dashboard')
             }}
           >
-            <SelectTrigger className="mt-2 border-white/10 bg-slate-950 text-slate-100">
+            <SelectTrigger className="mt-2 border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[var(--dos-text-primary)]">
               <SelectValue placeholder="Select project" />
             </SelectTrigger>
             <SelectContent>
@@ -558,16 +561,16 @@ export function PublishedDashboardsAdminPanel() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={openClientDashboard} disabled={!clientDashboardUrl} className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10">
+        <div className="flex flex-wrap gap-2 xl:col-span-2">
+          <Button variant="outline" onClick={openClientDashboard} disabled={!clientDashboardUrl}>
             <ExternalLink className="mr-2 h-4 w-4" />
             View as client
           </Button>
-          <Button onClick={runDashboardHealthCheck} disabled={!projectId || healthLoading} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
+          <Button variant="outline" onClick={runDashboardHealthCheck} disabled={!projectId || healthLoading}>
             {healthLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
             {demoMode ? 'Load health snapshot' : 'Run health check'}
           </Button>
-          <Button onClick={runReadinessPreflight} disabled={!projectId || preflightLoading} className="bg-[#66d9ef] text-slate-950 hover:bg-[#9beeff]" data-testid="run-readiness-preflight">
+          <Button onClick={runReadinessPreflight} disabled={!projectId || preflightLoading} data-testid="run-readiness-preflight">
             {preflightLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
             {demoMode ? 'Load readiness snapshot' : 'Run readiness check'}
           </Button>
@@ -582,31 +585,18 @@ export function PublishedDashboardsAdminPanel() {
         </section>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardContent className="p-4">
-            <p className="text-xs text-slate-500">Dashboards</p>
-            <p className="mt-2 text-2xl font-semibold">{dashboards.length}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardContent className="p-4">
-            <p className="text-xs text-slate-500">Versions</p>
-            <p className="mt-2 text-2xl font-semibold">{history.versions.length}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardContent className="p-4">
-            <p className="text-xs text-slate-500">Eligible charts</p>
-            <p className="mt-2 text-2xl font-semibold">{publishableCharts.length}</p>
-          </CardContent>
-        </Card>
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardContent className="p-4">
-            <p className="text-xs text-slate-500">Selected slots</p>
-            <p className="mt-2 text-2xl font-semibold">{selectedCharts.length}</p>
-          </CardContent>
-        </Card>
+      <section className="grid overflow-hidden rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] md:grid-cols-4 md:divide-x md:divide-[color:var(--dos-border-soft)]">
+        {[
+          ['Dashboards', dashboards.length],
+          ['Versions', history.versions.length],
+          ['Eligible charts', publishableCharts.length],
+          ['Selected slots', selectedCharts.length],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="border-b border-[color:var(--dos-border-soft)] p-4 last:border-b-0 md:border-b-0">
+            <p className="text-xs text-[var(--dos-text-muted)]">{label}</p>
+            <p className="mt-2 font-mono text-xl font-semibold text-[var(--dos-text-primary)]">{value}</p>
+          </div>
+        ))}
       </section>
 
       <GuidedPublishReadinessPanel readiness={publishReadiness} source={demoMode ? 'prepared-reference' : serverPreflight ? 'server-preflight' : 'local'} />
@@ -626,9 +616,9 @@ export function PublishedDashboardsAdminPanel() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline" className="border-[#a6e22e]/30 bg-[#a6e22e]/10 text-[#d7ff8f]">{healthAudit.summary.healthy} healthy</Badge>
-              <Badge variant="outline" className="border-[#fd971f]/30 bg-[#fd971f]/10 text-[#ffd866]">{healthAudit.summary.stale} stale</Badge>
-              <Badge variant="outline" className="border-[#f92672]/30 bg-[#f92672]/10 text-[#ff8db9]">{healthAudit.summary.blocked} blocked</Badge>
+              <Badge variant="outline" className="border-[color:var(--dos-success)] bg-[var(--dos-success-soft)] text-[var(--dos-success-text)]">{healthAudit.summary.healthy} healthy</Badge>
+              <Badge variant="outline" className="border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] text-[var(--dos-warning-text)]">{healthAudit.summary.stale} stale</Badge>
+              <Badge variant="outline" className="border-[color:var(--dos-danger)] bg-[var(--dos-danger-soft)] text-[var(--dos-danger-text)]">{healthAudit.summary.blocked} blocked</Badge>
             </div>
           </div>
         </section>
@@ -639,7 +629,7 @@ export function PublishedDashboardsAdminPanel() {
           <Card className="border-white/10 bg-white/[0.03] text-slate-100">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
-                <LayoutDashboard className="h-4 w-4 text-[#a6e22e]" />
+                <LayoutDashboard className="h-4 w-4 text-[var(--dos-accent-primary)]" />
                 New dashboard shell
               </CardTitle>
             </CardHeader>
@@ -652,7 +642,7 @@ export function PublishedDashboardsAdminPanel() {
                 <Label className="text-xs text-slate-400">Description</Label>
                 <Textarea value={dashboardDescription} onChange={event => setDashboardDescription(event.target.value)} disabled={demoMode} className="mt-2 border-white/10 bg-slate-950 text-slate-100" placeholder="Read-only client dashboard purpose" />
               </div>
-              <Button onClick={createDashboard} disabled={demoMode || !selectedProject || dashboardName.trim().length < 2 || savingDashboard} title={demoMode ? 'Draft creation is disabled in the prepared reference workspace' : undefined} className="w-full bg-[#a6e22e] text-[#1f1f1c] hover:bg-[#cfff55]">
+              <Button onClick={createDashboard} disabled={demoMode || !selectedProject || dashboardName.trim().length < 2 || savingDashboard} title={demoMode ? 'Draft creation is disabled in the prepared reference workspace' : undefined} className="w-full">
                 {savingDashboard ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
                 Create dashboard
               </Button>
@@ -662,7 +652,7 @@ export function PublishedDashboardsAdminPanel() {
           <Card className="border-white/10 bg-white/[0.03] text-slate-100">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
-                <SquareStack className="h-4 w-4 text-[#66d9ef]" />
+                <SquareStack className="h-4 w-4 text-[var(--dos-info-text)]" />
                 Dashboard selection
               </CardTitle>
             </CardHeader>
@@ -717,7 +707,7 @@ export function PublishedDashboardsAdminPanel() {
           <Card className="border-white/10 bg-white/[0.03] text-slate-100">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
-                <FileStack className="h-4 w-4 text-[#fd971f]" />
+                <FileStack className="h-4 w-4 text-[var(--dos-warning-text)]" />
                 Draft version composer
               </CardTitle>
             </CardHeader>
@@ -748,7 +738,7 @@ export function PublishedDashboardsAdminPanel() {
                       className={[
                         'min-h-24 rounded-md border p-3 text-left transition-colors',
                         selected
-                          ? 'border-[#a6e22e]/50 bg-[#a6e22e]/10'
+                          ? 'border-[color:var(--dos-success)] bg-[var(--dos-success-soft)]'
                           : 'border-white/10 bg-slate-950/50 hover:border-white/25',
                       ].join(' ')}
                     >
@@ -757,14 +747,14 @@ export function PublishedDashboardsAdminPanel() {
                           <p className="text-sm font-semibold text-slate-100">{chart.name}</p>
                           <p className="mt-1 text-xs text-slate-500">{chart.templateId}</p>
                         </div>
-                        {selected ? <CheckCircle2 className="h-4 w-4 text-[#a6e22e]" /> : <Eye className="h-4 w-4 text-slate-500" />}
+                        {selected ? <CheckCircle2 className="h-4 w-4 text-[var(--dos-success-text)]" /> : <Eye className="h-4 w-4 text-[var(--dos-text-muted)]" />}
                       </div>
                     </button>
                   )
                 })}
               </div>
 
-              <Button onClick={createVersion} disabled={demoMode || !selectedDashboard || selectedCharts.length === 0 || savingVersion} title={demoMode ? 'Draft creation is disabled in the prepared reference workspace' : undefined} className="bg-[#66d9ef] text-slate-950 hover:bg-[#9beeff]">
+              <Button onClick={createVersion} disabled={demoMode || !selectedDashboard || selectedCharts.length === 0 || savingVersion} title={demoMode ? 'Draft creation is disabled in the prepared reference workspace' : undefined}>
                 {savingVersion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 Create draft version
               </Button>
@@ -774,7 +764,7 @@ export function PublishedDashboardsAdminPanel() {
           <Card className="border-white/10 bg-white/[0.03] text-slate-100">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-sm">
-                <Rocket className="h-4 w-4 text-[#f92672]" />
+                <Rocket className="h-4 w-4 text-[var(--dos-danger-text)]" />
                 Version history
               </CardTitle>
             </CardHeader>
@@ -828,7 +818,7 @@ export function PublishedDashboardsAdminPanel() {
                           </p>
                         )}
                       </div>
-                      <Button size="sm" onClick={() => publishVersion(version.id)} disabled={publishDisabled || publishingId === version.id} className="bg-[#f92672] text-white hover:bg-[#ff5c9c]">
+                      <Button size="sm" onClick={() => publishVersion(version.id)} disabled={publishDisabled || publishingId === version.id}>
                         {publishingId === version.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Rocket className="mr-2 h-4 w-4" />}
                         Publish
                       </Button>

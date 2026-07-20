@@ -1,6 +1,9 @@
 ﻿'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 import type { SharePayload } from '@/lib/share-utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -272,14 +275,14 @@ export function SharedDashboardViewer({ payload }: Props) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-card/95 backdrop-blur sticky top-0 z-50">
+      <header className="sticky top-0 z-50 border-b bg-card">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-              <LayoutGrid className="w-4 h-4 text-white" />
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border bg-muted">
+              <LayoutGrid className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-sm font-bold truncate">{payload.dashboardName}</h1>
+              <h1 className="truncate text-sm font-semibold">{payload.dashboardName}</h1>
               <p className="text-xs text-muted-foreground">Shared read-only view</p>
             </div>
             <Badge variant="secondary" className="text-[10px] flex-shrink-0">
@@ -306,10 +309,10 @@ export function SharedDashboardViewer({ payload }: Props) {
         </div>
       </header>
 
-      <div className="bg-blue-50 dark:bg-blue-950/30 border-b border-blue-100 dark:border-blue-900/40">
+      <div className="border-b bg-muted/30">
         <div className="max-w-7xl mx-auto px-6 py-2 flex items-center gap-2">
-          <Shield className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-          <p className="text-xs text-blue-700 dark:text-blue-400">
+          <Shield className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
+          <p className="text-xs text-muted-foreground">
             This is a read-only shared view. Data is fetched live from the original API endpoints.
           </p>
         </div>
@@ -324,7 +327,7 @@ export function SharedDashboardViewer({ payload }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
             >
-              <Card className="hover:shadow-md transition-shadow">
+              <Card className="transition-colors hover:border-primary/30">
                 <CardHeader className="pb-2 px-4 pt-3">
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-sm truncate">{wd.title}</CardTitle>
@@ -344,7 +347,7 @@ export function SharedDashboardViewer({ payload }: Props) {
           ))}
         </div>
 
-        <div className="mt-8 text-center">
+        <div className="mt-8 border-t pt-4">
           <p className="text-xs text-muted-foreground">
             Shared from Analytics AI Dashboard Builder - {new Date(payload.exportedAt).toLocaleDateString()}
           </p>

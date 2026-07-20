@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, Building2, CheckCircle2, Globe2, KeyRound, Loader2, LockKeyhole, Plus, ShieldCheck, Users } from 'lucide-react'
 import { toast } from 'sonner'
@@ -140,48 +143,56 @@ export function TenantsAdminPanel() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 lg:grid-cols-4">
+      <section className="flex flex-col gap-4 border-b border-[color:var(--dos-border-soft)] pb-5 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Tenant registry</p>
+          <h2 className="mt-2 text-xl font-semibold text-[var(--dos-text-primary)]">Client isolation workbench</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
+            Establish the tenant boundary before assigning projects, data sources, members, and published dashboards.
+          </p>
+        </div>
+        <div className="text-xs text-[var(--dos-text-muted)]"><strong className="font-mono text-lg text-[var(--dos-text-primary)]">{tenants.length}</strong> registered tenants</div>
+      </section>
+
+      <section className="overflow-hidden rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
+        <div className="grid md:grid-cols-4 md:divide-x md:divide-[color:var(--dos-border-soft)]">
         {TENANT_FLOW.map((step) => {
           const Icon = step.icon
           return (
-            <Card key={step.title} className="border-white/10 bg-white/[0.03] text-slate-100">
-              <CardContent className="p-5">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h3 className="mt-4 text-sm font-semibold">{step.title}</h3>
-                <p className="mt-2 text-xs leading-5 text-slate-500">{step.body}</p>
-              </CardContent>
-            </Card>
+            <div key={step.title} className="border-b border-[color:var(--dos-border-soft)] p-4 last:border-b-0 md:border-b-0">
+              <div className="flex items-center gap-2 text-[var(--dos-text-primary)]"><Icon className="h-4 w-4 text-[var(--dos-accent-primary)]" /><h3 className="text-sm font-semibold">{step.title}</h3></div>
+              <p className="mt-2 text-xs leading-5 text-[var(--dos-text-muted)]">{step.body}</p>
+            </div>
           )
         })}
+        </div>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+        <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]">
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-[color:var(--dos-border-soft)]">
             <CardTitle className="text-sm">Tenant workspaces</CardTitle>
-            <Button size="sm" className="bg-cyan-500 text-slate-950 hover:bg-cyan-400" onClick={() => setCreateOpen(true)}>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               New Tenant
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {loading ? (
-              <div className="flex items-center justify-center rounded-lg border border-white/10 bg-slate-950/50 py-12 text-sm text-slate-400">
+              <div className="flex items-center border-b border-[color:var(--dos-border-soft)] py-10 text-sm text-[var(--dos-text-muted)]">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Loading tenants
               </div>
             ) : error ? (
-              <div className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
+              <div className="rounded-md border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] p-4 text-sm text-[var(--dos-warning-text)]">
                 <div className="flex items-start gap-3">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
                     <p className="font-medium">Tenant API is not ready</p>
-                    <p className="mt-1 text-xs leading-5 text-amber-100/75">
+                    <p className="mt-1 text-xs leading-5">
                       {error}
                     </p>
-                    <p className="mt-2 text-xs text-amber-100/75">
+                    <p className="mt-2 text-xs">
                       Apply the DashboardOS tenancy migration before using this screen.
                     </p>
                   </div>
@@ -191,30 +202,30 @@ export function TenantsAdminPanel() {
               tenants.map((tenant) => (
                 <div
                   key={tenant.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/50 p-4"
+                  className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--dos-border-soft)] py-4 last:border-b-0"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm font-semibold">{tenant.name}</h3>
-                      <Badge variant="outline" className="border-white/15 text-slate-300">
+                      <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">
                         {tenant.status}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-[var(--dos-text-muted)]">
                       {tenant.primaryDomain || `${tenant.slug}.dashboardos.local`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <LockKeyhole className="h-3.5 w-3.5 text-cyan-300" />
+                  <div className="flex items-center gap-2 font-mono text-xs text-[var(--dos-text-muted)]">
+                    <LockKeyhole className="h-3.5 w-3.5 text-[var(--dos-accent-primary)]" />
                     {tenant.slug}
                   </div>
                 </div>
               ))
             ) : (
-              <div className="rounded-lg border border-dashed border-white/15 bg-slate-950/50 p-8 text-center">
-                <Building2 className="mx-auto h-8 w-8 text-slate-500" />
-                <h3 className="mt-3 text-sm font-semibold">No tenants yet</h3>
-                <p className="mt-1 text-xs text-slate-500">
+              <div className="rounded-md border border-dashed border-[color:var(--dos-border-soft)] p-6">
+                <Building2 className="h-6 w-6 text-[var(--dos-text-muted)]" />
+                <h3 className="mt-4 text-sm font-semibold">No tenants yet</h3>
+                <p className="mt-1 max-w-md text-xs text-[var(--dos-text-muted)]">
                   Create the first client tenant after applying the tenancy migration.
                 </p>
               </div>
@@ -222,17 +233,17 @@ export function TenantsAdminPanel() {
           </CardContent>
         </Card>
 
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
+        <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
-              <ShieldCheck className="h-4 w-4 text-emerald-300" />
+              <ShieldCheck className="h-4 w-4 text-[var(--dos-success-text)]" />
               Access rules
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {ACCESS_RULES.map((rule) => (
-              <div key={rule} className="flex items-start gap-3 text-sm text-slate-400">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+              <div key={rule} className="flex items-start gap-3 text-sm text-[var(--dos-text-muted)]">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--dos-success-text)]" />
                 <span>{rule}</span>
               </div>
             ))}

@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { AlertTriangle, BarChart3, CheckCircle2, Clock3, Loader2, Table2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -391,7 +394,7 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
           const state = chartRuns[chart.id] ?? EMPTY_STATE
           const statusLabel = state.status === 'ready' ? 'Live' : state.status === 'loading' ? 'Loading' : state.status === 'error' ? 'Review' : 'Queued'
           return (
-            <article key={chart.id} className={`${sizeClass(chart)} rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.16)] transition duration-200 hover:border-[color:var(--dos-border-mid)]`}>
+            <article key={chart.id} className={`${sizeClass(chart)} rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 shadow-sm transition-colors hover:border-[color:var(--dos-border-mid)]`}>
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">

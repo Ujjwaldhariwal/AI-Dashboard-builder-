@@ -9,6 +9,9 @@
 //  P12 — ChartWrapper wraps every Recharts return in renderChart()
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -310,8 +313,8 @@ function WidgetHeader({
             </div>
           )}
 
-          <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center flex-shrink-0">
-            <Icon className="w-3.5 h-3.5 text-white" />
+          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border bg-muted text-foreground">
+            <Icon className="h-3.5 w-3.5" />
           </div>
 
           <div className="flex-1 min-w-0">
@@ -901,10 +904,10 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
       <Card
         ref={setNodeRef}
         style={dragStyle}
-        className={`flex flex-col transition-all duration-200 ${cardHeightClass} ${
+        className={`flex flex-col overflow-hidden rounded-lg ${cardHeightClass} ${
           isDragging
-            ? 'shadow-2xl ring-2 ring-blue-500/50 scale-[1.02]'
-            : 'hover:shadow-md'
+            ? 'border-primary shadow-lg ring-1 ring-primary/40'
+            : 'shadow-sm hover:border-primary/30'
         }`}
       >
         <WidgetHeader
@@ -982,7 +985,7 @@ export function WidgetCard({ widget, viewMode = false, isDragClone = false }: Wi
 
       <Dialog open={insightsOpen} onOpenChange={setInsightsOpen}>
         <DialogContent className="sm:max-w-2xl p-0 overflow-hidden">
-          <DialogHeader className="px-5 pt-5 pb-3 border-b bg-gradient-to-r from-blue-50/80 via-cyan-50/60 to-emerald-50/40 dark:from-blue-950/30 dark:via-cyan-950/20 dark:to-emerald-950/20">
+          <DialogHeader className="border-b bg-muted/25 px-5 pb-3 pt-5">
             <DialogTitle className="flex items-center gap-2 text-base">
               <Sparkles className="w-4 h-4 text-cyan-600" />
               AI Insights

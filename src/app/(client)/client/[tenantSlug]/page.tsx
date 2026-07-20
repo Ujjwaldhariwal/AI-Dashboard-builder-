@@ -1,3 +1,6 @@
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { LayoutDashboard, LockKeyhole, ShieldAlert, Table2 } from 'lucide-react'
 import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
@@ -114,14 +117,14 @@ function healthLabel(state?: DashboardHealthRunRecord['health_state']) {
 function AccessDeniedRuntime({ tenantSlug }: { tenantSlug: string }) {
   return (
     <ClientThemeShell>
-      <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]/92 backdrop-blur">
+      <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)]">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] text-[var(--dos-text-primary)]">
               <LayoutDashboard className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--dos-chart-warning)]">Client runtime</p>
+              <p className="font-mono text-xs text-[var(--dos-chart-warning)]">Client runtime</p>
               <h1 className="truncate text-xl font-semibold tracking-tight">Dashboard access required</h1>
             </div>
           </div>
@@ -131,18 +134,23 @@ function AccessDeniedRuntime({ tenantSlug }: { tenantSlug: string }) {
         </div>
       </header>
 
-      <main className="mx-auto flex min-h-[calc(100vh-80px)] max-w-3xl items-center px-4 py-12">
-        <section className="w-full rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-8 text-center shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[var(--dos-chart-warning)]">
+      <main className="mx-auto min-h-[calc(100vh-80px)] max-w-5xl px-4 py-10">
+        <section className="grid w-full overflow-hidden rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] md:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="p-6 md:p-8">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md border border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[var(--dos-chart-warning)]">
             <ShieldAlert className="h-6 w-6" />
           </div>
-          <h2 className="mt-5 text-2xl font-semibold tracking-tight">You do not have access to this dashboard yet</h2>
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[var(--dos-text-muted)]">
+          <h2 className="mt-8 text-2xl font-semibold tracking-tight">Dashboard access has not been assigned</h2>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--dos-text-muted)]">
             Your account is signed in, but it has not been assigned to the <span className="font-mono text-[var(--dos-text-secondary)]">{tenantSlug}</span> tenant or one of its published dashboard entitlements.
           </p>
+          </div>
+          <aside className="border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] p-6 md:border-l md:border-t-0">
+            <p className="text-xs font-semibold">Access boundary</p>
           <div className="mt-6 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] px-4 py-3 text-left text-xs leading-5 text-[var(--dos-text-muted)]">
             Ask a workspace admin to add your employee account as a tenant member or grant a dashboard entitlement. Source credentials and unpublished semantic assets remain hidden.
           </div>
+          </aside>
         </section>
       </main>
     </ClientThemeShell>
@@ -204,11 +212,11 @@ export default async function TenantClientPage({
         <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]/90 backdrop-blur">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]">
                 <LayoutDashboard className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Northstar Retail</p>
+                <p className="font-mono text-xs text-[var(--dos-text-muted)]">Northstar Retail</p>
                 <h1 className="truncate text-lg font-semibold">{demoDashboard.name}</h1>
               </div>
             </div>
@@ -231,10 +239,8 @@ export default async function TenantClientPage({
             </p>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-3">
-            <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]"><CardContent className="p-4"><p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Projects</p><p className="mt-2 text-2xl font-semibold">1</p></CardContent></Card>
-            <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]"><CardContent className="p-4"><p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Published datasets</p><p className="mt-2 text-2xl font-semibold">1</p></CardContent></Card>
-            <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]"><CardContent className="p-4"><p className="text-xs font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Published charts</p><p className="mt-2 text-2xl font-semibold">{demoCharts.length}</p></CardContent></Card>
+          <section className="grid overflow-hidden rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] md:grid-cols-3 md:divide-x md:divide-[color:var(--dos-border-soft)]">
+            {[['Projects', 1], ['Published datasets', 1], ['Published charts', demoCharts.length]].map(([label, value]) => <div key={String(label)} className="border-b border-[color:var(--dos-border-soft)] p-4 last:border-b-0 md:border-b-0"><p className="text-xs text-[var(--dos-text-muted)]">{label}</p><p className="mt-2 font-mono text-xl font-semibold">{value}</p></div>)}
           </section>
 
           <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4 shadow-sm">
@@ -460,11 +466,11 @@ export default async function TenantClientPage({
       <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]/92 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)] shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]">
               <LayoutDashboard className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--dos-chart-success)]">{activeTenant.name}</p>
+              <p className="font-mono text-xs text-[var(--dos-chart-success)]">{activeTenant.name}</p>
               <h1 className="truncate text-xl font-semibold tracking-tight">{runtimeDashboard?.dashboard.name ?? 'Published Dashboard'}</h1>
             </div>
           </div>
@@ -480,17 +486,17 @@ export default async function TenantClientPage({
       </header>
 
       <main className="mx-auto max-w-7xl space-y-5 px-4 py-5">
-        <section className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.14)]">
+        <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--dos-chart-info)]">Executive Runtime</p>
+              <p className="font-mono text-xs text-[var(--dos-chart-info)]">Executive runtime</p>
               <h2 className="mt-1 text-2xl font-semibold tracking-tight">Electricity operations dashboard</h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
                 Published charts run from governed semantic datasets. Builder controls, source credentials, and semantic draft assets stay hidden from this client view.
               </p>
             </div>
             <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] px-4 py-3 text-right">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--dos-text-muted)]">Last updated</p>
+              <p className="font-mono text-[11px] text-[var(--dos-text-muted)]">Last updated</p>
               <p className="mt-1 text-sm font-semibold">{formatUpdatedAt(runtimeDashboard?.dashboard.publishedAt ?? runtimeDashboard?.version.publishedAt)}</p>
             </div>
           </div>

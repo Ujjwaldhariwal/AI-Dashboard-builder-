@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 // src/components/builder/style-panel/widget-style-panel.tsx
 
 import { useState } from 'react'
@@ -66,14 +69,16 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
 
   if (!widget) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-6 text-center gap-3">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600/20 to-pink-600/20 flex items-center justify-center">
-          <Paintbrush className="w-6 h-6 text-purple-500" />
+      <div className="flex h-full flex-col justify-between gap-10 p-5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted">
+          <Paintbrush className="h-4 w-4" />
         </div>
-        <p className="text-sm font-semibold">No widget selected</p>
-        <p className="text-xs text-muted-foreground max-w-[200px] leading-relaxed">
-          Click any widget on the canvas to style it visually
-        </p>
+        <div>
+          <p className="text-sm font-semibold">Select a widget to style</p>
+          <p className="mt-2 max-w-[17rem] text-xs leading-5 text-muted-foreground">
+            Choose a canvas item to edit its palette, labels, tooltip, legend, and chart-specific controls.
+          </p>
+        </div>
       </div>
     )
   }
@@ -131,7 +136,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
     <div className="flex flex-col h-full overflow-y-auto">
 
       {/* Header */}
-      <div className="px-4 py-3 border-b bg-purple-500/5 flex-shrink-0">
+      <div className="flex-shrink-0 border-b bg-muted/25 px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="min-w-0">
             <p className="text-xs font-semibold truncate">{widget.title}</p>
@@ -181,7 +186,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
             {resolvedColors.slice(0, 6).map((color, i) => (
               <label key={i} className="relative cursor-pointer group" title={color}>
                 <div
-                  className="w-9 h-9 rounded-lg shadow-sm ring-2 ring-transparent group-hover:ring-white/30 transition-all"
+                  className="h-9 w-9 rounded-md border ring-2 ring-transparent transition-colors group-hover:ring-foreground/20"
                   style={{ backgroundColor: color }}
                 />
                 <input
@@ -236,7 +241,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
               type="range" min={0} max={20}
               value={style.barRadius ?? 5}
               onChange={e => updateWidgetStyle(widget.id, { barRadius: Number(e.target.value) })}
-              className="w-full h-1.5 rounded-full cursor-pointer accent-purple-500"
+              className="h-1.5 w-full cursor-pointer rounded-full accent-primary"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground">
               <span>Sharp</span><span>Rounded</span>
@@ -296,7 +301,7 @@ export function WidgetStylePanel({ selectedWidgetId }: WidgetStylePanelProps) {
         </section>
 
         {/* AI style assistant */}
-        <section className="space-y-2.5 rounded-lg border p-3 bg-muted/20">
+        <section className="space-y-2.5 rounded-md border bg-muted/20 p-3">
           <div className="flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
             <Label className="text-xs font-semibold">AI Style Assistant</Label>

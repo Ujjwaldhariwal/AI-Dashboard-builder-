@@ -1,5 +1,8 @@
 "use client";
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 // src/app/(viewer)/dashboard/page.tsx
 // ─────────────────────────────────────────────────────────
 // Fixed: responsive header, smooth nav, optimized renders
@@ -285,19 +288,19 @@ export default function ViewerPage() {
 
   if (!currentDash) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4 sm:p-8">
-        <Card className="max-w-md w-full">
-          <CardContent className="py-12 text-center">
-            <FolderKanban className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-            <h2 className="text-xl font-semibold mb-2">
-              No Dashboard Selected
-            </h2>
-            <p className="text-muted-foreground mb-4 text-sm">
-              Please select a dashboard from the builder
-            </p>
-            <Link href="/workspaces">
-              <Button>Go to Dashboards</Button>
-            </Link>
+      <div className="min-h-screen bg-muted/20 p-4 sm:p-8">
+        <Card className="mx-auto mt-12 w-full max-w-3xl overflow-hidden">
+          <CardContent className="grid gap-10 p-6 md:grid-cols-[minmax(0,1fr)_16rem] md:p-8">
+            <div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted"><FolderKanban className="h-4 w-4" /></div>
+              <h2 className="mt-8 text-xl font-semibold">No dashboard selected</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">Select a dashboard from the workspace before opening the governed preview.</p>
+            </div>
+            <div className="border-t pt-6 md:border-l md:border-t-0 md:pl-6 md:pt-0">
+              <p className="text-xs font-medium">Preview requirements</p>
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">A dashboard, governed widgets, and a valid data connection.</p>
+              <Link href="/workspaces" className="mt-6 inline-block"><Button>Open workspaces</Button></Link>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -309,7 +312,7 @@ export default function ViewerPage() {
   return (
     <div className="min-h-screen bg-background print:bg-white">
       {/* ── Sticky header — responsive ─────────────────── */}
-      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur print:hidden">
+      <header className="sticky top-0 z-50 border-b bg-card print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
           {/* Left */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -318,11 +321,11 @@ export default function ViewerPage() {
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </Link>
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shrink-0 hidden sm:flex">
-              <LayoutGrid className="w-4 h-4 text-white" />
+            <div className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted sm:flex">
+              <LayoutGrid className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-sm font-bold truncate">{currentDash.name}</h1>
+              <h1 className="truncate text-sm font-semibold">{currentDash.name}</h1>
               <p className="text-[11px] text-muted-foreground truncate hidden sm:block">
                 {currentDash.description || "Live Dashboard Preview"}
               </p>
@@ -491,12 +494,12 @@ export default function ViewerPage() {
             </Button>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-16 sm:py-24 text-center px-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center mx-auto mb-4">
-              <LayoutGrid className="w-7 h-7 text-white" />
+          <div className="mx-auto my-12 max-w-3xl rounded-lg border border-dashed p-6 sm:p-8">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted">
+              <LayoutGrid className="h-4 w-4" />
             </div>
-            <h2 className="text-lg font-semibold mb-1">No widgets yet</h2>
-            <p className="text-muted-foreground text-sm mb-4">
+            <h2 className="mt-8 text-lg font-semibold">No widgets yet</h2>
+            <p className="mb-4 mt-1 text-sm text-muted-foreground">
               Add widgets in the builder to see them here
             </p>
             <Link href="/builder">

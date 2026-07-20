@@ -1,0 +1,13 @@
+{
+  "project": "DashboardOS",
+  "scannedAt": "2026-07-19T18:20:00+05:30",
+  "framework": "Next.js 16 App Router with Tailwind CSS 3",
+  "fontStack": "Bundled Geist Sans and Geist Mono variable fonts",
+  "palette": "shadcn HSL compatibility variables plus DashboardOS surface variables",
+  "motion": "Framer Motion 11 installed",
+  "spacing": "Tailwind four-point-compatible scale",
+  "genre": "modern-minimal",
+  "theme": "Cobalt adapted for DashboardOS",
+  "macrostructure": "Workbench",
+  "source": "package.json, tailwind.config.ts, src/app/layout.tsx, src/app/globals.css"
+}

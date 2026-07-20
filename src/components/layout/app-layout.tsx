@@ -23,7 +23,6 @@ import {
   UserRound,
   Users,
   X,
-  Zap,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -45,9 +44,6 @@ interface ShellNavItem {
   href: string
   icon: React.ElementType
   show: boolean
-  iconColor: string
-  activeBg: string
-  pillColor: string
 }
 
 interface SearchResult {
@@ -73,25 +69,22 @@ function SidebarNavItem({
     <Link href={item.href} className="block">
       <div
         className={[
-          'group relative flex items-center gap-3 overflow-hidden rounded-xl transition-all duration-200',
+          'group relative flex items-center gap-3 overflow-hidden rounded-md border border-transparent transition-colors duration-150',
           isCompact ? 'mx-auto h-12 w-12 justify-center' : 'h-10 px-3',
-          isActive ? `bg-gradient-to-r ${item.activeBg}` : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+          isActive ? 'border-primary/20 bg-primary/10 text-foreground' : 'text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground',
         ].join(' ')}
       >
         {isActive ? (
-          <motion.div
-            layoutId="sidebar-active-pill"
+          <div
             className={[
-              'absolute rounded-full bg-gradient-to-b',
-              item.pillColor,
+              'absolute bg-primary',
               isCompact ? 'bottom-2 left-0 top-2 w-[3px]' : 'bottom-1.5 left-0 top-1.5 w-[3px]',
             ].join(' ')}
-            transition={{ type: 'spring', stiffness: 350, damping: 30 }}
           />
         ) : null}
 
         <div className={['relative flex shrink-0 items-center justify-center', isCompact ? 'h-6 w-6' : 'h-5 w-5'].join(' ')}>
-          <Icon className={`${isCompact ? 'h-[22px] w-[22px]' : 'h-[18px] w-[18px]'} ${item.iconColor}`} strokeWidth={isActive ? 2.2 : 1.8} />
+          <Icon className={`${isCompact ? 'h-[22px] w-[22px]' : 'h-[18px] w-[18px]'} ${isActive ? 'text-primary' : 'text-muted-foreground'}`} strokeWidth={isActive ? 2.2 : 1.8} />
         </div>
 
         {!isCompact ? (
@@ -108,7 +101,7 @@ function SidebarNavItem({
   return (
     <div className="group/tip relative" title={item.name}>
       {inner}
-      <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 scale-95 whitespace-nowrap rounded-md border border-border bg-popover px-2.5 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-md transition-all duration-150 group-hover/tip:scale-100 group-hover/tip:opacity-100">
+      <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2.5 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-sm transition-opacity duration-150 group-hover/tip:opacity-100 group-focus-within/tip:opacity-100">
         {item.name}
       </span>
     </div>
@@ -127,17 +120,17 @@ export function AppLayout({ children }: AppLayoutProps) {
   const searchRef = useRef<HTMLInputElement>(null)
 
   const navigation = useMemo<ShellNavItem[]>(() => [
-    { name: 'DashboardOS', href: '/admin', icon: Network, show: true, iconColor: 'text-cyan-500', activeBg: 'from-cyan-600/10 to-blue-400/5 dark:from-cyan-500/15 dark:to-blue-400/5', pillColor: 'from-cyan-500 to-blue-600' },
-    { name: 'Tenants', href: '/admin/tenants', icon: Users, show: true, iconColor: 'text-indigo-500', activeBg: 'from-indigo-600/10 to-indigo-400/5 dark:from-indigo-500/15 dark:to-indigo-400/5', pillColor: 'from-indigo-500 to-indigo-600' },
-    { name: 'Data Sources', href: '/admin/data-sources', icon: Database, show: true, iconColor: 'text-emerald-500', activeBg: 'from-emerald-600/10 to-emerald-400/5 dark:from-emerald-500/15 dark:to-emerald-400/5', pillColor: 'from-emerald-500 to-emerald-600' },
-    { name: 'Semantic Model', href: '/admin/semantic-model', icon: GitBranch, show: true, iconColor: 'text-amber-500', activeBg: 'from-amber-600/10 to-amber-400/5 dark:from-amber-500/15 dark:to-amber-400/5', pillColor: 'from-amber-500 to-amber-600' },
-    { name: 'Datasets', href: '/admin/datasets', icon: BarChart3, show: true, iconColor: 'text-lime-500', activeBg: 'from-lime-600/10 to-lime-400/5 dark:from-lime-500/15 dark:to-lime-400/5', pillColor: 'from-lime-500 to-lime-600' },
-    { name: 'Charts', href: '/admin/charts', icon: SlidersHorizontal, show: true, iconColor: 'text-fuchsia-500', activeBg: 'from-fuchsia-600/10 to-fuchsia-400/5 dark:from-fuchsia-500/15 dark:to-fuchsia-400/5', pillColor: 'from-fuchsia-500 to-fuchsia-600' },
-    { name: 'Publishing', href: '/admin/publishing', icon: LayoutDashboard, show: true, iconColor: 'text-blue-500', activeBg: 'from-blue-600/10 to-blue-400/5 dark:from-blue-500/15 dark:to-blue-400/5', pillColor: 'from-blue-500 to-blue-600' },
-    { name: 'API Docs', href: '/admin/api-docs', icon: BookOpen, show: true, iconColor: 'text-sky-500', activeBg: 'from-sky-600/10 to-sky-400/5 dark:from-sky-500/15 dark:to-sky-400/5', pillColor: 'from-sky-500 to-sky-600' },
-    { name: 'Legacy Workspaces', href: '/workspaces', icon: FolderKanban, show: LEGACY_NAVIGATION_ENABLED, iconColor: 'text-slate-400', activeBg: 'from-slate-600/10 to-slate-400/5 dark:from-slate-500/15 dark:to-slate-400/5', pillColor: 'from-slate-400 to-slate-500' },
-    { name: 'Legacy Builder', href: '/builder', icon: FolderKanban, show: LEGACY_NAVIGATION_ENABLED, iconColor: 'text-violet-500', activeBg: 'from-violet-600/10 to-violet-400/5 dark:from-violet-500/15 dark:to-violet-400/5', pillColor: 'from-violet-500 to-violet-600' },
-    { name: 'Settings', href: '/settings', icon: Settings, show: true, iconColor: 'text-slate-400', activeBg: 'from-slate-600/10 to-slate-400/5 dark:from-slate-500/15 dark:to-slate-400/5', pillColor: 'from-slate-400 to-slate-500' },
+    { name: 'DashboardOS', href: '/admin', icon: Network, show: true },
+    { name: 'Tenants', href: '/admin/tenants', icon: Users, show: true },
+    { name: 'Data Sources', href: '/admin/data-sources', icon: Database, show: true },
+    { name: 'Semantic Model', href: '/admin/semantic-model', icon: GitBranch, show: true },
+    { name: 'Datasets', href: '/admin/datasets', icon: BarChart3, show: true },
+    { name: 'Charts', href: '/admin/charts', icon: SlidersHorizontal, show: true },
+    { name: 'Publishing', href: '/admin/publishing', icon: LayoutDashboard, show: true },
+    { name: 'API Docs', href: '/admin/api-docs', icon: BookOpen, show: true },
+    { name: 'Legacy Workspaces', href: '/workspaces', icon: FolderKanban, show: LEGACY_NAVIGATION_ENABLED },
+    { name: 'Legacy Builder', href: '/builder', icon: FolderKanban, show: LEGACY_NAVIGATION_ENABLED },
+    { name: 'Settings', href: '/settings', icon: Settings, show: true },
   ], [])
 
   const visibleNavigation = useMemo(() => navigation.filter(item => item.show), [navigation])
@@ -208,8 +201,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const isCompactSidebar = isDesktopViewport && desktopSidebarCollapsed
   const roleBadgeClass = user?.role === 'admin'
-    ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+    ? 'border border-primary/20 bg-primary/10 text-primary'
+    : 'border border-border bg-muted text-muted-foreground'
 
   const handleSidebarToggle = useCallback(() => {
     if (isDesktopViewport) {
@@ -224,8 +217,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="px-3 py-4">
         <div className={isCompactSidebar ? 'flex justify-center' : ''}>
           <Link href="/admin" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-600/20">
-              <Zap className="h-4 w-4 text-white" strokeWidth={2.4} />
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+              <Network className="h-4 w-4" strokeWidth={2.2} />
             </div>
             {!isCompactSidebar ? (
               <div className="min-w-0">
@@ -285,18 +278,18 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="fixed left-0 right-0 top-0 z-50 h-14 border-b border-border/60 bg-card/80 backdrop-blur-xl">
+      <header className="fixed left-0 right-0 top-0 z-50 h-14 border-b border-border bg-card/95">
         <div className="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-4">
           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 xl:hidden" onClick={handleSidebarToggle} aria-label="Toggle sidebar">
             <Menu className="h-5 w-5" />
           </Button>
 
           <Link href="/admin" className="flex shrink-0 items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-600/20">
-              <Zap className="h-4 w-4 text-white" strokeWidth={2.4} />
+            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+              <Network className="h-4 w-4" strokeWidth={2.2} />
             </div>
             <span className="hidden text-base font-bold tracking-tight sm:block">
-              Dashboard<span className="text-cyan-600 dark:text-cyan-400">OS</span>
+              Dashboard<span className="text-primary">OS</span>
             </span>
           </Link>
 
@@ -310,7 +303,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Input
               ref={searchRef}
               placeholder="Search platform pages... (Ctrl+K)"
-              className="h-8 rounded-xl border-border/60 bg-muted/30 pl-8 pr-8 text-sm transition-colors focus:bg-background"
+              className="h-8 rounded-md border-border bg-muted/30 pl-8 pr-8 text-sm focus:bg-background"
               value={searchQuery}
               onChange={event => setSearchQuery(event.target.value)}
               onFocus={() => setSearchFocused(true)}
@@ -333,7 +326,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.98 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-border/60 bg-card shadow-2xl shadow-black/10"
+                  className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-md border border-border bg-card shadow-[var(--shadow-float)]"
                 >
                   {searchResults.map(result => (
                     <button
@@ -362,8 +355,8 @@ export function AppLayout({ children }: AppLayoutProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full" title={user?.name ?? 'Profile'}>
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 ring-2 ring-blue-600/20">
-                    <span className="text-[11px] font-bold text-white">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md border border-primary/20 bg-primary/10">
+                    <span className="text-[11px] font-bold text-primary">
                       {user?.name ? user.name.split(' ').map(name => name[0]).join('').slice(0, 2).toUpperCase() : 'U'}
                     </span>
                   </div>
@@ -374,8 +367,8 @@ export function AppLayout({ children }: AppLayoutProps) {
               <DropdownMenuContent align="end" className="w-64 rounded-xl" sideOffset={8}>
                 <DropdownMenuLabel className="p-0">
                   <div className="flex items-center gap-3 border-b p-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 ring-2 ring-blue-600/20">
-                      <UserRound className="h-4 w-4 text-white" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10">
+                      <UserRound className="h-4 w-4 text-primary" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{user?.name ?? 'Employee'}</p>
@@ -389,7 +382,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
                 <div className="py-1">
                   <DropdownMenuItem className="gap-2" onClick={() => router.push('/admin')}>
-                    <Shield className="h-3.5 w-3.5 text-purple-500" />
+                    <Shield className="h-3.5 w-3.5 text-primary" />
                     DashboardOS Admin
                   </DropdownMenuItem>
                   <DropdownMenuItem className="gap-2" onClick={() => router.push('/admin/publishing')}>
@@ -433,7 +426,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+                className="fixed inset-0 z-40 bg-foreground/25"
                 onClick={() => setSidebarOpen(false)}
                 aria-hidden="true"
               />
@@ -452,7 +445,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         <aside
           className={[
-            'fixed bottom-0 left-0 top-14 z-50 hidden flex-col overflow-y-auto overflow-x-hidden border-r border-border/60 bg-card transition-[width] duration-300 xl:flex',
+            'fixed bottom-0 left-0 top-14 z-50 hidden flex-col overflow-y-auto overflow-x-hidden border-r border-border bg-card xl:flex',
             isCompactSidebar ? 'w-[68px]' : 'w-60',
           ].join(' ')}
         >
@@ -466,7 +459,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed bottom-0 right-0 top-14 z-40 hidden cursor-pointer bg-black/5 xl:block"
+              className="fixed bottom-0 right-0 top-14 z-40 hidden cursor-pointer bg-transparent xl:block"
               style={{ left: 68 }}
               onClick={() => setDesktopSidebarCollapsed(true)}
               aria-label="Collapse sidebar"

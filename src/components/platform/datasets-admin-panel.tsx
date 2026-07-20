@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Archive, BarChart3, CheckCircle2, Eye, GitBranch, Loader2, Play, Plus, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -448,45 +451,49 @@ export function DatasetsAdminPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-white">Semantic Datasets</h2>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
+    <div className="space-y-6">
+      <section className="flex flex-col gap-4 border-b border-[color:var(--dos-border-soft)] pb-5 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Dataset registry</p>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--dos-text-primary)]">Governed dataset workbench</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
           Start from suggested dataset recipes, then customize only when the recommendation needs adjustment.
-        </p>
+          </p>
+        </div>
+        <div className="flex gap-5 text-xs text-[var(--dos-text-muted)]"><span><strong className="font-mono text-[var(--dos-text-primary)]">{datasets.length}</strong> datasets</span><span><strong className="font-mono text-[var(--dos-text-primary)]">{guidedRecipes.length}</strong> recipes</span></div>
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 text-slate-100">
+      <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[var(--dos-text-primary)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <Badge className="bg-[#a6e22e]/20 text-[#d7ff8f] hover:bg-[#a6e22e]/20">Guided mode</Badge>
+            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Guided mode</Badge>
             <h3 className="mt-3 text-lg font-semibold">Suggested dataset recipes</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
               Recipes use the approved semantic model asset. Generated drafts keep lineage back to the semantic draft version so reviewers know what the dataset came from.
             </p>
           </div>
-          <Button variant="outline" className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10" onClick={() => setAdvancedOpen(open => !open)}>
+          <Button variant="outline" onClick={() => setAdvancedOpen(open => !open)}>
             {advancedOpen ? 'Hide advanced' : 'Customize manually'}
           </Button>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
           {guidedRecipes.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-white/15 bg-slate-950/50 p-5 text-sm text-slate-400 lg:col-span-3">
+            <div className="rounded-md border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-5 text-sm text-[var(--dos-text-muted)] lg:col-span-3">
               Approve a semantic model with at least one metric to generate recipes.
             </div>
           ) : guidedRecipes.map(recipe => (
             <div
               key={recipe.id}
-              className="rounded-lg border border-white/10 bg-slate-950/50 p-4 transition-colors hover:border-[#a6e22e]/45 hover:bg-[#a6e22e]/10"
+              className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4 transition-colors hover:border-[var(--dos-accent-primary)]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-100">{recipe.title}</p>
-                  <p className="mt-2 text-xs leading-5 text-slate-400">{recipe.description}</p>
+                  <p className="text-sm font-semibold text-[var(--dos-text-primary)]">{recipe.title}</p>
+                  <p className="mt-2 text-xs leading-5 text-[var(--dos-text-muted)]">{recipe.description}</p>
                 </div>
-                <Badge variant="outline" className="border-white/15 text-slate-300">{recipe.confidence}%</Badge>
+                <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">{recipe.confidence}%</Badge>
               </div>
-              <p className="mt-3 text-[11px] text-slate-500">
+              <p className="mt-3 text-[11px] text-[var(--dos-text-muted)]">
                 {recipe.suggestedMetricLabels.slice(0, 3).join(', ') || 'Metrics pending'}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -494,7 +501,7 @@ export function DatasetsAdminPanel() {
                   {generatingRecipeId === recipe.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                   Generate draft
                 </Button>
-                <Button size="sm" variant="outline" className="border-white/10 bg-transparent text-slate-300 hover:bg-white/10" onClick={() => applyRecipe(recipe)}>
+                <Button size="sm" variant="outline" onClick={() => applyRecipe(recipe)}>
                   Review manually
                 </Button>
               </div>
@@ -504,7 +511,7 @@ export function DatasetsAdminPanel() {
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-        <Card className={advancedOpen ? 'border-white/10 bg-white/[0.03] text-slate-100' : 'border-white/10 bg-white/[0.03] text-slate-100 opacity-90'}>
+        <Card className={advancedOpen ? 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]' : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)] opacity-90'}>
           <CardHeader>
             <CardTitle className="text-sm">{advancedOpen ? 'Advanced dataset customization' : 'Review selected recipe'}</CardTitle>
           </CardHeader>
@@ -702,7 +709,7 @@ export function DatasetsAdminPanel() {
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span className="text-fuchsia-100">Shape: {plan.chartOptions.shape.kind}</span>
                       {plan.chartOptions.compatibility.filter(option => option.status === 'recommended').slice(0, 1).map(option => (
-                        <Badge key={option.template.id} className="bg-[#a6e22e]/20 text-[#d7ff8f] hover:bg-[#a6e22e]/25">
+                        <Badge key={option.template.id} className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">
                           Recommended: {option.template.name}
                         </Badge>
                       ))}

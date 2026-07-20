@@ -1,5 +1,8 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CheckCircle2, Clock3, Database, GitBranch, LayoutDashboard, Loader2, LockKeyhole, Rocket, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
@@ -320,7 +323,7 @@ export function GuidedWorkflowLanding() {
 
   return (
     <section
-      className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5 text-[color:var(--dos-text-primary)]"
+      className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[color:var(--dos-text-primary)]"
       data-testid="guided-workflow-landing"
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -333,7 +336,7 @@ export function GuidedWorkflowLanding() {
               </Badge>
             ) : null}
           </div>
-          <h2 className="mt-3 text-2xl font-semibold tracking-tight">Continue DB to dashboard</h2>
+          <h2 className="mt-3 text-xl font-semibold tracking-tight">Continue from database to dashboard</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--dos-text-muted)]">
             Connect a read-only database, review findings, approve the semantic model, inspect governed chart
             recommendations, validate readiness, then publish an immutable client release.
@@ -370,7 +373,7 @@ export function GuidedWorkflowLanding() {
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
         <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-text-muted)]">Current step</p>
+          <p className="font-mono text-xs text-[color:var(--dos-text-muted)]">Current step</p>
           <h3 className="mt-2 text-lg font-semibold" data-testid="guided-current-step">{continueState.currentStep.label}</h3>
           <p className="mt-2 text-sm leading-6 text-[color:var(--dos-text-muted)]">{continueState.currentStep.detail}</p>
           <div className="mt-4 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-3 text-xs leading-5 text-[color:var(--dos-text-muted)]">

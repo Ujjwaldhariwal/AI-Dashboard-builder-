@@ -1,5 +1,8 @@
 "use client";
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 // src/app/(builder)/builder/page.tsx
 // Optimized: reduced state, fixed effect loops, responsive
 // header, memoized computations, modular sub-components
@@ -479,14 +482,29 @@ export default function BuilderPage() {
   // Empty state: No Dashboard
   if (dashboards.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] p-6">
-        <div className="text-center max-w-sm">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mx-auto mb-4">
-            <FolderKanban className="w-8 h-8 text-white" />
+      <div className="mx-auto w-full max-w-7xl px-4 py-8">
+        <div className="grid min-h-[28rem] border bg-card md:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="flex flex-col justify-between gap-12 p-6 md:p-10">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted text-foreground">
+              <FolderKanban className="h-4 w-4" />
+            </div>
+            <div className="max-w-xl">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">DASHBOARD STUDIO</p>
+              <h1 className="text-2xl font-semibold tracking-tight">Create a dashboard workspace first</h1>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                The builder needs a workspace to own its data connections, widgets, and publishing settings.
+              </p>
+              <Button className="mt-6" onClick={() => router.push("/workspaces")}>Open workspaces</Button>
+            </div>
           </div>
-          <h2 className="text-xl font-bold mb-2">No Dashboard Yet</h2>
-          <p className="text-sm text-muted-foreground mb-5">Create one from Workspaces first.</p>
-          <Button onClick={() => router.push("/workspaces")}>Go to Workspaces</Button>
+          <div className="border-t bg-muted/25 p-6 md:border-l md:border-t-0 md:p-8">
+            <p className="text-xs font-semibold">Studio setup</p>
+            <ol className="mt-5 space-y-5 text-sm">
+              <li><span className="mr-3 font-mono text-xs text-muted-foreground">01</span>Create a workspace</li>
+              <li><span className="mr-3 font-mono text-xs text-muted-foreground">02</span>Connect a governed data source</li>
+              <li><span className="mr-3 font-mono text-xs text-muted-foreground">03</span>Compose and publish widgets</li>
+            </ol>
+          </div>
         </div>
       </div>
     );
@@ -495,9 +513,9 @@ export default function BuilderPage() {
   // Empty state: No APIs/Widgets
   if (dashboardEndpoints.length === 0 && widgets.length === 0) {
     return (
-      <div className="min-h-[calc(100vh-3.5rem)] bg-background relative">
-        <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-2">
-          <div className="border-b border-border/60 pb-4">
+      <div className="min-h-[calc(100vh-3.5rem)] bg-muted/20">
+        <div className="border-b bg-background">
+          <div className="mx-auto w-full max-w-[96rem] px-4 py-4 lg:px-6">
             <BuilderHeader
               currentDash={currentDash}
               widgetCount={0}
@@ -517,28 +535,41 @@ export default function BuilderPage() {
             />
           </div>
         </div>
-        <div className="mx-auto w-full max-w-7xl px-4 py-6">
-          <div className="flex items-center justify-center min-h-[50vh] border-2 border-dashed border-muted-foreground/20 rounded-xl mt-4">
-            <div className="text-center max-w-sm px-6">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center mx-auto mb-4">
-                <Database className="w-8 h-8 text-white" />
+        <div className="mx-auto w-full max-w-[96rem] px-4 py-6 lg:px-6">
+          <section className="grid min-h-[34rem] overflow-hidden rounded-lg border bg-card lg:grid-cols-[minmax(0,1fr)_21rem]">
+            <div className="flex flex-col justify-between gap-12 p-6 md:p-10">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted">
+                <Database className="h-4 w-4" />
               </div>
-              <h2 className="text-xl font-bold mb-2">No APIs Connected</h2>
-              <p className="text-sm text-muted-foreground mb-5">Add APIs or let AI build your dashboard instantly.</p>
-              <div className="flex flex-col gap-2">
-                <Button onClick={() => setMagicOpen(true)} className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+              <div className="max-w-xl">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">DATA REQUIRED</p>
+                <h2 className="text-2xl font-semibold tracking-tight">Connect data to begin composing</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Add an API connection, then build widgets manually or let the assistant propose a first dashboard.
+                </p>
+                <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+                  <Button onClick={() => setMagicOpen(true)}>
                   <Wand2 className="w-4 h-4 mr-2" />
-                  Magic Auto-Build
-                </Button>
-                <Button variant="outline" className="w-full" asChild>
-                  <Link href="/api-config">
-                    <Settings2 className="w-4 h-4 mr-2" />
-                    Configure APIs Manually
-                  </Link>
-                </Button>
+                    Start with AI
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <Link href="/api-config">
+                      <Settings2 className="w-4 h-4 mr-2" />
+                      Configure data
+                    </Link>
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
+            <aside className="border-t bg-muted/25 p-6 lg:border-l lg:border-t-0">
+              <p className="text-xs font-semibold">Connection checklist</p>
+              <div className="mt-5 space-y-4 text-sm text-muted-foreground">
+                <p><span className="mr-3 font-mono text-xs">01</span>Add an authenticated endpoint</p>
+                <p><span className="mr-3 font-mono text-xs">02</span>Scan fields and response health</p>
+                <p><span className="mr-3 font-mono text-xs">03</span>Map fields into a widget</p>
+              </div>
+            </aside>
+          </section>
         </div>
         <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
         <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
@@ -558,11 +589,11 @@ export default function BuilderPage() {
 
   // Main Builder UI
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-background relative">
+    <div className="min-h-[calc(100vh-3.5rem)] bg-muted/20">
       
       {/* The Header scrolls AWAY naturally */}
-      <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-2">
-        <div className="border-b border-border/60 pb-4">
+      <div className="border-b bg-background">
+        <div className="mx-auto w-full max-w-[96rem] px-4 py-4 lg:px-6">
           <BuilderHeader
             currentDash={currentDash}
             widgetCount={widgets.length}
@@ -594,12 +625,26 @@ export default function BuilderPage() {
       )}
 
       {/* The Canvas uses the rest of the page safely */}
-      <div className="mx-auto w-full max-w-7xl px-4 py-8" onClick={handleCanvasClick}>
-        <DragDropCanvas
-          selectedWidgetId={selectedWidgetId}
-          onSelectWidget={setSelectedWidgetId}
-          widgetsOverride={visibleWidgets}
-        />
+      <div className="mx-auto w-full max-w-[96rem] px-4 py-6 lg:px-6" onClick={handleCanvasClick}>
+        <section className="overflow-hidden rounded-lg border bg-background">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Canvas</p>
+              <p className="text-xs text-muted-foreground">Drag widgets to reorder. Select one to edit its appearance.</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="rounded-md border bg-muted/40 px-2 py-1">12-column grid</span>
+              <span className="rounded-md border bg-muted/40 px-2 py-1">{visibleWidgets.length} visible</span>
+            </div>
+          </div>
+          <div className="bg-muted/15 p-4 md:p-5">
+            <DragDropCanvas
+              selectedWidgetId={selectedWidgetId}
+              onSelectWidget={setSelectedWidgetId}
+              widgetsOverride={visibleWidgets}
+            />
+          </div>
+        </section>
       </div>
 
       {/* AI panel */}
@@ -615,10 +660,10 @@ export default function BuilderPage() {
       {/* AI fab */}
       {!aiPanel.open && (
         <motion.button
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
           onClick={openAi}
-          className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-50 flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-medium px-4 py-2.5 rounded-2xl shadow-lg transition-all active:scale-95"
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-md border bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-md hover:bg-primary/90 sm:bottom-5 sm:right-5"
         >
           <Sparkles className="w-4 h-4" />
           <span className="hidden sm:inline">AI Assistant</span>
@@ -681,10 +726,10 @@ function BuilderHeader({
   onAutoAdd,
 }: BuilderHeaderProps) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-          <h1 className="text-lg sm:text-xl font-bold truncate max-w-[200px] sm:max-w-none">
+          <h1 className="max-w-[16rem] truncate text-lg font-semibold tracking-tight sm:max-w-none">
             {currentDash?.name ?? "Builder"}
           </h1>
           <Badge variant="secondary" className="text-[10px]">
@@ -720,12 +765,12 @@ function BuilderHeader({
             </div>
           )}
         </div>
-        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 truncate">
+        <p className="mt-1 truncate text-xs text-muted-foreground sm:text-sm">
           {currentDash?.description || "Add widgets from your connected APIs"}
         </p>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+      <div className="flex flex-wrap items-center gap-2 lg:flex-shrink-0">
         <Link href="/api-config" className="hidden sm:block">
           <Button variant="outline" size="sm">
             <Settings2 className="w-3.5 h-3.5 mr-1.5" />
@@ -742,7 +787,7 @@ function BuilderHeader({
           <Download className="w-3.5 h-3.5 sm:mr-1.5" />
           <span className="hidden sm:inline">{exporting ? "Exporting..." : "Export"}</span>
         </Button>
-        <Button variant="outline" size="sm" onClick={onMagicOpen} className="border-purple-200 text-purple-600 hover:bg-purple-50 dark:border-purple-900 dark:text-purple-400">
+        <Button variant="outline" size="sm" onClick={onMagicOpen}>
           <Wand2 className="w-3.5 h-3.5 sm:mr-1.5" />
           <span className="hidden sm:inline">Magic</span>
         </Button>
@@ -811,20 +856,20 @@ function AiPanel({
       {open && (
         <motion.div
           key="ai"
-          initial={{ opacity: 0, y: 24, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 24, scale: 0.97 }}
-          transition={{ type: "spring", stiffness: 300, damping: 28 }}
-          className="fixed bottom-4 right-4 sm:bottom-5 sm:right-5 z-50 overflow-hidden rounded-2xl border bg-card shadow-2xl w-[calc(100vw-1.5rem)] sm:w-[460px]"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 12 }}
+          transition={{ duration: 0.16 }}
+          className="fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-lg border bg-card shadow-lg sm:inset-x-auto sm:bottom-5 sm:right-5 sm:w-[460px]"
           style={{ height: minimized ? "auto" : "min(680px, 82vh)" }}
         >
           <Tabs defaultValue="assist" className="flex h-full flex-col">
-            <div className="flex-shrink-0 border-b bg-background/95 px-4 py-3">
+            <div className="flex-shrink-0 border-b bg-background px-4 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-blue-600 text-white">
-                      <Sparkles className="h-3.5 w-3.5" />
+                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border bg-muted text-foreground">
+                      <Bot className="h-3.5 w-3.5" />
                     </div>
                     <span className="text-sm font-semibold truncate">Builder Assistant</span>
                   </div>

@@ -1,7 +1,10 @@
 'use client'
 
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, BrainCircuit, Clock3, Database, FileSearch, KeyRound, Loader2, LockKeyhole, PlugZap, Plus, RotateCcw, Server, ShieldCheck, X } from 'lucide-react'
+import { AlertCircle, BrainCircuit, Clock3, Database, FileSearch, KeyRound, Loader2, PlugZap, Plus, RotateCcw, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -15,7 +18,7 @@ import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { demoColumns, demoDataSource, demoProjects, DEMO_DATA_SOURCE_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { buildGuidedSchemaProfile } from '@/lib/dashboardos/guided-review'
-import type { DataSource, DataSourceSslMode } from '@/types/data-source'
+import type { DataSource, DataSourceSchemaProfileSummary, DataSourceSslMode } from '@/types/data-source'
 
 interface ProjectOption {
   id: string
@@ -73,6 +76,7 @@ export function DataSourcesAdminPanel() {
   const addBuilderDataSourceId = useScopedBuilderStore(state => state.addDataSourceId)
   const removeBuilderDataSourceId = useScopedBuilderStore(state => state.removeDataSourceId)
   const [dataSources, setDataSources] = useState<DataSource[]>([])
+  const [schemaProfiles, setSchemaProfiles] = useState<Record<string, DataSourceSchemaProfileSummary>>({})
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [loading, setLoading] = useState(true)
   const [projectsLoading, setProjectsLoading] = useState(true)
@@ -90,6 +94,7 @@ export function DataSourcesAdminPanel() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [sslMode, setSslMode] = useState<DataSourceSslMode>('require')
+  const [schemas, setSchemas] = useState('public')
   const [clientReady, setClientReady] = useState(false)
   const demoMode = isDashboardOsDemoMode()
   const guidedProfile = useMemo(() => (
@@ -113,6 +118,16 @@ export function DataSourcesAdminPanel() {
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(errorToText(payload) || `Request failed (${response.status})`)
       setDataSources(Array.isArray(payload?.dataSources) ? payload.dataSources : [])
+      const profileQuery = nextProjectId ? `?projectId=${encodeURIComponent(nextProjectId)}` : ''
+      const profileResponse = await fetch(`/api/admin/schema-profiles${profileQuery}`, { cache: 'no-store' })
+      const profilePayload = await profileResponse.json().catch(() => null)
+      if (profileResponse.ok && Array.isArray(profilePayload?.profiles)) {
+        setSchemaProfiles(Object.fromEntries(
+          (profilePayload.profiles as DataSourceSchemaProfileSummary[]).map(profile => [profile.dataSourceId, profile]),
+        ))
+      } else {
+        setSchemaProfiles({})
+      }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : String(fetchError))
     } finally {
@@ -164,6 +179,7 @@ export function DataSourcesAdminPanel() {
     setUsername('')
     setPassword('')
     setSslMode('require')
+    setSchemas('public')
   }
 
   const handleCreate = async () => {
@@ -197,6 +213,7 @@ export function DataSourcesAdminPanel() {
           username,
           password,
           sslMode,
+          schemas: schemas.split(',').map(value => value.trim()).filter(Boolean),
         }),
       })
       const payload = await response.json().catch(() => null)
@@ -275,7 +292,10 @@ export function DataSourcesAdminPanel() {
       const tableCount = Number(payload?.tableCount ?? payload?.tables?.length ?? 0)
       toast.success(payload?.noOp
         ? `Schema unchanged: ${payload?.columnCount ?? 0} columns across ${tableCount} tables`
-        : `Imported ${payload?.columnCount ?? 0} columns from ${tableCount} tables`)
+        : `Imported ${payload?.columnCount ?? 0} columns from ${tableCount} tables${payload?.profileSummary ? ' and prepared schema intelligence' : ''}`)
+      if (Array.isArray(payload?.profilingWarnings) && payload.profilingWarnings.length > 0) {
+        toast.warning(`Schema saved with ${payload.profilingWarnings.length} profiling warning(s)`)
+      }
     } catch (introspectError) {
       toast.error(introspectError instanceof Error ? introspectError.message : String(introspectError))
     } finally {
@@ -350,42 +370,41 @@ export function DataSourcesAdminPanel() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-3">
-        {[
-          { title: 'Connection vault', icon: LockKeyhole, body: 'Credentials never reach the browser and are decrypted only for server-side query execution.' },
-          { title: 'Schema scanner', icon: Server, body: 'Tables, columns, and data types become admin-visible metadata; incomplete scans are blocked.' },
-          { title: 'Query guardrails', icon: ShieldCheck, body: 'Every query needs tenant scope, parameters, row caps, timeout, and audit logging.' },
-        ].map((item) => {
-          const Icon = item.icon
-          return (
-            <Card key={item.title} className="border-white/10 bg-white/[0.03] text-slate-100">
-              <CardContent className="p-5">
-                <Icon className="h-5 w-5 text-cyan-300" />
-                <h3 className="mt-4 text-sm font-semibold">{item.title}</h3>
-                <p className="mt-2 text-xs leading-5 text-slate-500">{item.body}</p>
-              </CardContent>
-            </Card>
-          )
-        })}
+      <section className="flex flex-col gap-4 border-b border-[color:var(--dos-border-soft)] pb-5 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Connection inventory</p>
+          <h2 className="mt-2 text-xl font-semibold text-[var(--dos-text-primary)]">Data source workbench</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
+            Connect least-privilege Postgres sources, verify access, and maintain the schema evidence used by semantic models.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-[var(--dos-text-muted)]">
+          <span><strong className="font-mono text-[var(--dos-text-primary)]">{dataSources.length}</strong> sources</span>
+          <span><strong className="font-mono text-[var(--dos-text-primary)]">{dataSources.reduce((total, source) => total + source.schemaTableCount, 0)}</strong> tables</span>
+          <span><strong className="font-mono text-[var(--dos-text-primary)]">{dataSources.reduce((total, source) => total + source.schemaColumnCount, 0)}</strong> columns</span>
+        </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-            <CardTitle className="text-sm">Postgres sources</CardTitle>
-            <Button size="sm" className="bg-cyan-500 text-slate-950 hover:bg-cyan-400" onClick={() => setCreateOpen(true)} disabled={demoMode} title={demoMode ? 'Source creation is disabled in the prepared reference workspace' : undefined}>
+      <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <Card className="min-w-0 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]">
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 border-b border-[color:var(--dos-border-soft)]">
+            <div>
+              <CardTitle className="text-base">Postgres sources</CardTitle>
+              <p className="mt-1 text-xs text-[var(--dos-text-muted)]">Connection health, scan freshness, and profiling evidence.</p>
+            </div>
+            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={demoMode} title={demoMode ? 'Source creation is disabled in the prepared reference workspace' : undefined}>
               <Plus className="mr-2 h-4 w-4" />
               Add Source
             </Button>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-0 p-0">
             {loading ? (
-              <div className="flex items-center justify-center rounded-lg border border-white/10 bg-slate-950/50 py-12 text-sm text-slate-400">
+              <div className="flex items-center px-5 py-12 text-sm text-[var(--dos-text-muted)]">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Loading data sources
               </div>
             ) : error ? (
-              <div className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
+              <div className="m-5 rounded-md border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] p-4 text-sm text-[var(--dos-warning-text)]">
                 <div className="flex items-start gap-3">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
@@ -398,8 +417,10 @@ export function DataSourcesAdminPanel() {
                 </div>
               </div>
             ) : dataSources.length > 0 ? (
-              dataSources.map((source) => (
-                <div key={source.id} className="rounded-lg border border-white/10 bg-slate-950/50 p-4">
+              dataSources.map((source) => {
+                const profile = schemaProfiles[source.id]
+                return (
+                <div key={source.id} className="border-b border-[color:var(--dos-border-soft)] px-5 py-4 last:border-b-0">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -409,12 +430,15 @@ export function DataSourcesAdminPanel() {
                       <p className="mt-1 text-xs text-slate-500">
                         {source.connectionConfig.username}@{source.connectionConfig.host}:{source.connectionConfig.port}/{source.connectionConfig.database}
                       </p>
+                      <p className="mt-1 text-[11px] text-cyan-300/70">
+                        schemas: {(source.connectionConfig.schemas?.length ? source.connectionConfig.schemas : ['public']).join(', ')}
+                      </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
                         size="icon"
                         variant="outline"
-                        className="h-8 w-8 border-rose-300/20 bg-rose-500/10 text-rose-200 hover:border-rose-300/35 hover:bg-rose-500/15 hover:text-rose-100"
+                        className="h-8 w-8 border-[color:var(--dos-danger)] bg-[var(--dos-danger-soft)] text-[var(--dos-danger-text)] hover:bg-[var(--dos-danger-soft)]"
                         onClick={() => void handleRemoveSource(source)}
                         disabled={demoMode || busySourceId === source.id}
                         title="Remove data source"
@@ -431,7 +455,7 @@ export function DataSourcesAdminPanel() {
                       <Button
                         size="icon"
                         variant="outline"
-                        className="h-8 w-8 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]"
+                        className="h-8 w-8 border-[color:var(--dos-border-soft)] bg-transparent text-[var(--dos-text-secondary)]"
                         onClick={() => void handleTest(source.id)}
                         disabled={busySourceId === source.id}
                         title="Test connection"
@@ -443,7 +467,7 @@ export function DataSourcesAdminPanel() {
                       <Button
                         size="icon"
                         variant="outline"
-                        className="h-8 w-8 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]"
+                        className="h-8 w-8 border-[color:var(--dos-border-soft)] bg-transparent text-[var(--dos-text-secondary)]"
                         onClick={() => void handleIntrospect(source.id)}
                         disabled={busySourceId === source.id}
                         title="Introspect schema"
@@ -455,7 +479,7 @@ export function DataSourcesAdminPanel() {
                       <Button
                         size="icon"
                         variant="outline"
-                        className="h-8 w-8 border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]"
+                        className="h-8 w-8 border-[color:var(--dos-border-soft)] bg-transparent text-[var(--dos-text-secondary)]"
                         onClick={() => void handleRequestRefresh(source.id)}
                         disabled={busySourceId === source.id}
                         title="Request schema refresh"
@@ -471,7 +495,7 @@ export function DataSourcesAdminPanel() {
                     {source.lastTestedAt ? <span>{new Date(source.lastTestedAt).toLocaleString()}</span> : null}
                     {source.lastError ? <span className="text-rose-300">{source.lastError}</span> : null}
                   </div>
-                  <div className="mt-3 rounded-md border border-white/10 bg-slate-950/60 p-3">
+                  <div className="mt-4 border-t border-[color:var(--dos-border-soft)] pt-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs text-slate-400">
                         <Clock3 className="h-3.5 w-3.5 text-cyan-300" />
@@ -493,14 +517,40 @@ export function DataSourcesAdminPanel() {
                       ) : null}
                       {source.schemaLastError ? <span className="text-rose-300 sm:col-span-2">{source.schemaLastError}</span> : null}
                     </div>
+                    {profile ? (
+                      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-3 text-[11px] sm:grid-cols-4">
+                        <div>
+                          <p className="text-slate-500">Profiled</p>
+                          <p className="mt-0.5 text-slate-200">{profile.profiledColumnCount}/{profile.columnCount} columns</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Sensitive</p>
+                          <p className="mt-0.5 text-amber-200">{profile.sensitiveColumnCount} masked</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Join evidence</p>
+                          <p className="mt-0.5 text-cyan-200">{profile.explicitJoinCount} FK / {profile.inferredJoinCount} inferred</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Evidence status</p>
+                          <p className={profile.warningCount > 0 ? 'mt-0.5 text-amber-200' : 'mt-0.5 text-emerald-200'}>
+                            {profile.warningCount > 0 ? `${profile.warningCount} warning(s)` : 'ready'}
+                          </p>
+                        </div>
+                        <p className="col-span-2 text-slate-500 sm:col-span-4">
+                          scoped to {profile.selectedSchemas.join(', ')} · profile v{profile.profileVersion} · {new Date(profile.generatedAt).toLocaleString()}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-              ))
+                )
+              })
             ) : (
-              <div className="rounded-lg border border-dashed border-white/15 bg-slate-950/50 p-8 text-center">
-                <Database className="mx-auto h-8 w-8 text-slate-500" />
+              <div className="px-5 py-10 text-left">
+                <Database className="h-7 w-7 text-[var(--dos-text-muted)]" />
                 <h3 className="mt-3 text-sm font-semibold">No data sources yet</h3>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 max-w-md text-xs leading-5 text-[var(--dos-text-muted)]">
                   Add a read-only Postgres source after creating a tenant and project.
                 </p>
               </div>
@@ -508,37 +558,30 @@ export function DataSourcesAdminPanel() {
           </CardContent>
         </Card>
 
-        <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <BrainCircuit className="h-4 w-4 text-[#a6e22e]" />
-              Guided understanding
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-xs leading-5 text-slate-400">
-              After schema scan, DashboardOS prepares a concise review summary: likely facts, dimensions, dates, measures, joins, and sensitive fields hidden by default.
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-md border border-white/10 bg-slate-950/50 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">Tables</p>
-                <p className="mt-1 text-xl font-semibold">{guidedProfile?.tableCount ?? dataSources.reduce((total, source) => total + source.schemaTableCount, 0)}</p>
-              </div>
-              <div className="rounded-md border border-white/10 bg-slate-950/50 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500">Columns</p>
-                <p className="mt-1 text-xl font-semibold">{guidedProfile?.columnCount ?? dataSources.reduce((total, source) => total + source.schemaColumnCount, 0)}</p>
-              </div>
-              <div className="rounded-md border border-[#a6e22e]/30 bg-[#a6e22e]/10 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-[#d7ff8f]">Likely measures</p>
-                <p className="mt-1 text-xl font-semibold">{guidedProfile?.measures.length ?? 'Review'}</p>
-              </div>
-              <div className="rounded-md border border-[#fd971f]/30 bg-[#fd971f]/10 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-[#ffd866]">Needs review</p>
-                <p className="mt-1 text-xl font-semibold">{guidedProfile?.reviewItems.length ?? 'After scan'}</p>
-              </div>
+        <Card className="h-fit border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)] xl:sticky xl:top-20">
+          <CardHeader className="border-b border-[color:var(--dos-border-soft)]">
+            <div className="flex items-center gap-2">
+              <BrainCircuit className="h-4 w-4 text-[var(--dos-accent-primary)]" />
+              <CardTitle className="text-base">Schema intelligence</CardTitle>
             </div>
+            <p className="text-xs leading-5 text-[var(--dos-text-muted)]">Evidence prepared from the latest successful scan.</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <dl className="divide-y divide-[color:var(--dos-border-soft)]">
+              {[
+                ['Tables', guidedProfile?.tableCount ?? dataSources.reduce((total, source) => total + source.schemaTableCount, 0)],
+                ['Columns', guidedProfile?.columnCount ?? dataSources.reduce((total, source) => total + source.schemaColumnCount, 0)],
+                ['Likely measures', guidedProfile?.measures.length ?? 'Review'],
+                ['Needs review', guidedProfile?.reviewItems.length ?? 'After scan'],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="flex items-center justify-between gap-4 px-5 py-3">
+                  <dt className="text-xs text-[var(--dos-text-muted)]">{label}</dt>
+                  <dd className="font-mono text-sm font-semibold text-[var(--dos-text-primary)]">{value}</dd>
+                </div>
+              ))}
+            </dl>
             {guidedProfile ? (
-              <div className="rounded-md border border-white/10 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">
+              <div className="border-t border-[color:var(--dos-border-soft)] px-5 py-4 text-xs leading-5 text-[var(--dos-text-muted)]">
                 Suggested area: {guidedProfile.businessAreas[0]?.label ?? 'Review schema'} · sensitive fields hidden: {guidedProfile.sensitive.length}
               </div>
             ) : null}
@@ -546,32 +589,25 @@ export function DataSourcesAdminPanel() {
         </Card>
       </section>
 
-      <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-        <CardHeader>
-          <CardTitle className="text-sm">How a scanned table becomes a chart</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-5">
-          {SCAN_TO_CHART_FLOW.map((step) => (
-            <div key={step.title} className="rounded-lg border border-white/10 bg-slate-950/50 p-3">
-              <p className="text-xs font-semibold text-[#a6e22e]">{step.title}</p>
-              <p className="mt-2 text-xs leading-5 text-slate-400">{step.body}</p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className="border-white/10 bg-white/[0.03] text-slate-100">
-        <CardHeader>
-          <CardTitle className="text-sm">Advanced guardrails</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          {REQUIREMENTS.map((item) => (
-            <div key={item} className="rounded-md border border-white/10 bg-slate-950/50 px-3 py-2 text-sm text-slate-300">
-              {item}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <details className="group rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]">
+        <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)]">
+          Connection policy and delivery path
+        </summary>
+        <div className="grid gap-6 border-t border-[color:var(--dos-border-soft)] p-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <ol className="grid gap-4 md:grid-cols-5">
+            {SCAN_TO_CHART_FLOW.map((step, index) => (
+              <li key={step.title} className="border-t border-[color:var(--dos-border-soft)] pt-3">
+                <p className="font-mono text-xs text-[var(--dos-accent-primary)]">0{index + 1}</p>
+                <p className="mt-2 text-xs font-semibold">{step.title}</p>
+                <p className="mt-2 text-xs leading-5 text-[var(--dos-text-muted)]">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+          <ul className="space-y-3 border-l border-[color:var(--dos-border-soft)] pl-5 text-xs leading-5 text-[var(--dos-text-muted)]">
+            {REQUIREMENTS.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </div>
+      </details>
 
       <Dialog open={createOpen} onOpenChange={(open) => {
         setCreateOpen(open)
@@ -616,6 +652,11 @@ export function DataSourcesAdminPanel() {
             <div className="space-y-2 sm:col-span-2">
               <Label>Name</Label>
               <Input value={name} onChange={event => setName(event.target.value)} placeholder="Client reporting database" />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Schemas</Label>
+              <Input value={schemas} onChange={event => setSchemas(event.target.value)} placeholder="public" />
+              <p className="text-[11px] text-muted-foreground">Comma-separated allowlist. Only these schemas are scanned and profiled.</p>
             </div>
             <div className="space-y-2">
               <Label>Host</Label>
