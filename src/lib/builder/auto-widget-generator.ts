@@ -71,10 +71,10 @@ export function getNextWidgetStartY(widgets: Widget[]) {
   }, 0)
 }
 
-export function applyAutoLayout(
-  drafts: Array<Omit<AutoWidgetDraft, 'position'>>,
+export function applyAutoLayout<T extends Omit<AutoWidgetDraft, 'position'>>(
+  drafts: T[],
   startY: number,
-): AutoWidgetDraft[] {
+): Array<T & Pick<AutoWidgetDraft, 'position'>> {
   let cursorX = 0
   let cursorY = startY
   let rowHeight = 0
@@ -93,7 +93,7 @@ export function applyAutoLayout(
       rowHeight = 0
     }
 
-    const positioned: AutoWidgetDraft = {
+    const positioned: T & Pick<AutoWidgetDraft, 'position'> = {
       ...draft,
       position: {
         x: cursorX,

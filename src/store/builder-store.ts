@@ -13,6 +13,7 @@ import type {
 import { DEFAULT_PROJECT_CONFIG } from '@/types/project-config'
 import { createClient } from '@/lib/supabase/client'
 import { useAuthStore } from '@/store/auth-store'
+import { parseDashboardBrief, type DashboardBrief } from '@/types/dashboard-brief'
 
 interface Dashboard {
   id:          string
@@ -21,6 +22,7 @@ interface Dashboard {
   // ── Fix #3 — store as ISO string, not Date object ──────────
   createdAt:   string
   ownerId?:    string
+  dashboardBrief?: DashboardBrief | null
 }
 
 type APIEndpoint = ApiEndpointConfig
@@ -395,6 +397,7 @@ export const useDashboardStore = create<DashboardStore>()(
             description: row.description ?? '',
             createdAt: row.created_at ?? new Date().toISOString(),
             ownerId: row.user_id,
+            dashboardBrief: parseDashboardBrief(row.dashboard_brief),
           }))
 
           const endpoints = (endpointRes.data ?? []).map((row: any) => {
@@ -551,6 +554,7 @@ export const useDashboardStore = create<DashboardStore>()(
                 user_id: userId,
                 name: dashboard.name,
                 description: dashboard.description || null,
+                dashboard_brief: dashboard.dashboardBrief ?? null,
                 created_at: createdAt,
                 updated_at: createdAt,
               })
@@ -625,6 +629,7 @@ export const useDashboardStore = create<DashboardStore>()(
         const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
         if (patch.name !== undefined) payload.name = patch.name
         if (patch.description !== undefined) payload.description = patch.description
+        if (patch.dashboardBrief !== undefined) payload.dashboard_brief = patch.dashboardBrief
 
         set({ isSyncing: true })
         void (async () => {
@@ -758,6 +763,7 @@ export const useDashboardStore = create<DashboardStore>()(
                   user_id: userId,
                   name: `${source.name} (copy)`,
                   description: source.description || null,
+                  dashboard_brief: source.dashboardBrief ?? null,
                   created_at: now,
                   updated_at: now,
                 })

@@ -95,6 +95,13 @@ export interface DataMapping {
   sortBy?:    string
   sortOrder?: 'asc' | 'desc'
   limit?:     number
+  autopilot?: {
+    briefId: string
+    requirementId: string
+    confidence: number
+    locked: boolean
+    generatedAt: string
+  }
 }
 
 export interface WidgetPosition {

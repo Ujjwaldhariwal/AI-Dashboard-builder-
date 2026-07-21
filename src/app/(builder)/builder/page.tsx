@@ -22,6 +22,7 @@ import { useDashboardStore } from "@/store/builder-store";
 import { DragDropCanvas } from "@/components/builder/canvas/drag-drop-canvas";
 import { WidgetConfigDialog } from "@/components/builder/widget-config-dialog";
 import { MagicPasteModal } from "@/components/builder/magic-paste-modal";
+import { DashboardBriefDialog } from "@/components/builder/dashboard-brief-dialog";
 import { ConfigChatbot } from "@/components/builder/ai-assistant/config-chatbot";
 import { ChartSuggester } from "@/components/builder/ai-assistant/chart-suggester";
 import { WidgetStylePanel } from "@/components/builder/style-panel/widget-style-panel";
@@ -48,6 +49,7 @@ import {
   Radar,
   RefreshCw,
   MoreHorizontal,
+  ListChecks,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -138,6 +140,7 @@ export default function BuilderPage() {
 
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [magicOpen, setMagicOpen] = useState(false);
+  const [briefOpen, setBriefOpen] = useState(false);
   const [exportConfigOpen, setExportConfigOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
@@ -528,6 +531,7 @@ export default function BuilderPage() {
               scanSummary={null}
               onAddWidget={() => setAddWidgetOpen(true)}
               onOpenAssistant={openAi}
+              onOpenBrief={() => setBriefOpen(true)}
               onMagicOpen={() => setMagicOpen(true)}
               onExport={handleExport}
               onScanApis={handleScanApis}
@@ -574,6 +578,7 @@ export default function BuilderPage() {
         </div>
         <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
         <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
+        <DashboardBriefDialog open={briefOpen} onOpenChange={setBriefOpen} />
         {currentDash && (
           <ExportConfigModal
             open={exportConfigOpen}
@@ -607,6 +612,7 @@ export default function BuilderPage() {
             scanSummary={scanSummary}
             onAddWidget={() => setAddWidgetOpen(true)}
             onOpenAssistant={openAi}
+            onOpenBrief={() => setBriefOpen(true)}
             onMagicOpen={() => setMagicOpen(true)}
             onExport={handleExport}
             onScanApis={handleScanApis}
@@ -676,6 +682,7 @@ export default function BuilderPage() {
 
       <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
+      <DashboardBriefDialog open={briefOpen} onOpenChange={setBriefOpen} />
       {currentDash && (
         <ExportConfigModal
           open={exportConfigOpen}
@@ -706,6 +713,7 @@ interface BuilderHeaderProps {
   scanSummary: DashboardEndpointProbeSummary | null;
   onAddWidget: () => void;
   onOpenAssistant: () => void;
+  onOpenBrief: () => void;
   onMagicOpen: () => void;
   onExport: () => void;
   onScanApis: () => void;
@@ -725,6 +733,7 @@ function BuilderHeader({
   scanSummary,
   onAddWidget,
   onOpenAssistant,
+  onOpenBrief,
   onMagicOpen,
   onExport,
   onScanApis,
@@ -765,6 +774,10 @@ function BuilderHeader({
         <Button variant="outline" size="sm" onClick={onOpenAssistant}>
           <Sparkles className="mr-1.5 h-3.5 w-3.5" />
           Assistant
+        </Button>
+        <Button variant="outline" size="sm" onClick={onOpenBrief} disabled={endpointCount === 0}>
+          <ListChecks className="mr-1.5 h-3.5 w-3.5" />
+          Build from brief
         </Button>
         <Button size="sm" onClick={onAddWidget} disabled={endpointCount === 0}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
