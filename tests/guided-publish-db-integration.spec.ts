@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 import { NextRequest } from 'next/server'
 import { randomUUID } from 'node:crypto'
 
-import { createGuidedPublishReadinessGetHandler } from '../src/app/api/admin/guided-review/publish-readiness/route'
-import { createPublishedDashboardPublishPostHandler } from '../src/app/api/admin/published-dashboards/[id]/publish/route'
-import { createPublishedDashboardRollbackPostHandler } from '../src/app/api/admin/published-dashboards/[id]/rollback/route'
+import { createGuidedPublishReadinessGetHandler } from '../src/app/api/admin/guided-review/publish-readiness/handler'
+import { createPublishedDashboardPublishPostHandler } from '../src/app/api/admin/published-dashboards/[id]/publish/handler'
+import { createPublishedDashboardRollbackPostHandler } from '../src/app/api/admin/published-dashboards/[id]/rollback/handler'
 import {
   assertNoSupabaseError,
   cleanupGuidedPublishSupabaseFixture,

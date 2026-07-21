@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 import {
   createGuidedDashboardDraftPostHandler,
   GUIDED_DASHBOARD_GENERATION_PAUSED_CODE,
-} from '../src/app/api/admin/guided-review/dashboard-draft/route'
+} from '../src/app/api/admin/guided-review/dashboard-draft/handler'
 import {
   buildSchemaRefreshPlan,
   runDataSourceSchemaIntrospection,
