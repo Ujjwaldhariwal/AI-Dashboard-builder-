@@ -112,10 +112,16 @@ test.describe('dashboard brief Autopilot', () => {
       join(process.cwd(), 'supabase/migrations/20260721143000_dashboard_briefs.sql'),
       'utf8',
     )
+    const hardeningMigration = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20260721150000_dashboard_brief_constraint_hardening.sql'),
+      'utf8',
+    )
 
     expect(migration).toContain('add column if not exists dashboard_brief jsonb')
     expect(migration).toContain('jsonb_array_length')
     expect(migration).toContain('between 1 and 24')
+    expect(hardeningMigration).toContain("dashboard_brief ->> 'version' = '1'")
+    expect(hardeningMigration).toContain("dashboard_brief ? 'requirements'")
+    expect(hardeningMigration).toContain("jsonb_typeof(dashboard_brief -> 'id') = 'string'")
   })
 })
-
