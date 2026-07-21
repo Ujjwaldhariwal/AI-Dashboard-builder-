@@ -17,7 +17,7 @@ import { WidgetCard } from './widget-card'
 import { WidgetConfigDialog } from '@/components/builder/widget-config-dialog'
 import type { Widget } from '@/types/widget'
 import {
-  LayoutDashboard, Plus, Wand2, Database, ArrowRight,
+  LayoutDashboard, Plus, Wand2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MagicPasteModal } from '@/components/builder/magic-paste-modal'
@@ -38,42 +38,21 @@ function EmptyCanvas({
   hasEndpoints: boolean
 }) {
   return (
-    <div className="grid min-h-[30rem] overflow-hidden rounded-md border border-dashed bg-background md:grid-cols-[minmax(0,1fr)_19rem]">
-      <div className="flex flex-col justify-between gap-12 p-6 md:p-8">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted">
+    <div className="flex min-h-[30rem] items-center justify-center rounded-md border border-dashed bg-background p-6 text-center">
+      <div>
+        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border bg-muted">
           <LayoutDashboard className="h-4 w-4" />
         </div>
-        <div className="max-w-xl">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">EMPTY CANVAS</p>
-          <h3 className="text-xl font-semibold tracking-tight">Compose the first view</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {hasEndpoints
-              ? 'Add a mapped widget or ask the assistant to propose a starting layout from connected data.'
-              : 'Connect a data endpoint first, then return here to map fields into charts and tables.'}
-          </p>
-          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-            <Button onClick={onAddWidget} disabled={!hasEndpoints} className="gap-2">
-              <Plus className="h-4 w-4" />Add widget
-            </Button>
-            <Button variant="outline" onClick={onMagicBuild} disabled={!hasEndpoints} className="gap-2">
-              <Wand2 className="h-4 w-4" />Generate draft
-            </Button>
-          </div>
+        <h3 className="mt-4 text-lg font-semibold tracking-tight">Start the canvas</h3>
+        <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+          <Button onClick={onAddWidget} disabled={!hasEndpoints} className="gap-2">
+            <Plus className="h-4 w-4" />Add widget
+          </Button>
+          <Button variant="outline" onClick={onMagicBuild} disabled={!hasEndpoints} className="gap-2">
+            <Wand2 className="h-4 w-4" />Generate draft
+          </Button>
         </div>
       </div>
-      <aside className="border-t bg-muted/25 p-6 md:border-l md:border-t-0">
-        <p className="text-xs font-semibold">Build sequence</p>
-        <div className="mt-5 space-y-4 text-sm text-muted-foreground">
-          <p className="flex items-center gap-3"><Database className="h-4 w-4" />Choose a data source</p>
-          <p className="flex items-center gap-3"><ArrowRight className="h-4 w-4" />Map dimensions and measures</p>
-          <p className="flex items-center gap-3"><LayoutDashboard className="h-4 w-4" />Arrange the canvas</p>
-        </div>
-        {!hasEndpoints && (
-          <a href="/api-config" className="mt-6 inline-flex items-center gap-2 text-xs font-medium text-primary hover:underline">
-            Open API configuration <ArrowRight className="h-3.5 w-3.5" />
-          </a>
-        )}
-      </aside>
     </div>
   )
 }
@@ -89,7 +68,6 @@ function AddWidgetTile({ onClick }: { onClick: () => void }) {
       </div>
       <div>
         <span className="block text-sm font-medium text-foreground">Add another widget</span>
-        <span className="mt-1 block text-xs leading-5">Choose a chart, table, or metric and map it to connected data.</span>
       </div>
     </button>
   )

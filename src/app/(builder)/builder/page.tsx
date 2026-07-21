@@ -23,6 +23,7 @@ import { DragDropCanvas } from "@/components/builder/canvas/drag-drop-canvas";
 import { WidgetConfigDialog } from "@/components/builder/widget-config-dialog";
 import { MagicPasteModal } from "@/components/builder/magic-paste-modal";
 import { DashboardBriefDialog } from "@/components/builder/dashboard-brief-dialog";
+import { BuilderGuideDialog } from "@/components/builder/builder-guide-dialog";
 import { ConfigChatbot } from "@/components/builder/ai-assistant/config-chatbot";
 import { ChartSuggester } from "@/components/builder/ai-assistant/chart-suggester";
 import { WidgetStylePanel } from "@/components/builder/style-panel/widget-style-panel";
@@ -50,6 +51,7 @@ import {
   RefreshCw,
   MoreHorizontal,
   ListChecks,
+  HelpCircle,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -141,6 +143,7 @@ export default function BuilderPage() {
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [magicOpen, setMagicOpen] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [exportConfigOpen, setExportConfigOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
@@ -199,15 +202,6 @@ export default function BuilderPage() {
     if (!currentDashboardId) return DEFAULT_NAV_SELECTION;
     return chartNavSelections[currentDashboardId] ?? DEFAULT_NAV_SELECTION;
   }, [chartNavSelections, currentDashboardId]);
-
-  const sectionCount = useMemo(() => {
-    const names = new Set<string>();
-    for (const w of widgets) {
-      const s = w.sectionName?.trim();
-      if (s) names.add(s);
-    }
-    return names.size;
-  }, [widgets]);
 
   const orderedWidgets = useMemo(
     () =>
@@ -486,29 +480,21 @@ export default function BuilderPage() {
   if (dashboards.length === 0) {
     return (
       <div className="mx-auto w-full max-w-7xl px-4 py-8">
-        <div className="grid min-h-[28rem] border bg-card md:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="flex flex-col justify-between gap-12 p-6 md:p-10">
-            <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted text-foreground">
+        <div className="flex min-h-[28rem] items-center justify-center rounded-lg border bg-card p-6 text-center">
+          <div>
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border bg-muted text-foreground">
               <FolderKanban className="h-4 w-4" />
             </div>
-            <div className="max-w-xl">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">DASHBOARD STUDIO</p>
-              <h1 className="text-2xl font-semibold tracking-tight">Create a dashboard workspace first</h1>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                The builder needs a workspace to own its data connections, widgets, and publishing settings.
-              </p>
-              <Button className="mt-6" onClick={() => router.push("/workspaces")}>Open workspaces</Button>
+            <h1 className="mt-4 text-xl font-semibold tracking-tight">Create a dashboard workspace</h1>
+            <div className="mt-5 flex justify-center gap-2">
+              <Button onClick={() => router.push("/workspaces")}>Open workspaces</Button>
+              <Button variant="outline" onClick={() => setGuideOpen(true)}>
+                <HelpCircle className="mr-2 h-4 w-4" /> Guide
+              </Button>
             </div>
           </div>
-          <div className="border-t bg-muted/25 p-6 md:border-l md:border-t-0 md:p-8">
-            <p className="text-xs font-semibold">Studio setup</p>
-            <ol className="mt-5 space-y-5 text-sm">
-              <li><span className="mr-3 font-mono text-xs text-muted-foreground">01</span>Create a workspace</li>
-              <li><span className="mr-3 font-mono text-xs text-muted-foreground">02</span>Connect a governed data source</li>
-              <li><span className="mr-3 font-mono text-xs text-muted-foreground">03</span>Compose and publish widgets</li>
-            </ol>
-          </div>
         </div>
+        <BuilderGuideDialog open={guideOpen} onOpenChange={setGuideOpen} widgetCount={0} endpointCount={0} />
       </div>
     );
   }
@@ -523,8 +509,6 @@ export default function BuilderPage() {
               currentDash={currentDash}
               widgetCount={0}
               endpointCount={0}
-              collectionCount={0}
-              sectionCount={0}
               exporting={false}
               unsaved={false}
               ops={{ scanning: false, autoAdding: false, refreshing: false }}
@@ -532,6 +516,7 @@ export default function BuilderPage() {
               onAddWidget={() => setAddWidgetOpen(true)}
               onOpenAssistant={openAi}
               onOpenBrief={() => setBriefOpen(true)}
+              onOpenGuide={() => setGuideOpen(true)}
               onMagicOpen={() => setMagicOpen(true)}
               onExport={handleExport}
               onScanApis={handleScanApis}
@@ -541,44 +526,29 @@ export default function BuilderPage() {
           </div>
         </div>
         <div className="mx-auto w-full max-w-[96rem] px-4 py-6 lg:px-6">
-          <section className="grid min-h-[34rem] overflow-hidden rounded-lg border bg-card lg:grid-cols-[minmax(0,1fr)_21rem]">
-            <div className="flex flex-col justify-between gap-12 p-6 md:p-10">
-              <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted">
+          <section className="flex min-h-[34rem] items-center justify-center rounded-lg border bg-card p-6 text-center">
+            <div>
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border bg-muted">
                 <Database className="h-4 w-4" />
               </div>
-              <div className="max-w-xl">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">DATA REQUIRED</p>
-                <h2 className="text-2xl font-semibold tracking-tight">Connect data to begin composing</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Add an API connection, then build widgets manually or let the assistant propose a first dashboard.
-                </p>
-                <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-                  <Button onClick={() => setMagicOpen(true)}>
-                  <Wand2 className="w-4 h-4 mr-2" />
-                    Start with AI
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <Link href="/api-config">
-                      <Settings2 className="w-4 h-4 mr-2" />
-                      Configure data
-                    </Link>
-                  </Button>
-                </div>
+              <h2 className="mt-4 text-xl font-semibold tracking-tight">Connect data to start</h2>
+              <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+                <Button asChild>
+                  <Link href="/api-config">
+                    <Settings2 className="mr-2 h-4 w-4" /> Configure data
+                  </Link>
+                </Button>
+                <Button variant="outline" onClick={() => setGuideOpen(true)}>
+                  <HelpCircle className="mr-2 h-4 w-4" /> Guide
+                </Button>
               </div>
             </div>
-            <aside className="border-t bg-muted/25 p-6 lg:border-l lg:border-t-0">
-              <p className="text-xs font-semibold">Connection checklist</p>
-              <div className="mt-5 space-y-4 text-sm text-muted-foreground">
-                <p><span className="mr-3 font-mono text-xs">01</span>Add an authenticated endpoint</p>
-                <p><span className="mr-3 font-mono text-xs">02</span>Scan fields and response health</p>
-                <p><span className="mr-3 font-mono text-xs">03</span>Map fields into a widget</p>
-              </div>
-            </aside>
           </section>
         </div>
         <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
         <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
         <DashboardBriefDialog open={briefOpen} onOpenChange={setBriefOpen} />
+        <BuilderGuideDialog open={guideOpen} onOpenChange={setGuideOpen} widgetCount={0} endpointCount={0} />
         {currentDash && (
           <ExportConfigModal
             open={exportConfigOpen}
@@ -604,8 +574,6 @@ export default function BuilderPage() {
             currentDash={currentDash}
             widgetCount={widgets.length}
             endpointCount={dashboardEndpoints.length}
-            collectionCount={collections.length}
-            sectionCount={sectionCount}
             exporting={exporting}
             unsaved={unsaved}
             ops={ops}
@@ -613,6 +581,7 @@ export default function BuilderPage() {
             onAddWidget={() => setAddWidgetOpen(true)}
             onOpenAssistant={openAi}
             onOpenBrief={() => setBriefOpen(true)}
+            onOpenGuide={() => setGuideOpen(true)}
             onMagicOpen={() => setMagicOpen(true)}
             onExport={handleExport}
             onScanApis={handleScanApis}
@@ -640,13 +609,12 @@ export default function BuilderPage() {
       >
         <section className="min-w-0 overflow-hidden rounded-lg border bg-background" onClick={handleCanvasClick}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-            <div>
-              <p className="text-sm font-medium">Canvas</p>
-              <p className="text-xs text-muted-foreground">Drag widgets to reorder. Select one to edit its appearance.</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded-md border bg-muted/40 px-2 py-1">12-column grid</span>
-              <span className="rounded-md border bg-muted/40 px-2 py-1">{visibleWidgets.length} visible</span>
+            <p className="text-sm font-medium">Canvas</p>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[11px] text-muted-foreground">{visibleWidgets.length}</span>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setGuideOpen(true)} aria-label="Open builder guide">
+                <HelpCircle className="h-4 w-4" />
+              </Button>
             </div>
           </div>
           <div className="bg-muted/15 p-4 md:p-5">
@@ -683,6 +651,7 @@ export default function BuilderPage() {
       <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
       <DashboardBriefDialog open={briefOpen} onOpenChange={setBriefOpen} />
+      <BuilderGuideDialog open={guideOpen} onOpenChange={setGuideOpen} widgetCount={widgets.length} endpointCount={dashboardEndpoints.length} />
       {currentDash && (
         <ExportConfigModal
           open={exportConfigOpen}
@@ -698,15 +667,13 @@ export default function BuilderPage() {
 }
 
 // ----------------------------------------------------------------------
-// Subcomponents (Identical to your paste)
+// Builder workbench subcomponents
 // ----------------------------------------------------------------------
 
 interface BuilderHeaderProps {
   currentDash: any;
   widgetCount: number;
   endpointCount: number;
-  collectionCount: number;
-  sectionCount: number;
   exporting: boolean;
   unsaved: boolean;
   ops: { scanning: boolean; autoAdding: boolean; refreshing: boolean };
@@ -714,6 +681,7 @@ interface BuilderHeaderProps {
   onAddWidget: () => void;
   onOpenAssistant: () => void;
   onOpenBrief: () => void;
+  onOpenGuide: () => void;
   onMagicOpen: () => void;
   onExport: () => void;
   onScanApis: () => void;
@@ -725,8 +693,6 @@ function BuilderHeader({
   currentDash,
   widgetCount,
   endpointCount,
-  collectionCount,
-  sectionCount,
   exporting,
   unsaved,
   ops,
@@ -734,6 +700,7 @@ function BuilderHeader({
   onAddWidget,
   onOpenAssistant,
   onOpenBrief,
+  onOpenGuide,
   onMagicOpen,
   onExport,
   onScanApis,
@@ -754,11 +721,8 @@ function BuilderHeader({
             </div>
           )}
         </div>
-        <p className="mt-1 truncate text-xs text-muted-foreground sm:text-sm">
-          {currentDash?.description || "Compose governed charts from connected data sources."}
-        </p>
-        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-          {widgetCount} widgets · {endpointCount} sources · {collectionCount} groups · {sectionCount} sections
+        <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+          {widgetCount} widgets · {endpointCount} sources
           {scanSummary ? ` · ${scanSummary.healthy} ready` : ""}
           {scanSummary?.unauthorized ? ` · ${scanSummary.unauthorized} need authorization` : ""}
         </p>
@@ -816,6 +780,10 @@ function BuilderHeader({
                 Data sources
               </Link>
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={onOpenGuide}>
+              <HelpCircle className="mr-2 h-3.5 w-3.5" />
+              Builder guide
+            </DropdownMenuItem>
             <div className="sm:hidden">
               <DropdownMenuItem asChild>
                 <Link href="/dashboard" className="flex items-center">
@@ -869,9 +837,6 @@ function AiPanel({
                     </div>
                     <span className="text-sm font-semibold truncate">Builder Assistant</span>
                   </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                    Build, style, and configure the selected dashboard context.
-                  </p>
                 </div>
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="icon" className="h-9 w-9" onClick={onMinToggle} aria-label={minimized ? "Expand inspector" : "Minimize inspector"}>
@@ -902,12 +867,7 @@ function AiPanel({
 
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <TabsContent value="assist" className="mt-0 h-full overflow-hidden data-[state=active]:flex data-[state=active]:flex-col">
-                    <div className="flex items-center justify-between gap-3 border-b bg-muted/15 px-3 py-2">
-                      <p className="text-[11px] leading-relaxed text-muted-foreground">
-                        {assistView === "chat"
-                          ? "Use natural language to build charts or update the selected chart style."
-                          : "Analyze API data and add recommended charts in one click."}
-                      </p>
+                    <div className="flex justify-end border-b bg-muted/15 px-3 py-2">
                       <Button type="button" variant="outline" size="sm" className="h-7 flex-shrink-0 text-[11px]" onClick={() => setAssistView((v) => (v === "chat" ? "ideas" : "chat"))}>
                         {assistView === "chat" ? "Chart Ideas" : "Back to Chat"}
                       </Button>
