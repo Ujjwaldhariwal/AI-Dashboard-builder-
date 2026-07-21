@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
+import { BuilderWidgetPatchSchema } from '@/lib/ai/builder-assistant-contract'
 
 const MessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -17,6 +18,10 @@ const ChatContextSchema = z.object({
   projectId: z.string().uuid().optional(),
   dashboardId: z.string().optional().nullable(),
   styleOnlyMode: z.boolean().optional(),
+  editMode: z.boolean().optional(),
+  assistantMode: z.enum(['builder', 'platform_help']).optional(),
+  pagePath: z.string().max(240).optional(),
+  workflowStage: z.string().max(80).optional(),
   fields: z.array(z.unknown()).max(50).optional(),
   sampleRows: z.array(z.unknown()).max(3).optional(),
   selectedWidget: z.record(z.string(), z.unknown()).optional().nullable(),
@@ -98,7 +103,15 @@ export async function POST(req: NextRequest) {
     }
 
     const isStyleMode = Boolean(context.styleOnlyMode && context.selectedWidget)
-    const systemPrompt = isStyleMode ? buildStylePrompt(context) : buildCreatePrompt(context)
+    const isEditMode = Boolean(context.editMode && context.selectedWidget)
+    const isHelpMode = context.assistantMode === 'platform_help'
+    const systemPrompt = isHelpMode
+      ? buildPlatformHelpPrompt(context)
+      : isEditMode
+        ? buildEditPrompt(context)
+        : isStyleMode
+          ? buildStylePrompt(context)
+          : buildCreatePrompt(context)
     const history = buildGeminiHistory(messages)
     const lastMessage = messages[messages.length - 1]
     history.push({ role: 'user', parts: [{ text: lastMessage.content }] })
@@ -147,6 +160,16 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
+    let widgetPatchAction: (z.infer<typeof BuilderWidgetPatchSchema> & { widgetId: string }) | null = null
+    const patchMatch = content.match(/```widget_patch\n([\s\S]*?)\n```/)
+    if (patchMatch) {
+      try {
+        const action = BuilderWidgetPatchSchema.safeParse(JSON.parse(patchMatch[1]))
+        const widgetId = typeof context.selectedWidget?.id === 'string' ? context.selectedWidget.id : null
+        if (action.success && widgetId) widgetPatchAction = { ...action.data, widgetId }
+      } catch {}
+    }
+
     await auth.supabase.from('audit_logs').insert({
       tenant_id: access.tenantId,
       project_id: access.projectId,
@@ -156,14 +179,17 @@ export async function POST(req: NextRequest) {
       target_id: access.projectId,
       metadata: {
         styleOnlyMode: isStyleMode,
+        editMode: isEditMode,
+        helpMode: isHelpMode,
         messageCount: messages.length,
         widgetAction: Boolean(widgetAction),
         styleAction: Boolean(styleAction),
+        widgetPatchAction: Boolean(widgetPatchAction),
       },
       created_at: new Date().toISOString(),
     })
 
-    return NextResponse.json({ message: content, widgetAction, styleAction })
+    return NextResponse.json({ message: content, widgetAction, styleAction, widgetPatchAction })
   } catch (err: unknown) {
     const errorMsg = axios.isAxiosError(err)
       ? err.response?.data?.error?.message ?? err.message
@@ -233,6 +259,61 @@ When changing style, respond with one JSON block:
 \`\`\`
 
 Only include fields that actually change.`
+}
+
+function buildEditPrompt(context: ChatContext): string {
+  const widget = context.selectedWidget ?? {}
+  const fields = Array.isArray(context.fields) ? context.fields.slice(0, 50) : []
+  return `You are a governed chart configuration assistant for DashboardOS.
+
+The engineer may change the selected chart's title, chart type, axes, value field, and safe visual style.
+Use only field names present in Available fields. Never invent a field, execute code, change an endpoint, or modify another chart.
+Explain the requested change briefly, then output exactly one JSON block when a chart change is requested:
+
+\`\`\`widget_patch
+{
+  "action": "update_widget",
+  "changes": {
+    "title": "Optional new title",
+    "type": "bar|line|area|pie|donut|horizontal-bar|horizontal-stacked-bar|grouped-bar|drilldown-bar|gauge|ring-gauge|status-card|table",
+    "xAxis": "available_field",
+    "yAxis": "available_numeric_field",
+    "style": {
+      "colors": ["#2563eb"],
+      "showLegend": true,
+      "showGrid": true,
+      "barRadius": 5,
+      "labelFormat": "currency|percent"
+    }
+  },
+  "description": "Concise explanation of the proposed change"
+}
+\`\`\`
+
+Include only fields that actually change. If the request is a how-to question, answer it without a JSON block.
+
+Selected chart:
+${JSON.stringify(widget, null, 2)}
+
+Available fields:
+${JSON.stringify(fields, null, 2)}`
+}
+
+function buildPlatformHelpPrompt(context: ChatContext): string {
+  return `You are the persistent DashboardOS product assistant. Help engineers understand and use the product in concise, practical language.
+
+DashboardOS workflow:
+1. Create/select a tenant and project.
+2. Attach a read-only data source and review the fetched schema inventory.
+3. Approve business meaning only where confidence is low.
+4. Generate governed datasets and editable charts from a dashboard brief.
+5. Preview readiness and explicitly publish an immutable release.
+
+Explain the current page first when relevant. Do not claim that an action was executed. Do not invent customer data, database fields, permissions, or validation results. When asked to change a chart, tell the user to select it on the builder canvas so a validated preview can be created.
+
+Current page: ${context.pagePath ?? 'unknown'}
+Workflow stage: ${context.workflowStage ?? 'unknown'}
+Project context available: ${Boolean(context.tenantId && context.projectId)}`
 }
 
 function buildCreatePrompt(context: ChatContext): string {

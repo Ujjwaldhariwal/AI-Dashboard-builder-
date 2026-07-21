@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Palette, Plus, Send, Sparkles } from 'lucide-react'
+import { CheckCircle2, Loader2, Palette, Plus, Send, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,13 @@ import { useDashboardStore } from '@/store/builder-store'
 import { DataAnalyzer } from '@/lib/ai/data-analyzer'
 import { toast } from 'sonner'
 import { ChartType, WidgetStyle } from '@/types/widget'
+import { buildEndpointRequestInit } from '@/lib/api/request-utils'
+import {
+  describeBuilderWidgetPatch,
+  validateBuilderWidgetPatch,
+  type BuilderWidgetPatch,
+} from '@/lib/ai/builder-assistant-contract'
+import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 
 interface WidgetAction {
   action: 'create_widget'
@@ -31,6 +38,7 @@ interface Message {
   content: string
   widgetAction?: WidgetAction | null
   styleAction?: StyleAction | null
+  widgetPatchAction?: (BuilderWidgetPatch & { widgetId: string }) | null
 }
 
 interface ConfigChatbotProps {
@@ -43,24 +51,29 @@ const BASE_PROMPTS = [
   'Create a weekly trend chart',
 ]
 
-const STYLE_PROMPTS = [
-  'Improve readability of this chart',
-  'Use a softer color palette',
-  'Hide legend and keep grid lines',
+const EDIT_PROMPTS = [
+  'Change this to a horizontal bar chart',
+  'Use the best available category and value fields',
+  'Rename this chart and improve its readability',
 ]
 
 const INITIAL_MESSAGE =
   "I can help you build and style dashboard charts.\n\n" +
   "For chart creation: ask what to build from your API data.\n" +
-  "For style changes: select a widget on the canvas and ask for color or display updates."
+  "Select a widget to change its chart type, field mapping, title, or visual style with a reviewed patch."
 
 function cleanAssistantMessage(content: string): string {
-  return content.replace(/```widget[\s\S]*?```/g, '').trim()
+  return content
+    .replace(/```widget_patch[\s\S]*?```/g, '')
+    .replace(/```widget[\s\S]*?```/g, '')
+    .replace(/```style[\s\S]*?```/g, '')
+    .trim()
 }
 
 export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
-  const { endpoints, widgets, currentDashboardId, addWidget, updateWidgetStyle } =
+  const { endpoints, widgets, currentDashboardId, addWidget, updateWidget, updateWidgetStyle } =
     useDashboardStore()
+  const builderScope = useScopedBuilderStore(state => state.scope)
 
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: INITIAL_MESSAGE },
@@ -82,6 +95,8 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
 
     const context: any = {
       dashboardId: currentDashboardId,
+      tenantId: builderScope?.tenantId,
+      projectId: builderScope?.projectId,
       connectedEndpoints: endpoints.map((e) => ({
         id: e.id,
         name: e.name,
@@ -99,7 +114,8 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
             yAxis: selectedWidget.dataMapping.yAxis,
           }
         : null,
-      styleOnlyMode: !!selectedWidget,
+      editMode: !!selectedWidget,
+      styleOnlyMode: false,
     }
 
     const endpointForContext = selectedWidget
@@ -109,8 +125,11 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
     if (endpointForContext) {
       try {
         const response = await fetch(endpointForContext.url, {
-          method: endpointForContext.method,
-          headers: endpointForContext.headers,
+          ...buildEndpointRequestInit({
+            method: endpointForContext.method,
+            headers: endpointForContext.headers,
+            body: endpointForContext.body,
+          }),
         })
         if (response.ok) {
           const raw = await response.json()
@@ -166,6 +185,7 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
           content: data.message,
           widgetAction: data.widgetAction ?? null,
           styleAction: data.styleAction ?? null,
+          widgetPatchAction: data.widgetPatchAction ?? null,
         },
       ])
     } catch (error: unknown) {
@@ -255,12 +275,39 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
     ])
   }
 
+  const handleApplyWidgetPatch = async (action: BuilderWidgetPatch & { widgetId: string }) => {
+    const target = widgets.find(widget => widget.id === action.widgetId)
+    if (!target || target.id !== selectedWidget?.id) {
+      toast.error('Select the target chart again before applying this change.')
+      return
+    }
+    const context = await buildContext()
+    const allowedFields = Array.isArray(context.fields)
+      ? context.fields.flatMap((field: unknown) => {
+          if (!field || typeof field !== 'object' || Array.isArray(field)) return []
+          const name = (field as Record<string, unknown>).name
+          return typeof name === 'string' ? [name] : []
+        })
+      : []
+    const validation = validateBuilderWidgetPatch({ widget: target, patch: action, allowedFields })
+    if (!validation.ok || !validation.updates) {
+      toast.error(validation.issues[0] ?? 'The proposed chart change is not valid.')
+      return
+    }
+    updateWidget(target.id, validation.updates)
+    toast.success(`Updated "${target.title}"`)
+    setMessages(current => [...current, {
+      role: 'assistant',
+      content: 'Applied the validated chart change. You can continue editing it manually or ask for another revision.',
+    }])
+  }
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()
     sendMessage(input)
   }
 
-  const quickPrompts = selectedWidget ? STYLE_PROMPTS : BASE_PROMPTS
+  const quickPrompts = selectedWidget ? EDIT_PROMPTS : BASE_PROMPTS
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -270,7 +317,7 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
             <Sparkles className="h-3.5 w-3.5 text-blue-600" />
             <p className="text-[11px] text-muted-foreground">
               {selectedWidget
-                ? 'Styling mode for selected chart'
+                ? 'Edit mode for selected chart'
                 : 'Chart creation mode'}
             </p>
           </div>
@@ -281,7 +328,7 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
         <p className="mt-1 text-[11px] text-muted-foreground">
           {selectedWidget
             ? `Target: ${selectedWidget.title}`
-            : 'Select a chart on canvas to apply style-only edits.'}
+            : 'Select a chart on canvas to edit its data, type, or appearance.'}
         </p>
       </div>
 
@@ -383,6 +430,30 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
                 </Button>
               </div>
             )}
+
+            {message.widgetPatchAction?.action === 'update_widget' && selectedWidget?.id === message.widgetPatchAction.widgetId && (
+              <div className="w-full max-w-[92%] rounded-lg border bg-card p-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  <div>
+                    <p className="text-xs font-semibold">Reviewed chart change</p>
+                    <p className="text-[10px] text-muted-foreground">{message.widgetPatchAction.description}</p>
+                  </div>
+                </div>
+                <div className="mt-2 space-y-1 text-[10px] text-muted-foreground">
+                  {describeBuilderWidgetPatch(selectedWidget, message.widgetPatchAction).map(change => (
+                    <p key={change} className="rounded bg-muted px-2 py-1 font-mono">{change}</p>
+                  ))}
+                </div>
+                <Button
+                  size="sm"
+                  className="mt-3 h-8 w-full text-xs"
+                  onClick={() => void handleApplyWidgetPatch(message.widgetPatchAction!)}
+                >
+                  Apply validated change
+                </Button>
+              </div>
+            )}
           </div>
         ))}
 
@@ -417,7 +488,7 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
           onChange={(event) => setInput(event.target.value)}
           placeholder={
             selectedWidget
-              ? `Style "${selectedWidget.title}"...`
+              ? `Change "${selectedWidget.title}"...`
               : 'Ask to create or improve a chart...'
           }
           disabled={loading}

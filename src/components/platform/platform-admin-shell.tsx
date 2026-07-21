@@ -25,6 +25,7 @@ import { BuilderFlowIndicator } from '@/components/platform/builder-flow-indicat
 import { enableDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { DASHBOARDOS_THEME_STORAGE_KEY, getDashboardOsThemeVars, type DashboardOsThemeMode } from '@/lib/dashboardos/theme'
 import { useAuthStore } from '@/store/auth-store'
+import { PlatformAssistantDock } from '@/components/platform/platform-assistant-dock'
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
@@ -245,6 +246,7 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
           </div>
         </DialogContent>
       </Dialog>
+      <PlatformAssistantDock />
     </div>
   )
 }
