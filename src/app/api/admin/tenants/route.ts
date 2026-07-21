@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
 
     const tenant = mapTenant(data as Record<string, unknown>)
 
-    await auth.supabase
+    const { error: membershipError } = await auth.supabase
       .from('tenant_memberships')
       .upsert({
         tenant_id: tenant.id,
@@ -109,6 +109,31 @@ export async function POST(req: NextRequest) {
         role: 'owner',
         created_at: nowIso,
       }, { onConflict: 'tenant_id,user_id' })
+
+    if (membershipError) {
+      return NextResponse.json({ tenant, project: null, error: membershipError.message }, { status: 400 })
+    }
+
+    const { data: project, error: projectError } = await auth.supabase
+      .from('dashboard_projects')
+      .insert({
+        tenant_id: tenant.id,
+        name: 'Dashboard Workspace',
+        description: 'Default project for this tenant',
+        status: 'active',
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select('id, tenant_id, name, description, status, created_at, updated_at')
+      .single()
+
+    if (projectError || !project) {
+      return NextResponse.json({
+        tenant,
+        project: null,
+        error: projectError?.message ?? 'Default project could not be created',
+      }, { status: 400 })
+    }
 
     await auth.supabase
       .from('audit_logs')
@@ -122,7 +147,20 @@ export async function POST(req: NextRequest) {
         created_at: nowIso,
       })
 
-    return NextResponse.json({ tenant }, { status: 201 })
+    await auth.supabase
+      .from('audit_logs')
+      .insert({
+        tenant_id: tenant.id,
+        project_id: project.id,
+        actor_user_id: auth.userId,
+        action: 'project.created',
+        target_type: 'dashboard_project',
+        target_id: project.id,
+        metadata: { name: project.name, source: 'tenant_creation' },
+        created_at: nowIso,
+      })
+
+    return NextResponse.json({ tenant, project }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ tenant: null, error: message }, { status: 500 })

@@ -150,7 +150,8 @@ Body:
   "database": "analytics",
   "username": "readonly_user",
   "password": "secret",
-  "sslMode": "require"
+  "sslMode": "require",
+  "schemas": ["public"]
 }
 ```
 
@@ -174,7 +175,35 @@ Auth: authenticated project editor.
 
 Body: `{}`
 
-Response: introspected tables/columns, persisted metadata count, schema hash, and next refresh timestamp.
+Response: introspected relations/columns, named inventory counts, schema hash, review requirement, and next refresh timestamp.
+
+### `GET /api/admin/data-sources/{id}/schema-inventory`
+
+Purpose: reconcile every fetched table/view and column with its classification and governed analytics-scope decision.
+
+Auth: authenticated project access.
+
+Response: `{ "inventory": { "inventoryHash": "...", "summary": { ...named counts... }, "relations": [...] } }`
+
+### `PUT /api/admin/data-sources/{id}/schema-selection`
+
+Purpose: confirm the complete included/excluded analytics scope for the current schema fingerprint.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "inventoryHash": "schema-sha256",
+  "decisions": [
+    { "relationId": "uuid", "status": "included" },
+    { "relationId": "uuid", "status": "excluded" }
+  ]
+}
+```
+
+Response: the refreshed confirmed inventory. Returns `409` when the schema changed after the inventory was loaded.
 
 ### `POST /api/admin/data-sources/{id}/schema-refresh`
 
@@ -201,6 +230,7 @@ Auth: authenticated project access.
 Query:
 - `dataSourceId`: optional UUID
 - `projectId`: optional UUID
+- `scope`: optional `all` or `selected`; semantic consumers must request `selected`
 
 Response: `{ "columns": [...] }`
 

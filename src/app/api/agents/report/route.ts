@@ -4,7 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { ReportInsightSchema } from '@/lib/ai/agent-schemas'
-import { getGoogleModel } from '@/lib/ai/google-model'
+import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
 import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const ReportAgentRequestSchema = z.object({
@@ -65,8 +65,9 @@ export async function POST(req: NextRequest) {
     const { dashboardTitle, widgetsData } = parsed.data
     const widgetsPreview = JSON.stringify(widgetsData.slice(0, 40), null, 2)
 
+    const model = getAiWorkflowModel({ workflowType: 'report_generation' })
     const result = await generateObject({
-      model: getGoogleModel('gemini-2.5-flash'),
+      model: model.model,
       schema: ReportInsightSchema,
       system: `You are a Senior Data Analyst preparing a professional dashboard report.
 

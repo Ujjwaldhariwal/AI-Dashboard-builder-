@@ -3,12 +3,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import {
   introspectPostgresSchema,
+  profilePostgresSchema,
   testPostgresConnection,
   type PostgresSchemaIntrospectionResult,
   type PostgresTableMetadata,
 } from '@/lib/data-sources/postgres-runtime'
+import { SCHEMA_PROFILE_VERSION, type SchemaIntelligenceProfile } from '@/lib/data-sources/schema-profile'
+import { buildSchemaInventoryRelations, buildSchemaInventorySummary } from '@/lib/data-sources/schema-inventory'
 import { columnsFromIntrospectionRows, persistGuidedProfileForColumns } from '@/lib/dashboardos/guided-review-store'
 import { invalidateSemanticDependentsForDataSource } from '@/lib/semantic/semantic-hardening'
+import type { DataSourceSchemaInventorySummary, DataSourceSchemaScopeStatus } from '@/types/data-source'
 
 const SCHEMA_REFRESH_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -26,6 +30,10 @@ export interface SchemaIntrospectionRunResult {
   refreshAfter: string
   latencyMs: number
   tables: PostgresTableMetadata[]
+  profileSummary: SchemaIntelligenceProfile['summary'] | null
+  profileCached: boolean
+  profilingWarnings: string[]
+  inventorySummary: DataSourceSchemaInventorySummary
 }
 
 export interface SchemaRefreshPlan {
@@ -89,9 +97,145 @@ class SchemaIntrospectionRecordingError extends Error {
   }
 }
 
+function isMissingSchemaSnapshotRpc(error: { code?: string; message?: string } | null | undefined) {
+  const message = error?.message ?? ''
+  return error?.code === 'PGRST202'
+    || /apply_data_source_schema_snapshot_atomic.*(function|schema cache)|could not find the function/i.test(message)
+}
+
+function isMissingSchemaInventoryRpc(error: { code?: string; message?: string } | null | undefined) {
+  const message = error?.message ?? ''
+  return error?.code === 'PGRST202'
+    || /apply_data_source_schema_inventory_atomic.*(function|schema cache)|could not find the function/i.test(message)
+}
+
+function summaryFromSourceRow(
+  row: Record<string, unknown>,
+  fallback: DataSourceSchemaInventorySummary,
+): DataSourceSchemaInventorySummary {
+  if (row.schema_object_count === undefined) return fallback
+  return {
+    discoveredObjectCount: Number(row.schema_object_count ?? fallback.discoveredObjectCount),
+    discoveredTableCount: Number(row.schema_base_table_count ?? fallback.discoveredTableCount),
+    discoveredViewCount: Number(row.schema_view_count ?? fallback.discoveredViewCount),
+    discoveredColumnCount: Number(row.schema_column_count ?? fallback.discoveredColumnCount),
+    includedObjectCount: Number(row.schema_included_object_count ?? fallback.includedObjectCount),
+    includedColumnCount: Number(row.schema_included_column_count ?? fallback.includedColumnCount),
+    excludedObjectCount: Number(row.schema_excluded_object_count ?? fallback.excludedObjectCount),
+    reviewObjectCount: Number(row.schema_review_object_count ?? fallback.reviewObjectCount),
+    scopeStatus: String(row.schema_scope_status ?? fallback.scopeStatus) as DataSourceSchemaScopeStatus,
+  }
+}
+
+function summaryFromRpc(value: unknown, fallback: DataSourceSchemaInventorySummary) {
+  const row = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+  if (row.discoveredObjectCount === undefined) return fallback
+  return {
+    discoveredObjectCount: Number(row.discoveredObjectCount),
+    discoveredTableCount: Number(row.discoveredTableCount ?? 0),
+    discoveredViewCount: Number(row.discoveredViewCount ?? 0),
+    discoveredColumnCount: Number(row.discoveredColumnCount ?? 0),
+    includedObjectCount: Number(row.includedObjectCount ?? 0),
+    includedColumnCount: Number(row.includedColumnCount ?? 0),
+    excludedObjectCount: Number(row.excludedObjectCount ?? 0),
+    reviewObjectCount: Number(row.reviewObjectCount ?? 0),
+    scopeStatus: String(row.scopeStatus ?? 'review_required') as DataSourceSchemaScopeStatus,
+  }
+}
+
+function isMissingGuidedProfileTableError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /relation .*guided_schema_profiles.* does not exist|could not find the table .*guided_schema_profiles.*schema cache/i.test(message)
+}
+
+async function persistSchemaSnapshotWithoutRpc({
+  supabase,
+  dataSourceId,
+  tenantId,
+  projectId,
+  columns,
+  schemaHash,
+  tableCount,
+  columnCount,
+  introspectedAt,
+  refreshAfter,
+}: {
+  supabase: SupabaseClient
+  dataSourceId: string
+  tenantId: string
+  projectId: string
+  columns: Array<Record<string, unknown>>
+  schemaHash: string
+  tableCount: number
+  columnCount: number
+  introspectedAt: string
+  refreshAfter: string
+}) {
+  const { error: deleteError } = await supabase
+    .from('data_source_columns')
+    .delete()
+    .eq('data_source_id', dataSourceId)
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+
+  if (deleteError) throw new Error(deleteError.message)
+
+  if (columns.length > 0) {
+    const rows = columns.map(column => ({
+      tenant_id: tenantId,
+      project_id: projectId,
+      data_source_id: dataSourceId,
+      schema_name: column.schema_name,
+      table_name: column.table_name,
+      column_name: column.column_name,
+      ordinal_position: column.ordinal_position,
+      data_type: column.data_type,
+      udt_name: column.udt_name,
+      is_nullable: column.is_nullable,
+      column_default: column.column_default,
+    }))
+    const { data: inserted, error: insertError } = await supabase
+      .from('data_source_columns')
+      .insert(rows)
+      .select('id')
+
+    if (insertError) throw new Error(insertError.message)
+    if ((inserted ?? []).length !== columnCount) {
+      throw new Error(`Schema snapshot column count mismatch: expected ${columnCount}, inserted ${(inserted ?? []).length}`)
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from('data_sources')
+    .update({
+      status: 'active',
+      last_tested_at: introspectedAt,
+      last_test_status: 'ok',
+      last_error: null,
+      schema_last_introspected_at: introspectedAt,
+      schema_last_status: 'ok',
+      schema_last_error: null,
+      schema_hash: schemaHash,
+      schema_table_count: tableCount,
+      schema_column_count: columnCount,
+      schema_refresh_after: refreshAfter,
+      schema_refresh_requested_at: null,
+      schema_refresh_reason: null,
+      updated_at: introspectedAt,
+    })
+    .eq('id', dataSourceId)
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+
+  if (updateError) throw new Error(updateError.message)
+}
+
 interface SchemaIntrospectionDependencies {
   testConnection: typeof testPostgresConnection
   introspectSchema: typeof introspectPostgresSchema
+  profileSchema: typeof profilePostgresSchema
   invalidateDependents: typeof invalidateSemanticDependentsForDataSource
   persistGuidedProfile: typeof persistGuidedProfileForColumns
 }
@@ -99,16 +243,21 @@ interface SchemaIntrospectionDependencies {
 const DEFAULT_DEPENDENCIES: SchemaIntrospectionDependencies = {
   testConnection: testPostgresConnection,
   introspectSchema: introspectPostgresSchema,
+  profileSchema: profilePostgresSchema,
   invalidateDependents: invalidateSemanticDependentsForDataSource,
   persistGuidedProfile: persistGuidedProfileForColumns,
 }
 
-export function schemaHashForTables(tables: PostgresTableMetadata[]) {
-  const canonical = tables
-    .map(table => ({
+export function schemaHashForTables(
+  tables: PostgresTableMetadata[],
+  foreignKeys: PostgresSchemaIntrospectionResult['foreignKeys'] = [],
+) {
+  const canonical = {
+    tables: tables.map(table => ({
       schemaName: table.schemaName,
       tableName: table.tableName,
       tableType: table.tableType,
+      comment: table.comment ?? null,
       columns: table.columns.map(column => ({
         columnName: column.columnName,
         ordinalPosition: column.ordinalPosition,
@@ -116,11 +265,79 @@ export function schemaHashForTables(tables: PostgresTableMetadata[]) {
         udtName: column.udtName,
         isNullable: column.isNullable,
         columnDefault: column.columnDefault ?? null,
+        comment: column.comment ?? null,
+        isPrimaryKey: Boolean(column.isPrimaryKey),
+        isUnique: Boolean(column.isUnique),
+        isIndexed: Boolean(column.isIndexed),
       })),
     }))
-    .sort((left, right) => `${left.schemaName}.${left.tableName}`.localeCompare(`${right.schemaName}.${right.tableName}`))
+    .sort((left, right) => `${left.schemaName}.${left.tableName}`.localeCompare(`${right.schemaName}.${right.tableName}`)),
+    foreignKeys: [...(foreignKeys ?? [])].sort((left, right) => (
+      `${left.sourceSchema}.${left.sourceTable}.${left.sourceColumn}.${left.constraintName}`
+        .localeCompare(`${right.sourceSchema}.${right.sourceTable}.${right.sourceColumn}.${right.constraintName}`)
+    )),
+  }
 
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex')
+}
+
+async function persistSchemaIntelligenceProfile({
+  supabase,
+  tenantId,
+  projectId,
+  dataSourceId,
+  schemaHash,
+  profile,
+}: {
+  supabase: SupabaseClient
+  tenantId: string
+  projectId: string
+  dataSourceId: string
+  schemaHash: string
+  profile: SchemaIntelligenceProfile
+}) {
+  const { error } = await supabase
+    .from('data_source_schema_profiles')
+    .upsert({
+      tenant_id: tenantId,
+      project_id: projectId,
+      data_source_id: dataSourceId,
+      schema_hash: schemaHash,
+      profile_version: SCHEMA_PROFILE_VERSION,
+      selected_schemas: profile.selectedSchemas,
+      table_profiles: profile.tableProfiles,
+      column_profiles: profile.columnProfiles,
+      join_candidates: profile.joinCandidates,
+      warnings: profile.warnings,
+      summary: profile.summary,
+      generated_at: profile.generatedAt,
+      updated_at: profile.generatedAt,
+    }, { onConflict: 'data_source_id,schema_hash,profile_version' })
+
+  if (error) throw new Error(error.message)
+}
+
+async function hasCachedSchemaIntelligenceProfile({
+  supabase,
+  dataSourceId,
+  schemaHash,
+}: {
+  supabase: SupabaseClient
+  dataSourceId: string
+  schemaHash: string
+}) {
+  try {
+    const { data, error } = await supabase
+      .from('data_source_schema_profiles')
+      .select('id')
+      .eq('data_source_id', dataSourceId)
+      .eq('schema_hash', schemaHash)
+      .eq('profile_version', SCHEMA_PROFILE_VERSION)
+      .maybeSingle()
+    return !error && Boolean(data)
+  } catch {
+    return false
+  }
 }
 
 async function recordIncompleteIntrospection({
@@ -212,7 +429,7 @@ export async function runDataSourceSchemaIntrospection({
 
   const { data: source, error: sourceError } = await supabase
     .from('data_sources')
-    .select('id, tenant_id, project_id, status, credential_ciphertext, schema_hash')
+    .select('id, tenant_id, project_id, status, credential_ciphertext, schema_hash, schema_object_count, schema_base_table_count, schema_view_count, schema_column_count, schema_included_object_count, schema_included_column_count, schema_excluded_object_count, schema_review_object_count, schema_scope_status')
     .eq('id', dataSourceId)
     .single()
 
@@ -249,6 +466,12 @@ export async function runDataSourceSchemaIntrospection({
     }
 
     const tables = introspection.tables
+    const inventoryRelations = buildSchemaInventoryRelations(tables)
+    const proposedInventorySummary = buildSchemaInventorySummary(inventoryRelations.map(relation => ({
+      relationType: relation.relation_type,
+      columnCount: relation.column_count,
+      selectionStatus: relation.suggested_status,
+    })), 'review_required')
     const columns = tables.flatMap(table => table.columns.map(column => ({
       schema_name: column.schemaName,
       table_name: column.tableName,
@@ -259,27 +482,75 @@ export async function runDataSourceSchemaIntrospection({
       is_nullable: column.isNullable,
       column_default: column.columnDefault ?? null,
     })))
-    const schemaHash = schemaHashForTables(tables)
+    const schemaHash = schemaHashForTables(tables, introspection.foreignKeys)
     const plan = buildSchemaRefreshPlan({
       previousSchemaHash,
       nextSchemaHash: schemaHash,
       complete: introspection.completeness.complete,
     })
     const refreshAfter = new Date(Date.now() + SCHEMA_REFRESH_TTL_MS).toISOString()
+    let intelligenceProfile: SchemaIntelligenceProfile | null = null
+    const profilingWarnings: string[] = []
+    const profileCached = plan.noOp
+      ? await hasCachedSchemaIntelligenceProfile({ supabase, dataSourceId, schemaHash })
+      : false
+    let persistedInventorySummary: DataSourceSchemaInventorySummary | null = null
+
+    if (plan.replaceSnapshot || !profileCached) {
+      try {
+        intelligenceProfile = await runtime.profileSchema(ciphertext, introspection)
+        profilingWarnings.push(...intelligenceProfile.warnings)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        profilingWarnings.push(`Schema profiling was skipped: ${message.slice(0, 240)}`)
+      }
+    }
 
     if (plan.replaceSnapshot) {
-      const { error: snapshotError } = await supabase.rpc('apply_data_source_schema_snapshot_atomic', {
+      const inventoryResult = await supabase.rpc('apply_data_source_schema_inventory_atomic', {
         p_data_source_id: dataSourceId,
         p_tenant_id: tenantId,
         p_project_id: projectId,
         p_columns: columns,
+        p_relations: inventoryRelations,
         p_schema_hash: schemaHash,
-        p_table_count: tables.length,
-        p_column_count: columns.length,
         p_introspected_at: nowIso,
         p_refresh_after: refreshAfter,
       })
-      if (snapshotError) throw new Error(snapshotError.message)
+      if (inventoryResult.error && !isMissingSchemaInventoryRpc(inventoryResult.error)) {
+        throw new Error(inventoryResult.error.message)
+      }
+      if (inventoryResult.error) {
+        const snapshotResult = await supabase.rpc('apply_data_source_schema_snapshot_atomic', {
+          p_data_source_id: dataSourceId,
+          p_tenant_id: tenantId,
+          p_project_id: projectId,
+          p_columns: columns,
+          p_schema_hash: schemaHash,
+          p_table_count: tables.length,
+          p_column_count: columns.length,
+          p_introspected_at: nowIso,
+          p_refresh_after: refreshAfter,
+        })
+        if (snapshotResult.error && !isMissingSchemaSnapshotRpc(snapshotResult.error)) throw new Error(snapshotResult.error.message)
+        if (snapshotResult.error) {
+          await persistSchemaSnapshotWithoutRpc({
+            supabase,
+            dataSourceId,
+            tenantId,
+            projectId,
+            columns,
+            schemaHash,
+            tableCount: tables.length,
+            columnCount: columns.length,
+            introspectedAt: nowIso,
+            refreshAfter,
+          })
+        }
+        profilingWarnings.push('Schema inventory migration is not applied; raw columns were saved without governed table selection.')
+      } else {
+        persistedInventorySummary = summaryFromRpc(inventoryResult.data, proposedInventorySummary)
+      }
     } else {
       const { error: heartbeatError } = await supabase
         .from('data_sources')
@@ -312,18 +583,38 @@ export async function runDataSourceSchemaIntrospection({
       })
     }
 
-    if (plan.persistGuidedProfile) {
-      await runtime.persistGuidedProfile({
-        supabase,
-        tenantId,
-        projectId,
-        dataSourceId,
-        schemaHash,
-        columns: columnsFromIntrospectionRows({
+    if (intelligenceProfile) {
+      try {
+        await persistSchemaIntelligenceProfile({
+          supabase,
+          tenantId,
+          projectId,
           dataSourceId,
-          columns: tables.flatMap(table => table.columns),
-        }),
-      })
+          schemaHash,
+          profile: intelligenceProfile,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        profilingWarnings.push(`Schema profile could not be persisted: ${message.slice(0, 240)}`)
+      }
+    }
+
+    if (plan.persistGuidedProfile) {
+      try {
+        await runtime.persistGuidedProfile({
+          supabase,
+          tenantId,
+          projectId,
+          dataSourceId,
+          schemaHash,
+          columns: columnsFromIntrospectionRows({
+            dataSourceId,
+            columns: tables.flatMap(table => table.columns),
+          }),
+        })
+      } catch (error) {
+        if (!isMissingGuidedProfileTableError(error)) throw error
+      }
     }
 
     const finishedAt = new Date().toISOString()
@@ -348,6 +639,10 @@ export async function runDataSourceSchemaIntrospection({
           schemaChanged: plan.schemaChanged,
           noOp: plan.noOp,
           previousSchemaHash,
+          profileVersion: intelligenceProfile?.version ?? SCHEMA_PROFILE_VERSION,
+          profileCached,
+          profileSummary: intelligenceProfile?.summary ?? null,
+          profilingWarnings,
         },
       })
     if (runError) throw new SchemaIntrospectionRecordingError(runError.message)
@@ -366,6 +661,12 @@ export async function runDataSourceSchemaIntrospection({
       refreshAfter,
       latencyMs: test.latencyMs,
       tables,
+      profileSummary: intelligenceProfile?.summary ?? null,
+      profileCached,
+      profilingWarnings,
+      inventorySummary: plan.noOp
+        ? summaryFromSourceRow(row, proposedInventorySummary)
+        : persistedInventorySummary ?? proposedInventorySummary,
     }
   } catch (error) {
     if (error instanceof SchemaIntrospectionIncompleteError || error instanceof SchemaIntrospectionRecordingError) throw error

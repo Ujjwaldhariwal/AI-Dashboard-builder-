@@ -148,7 +148,8 @@ AI should not receive raw credentials, arbitrary SQL access, or unrestricted raw
 
 ## Next Architecture Sprints
 
-1. Visual chart snapshot rendering for PDF/report exports.
-2. Standalone ZIP app package generation from the published-dashboard runtime.
-3. Alert delivery policy tuning from real operations.
-4. AI filter policy after the above are stable.
+1. Trustworthy schema discovery and user-confirmed analytics scope (`docs/schema-discovery-trust-sprint.md`).
+2. Visual chart snapshot rendering for PDF/report exports.
+3. Standalone ZIP app package generation from the published-dashboard runtime.
+4. Alert delivery policy tuning from real operations.
+5. AI filter policy after the above are stable.

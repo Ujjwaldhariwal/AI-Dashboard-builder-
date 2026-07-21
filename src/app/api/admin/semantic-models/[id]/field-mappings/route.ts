@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
+import { validateSelectedSourceColumn } from '@/lib/semantic/semantic-hardening'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { BusinessEntityType, BusinessFieldRole } from '@/types/semantic-model'
 
@@ -178,6 +179,19 @@ export async function POST(
       tableName: parsed.data.tableName,
       columnName: parsed.data.columnName,
       dataType: parsed.data.dataType,
+    }
+
+    const sourceValidation = await validateSelectedSourceColumn({
+      supabase: auth.supabase,
+      tenantId: String(model.tenant_id),
+      projectId: String(model.project_id),
+      dataSourceId: parsed.data.dataSourceId,
+      schemaName: parsed.data.schemaName,
+      tableName: parsed.data.tableName,
+      columnName: parsed.data.columnName,
+    })
+    if (!sourceValidation.ok) {
+      return NextResponse.json({ entity: null, field: null, error: sourceValidation.error }, { status: 409 })
     }
 
     const { data: entityRow, error: entityError } = await auth.supabase

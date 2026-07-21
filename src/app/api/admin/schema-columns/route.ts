@@ -9,6 +9,7 @@ function mapColumn(row: Record<string, unknown>) {
     tenantId: String(row.tenant_id),
     projectId: String(row.project_id),
     dataSourceId: String(row.data_source_id),
+    relationId: typeof row.relation_id === 'string' ? row.relation_id : null,
     schemaName: String(row.schema_name ?? ''),
     tableName: String(row.table_name ?? ''),
     columnName: String(row.column_name ?? ''),
@@ -35,6 +36,10 @@ export async function GET(req: NextRequest) {
     const projectId = req.nextUrl.searchParams.get('projectId')
     const dataSourceId = req.nextUrl.searchParams.get('dataSourceId')
     const search = req.nextUrl.searchParams.get('search')?.trim()
+    const scope = req.nextUrl.searchParams.get('scope') ?? 'all'
+    if (!['all', 'selected'].includes(scope)) {
+      return NextResponse.json({ columns: [], error: 'scope must be selected or all' }, { status: 400 })
+    }
 
     if (projectId) {
       const access = await requireProjectAccess({ ...accessContext(auth), projectId })
@@ -62,9 +67,25 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    let selectedRelationIds: string[] | null = null
+    if (scope === 'selected') {
+      let selectionQuery = auth.supabase
+        .from('data_source_relation_selections')
+        .select('relation_id')
+        .eq('status', 'included')
+      if (projectId) selectionQuery = selectionQuery.eq('project_id', projectId)
+      if (dataSourceId) selectionQuery = selectionQuery.eq('data_source_id', dataSourceId)
+      const selectionResult = await selectionQuery
+      if (selectionResult.error) {
+        return NextResponse.json({ columns: [], error: selectionResult.error.message }, { status: 503 })
+      }
+      selectedRelationIds = (selectionResult.data ?? []).map(row => String(row.relation_id))
+      if (selectedRelationIds.length === 0) return NextResponse.json({ columns: [] })
+    }
+
     let query = auth.supabase
       .from('data_source_columns')
-      .select('id, tenant_id, project_id, data_source_id, schema_name, table_name, column_name, ordinal_position, data_type, udt_name, is_nullable, column_default, created_at')
+      .select('id, tenant_id, project_id, data_source_id, relation_id, schema_name, table_name, column_name, ordinal_position, data_type, udt_name, is_nullable, column_default, created_at')
       .order('schema_name', { ascending: true })
       .order('table_name', { ascending: true })
       .order('ordinal_position', { ascending: true })
@@ -72,6 +93,7 @@ export async function GET(req: NextRequest) {
 
     if (projectId) query = query.eq('project_id', projectId)
     if (dataSourceId) query = query.eq('data_source_id', dataSourceId)
+    if (selectedRelationIds) query = query.in('relation_id', selectedRelationIds)
     if (search) {
       query = query.or(`table_name.ilike.%${search}%,column_name.ilike.%${search}%,schema_name.ilike.%${search}%`)
     }

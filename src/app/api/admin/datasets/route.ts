@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
+import { validateSemanticReferencesForModel } from '@/lib/semantic/semantic-hardening'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { SemanticDataset, SemanticDatasetStatus } from '@/types/semantic-dataset'
 
@@ -99,6 +100,16 @@ export async function POST(req: NextRequest) {
       fieldIds: parsed.data.fieldIds,
       metricIds: parsed.data.metricIds,
       relationshipIds: parsed.data.relationshipIds,
+    }
+    const semanticValidation = await validateSemanticReferencesForModel({
+      supabase: auth.supabase,
+      tenantId: parsed.data.tenantId,
+      projectId: parsed.data.projectId,
+      modelId: parsed.data.modelId,
+      selection,
+    })
+    if (!semanticValidation.ok) {
+      return NextResponse.json({ dataset: null, error: semanticValidation.error }, { status: 409 })
     }
     const { data, error } = await auth.supabase
       .from('semantic_datasets')

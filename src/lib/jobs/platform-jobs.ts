@@ -8,6 +8,18 @@ export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number]
 export type PlatformJobStatus = (typeof PLATFORM_JOB_STATUSES)[number]
 export type PlatformJobTargetType = (typeof PLATFORM_JOB_TARGET_TYPES)[number]
 
+function isLegacyPlatformJobsSchemaError(error: { code?: string; message?: string } | null | undefined) {
+  const message = error?.message ?? ''
+  return error?.code === 'PGRST204'
+    || /column .*?(run_after|completed_at|locked_by|locked_at|dedupe_key).*platform_jobs/i.test(message)
+    || /schema cache.*(run_after|completed_at|locked_by|locked_at|dedupe_key)/i.test(message)
+}
+
+function isMissingClaimFunctionError(error: { code?: string; message?: string } | null | undefined) {
+  const message = error?.message ?? ''
+  return error?.code === 'PGRST202' || /claim_platform_jobs.*function|could not find the function/i.test(message)
+}
+
 export interface PlatformJob {
   id: string
   tenantId: string
@@ -90,14 +102,20 @@ export function mapPlatformJob(row: Record<string, unknown>): PlatformJob {
     targetType: typeof row.target_type === 'string' ? row.target_type as PlatformJobTargetType : null,
     targetId: typeof row.target_id === 'string' ? row.target_id : null,
     priority: Number(row.priority ?? 0),
-    runAfter: String(row.run_after ?? new Date().toISOString()),
+    runAfter: String(row.run_after ?? row.scheduled_for ?? new Date().toISOString()),
     attempts: Number(row.attempts ?? 0),
     maxAttempts: Number(row.max_attempts ?? 3),
     dedupeKey: typeof row.dedupe_key === 'string' ? row.dedupe_key : null,
-    lockedBy: typeof row.locked_by === 'string' ? row.locked_by : null,
-    lockedAt: typeof row.locked_at === 'string' ? row.locked_at : null,
+    lockedBy: typeof row.locked_by === 'string'
+      ? row.locked_by
+      : typeof row.claimed_by === 'string' ? row.claimed_by : null,
+    lockedAt: typeof row.locked_at === 'string'
+      ? row.locked_at
+      : typeof row.claimed_at === 'string' ? row.claimed_at : null,
     startedAt: typeof row.started_at === 'string' ? row.started_at : null,
-    completedAt: typeof row.completed_at === 'string' ? row.completed_at : null,
+    completedAt: typeof row.completed_at === 'string'
+      ? row.completed_at
+      : typeof row.finished_at === 'string' ? row.finished_at : null,
     payload: asRecord(row.payload),
     result: asRecord(row.result),
     errorMessage: typeof row.error_message === 'string' ? row.error_message : null,
@@ -139,13 +157,41 @@ export async function enqueuePlatformJob({
     updated_at: nowIso,
   }
 
-  const { data, error } = await supabase
+  const firstInsert = await supabase
     .from('platform_jobs')
     .insert(insertPayload)
     .select('*')
     .single()
 
-  if (!error && data) return mapPlatformJob(data as Record<string, unknown>)
+  if (!firstInsert.error && firstInsert.data) return mapPlatformJob(firstInsert.data as Record<string, unknown>)
+
+  let error = firstInsert.error
+  if (isLegacyPlatformJobsSchemaError(firstInsert.error)) {
+    const legacyInsertPayload = {
+      tenant_id: tenantId,
+      project_id: projectId,
+      job_type: jobType,
+      status: 'queued',
+      target_type: targetType,
+      target_id: targetId,
+      priority,
+      scheduled_for: runAfter ?? nowIso,
+      max_attempts: maxAttempts,
+      payload,
+      result: {},
+      created_by: createdBy,
+      created_at: nowIso,
+      updated_at: nowIso,
+    }
+    const legacyInsert = await supabase
+      .from('platform_jobs')
+      .insert(legacyInsertPayload)
+      .select('*')
+      .single()
+
+    if (!legacyInsert.error && legacyInsert.data) return mapPlatformJob(legacyInsert.data as Record<string, unknown>)
+    error = legacyInsert.error
+  }
 
   if (dedupeKey && error && 'code' in error && error.code === '23505') {
     const { data: existing, error: existingError } = await supabase
@@ -200,8 +246,71 @@ export async function claimPlatformJobs({
     worker_id: workerId,
   })
 
-  if (error) throw new Error(error.message)
-  return ((data ?? []) as Record<string, unknown>[]).map(row => mapPlatformJob(row))
+  if (!error) return ((data ?? []) as Record<string, unknown>[]).map(row => mapPlatformJob(row))
+  if (!isMissingClaimFunctionError(error)) throw new Error(error.message)
+
+  return claimPlatformJobsWithoutRpc({ supabase, workerId, batchSize: clampedBatchSize })
+}
+
+async function claimPlatformJobsWithoutRpc({
+  supabase,
+  workerId,
+  batchSize,
+}: {
+  supabase: SupabaseClient
+  workerId: string
+  batchSize: number
+}) {
+  const nowIso = new Date().toISOString()
+  const currentQuery = await supabase
+    .from('platform_jobs')
+    .select('*')
+    .eq('status', 'queued')
+    .lte('run_after', nowIso)
+    .order('priority', { ascending: false })
+    .order('run_after', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(batchSize)
+
+  const query = isLegacyPlatformJobsSchemaError(currentQuery.error)
+    ? await supabase
+      .from('platform_jobs')
+      .select('*')
+      .eq('status', 'queued')
+      .lte('scheduled_for', nowIso)
+      .order('priority', { ascending: false })
+      .order('scheduled_for', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(batchSize)
+    : currentQuery
+
+  if (query.error) throw new Error(query.error.message)
+
+  const claimed: PlatformJob[] = []
+  for (const row of (query.data ?? []) as Record<string, unknown>[]) {
+    const update = {
+      status: 'running',
+      started_at: typeof row.started_at === 'string' ? row.started_at : nowIso,
+      attempts: Number(row.attempts ?? 0) + 1,
+      error_message: null,
+      updated_at: nowIso,
+    }
+    const isLegacy = typeof row.scheduled_for === 'string' && typeof row.run_after !== 'string'
+    const result = await supabase
+      .from('platform_jobs')
+      .update(isLegacy
+        ? { ...update, claimed_by: workerId, claimed_at: nowIso, finished_at: null }
+        : { ...update, locked_by: workerId, locked_at: nowIso, completed_at: null })
+      .eq('id', String(row.id))
+      .eq('status', 'queued')
+      .select('*')
+      .maybeSingle()
+
+    if (result.error) throw new Error(result.error.message)
+    if (result.data) claimed.push(mapPlatformJob(result.data as Record<string, unknown>))
+  }
+
+  return claimed
 }
 
 export async function completePlatformJob({
@@ -210,7 +319,7 @@ export async function completePlatformJob({
   result = {},
 }: CompletePlatformJobInput): Promise<PlatformJob> {
   const nowIso = new Date().toISOString()
-  const { data, error } = await supabase
+  const firstUpdate = await supabase
     .from('platform_jobs')
     .update({
       status: 'succeeded',
@@ -225,8 +334,26 @@ export async function completePlatformJob({
     .select('*')
     .single()
 
-  if (error) throw new Error(error.message)
-  return mapPlatformJob(data as Record<string, unknown>)
+  if (!firstUpdate.error && firstUpdate.data) return mapPlatformJob(firstUpdate.data as Record<string, unknown>)
+  if (!isLegacyPlatformJobsSchemaError(firstUpdate.error)) throw new Error(firstUpdate.error?.message ?? 'Unable to complete platform job')
+
+  const legacyUpdate = await supabase
+    .from('platform_jobs')
+    .update({
+      status: 'succeeded',
+      result,
+      error_message: null,
+      claimed_by: null,
+      claimed_at: null,
+      finished_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq('id', jobId)
+    .select('*')
+    .single()
+
+  if (legacyUpdate.error || !legacyUpdate.data) throw new Error(legacyUpdate.error?.message ?? 'Unable to complete platform job')
+  return mapPlatformJob(legacyUpdate.data as Record<string, unknown>)
 }
 
 export async function failPlatformJob({
@@ -240,7 +367,7 @@ export async function failPlatformJob({
   const retryDelaySeconds = retryAfterSeconds ?? Math.min(900, 30 * Math.max(1, job.attempts))
   const nextRunAfter = new Date(now.getTime() + retryDelaySeconds * 1000).toISOString()
   const status: PlatformJobStatus = shouldRetry ? 'queued' : 'failed'
-  const { data, error } = await supabase
+  const firstUpdate = await supabase
     .from('platform_jobs')
     .update({
       status,
@@ -255,6 +382,24 @@ export async function failPlatformJob({
     .select('*')
     .single()
 
-  if (error) throw new Error(error.message)
-  return mapPlatformJob(data as Record<string, unknown>)
+  if (!firstUpdate.error && firstUpdate.data) return mapPlatformJob(firstUpdate.data as Record<string, unknown>)
+  if (!isLegacyPlatformJobsSchemaError(firstUpdate.error)) throw new Error(firstUpdate.error?.message ?? 'Unable to fail platform job')
+
+  const legacyUpdate = await supabase
+    .from('platform_jobs')
+    .update({
+      status,
+      error_message: errorMessage,
+      claimed_by: null,
+      claimed_at: null,
+      scheduled_for: shouldRetry ? nextRunAfter : job.runAfter,
+      finished_at: shouldRetry ? null : now.toISOString(),
+      updated_at: now.toISOString(),
+    })
+    .eq('id', job.id)
+    .select('*')
+    .single()
+
+  if (legacyUpdate.error || !legacyUpdate.data) throw new Error(legacyUpdate.error?.message ?? 'Unable to fail platform job')
+  return mapPlatformJob(legacyUpdate.data as Record<string, unknown>)
 }

@@ -23,6 +23,7 @@ function mapDataSource(row: Record<string, unknown>): DataSource {
       database: String(config.database ?? ''),
       username: String(config.username ?? ''),
       sslMode: String(config.sslMode ?? 'require') as DataSourceSslMode,
+      schemas: Array.isArray(config.schemas) ? config.schemas.map(String) : ['public'],
     },
     credentialKeyId: typeof row.credential_key_id === 'string' ? row.credential_key_id : null,
     lastTestedAt: typeof row.last_tested_at === 'string' ? row.last_tested_at : null,
@@ -34,6 +35,14 @@ function mapDataSource(row: Record<string, unknown>): DataSource {
     schemaHash: typeof row.schema_hash === 'string' ? row.schema_hash : null,
     schemaTableCount: Number(row.schema_table_count ?? 0),
     schemaColumnCount: Number(row.schema_column_count ?? 0),
+    schemaObjectCount: Number(row.schema_object_count ?? row.schema_table_count ?? 0),
+    schemaBaseTableCount: Number(row.schema_base_table_count ?? row.schema_table_count ?? 0),
+    schemaViewCount: Number(row.schema_view_count ?? 0),
+    schemaIncludedObjectCount: Number(row.schema_included_object_count ?? 0),
+    schemaIncludedColumnCount: Number(row.schema_included_column_count ?? 0),
+    schemaExcludedObjectCount: Number(row.schema_excluded_object_count ?? 0),
+    schemaReviewObjectCount: Number(row.schema_review_object_count ?? 0),
+    schemaScopeStatus: String(row.schema_scope_status ?? 'unconfirmed') as DataSource['schemaScopeStatus'],
     schemaRefreshAfter: typeof row.schema_refresh_after === 'string' ? row.schema_refresh_after : null,
     schemaRefreshRequestedAt: typeof row.schema_refresh_requested_at === 'string' ? row.schema_refresh_requested_at : null,
     schemaRefreshReason: typeof row.schema_refresh_reason === 'string' ? row.schema_refresh_reason : null,
@@ -57,7 +66,7 @@ export async function POST(
 
     const { data: source, error: sourceError } = await auth.supabase
       .from('data_sources')
-      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_ciphertext, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
+      .select('id, tenant_id, project_id, name, type, status, connection_config, credential_ciphertext, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_object_count, schema_base_table_count, schema_view_count, schema_included_object_count, schema_included_column_count, schema_excluded_object_count, schema_review_object_count, schema_scope_status, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
       .eq('id', id)
       .single()
 
@@ -93,7 +102,7 @@ export async function POST(
           updated_at: nowIso,
         })
         .eq('id', id)
-        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
+        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_object_count, schema_base_table_count, schema_view_count, schema_included_object_count, schema_included_column_count, schema_excluded_object_count, schema_review_object_count, schema_scope_status, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
         .single()
 
       if (updateError) {
@@ -129,7 +138,7 @@ export async function POST(
           updated_at: nowIso,
         })
         .eq('id', id)
-        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
+        .select('id, tenant_id, project_id, name, type, status, connection_config, credential_key_id, last_tested_at, last_test_status, last_error, schema_last_introspected_at, schema_last_status, schema_last_error, schema_hash, schema_table_count, schema_column_count, schema_object_count, schema_base_table_count, schema_view_count, schema_included_object_count, schema_included_column_count, schema_excluded_object_count, schema_review_object_count, schema_scope_status, schema_refresh_after, schema_refresh_requested_at, schema_refresh_reason, created_at, updated_at')
         .maybeSingle()
 
       await auth.supabase

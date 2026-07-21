@@ -252,6 +252,7 @@ export interface GuidedPublishReadinessInput {
     status?: string | null
     error?: string | null
     schemaHash?: string | null
+    scopeStatus?: string | null
   } | null
   models?: Array<{ id: string; status?: string | null; version?: number | null }> | null
   activeSemanticModelId?: string | null
@@ -429,7 +430,8 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
   const expectedSchemaHash = input.profileState?.lineage?.schemaProfile.schemaHash ?? null
   const schemaIntrospectionReady = Boolean(
     input.schemaIntrospection?.status === 'ok'
-    && (!expectedSchemaHash || input.schemaIntrospection.schemaHash === expectedSchemaHash),
+    && (!expectedSchemaHash || input.schemaIntrospection.schemaHash === expectedSchemaHash)
+    && (!input.schemaIntrospection.scopeStatus || input.schemaIntrospection.scopeStatus === 'confirmed'),
   )
   checks.push(schemaIntrospectionReady
     ? readinessCheck('schema_introspection', 'Schema completeness', 'ready', 'The active guided profile is backed by a complete schema scan.')
@@ -437,7 +439,9 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
       'schema_introspection',
       'Schema completeness',
       'blocker',
-      input.schemaIntrospection?.error
+      input.schemaIntrospection?.scopeStatus && input.schemaIntrospection.scopeStatus !== 'confirmed'
+        ? 'Publish requires the discovered table scope to be reviewed and confirmed.'
+        : input.schemaIntrospection?.error
         ? `Schema scan is not publish-safe: ${input.schemaIntrospection.error}`
         : 'Publish requires a complete schema scan that matches the guided profile.',
       DEFAULT_GUIDED_ACTIONS.connect_db,

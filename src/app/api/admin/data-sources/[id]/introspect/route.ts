@@ -65,6 +65,10 @@ export async function POST(
         schemaHash: result.schemaHash,
         previousSchemaHash: result.previousSchemaHash,
         latencyMs: result.latencyMs,
+        profileCached: result.profileCached,
+        profileSummary: result.profileSummary,
+        profilingWarningCount: result.profilingWarnings.length,
+        inventorySummary: result.inventorySummary,
       },
       created_at: new Date().toISOString(),
     })
@@ -79,6 +83,11 @@ export async function POST(
       noOp: result.noOp,
       complete: result.complete,
       refreshAfter: result.refreshAfter,
+      profileCached: result.profileCached,
+      profileSummary: result.profileSummary,
+      profilingWarnings: result.profilingWarnings,
+      inventorySummary: result.inventorySummary,
+      reviewRequired: result.inventorySummary.scopeStatus !== 'confirmed',
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

@@ -5,7 +5,7 @@ import { generateObject } from 'ai'
 import { z } from 'zod'
 import { ENTERPRISE_COLORS } from '@/lib/echarts/theme'
 import { WidgetStyleSchema } from '@/lib/ai/agent-schemas'
-import { getGoogleModel } from '@/lib/ai/google-model'
+import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
 import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const UiAgentRequestSchema = z.object({
@@ -65,8 +65,9 @@ export async function POST(req: NextRequest) {
     const { prompt, currentStyle } = parsed.data
     const currentStylePreview = JSON.stringify(currentStyle ?? {}, null, 2)
 
+    const model = getAiWorkflowModel({ workflowType: 'chart_refinement' })
     const result = await generateObject({
-      model: getGoogleModel('gemini-2.5-flash'),
+      model: model.model,
       schema: WidgetStyleSchema,
       system: `You are an expert enterprise chart UI designer.
 

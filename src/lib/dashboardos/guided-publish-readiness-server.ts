@@ -148,7 +148,7 @@ export async function evaluateGuidedPublishReadinessForProject({
       .order('updated_at', { ascending: false }),
     supabase
       .from('data_sources')
-      .select('id, schema_last_status, schema_last_error, schema_hash')
+      .select('id, schema_last_status, schema_last_error, schema_hash, schema_scope_status')
       .eq('tenant_id', tenantId)
       .eq('project_id', projectId),
   ])
@@ -203,6 +203,7 @@ export async function evaluateGuidedPublishReadinessForProject({
       status: typeof schemaSource.schema_last_status === 'string' ? schemaSource.schema_last_status : null,
       error: typeof schemaSource.schema_last_error === 'string' ? schemaSource.schema_last_error : null,
       schemaHash: typeof schemaSource.schema_hash === 'string' ? schemaSource.schema_hash : null,
+      scopeStatus: typeof schemaSource.schema_scope_status === 'string' ? schemaSource.schema_scope_status : null,
     } : null,
     models: (modelsResult.data ?? []).map(row => ({
       id: String(row.id),

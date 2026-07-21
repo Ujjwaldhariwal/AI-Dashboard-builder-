@@ -4,7 +4,7 @@
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, BrainCircuit, Clock3, Database, FileSearch, KeyRound, Loader2, PlugZap, Plus, RotateCcw, X } from 'lucide-react'
+import { AlertCircle, BrainCircuit, Clock3, Database, FileSearch, KeyRound, Loader2, PlugZap, Plus, RotateCcw, TableProperties, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SchemaInventoryDialog } from '@/components/platform/schema-inventory-dialog'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { demoColumns, demoDataSource, demoProjects, DEMO_DATA_SOURCE_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
@@ -85,6 +86,7 @@ export function DataSourcesAdminPanel() {
   const [busyAction, setBusyAction] = useState<'test' | 'introspect' | 'refresh' | 'remove' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [inventorySource, setInventorySource] = useState<DataSource | null>(null)
 
   const [projectId, setProjectId] = useState('')
   const [name, setName] = useState('')
@@ -296,6 +298,8 @@ export function DataSourcesAdminPanel() {
       if (Array.isArray(payload?.profilingWarnings) && payload.profilingWarnings.length > 0) {
         toast.warning(`Schema saved with ${payload.profilingWarnings.length} profiling warning(s)`)
       }
+      const source = dataSources.find(item => item.id === sourceId)
+      if (source) setInventorySource(source)
     } catch (introspectError) {
       toast.error(introspectError instanceof Error ? introspectError.message : String(introspectError))
     } finally {
@@ -502,8 +506,23 @@ export function DataSourcesAdminPanel() {
                         {schemaStatusLabel(source)}
                       </div>
                       <Badge variant="outline" className="border-white/15 text-slate-300">
-                        {source.schemaTableCount} tables / {source.schemaColumnCount} columns
+                        {source.schemaObjectCount ?? source.schemaTableCount} objects · {source.schemaBaseTableCount ?? source.schemaTableCount} tables · {source.schemaViewCount ?? 0} views · {source.schemaColumnCount} columns
                       </Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.02] px-3 py-2">
+                      <div className="text-xs text-slate-400">
+                        Analytics scope: <span className="font-medium text-slate-200">{(source.schemaScopeStatus ?? 'unconfirmed').replace(/_/g, ' ')}</span>
+                        {' · '}{source.schemaIncludedObjectCount ?? 0} included · {source.schemaReviewObjectCount ?? 0} review
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setInventorySource(source)}
+                        disabled={demoMode || !source.schemaHash}
+                      >
+                        <TableProperties className="mr-1.5 h-3.5 w-3.5" /> Review fetched objects
+                      </Button>
                     </div>
                     <div className="mt-2 grid gap-1 text-[11px] text-slate-500 sm:grid-cols-2">
                       <span>last scan: {schemaAgeLabel(source)}</span>
@@ -569,7 +588,7 @@ export function DataSourcesAdminPanel() {
           <CardContent className="p-0">
             <dl className="divide-y divide-[color:var(--dos-border-soft)]">
               {[
-                ['Tables', guidedProfile?.tableCount ?? dataSources.reduce((total, source) => total + source.schemaTableCount, 0)],
+                ['Objects', guidedProfile?.tableCount ?? dataSources.reduce((total, source) => total + (source.schemaObjectCount ?? source.schemaTableCount), 0)],
                 ['Columns', guidedProfile?.columnCount ?? dataSources.reduce((total, source) => total + source.schemaColumnCount, 0)],
                 ['Likely measures', guidedProfile?.measures.length ?? 'Review'],
                 ['Needs review', guidedProfile?.reviewItems.length ?? 'After scan'],
@@ -584,6 +603,11 @@ export function DataSourcesAdminPanel() {
               <div className="border-t border-[color:var(--dos-border-soft)] px-5 py-4 text-xs leading-5 text-[var(--dos-text-muted)]">
                 Suggested area: {guidedProfile.businessAreas[0]?.label ?? 'Review schema'} · sensitive fields hidden: {guidedProfile.sensitive.length}
               </div>
+            ) : null}
+            {!guidedProfile && dataSources.length > 0 ? (
+              <p className="border-t border-[color:var(--dos-border-soft)] px-5 py-4 text-xs leading-5 text-[var(--dos-text-muted)]">
+                Across {dataSources.length} data source{dataSources.length === 1 ? '' : 's'}. Open a source to reconcile its exact tables, views, and columns.
+              </p>
             ) : null}
           </CardContent>
         </Card>
@@ -703,6 +727,13 @@ export function DataSourcesAdminPanel() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <SchemaInventoryDialog
+        source={inventorySource}
+        open={Boolean(inventorySource)}
+        onOpenChange={(open) => { if (!open) setInventorySource(null) }}
+        onConfirmed={() => fetchDataSources(projectId)}
+      />
     </div>
   )
 }

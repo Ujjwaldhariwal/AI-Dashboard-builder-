@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { TransformOpSchema } from '@/lib/ai/agent-schemas'
-import { getGoogleModel } from '@/lib/ai/google-model'
+import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
 import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
 
 const MAX_BLUEPRINT_FETCH_ROWS = 12
@@ -224,8 +224,9 @@ export async function POST(req: NextRequest) {
       ? `Reusable blueprint memory:\n${blueprintMemory}`
       : 'Reusable blueprint memory: none'
 
+    const model = getAiWorkflowModel({ workflowType: 'data_transform' })
     const result = await generateObject({
-      model: getGoogleModel('gemini-2.5-flash'),
+      model: model.model,
       schema: TransformAgentResponseSchema,
       system: `You are a data transformation planner for dashboard charts.
 

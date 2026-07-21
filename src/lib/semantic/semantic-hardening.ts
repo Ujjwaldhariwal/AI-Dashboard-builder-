@@ -36,6 +36,51 @@ function sourceColumnKey(column: Record<string, unknown>) {
   ].map(value => String(value ?? '')).join('.')
 }
 
+export async function validateSelectedSourceColumn({
+  supabase,
+  tenantId,
+  projectId,
+  dataSourceId,
+  schemaName,
+  tableName,
+  columnName,
+}: {
+  supabase: SupabaseClient
+  tenantId: string
+  projectId: string
+  dataSourceId: string
+  schemaName: string
+  tableName: string
+  columnName: string
+}): Promise<{ ok: true; relationId: string } | { ok: false; error: string }> {
+  const label = `${dataSourceId}.${schemaName}.${tableName}.${columnName}`
+  const { data: column, error } = await supabase
+    .from('data_source_columns')
+    .select('id, relation_id')
+    .eq('tenant_id', tenantId)
+    .eq('project_id', projectId)
+    .eq('data_source_id', dataSourceId)
+    .eq('schema_name', schemaName)
+    .eq('table_name', tableName)
+    .eq('column_name', columnName)
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!column) return { ok: false, error: `Mapped source column is missing from discovered schema: ${label}` }
+  if (!column.relation_id) return { ok: false, error: `Confirm the analytics table scope before mapping: ${schemaName}.${tableName}` }
+
+  const { data: selection, error: selectionError } = await supabase
+    .from('data_source_relation_selections')
+    .select('status')
+    .eq('relation_id', column.relation_id)
+    .maybeSingle()
+  if (selectionError) throw new Error(selectionError.message)
+  if (!selection || selection.status !== 'included') {
+    return { ok: false, error: `Table is not included in the confirmed analytics scope: ${schemaName}.${tableName}` }
+  }
+  return { ok: true, relationId: String(column.relation_id) }
+}
+
 export function selectionFromRecord(value: unknown): SemanticSelection {
   const record = asRecord(value)
   const toStrings = (input: unknown) => Array.isArray(input)
@@ -81,7 +126,7 @@ export async function validateSourceColumnsForFields({
   tenantId: string
   projectId: string
   fields: Record<string, unknown>[]
-}) {
+}): Promise<{ ok: true } | { ok: false; error: string }> {
   const seen = new Set<string>()
   const sourceColumns = fields.map(field => sourceColumn(field)).filter(column => {
     const required = ['dataSourceId', 'schemaName', 'tableName', 'columnName']
@@ -97,24 +142,16 @@ export async function validateSourceColumnsForFields({
   }
 
   for (const column of sourceColumns) {
-    const { data, error } = await supabase
-      .from('data_source_columns')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('project_id', projectId)
-      .eq('data_source_id', String(column.dataSourceId))
-      .eq('schema_name', String(column.schemaName))
-      .eq('table_name', String(column.tableName))
-      .eq('column_name', String(column.columnName))
-      .maybeSingle()
-
-    if (error) throw new Error(error.message)
-    if (!data) {
-      return {
-        ok: false,
-        error: `Mapped source column is missing from discovered schema: ${sourceColumnKey(column)}`,
-      }
-    }
+    const result = await validateSelectedSourceColumn({
+      supabase,
+      tenantId,
+      projectId,
+      dataSourceId: String(column.dataSourceId),
+      schemaName: String(column.schemaName),
+      tableName: String(column.tableName),
+      columnName: String(column.columnName),
+    })
+    if (!result.ok) return result
   }
 
   return { ok: true }
