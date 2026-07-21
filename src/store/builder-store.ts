@@ -22,6 +22,8 @@ interface Dashboard {
   // ── Fix #3 — store as ISO string, not Date object ──────────
   createdAt:   string
   ownerId?:    string
+  tenantId?:   string | null
+  projectId?:  string | null
   dashboardBrief?: DashboardBrief | null
 }
 
@@ -397,6 +399,8 @@ export const useDashboardStore = create<DashboardStore>()(
             description: row.description ?? '',
             createdAt: row.created_at ?? new Date().toISOString(),
             ownerId: row.user_id,
+            tenantId: typeof row.tenant_id === 'string' ? row.tenant_id : null,
+            projectId: typeof row.project_id === 'string' ? row.project_id : null,
             dashboardBrief: parseDashboardBrief(row.dashboard_brief),
           }))
 
@@ -555,6 +559,8 @@ export const useDashboardStore = create<DashboardStore>()(
                 name: dashboard.name,
                 description: dashboard.description || null,
                 dashboard_brief: dashboard.dashboardBrief ?? null,
+                tenant_id: dashboard.tenantId ?? null,
+                project_id: dashboard.projectId ?? null,
                 created_at: createdAt,
                 updated_at: createdAt,
               })
@@ -764,6 +770,8 @@ export const useDashboardStore = create<DashboardStore>()(
                   name: `${source.name} (copy)`,
                   description: source.description || null,
                   dashboard_brief: source.dashboardBrief ?? null,
+                  tenant_id: source.tenantId ?? null,
+                  project_id: source.projectId ?? null,
                   created_at: now,
                   updated_at: now,
                 })

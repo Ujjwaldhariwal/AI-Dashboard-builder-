@@ -96,6 +96,6 @@ test.describe('builder assistant chart patches', () => {
     expect(shell).toContain('<PlatformAssistantDock />')
     expect(chatbot).toContain('validateBuilderWidgetPatch')
     expect(chatbot).toContain('Apply validated change')
+    expect(chatbot).toContain('activeDashboard?.tenantId && activeDashboard.projectId')
   })
 })
-

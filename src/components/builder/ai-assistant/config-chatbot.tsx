@@ -71,7 +71,7 @@ function cleanAssistantMessage(content: string): string {
 }
 
 export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
-  const { endpoints, widgets, currentDashboardId, addWidget, updateWidget, updateWidgetStyle } =
+  const { dashboards, endpoints, widgets, currentDashboardId, addWidget, updateWidget, updateWidgetStyle } =
     useDashboardStore()
   const builderScope = useScopedBuilderStore(state => state.scope)
 
@@ -83,6 +83,12 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const selectedWidget = widgets.find((w) => w.id === selectedWidgetId)
+  const activeDashboard = dashboards.find(dashboard => dashboard.id === currentDashboardId)
+  const resolvedScope = builderScope ?? (
+    activeDashboard?.tenantId && activeDashboard.projectId
+      ? { tenantId: activeDashboard.tenantId, projectId: activeDashboard.projectId }
+      : null
+  )
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -95,8 +101,8 @@ export function ConfigChatbot({ selectedWidgetId }: ConfigChatbotProps) {
 
     const context: any = {
       dashboardId: currentDashboardId,
-      tenantId: builderScope?.tenantId,
-      projectId: builderScope?.projectId,
+      tenantId: resolvedScope?.tenantId,
+      projectId: resolvedScope?.projectId,
       connectedEndpoints: endpoints.map((e) => ({
         id: e.id,
         name: e.name,
