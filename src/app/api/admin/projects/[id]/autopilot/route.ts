@@ -51,11 +51,24 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const access = await requireProjectAccess({ ...accessContext(auth), tenantId: parsed.data.tenantId, projectId, editor: true })
     if (!access.ok) return NextResponse.json({ run: null, error: access.error }, { status: access.status })
     const brief = parsed.data.brief
+    const idempotencyKey = parsed.data.idempotencyKey ?? projectAutopilotIdempotencyKey(projectId, brief)
+    const { data: existingRow, error: existingError } = await auth.supabase
+      .from('project_autopilot_runs')
+      .select('*')
+      .eq('tenant_id', parsed.data.tenantId)
+      .eq('project_id', projectId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle()
+    if (existingError) {
+      return NextResponse.json({ run: null, error: existingError.message }, { status: migrationMissing(existingError.message) ? 503 : 500 })
+    }
+    if (existingRow) {
+      return NextResponse.json({ run: mapProjectAutopilotRun(existingRow as Record<string, unknown>) })
+    }
     const snapshot = await loadProjectAutopilotSnapshot({ supabase: auth.supabase, tenantId: parsed.data.tenantId, projectId })
     const plan = buildProjectAutopilotPlan(snapshot, brief)
-    const idempotencyKey = parsed.data.idempotencyKey ?? projectAutopilotIdempotencyKey(projectId, brief)
     const nowIso = new Date().toISOString()
-    const { data, error } = await auth.supabase.from('project_autopilot_runs').upsert({
+    const { data, error } = await auth.supabase.from('project_autopilot_runs').insert({
       tenant_id: parsed.data.tenantId,
       project_id: projectId,
       actor_user_id: auth.userId,
@@ -67,9 +80,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       idempotency_key: idempotencyKey,
       created_at: nowIso,
       updated_at: nowIso,
-    }, { onConflict: 'tenant_id,project_id,idempotency_key' }).select('*').single()
+    }).select('*').single()
     if (error || !data) {
       const message = error?.message ?? 'Unable to create Autopilot run'
+      if (error?.code === '23505') {
+        const { data: concurrentRow } = await auth.supabase
+          .from('project_autopilot_runs')
+          .select('*')
+          .eq('tenant_id', parsed.data.tenantId)
+          .eq('project_id', projectId)
+          .eq('idempotency_key', idempotencyKey)
+          .maybeSingle()
+        if (concurrentRow) return NextResponse.json({ run: mapProjectAutopilotRun(concurrentRow as Record<string, unknown>) })
+      }
       return NextResponse.json({ run: null, error: message }, { status: migrationMissing(message) ? 503 : 400 })
     }
     const run = await persistProjectAutopilotPlan({

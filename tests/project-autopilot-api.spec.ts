@@ -23,6 +23,7 @@ test.describe('project autopilot API', () => {
 
   test('chains governed artifacts without auto-publishing a dashboard release', () => {
     const server = readFileSync(join(process.cwd(), 'src/lib/ai/project-autopilot-server.ts'), 'utf8')
+    const runRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/route.ts'), 'utf8')
     const executeRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/execute/route.ts'), 'utf8')
     expect(server).toContain('buildDeterministicSemanticProposal')
     expect(server).toContain('buildDeterministicDatasetProposal')
@@ -36,5 +37,8 @@ test.describe('project autopilot API', () => {
     expect(executeRoute).toContain('requireProjectAccess')
     expect(executeRoute).toContain('executeProjectAutopilot')
     expect(executeRoute).toContain('const latest = latestRow ? mapProjectAutopilotRun')
+    expect(runRoute).toContain('if (existingRow)')
+    expect(runRoute).toContain("error?.code === '23505'")
+    expect(runRoute).not.toContain(".upsert({\n      tenant_id: parsed.data.tenantId")
   })
 })
