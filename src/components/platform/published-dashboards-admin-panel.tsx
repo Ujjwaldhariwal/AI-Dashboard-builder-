@@ -121,6 +121,7 @@ function buildDemoGuidedProfile(): GuidedProfileApiRecord {
 
 export function PublishedDashboardsAdminPanel() {
   const builderScope = useScopedBuilderStore(state => state.scope)
+  const builderDashboardId = useScopedBuilderStore(state => state.dashboardId)
   const setBuilderScope = useScopedBuilderStore(state => state.setScope)
   const setBuilderDashboardId = useScopedBuilderStore(state => state.setDashboardId)
   const setBuilderPublishedVersionId = useScopedBuilderStore(state => state.setPublishedVersionId)
@@ -247,10 +248,14 @@ export function PublishedDashboardsAdminPanel() {
     setGuidedProfile(profilePayload?.profile as GuidedProfileApiRecord | null)
     setModels(Array.isArray(modelsPayload?.models) ? modelsPayload.models as Array<{ id: string; status?: string | null; version?: number | null }> : [])
     setDatasets(Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets as SemanticDataset[] : [])
-    setDashboardId(current => nextDashboards.some(dashboard => dashboard.id === current) ? current : nextDashboards[0]?.id ?? '')
+    setDashboardId(current => {
+      if (nextDashboards.some(dashboard => dashboard.id === current)) return current
+      if (builderDashboardId && nextDashboards.some(dashboard => dashboard.id === builderDashboardId)) return builderDashboardId
+      return nextDashboards[0]?.id ?? ''
+    })
     setSelectedChartIds(current => current.filter(chartId => nextCharts.some(chart => chart.id === chartId)))
     setServerPreflight(null)
-  }, [demoMode])
+  }, [builderDashboardId, demoMode])
 
   const fetchVersionHistory = useCallback(async (nextDashboardId: string) => {
     if (!nextDashboardId) {

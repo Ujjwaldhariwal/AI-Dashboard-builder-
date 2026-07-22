@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
+import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import type { ChartTemplateId } from '@/types/chart-template'
 import type { ProjectAutopilotRun, ProjectAutopilotStepPlan } from '@/types/project-autopilot'
 
@@ -54,6 +55,8 @@ function statusVariant(status: ProjectAutopilotStepPlan['status']) {
 }
 
 export function ProjectAutopilotPanel() {
+  const setBuilderScope = useScopedBuilderStore(state => state.setScope)
+  const setBuilderDashboardId = useScopedBuilderStore(state => state.setDashboardId)
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [projectId, setProjectId] = useState('')
   const [objective, setObjective] = useState('Build an executive dashboard that highlights the most important KPIs, trends, comparisons, and operational details.')
@@ -115,6 +118,12 @@ export function ProjectAutopilotPanel() {
     void loadLatest(selectedProject).catch(error => toast.error(error instanceof Error ? error.message : String(error)))
   }, [selectedProject])
 
+  useEffect(() => {
+    if (!run?.artifacts.dashboardId) return
+    setBuilderScope({ tenantId: run.tenantId, projectId: run.projectId }, 'dashboard')
+    setBuilderDashboardId(run.artifacts.dashboardId)
+  }, [run?.artifacts.dashboardId, run?.projectId, run?.tenantId, setBuilderDashboardId, setBuilderScope])
+
   const execute = async (targetRun: ProjectAutopilotRun) => {
     const response = await fetch(`/api/admin/projects/${targetRun.projectId}/autopilot/execute`, {
       method: 'POST',
@@ -153,7 +162,9 @@ export function ProjectAutopilotPanel() {
       await execute(created)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if (/project_autopilot_runs|project_autopilot_steps/i.test(message)) {
+      if (/compose_project_autopilot_dashboard_draft/i.test(message)) {
+        toast.error('Apply migration 20260722130000_autopilot_dashboard_composition.sql in the AI Builder Supabase.')
+      } else if (/project_autopilot_runs|project_autopilot_steps/i.test(message)) {
         toast.error('Apply migration 20260722113000_project_autopilot_runs.sql in the AI Builder Supabase.')
       } else {
         toast.error(message)
@@ -185,7 +196,7 @@ export function ProjectAutopilotPanel() {
     <div className="mx-auto max-w-6xl space-y-5">
       <section className="border-b border-[color:var(--dos-border-soft)] pb-5">
         <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--dos-text-primary)]">Build the governed dashboard from one brief</h1>
-        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot prepares semantic fields, a dataset, and editable charts. You approve meaning and publishing.</p>
+        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot prepares semantic fields, a dataset, editable charts, and a responsive dashboard draft. You approve meaning and publishing.</p>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
@@ -288,7 +299,7 @@ export function ProjectAutopilotPanel() {
                 </Button>
               ) : (
                 <Button asChild className="mt-4 min-h-11 w-full">
-                  <Link href="/admin/publishing">Review and publish <ArrowRight className="h-4 w-4" /></Link>
+                  <Link href="/admin/publishing">{run.status === 'succeeded' ? 'Open published dashboard' : 'Review dashboard and publish'} <ArrowRight className="h-4 w-4" /></Link>
                 </Button>
               )}
             </>

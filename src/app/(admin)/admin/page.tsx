@@ -5,7 +5,7 @@ const QUICK_ACTIONS = [
   {
     label: 'Start Autopilot',
     href: '/admin/autopilot',
-    detail: 'Build semantics, datasets, and editable charts from one brief.',
+    detail: 'Build semantics, datasets, editable charts, and a dashboard draft from one brief.',
     icon: Sparkles,
   },
   {
