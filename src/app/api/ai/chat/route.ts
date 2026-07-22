@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import axios from 'axios'
 import https from 'https'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import { BuilderWidgetPatchSchema } from '@/lib/ai/builder-assistant-contract'
+import { PlatformAssistantActionSchema } from '@/lib/ai/platform-assistant-contract'
 
 const MessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
@@ -28,6 +30,13 @@ const ChatContextSchema = z.object({
   existingWidgetCount: z.number().int().min(0).max(500).optional(),
   activeEndpointName: z.string().max(120).optional(),
   totalRows: z.number().int().min(0).max(1_000_000).optional(),
+  workflowSnapshot: z.object({
+    dataSources: z.number().int().nonnegative().nullable(),
+    approvedModels: z.number().int().nonnegative().nullable(),
+    publishedDatasets: z.number().int().nonnegative().nullable(),
+    chartDrafts: z.number().int().nonnegative().nullable(),
+    publishedDashboards: z.number().int().nonnegative().nullable(),
+  }).strict().optional(),
 }).passthrough()
 
 const ChatBodySchema = z.object({
@@ -105,8 +114,11 @@ export async function POST(req: NextRequest) {
     const isStyleMode = Boolean(context.styleOnlyMode && context.selectedWidget)
     const isEditMode = Boolean(context.editMode && context.selectedWidget)
     const isHelpMode = context.assistantMode === 'platform_help'
+    const promptContext = isHelpMode
+      ? { ...context, workflowSnapshot: await loadPlatformWorkflowSnapshot(auth.supabase, access.projectId) }
+      : context
     const systemPrompt = isHelpMode
-      ? buildPlatformHelpPrompt(context)
+      ? buildPlatformHelpPrompt(promptContext)
       : isEditMode
         ? buildEditPrompt(context)
         : isStyleMode
@@ -170,6 +182,17 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
+    let platformAction: z.infer<typeof PlatformAssistantActionSchema> | null = null
+    if (isHelpMode) {
+      const actionMatch = content.match(/```platform_action\n([\s\S]*?)\n```/)
+      if (actionMatch) {
+        try {
+          const action = PlatformAssistantActionSchema.safeParse(JSON.parse(actionMatch[1]))
+          if (action.success) platformAction = action.data
+        } catch {}
+      }
+    }
+
     await auth.supabase.from('audit_logs').insert({
       tenant_id: access.tenantId,
       project_id: access.projectId,
@@ -185,11 +208,12 @@ export async function POST(req: NextRequest) {
         widgetAction: Boolean(widgetAction),
         styleAction: Boolean(styleAction),
         widgetPatchAction: Boolean(widgetPatchAction),
+        platformAction: platformAction?.target ?? null,
       },
       created_at: new Date().toISOString(),
     })
 
-    return NextResponse.json({ message: content, widgetAction, styleAction, widgetPatchAction })
+    return NextResponse.json({ message: content, widgetAction, styleAction, widgetPatchAction, platformAction })
   } catch (err: unknown) {
     const errorMsg = axios.isAxiosError(err)
       ? err.response?.data?.error?.message ?? err.message
@@ -200,6 +224,23 @@ export async function POST(req: NextRequest) {
       { status: axios.isAxiosError(err) ? err.response?.status ?? 500 : 500 },
     )
   }
+}
+
+async function loadPlatformWorkflowSnapshot(supabase: SupabaseClient, projectId: string) {
+  const count = async (table: string, status?: string) => {
+    let query = supabase.from(table).select('id', { count: 'exact', head: true }).eq('project_id', projectId)
+    if (status) query = query.eq('status', status)
+    const result = await query
+    return result.error ? null : result.count ?? 0
+  }
+  const [dataSources, approvedModels, publishedDatasets, chartDrafts, publishedDashboards] = await Promise.all([
+    count('data_sources'),
+    count('business_models', 'approved'),
+    count('semantic_datasets', 'published'),
+    count('dashboard_chart_configs', 'draft'),
+    count('published_dashboards', 'published'),
+  ])
+  return { dataSources, approvedModels, publishedDatasets, chartDrafts, publishedDashboards }
 }
 
 function buildGeminiHistory(messages: ChatMessage[]) {
@@ -309,11 +350,27 @@ DashboardOS workflow:
 4. Generate governed datasets and editable charts from a dashboard brief.
 5. Preview readiness and explicitly publish an immutable release.
 
-Explain the current page first when relevant. Do not claim that an action was executed. Do not invent customer data, database fields, permissions, or validation results. When asked to change a chart, tell the user to select it on the builder canvas so a validated preview can be created.
+Explain the current page first when relevant. Ground "what next" answers in the workflow snapshot. Do not claim that an action was executed. Do not invent customer data, database fields, permissions, or validation results.
+
+When the user asks to move to a workspace, start a workflow, create a semantic model/dataset/chart suite, or asks what to do next, you may propose exactly one safe navigation action after the explanation:
+
+\`\`\`platform_action
+{
+  "action": "navigate_workflow",
+  "target": "data_sources|semantic_model|datasets|charts|publishing|builder",
+  "path": "/admin/data-sources|/admin/semantic-model|/admin/datasets|/admin/charts|/admin/publishing|/builder",
+  "label": "Short action label",
+  "reason": "What will happen after the user confirms",
+  "instruction": "Optional business request to prefill on semantic, dataset, or chart pages"
+}
+\`\`\`
+
+The target and path must match. This action only navigates and prefills a request; it never creates, changes, approves, or publishes data. Do not output an action for a pure explanation question.
 
 Current page: ${context.pagePath ?? 'unknown'}
 Workflow stage: ${context.workflowStage ?? 'unknown'}
-Project context available: ${Boolean(context.tenantId && context.projectId)}`
+Project context available: ${Boolean(context.tenantId && context.projectId)}
+Workflow snapshot: ${JSON.stringify(context.workflowSnapshot ?? {})}`
 }
 
 function buildCreatePrompt(context: ChatContext): string {

@@ -1,16 +1,18 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Loader2, Maximize2, Minimize2, Send, Sparkles, X } from 'lucide-react'
-import { usePathname } from 'next/navigation'
+import { Bot, CheckCircle2, Loader2, Maximize2, Minimize2, Send, Sparkles, X } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { PLATFORM_ASSISTANT_INTENT_STORAGE_KEY, type PlatformAssistantAction } from '@/lib/ai/platform-assistant-contract'
 
 interface AssistantMessage {
   role: 'user' | 'assistant'
   content: string
+  platformAction?: PlatformAssistantAction | null
 }
 
 const INITIAL_MESSAGE: AssistantMessage = {
@@ -21,9 +23,13 @@ const INITIAL_MESSAGE: AssistantMessage = {
 const QUICK_PROMPTS = [
   'What should I do next?',
   'Explain this page',
-  'How do I create a dashboard?',
+  'Plan a dashboard for me',
   'Why can publishing be blocked?',
 ]
+
+function cleanAssistantMessage(content: string) {
+  return content.replace(/```platform_action[\s\S]*?```/g, '').trim()
+}
 
 function localHelpAnswer(prompt: string, pagePath: string, hasScope: boolean) {
   const normalized = prompt.toLowerCase()
@@ -51,8 +57,26 @@ function localHelpAnswer(prompt: string, pagePath: string, hasScope: boolean) {
   return `You are on ${pagePath}. I can explain data sources, semantic models, datasets, charts, dashboard briefs, validation, and publishing.${scopeNote}`
 }
 
+function localHelpAction(prompt: string, stage: string): PlatformAssistantAction | null {
+  const normalized = prompt.toLowerCase()
+  const requestInstruction = /create|generate|build|plan|compose/.test(normalized) ? prompt : undefined
+  if (normalized.includes('semantic')) return { action: 'navigate_workflow', target: 'semantic_model', path: '/admin/semantic-model', label: 'Open semantic workbench', reason: 'Review or generate the governed business model.', ...(requestInstruction ? { instruction: requestInstruction } : {}) }
+  if (normalized.includes('dataset')) return { action: 'navigate_workflow', target: 'datasets', path: '/admin/datasets', label: 'Open dataset workbench', reason: 'Generate a governed dataset proposal from an approved model.', ...(requestInstruction ? { instruction: requestInstruction } : {}) }
+  if (normalized.includes('chart') || normalized.includes('dashboard')) return { action: 'navigate_workflow', target: 'charts', path: '/admin/charts', label: 'Open dashboard composer', reason: 'Generate an editable chart suite from the business requirement.', ...(requestInstruction ? { instruction: requestInstruction } : {}) }
+  if (normalized.includes('publish')) return { action: 'navigate_workflow', target: 'publishing', path: '/admin/publishing', label: 'Open publishing', reason: 'Inspect readiness and explicitly approve a release.' }
+  if (normalized.includes('database') || normalized.includes('data source')) return { action: 'navigate_workflow', target: 'data_sources', path: '/admin/data-sources', label: 'Open data sources', reason: 'Attach or inspect the project database inventory.' }
+  if (!normalized.includes('next')) return null
+  if (stage === 'user' || stage === 'tenant') return { action: 'navigate_workflow', target: 'data_sources', path: '/admin/data-sources', label: 'Start with a data source', reason: 'Attach the project database before modeling analytics.' }
+  if (stage === 'data_source') return { action: 'navigate_workflow', target: 'data_sources', path: '/admin/data-sources', label: 'Continue with data sources', reason: 'Confirm the database and selected table inventory.' }
+  if (stage === 'semantic_model') return { action: 'navigate_workflow', target: 'semantic_model', path: '/admin/semantic-model', label: 'Continue with semantics', reason: 'Generate and approve the business model.' }
+  if (stage === 'charts') return { action: 'navigate_workflow', target: 'datasets', path: '/admin/datasets', label: 'Continue with datasets', reason: 'Generate a governed dataset from the approved model.' }
+  if (stage === 'dashboard') return { action: 'navigate_workflow', target: 'charts', path: '/admin/charts', label: 'Continue with charts', reason: 'Compose and review editable chart drafts.' }
+  return { action: 'navigate_workflow', target: 'publishing', path: '/admin/publishing', label: 'Review publishing readiness', reason: 'Validate the release before explicit publication.' }
+}
+
 export function PlatformAssistantDock() {
   const pathname = usePathname()
+  const router = useRouter()
   const scope = useScopedBuilderStore(state => state.scope)
   const stage = useScopedBuilderStore(state => state.stage)
   const [open, setOpen] = useState(false)
@@ -99,12 +123,31 @@ export function PlatformAssistantDock() {
       if (!response.ok || typeof payload?.message !== 'string') {
         throw new Error(typeof payload?.error === 'string' ? payload.error : `Assistant request failed (${response.status})`)
       }
-      setMessages(current => [...current, { role: 'assistant', content: payload.message }])
+      setMessages(current => [...current, {
+        role: 'assistant',
+        content: payload.message,
+        platformAction: payload.platformAction ?? null,
+      }])
     } catch {
-      setMessages(current => [...current, { role: 'assistant', content: localHelpAnswer(prompt, pathname, true) }])
+      setMessages(current => [...current, {
+        role: 'assistant',
+        content: localHelpAnswer(prompt, pathname, true),
+        platformAction: localHelpAction(prompt, stage),
+      }])
     } finally {
       setLoading(false)
     }
+  }
+
+  const applyAction = (action: PlatformAssistantAction) => {
+    if (!scope) return
+    window.sessionStorage.setItem(PLATFORM_ASSISTANT_INTENT_STORAGE_KEY, JSON.stringify({
+      ...action,
+      tenantId: scope.tenantId,
+      projectId: scope.projectId,
+      createdAt: new Date().toISOString(),
+    }))
+    router.push(action.path)
   }
 
   if (!open) {
@@ -150,12 +193,27 @@ export function PlatformAssistantDock() {
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
             {messages.map((message, index) => (
               <div key={`${message.role}-${index}`} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                <p className={[
-                  'max-w-[90%] whitespace-pre-wrap rounded-lg border px-3 py-2 text-sm leading-6',
-                  message.role === 'user'
-                    ? 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)]'
-                    : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[var(--dos-text-secondary)]',
-                ].join(' ')}>{message.content}</p>
+                <div className="max-w-[90%] space-y-2">
+                  <p className={[
+                    'whitespace-pre-wrap rounded-lg border px-3 py-2 text-sm leading-6',
+                    message.role === 'user'
+                      ? 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary)] text-[var(--dos-background-deep)]'
+                      : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[var(--dos-text-secondary)]',
+                  ].join(' ')}>{cleanAssistantMessage(message.content)}</p>
+                  {message.platformAction ? (
+                    <div className="rounded-lg border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] p-3 text-left">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-[var(--dos-text-primary)]">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-[var(--dos-accent-primary)]" /> Proposed next action
+                      </div>
+                      <p className="mt-2 text-sm font-medium">{message.platformAction.label}</p>
+                      <p className="mt-1 text-xs leading-5 text-[var(--dos-text-muted)]">{message.platformAction.reason}</p>
+                      {message.platformAction.instruction ? <p className="mt-2 rounded-md bg-[var(--dos-background-deep)] px-2 py-1.5 text-[11px] text-[var(--dos-text-secondary)]">Prefill: {message.platformAction.instruction}</p> : null}
+                      <Button size="sm" className="mt-3" onClick={() => applyAction(message.platformAction as PlatformAssistantAction)}>
+                        Open workspace
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ))}
             {loading && (

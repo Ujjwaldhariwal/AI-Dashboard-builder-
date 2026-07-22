@@ -2,6 +2,30 @@
   {
     "date": "2026-07-22",
     "scope": "app",
+    "sprint": "H14",
+    "project": "DashboardOS",
+    "genre": "modern-minimal",
+    "theme": "Cobalt adapted for DashboardOS",
+    "macrostructure": "Contextual assistant action preview",
+    "designSystem": "design.md",
+    "files": [
+      "src/components/platform/platform-assistant-dock.tsx",
+      "src/components/platform/semantic-model-admin-panel.tsx",
+      "src/components/platform/datasets-admin-panel.tsx",
+      "src/components/platform/dashboard-charts-admin-panel.tsx"
+    ],
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 5,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-07-22",
+    "scope": "app",
     "sprint": "H13",
     "project": "DashboardOS",
     "genre": "modern-minimal",

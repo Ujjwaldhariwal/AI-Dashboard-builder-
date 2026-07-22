@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { buildDeterministicChartSuiteProposal, type ChartSuiteCopilotProposal } from '@/lib/ai/chart-suite-copilot'
+import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
 import { demoChart, demoChartAudit, demoCharts, demoDataset, demoDatasetPlan, demoProjects, DEMO_TENANT_ID, DEMO_PROJECT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import type { DashboardChartAudit, DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
@@ -206,6 +207,11 @@ export function DashboardChartsAdminPanel() {
   const [generatingSuite, setGeneratingSuite] = useState(false)
   const [applyingSuite, setApplyingSuite] = useState(false)
   const demoMode = isDashboardOsDemoMode()
+
+  useEffect(() => {
+    const intent = readPlatformAssistantIntent('charts')
+    if (intent?.instruction) setSuiteInstruction(intent.instruction)
+  }, [])
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedDataset = datasets.find(dataset => dataset.id === datasetId)

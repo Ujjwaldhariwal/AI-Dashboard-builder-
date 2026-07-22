@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { buildDeterministicDatasetProposal, type DatasetCopilotProposal } from '@/lib/ai/dataset-copilot'
+import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
 import { demoDataset, demoDatasetPlan, demoEntities, demoMetrics, demoModel, demoProjects, demoRelationships, demoChartRows, DEMO_MODEL_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import type { ChartCompatibilityResult, DatasetShape } from '@/types/chart-template'
@@ -119,6 +120,11 @@ export function DatasetsAdminPanel() {
   const [proposalWarnings, setProposalWarnings] = useState<string[]>([])
   const [generating, setGenerating] = useState(false)
   const demoMode = isDashboardOsDemoMode()
+
+  useEffect(() => {
+    const intent = readPlatformAssistantIntent('datasets')
+    if (intent?.instruction) setDatasetInstruction(intent.instruction)
+  }, [])
 
   const selectedProject = projects.find(project => project.id === projectId)
   const approvedModels = models.filter(model => model.status === 'approved')

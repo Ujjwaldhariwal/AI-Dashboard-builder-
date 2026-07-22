@@ -156,7 +156,7 @@ export function buildDeterministicSemanticProposal(
         fieldName: title(column.columnName),
         role,
         isFilterable: ['identifier', 'dimension', 'date'].includes(role),
-        isTooltipField: role !== 'hidden',
+        isTooltipField: true,
         confidence: role === 'attribute' ? 0.72 : 0.88,
         reason: `Classified from the ${column.dataType} type and ${column.columnName} name.`,
         ...(aggregation ? {

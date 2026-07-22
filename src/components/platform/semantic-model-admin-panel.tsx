@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { buildDeterministicSemanticProposal, type SemanticCopilotProposal } from '@/lib/ai/semantic-copilot'
+import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
 import { demoColumns, demoEntities, demoMetrics, demoModel, demoProjects, demoRelationships, DEMO_MODEL_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
@@ -158,6 +159,11 @@ export function SemanticModelAdminPanel() {
   const [proposalSource, setProposalSource] = useState<'ai' | 'deterministic' | null>(null)
   const [schemaScannedAt, setSchemaScannedAt] = useState<Date | null>(null)
   const demoMode = isDashboardOsDemoMode()
+
+  useEffect(() => {
+    const intent = readPlatformAssistantIntent('semantic_model')
+    if (intent?.instruction) setSemanticInstruction(intent.instruction)
+  }, [])
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedModel = models.find(model => model.id === modelId)

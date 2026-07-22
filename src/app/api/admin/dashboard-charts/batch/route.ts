@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       p_charts: rpcCharts,
     })
     if (error) return NextResponse.json({ charts: [], error: error.message }, { status: 409 })
-    return NextResponse.json({ charts: (data ?? []).map(row => mapChart(row as Record<string, unknown>)), validation: validated.map(item => item.validation) }, { status: 201 })
+    return NextResponse.json({ charts: ((data ?? []) as Record<string, unknown>[]).map(row => mapChart(row)), validation: validated.map(item => item.validation) }, { status: 201 })
   } catch (error) {
     return NextResponse.json({ charts: [], error: error instanceof Error ? error.message : String(error) }, { status: 500 })
   }
