@@ -18,6 +18,7 @@ import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
 import { getDemoChartElapsedMs, getDemoChartFields, getDemoChartRows } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { getEnterpriseChartColors } from '@/lib/echarts/theme'
+import { resolvePublishedChartFields } from '@/lib/client/published-chart-runtime'
 import type { ChartTemplateId } from '@/types/chart-template'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 
@@ -346,16 +347,21 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
           })
           const payload = await response.json() as ChartRunPayload
           if (!response.ok) throw new Error(payload.error || 'Chart query failed')
+          const rows = payload.result?.rows ?? []
+          const fieldNames = fieldNamesFromResult(payload.result?.fields)
+          const resolved = resolvePublishedChartFields({
+            fieldNames,
+            rows,
+            requestedXField: payload.result?.chart?.resolved?.xField,
+            requestedYFields: payload.result?.chart?.resolved?.yFields,
+            requestedTooltipFields: payload.result?.chart?.resolved?.tooltipFields,
+            requestedSortField: payload.result?.chart?.resolved?.sortField,
+          })
           return [chartId, {
             status: 'ready' as const,
-            rows: payload.result?.rows ?? [],
-            fieldNames: fieldNamesFromResult(payload.result?.fields),
-            resolved: {
-              xField: payload.result?.chart?.resolved?.xField ?? '',
-              yFields: payload.result?.chart?.resolved?.yFields ?? [],
-              tooltipFields: payload.result?.chart?.resolved?.tooltipFields ?? [],
-              sortField: payload.result?.chart?.resolved?.sortField ?? '',
-            },
+            rows,
+            fieldNames,
+            resolved,
             rowCount: payload.result?.rowCount ?? payload.result?.rows?.length ?? 0,
             elapsedMs: payload.result?.elapsedMs ?? 0,
           }] as const
