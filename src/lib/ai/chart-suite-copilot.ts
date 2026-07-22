@@ -84,11 +84,34 @@ function requestedTemplates(instruction: string): ChartTemplateId[] {
   }
   append('kpi-card', /\b(\d{1,2})\s+(?:kpis?|cards?)\b/, normalized.includes('kpi') || normalized.includes('card'))
   append('line', /\b(\d{1,2})\s+(?:line charts?|trends?)\b/, normalized.includes('line') || normalized.includes('trend'))
-  append(normalized.includes('horizontal bar') ? 'horizontal-bar' : 'bar', /\b(\d{1,2})\s+(?:horizontal\s+)?bar charts?\b/, normalized.includes('bar'))
+  append(
+    normalized.includes('horizontal bar') ? 'horizontal-bar' : 'bar',
+    /\b(\d{1,2})\s+(?:horizontal\s+)?bar charts?\b/,
+    normalized.includes('bar') || /\b(compare|comparison|breakdown|ranking)\b/.test(normalized),
+  )
   append('pie', /\b(\d{1,2})\s+pie charts?\b/, normalized.includes('pie'))
   append('gauge', /\b(\d{1,2})\s+gauges?\b/, normalized.includes('gauge'))
   append('table-grid', /\b(\d{1,2})\s+tables?\b/, normalized.includes('table'))
   return result.slice(0, 12)
+}
+
+const COMPATIBLE_TEMPLATE_ALTERNATIVES: Partial<Record<ChartTemplateId, ChartTemplateId[]>> = {
+  'kpi-card': ['kpi-card', 'kpi-grid'],
+  'kpi-grid': ['kpi-grid', 'kpi-card'],
+  line: ['line', 'trend-composed'],
+  'trend-composed': ['trend-composed', 'line'],
+  bar: ['bar', 'horizontal-bar', 'grouped-bar', 'drilldown-bar', 'table-grid'],
+  'horizontal-bar': ['horizontal-bar', 'bar', 'grouped-bar', 'drilldown-bar', 'table-grid'],
+  'grouped-bar': ['grouped-bar', 'bar', 'horizontal-bar', 'table-grid'],
+  pie: ['pie', 'bar', 'table-grid'],
+  gauge: ['gauge', 'ring-gauge', 'kpi-card', 'kpi-grid'],
+  'ring-gauge': ['ring-gauge', 'gauge', 'kpi-card', 'kpi-grid'],
+  'table-grid': ['table-grid'],
+}
+
+function resolveCompatibleTemplate(templateId: ChartTemplateId, allowed: ChartTemplateId[]) {
+  return (COMPATIBLE_TEMPLATE_ALTERNATIVES[templateId] ?? [templateId])
+    .find(candidate => allowed.includes(candidate)) ?? null
 }
 
 function defaultSize(templateId: ChartTemplateId): 'compact' | 'standard' | 'wide' | 'full' {
@@ -115,22 +138,32 @@ export function buildDeterministicChartSuiteProposal({
   const allowed = [...new Set(allowedTemplateIds)]
   if (allowed.length === 0) throw new Error('No compatible chart templates are available for this dataset.')
   const allRequested = requestedTemplates(instruction)
-  const requested = allRequested.filter(template => allowed.includes(template))
+  const resolvedRequested = allRequested
+    .map(templateId => ({ requested: templateId, resolved: resolveCompatibleTemplate(templateId, allowed) }))
+  const requested = resolvedRequested.flatMap(item => item.resolved ? [item.resolved] : [])
   const templateSequence = [...requested, ...allowed.filter(template => !requested.includes(template))]
   const count = requestedCount(instruction, allRequested.length)
   const dateFields = fields.filter(field => field.role === 'date')
   const categoryFields = fields.filter(field => ['dimension', 'attribute'].includes(field.role))
   const fallbackFields = fields.filter(field => field.role !== 'identifier')
 
-  const charts = Array.from({ length: count }, (_, index) => {
-    const templateId = templateSequence[index % templateSequence.length]
-    const metric = metrics[index % metrics.length]
+  const charts: z.infer<typeof ChartSuiteDraftSchema>[] = []
+  const semanticSignatures = new Set<string>()
+  const templateOccurrences = new Map<ChartTemplateId, number>()
+  const variationCount = Math.max(metrics.length, dateFields.length, categoryFields.length, fallbackFields.length, 1)
+  const attemptLimit = Math.min(240, Math.max(48, count * templateSequence.length * variationCount * 2))
+
+  for (let attempt = 0; attempt < attemptLimit && charts.length < count; attempt += 1) {
+    const templateId = templateSequence[attempt % templateSequence.length]
+    const occurrence = templateOccurrences.get(templateId) ?? 0
+    templateOccurrences.set(templateId, occurrence + 1)
+    const metric = metrics[occurrence % metrics.length]
     const prefersDate = templateId === 'line' || templateId === 'trend-composed'
     const axisPool = prefersDate && dateFields.length > 0 ? dateFields : categoryFields.length > 0 ? categoryFields : fallbackFields
-    const axis = axisPool[index % Math.max(axisPool.length, 1)]
+    const axis = axisPool[Math.floor(occurrence / metrics.length) % Math.max(axisPool.length, 1)]
     const supportsMany = ['grouped-bar', 'horizontal-stacked-bar', 'trend-composed', 'kpi-grid', 'drilldown-bar', 'table-grid'].includes(templateId)
     const yMetricIds = supportsMany ? metrics.slice(0, Math.min(4, metrics.length)).map(item => item.id) : [metric.id]
-    const encoding: DashboardChartEncoding = {
+    const encoding = {
       ...(axis ? { xAxisFieldId: axis.id } : {}),
       yMetricIds,
       stackMetricIds: templateId === 'horizontal-stacked-bar' ? yMetricIds : [],
@@ -140,38 +173,46 @@ export function buildDeterministicChartSuiteProposal({
       sort: null,
       limit: templateId === 'kpi-card' ? 1 : 25,
       filters: [],
-    }
+    } satisfies DashboardChartEncoding
+    const signature = JSON.stringify({
+      templateId,
+      xAxisFieldId: encoding.xAxisFieldId ?? null,
+      yMetricIds: [...encoding.yMetricIds].sort(),
+      stackMetricIds: [...(encoding.stackMetricIds ?? [])].sort(),
+    })
+    if (semanticSignatures.has(signature)) continue
+    semanticSignatures.add(signature)
     const chartName = templateId === 'kpi-card'
       ? metric.name
       : axis
         ? `${metric.name} by ${axis.name}`
         : `${metric.name} ${title(templateId)}`
     const size = defaultSize(templateId)
-    return {
+    charts.push({
       name: chartName.slice(0, 120),
       description: `Editable ${title(templateId)} proposed from ${datasetName}.`,
       templateId,
       encoding,
       presentation: { size, showLegend: templateId !== 'kpi-card', showLabels: templateId === 'pie', valueFormat: null },
-      layout: { order: index, gridSpan: size === 'compact' ? 1 : size === 'standard' ? 2 : size === 'wide' ? 3 : 4 },
+      layout: { order: charts.length, gridSpan: size === 'compact' ? 1 : size === 'standard' ? 2 : size === 'wide' ? 3 : 4 },
       confidence: requested.includes(templateId) ? 0.9 : 0.82,
       rationale: requested.includes(templateId) ? 'Matches an explicitly requested visual type.' : 'Selected from templates compatible with the governed dataset shape.',
-    }
-  })
-  const nameCounts = new Map<string, number>()
-  const uniqueCharts = charts.map((chart) => {
-    const key = chart.name.toLowerCase()
-    const countForName = (nameCounts.get(key) ?? 0) + 1
-    nameCounts.set(key, countForName)
-    return countForName === 1 ? chart : { ...chart, name: `${chart.name} ${countForName}`.slice(0, 120) }
-  })
+    })
+  }
+
+  const warnings = [...new Set(resolvedRequested.flatMap(({ requested: requestedTemplate, resolved }) => {
+    if (!resolved) return [`${title(requestedTemplate)} could not be generated from the current governed dataset shape.`]
+    if (resolved !== requestedTemplate) return [`${title(requestedTemplate)} was mapped to compatible ${title(resolved)} output.`]
+    return []
+  }))]
+  if (charts.length < count) {
+    warnings.push(`Generated ${charts.length} of ${count} requested charts because additional drafts would repeat the same metric and dimension view.`)
+  }
 
   return ChartSuiteCopilotProposalSchema.parse({
     title: `${datasetName} dashboard`.slice(0, 120),
-    summary: `${instruction.trim()} Proposed ${charts.length} editable chart drafts from compatible templates.`.slice(0, 500),
-    charts: uniqueCharts,
-    warnings: allRequested.some(template => !allowed.includes(template))
-      ? ['At least one requested chart type was incompatible with the dataset and was replaced by a safe template.']
-      : [],
+    summary: `${instruction.trim()} Proposed ${charts.length} distinct editable chart drafts from compatible templates.`.slice(0, 500),
+    charts,
+    warnings,
   })
 }

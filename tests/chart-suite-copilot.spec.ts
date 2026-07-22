@@ -25,7 +25,9 @@ test.describe('chart suite copilot', () => {
     })
 
     expect(proposal.charts).toHaveLength(6)
-    expect(proposal.charts.filter(chart => chart.templateId === 'kpi-card')).toHaveLength(4)
+    expect(proposal.charts.filter(chart => chart.templateId === 'kpi-card')).toHaveLength(2)
+    expect(proposal.charts.filter(chart => chart.templateId === 'line')).toHaveLength(2)
+    expect(proposal.charts.filter(chart => chart.templateId === 'bar')).toHaveLength(2)
     expect(proposal.charts[2].templateId).toBe('line')
     expect(proposal.charts.every(chart => chart.encoding.yMetricIds.length > 0)).toBeTruthy()
   })
@@ -39,9 +41,25 @@ test.describe('chart suite copilot', () => {
       allowedTemplateIds: ['bar'],
     })
 
-    expect(proposal.charts).toHaveLength(3)
+    expect(proposal.charts).toHaveLength(2)
     expect(proposal.charts.every(chart => chart.templateId === 'bar')).toBeTruthy()
-    expect(proposal.warnings).toHaveLength(1)
+    expect(proposal.warnings).toHaveLength(2)
+    expect(proposal.warnings.some(warning => warning.includes('Generated 2 of 3'))).toBeTruthy()
+  })
+
+  test('does not pad a wide-table fallback with duplicate KPI grids and tables', () => {
+    const proposal = buildDeterministicChartSuiteProposal({
+      instruction: 'Create 5 charts: KPI summaries, a time trend, and the most useful business comparisons.',
+      datasetName: 'Monthly consumption and billing',
+      fields,
+      metrics,
+      allowedTemplateIds: ['kpi-grid', 'table-grid'],
+    })
+
+    expect(proposal.charts).toHaveLength(2)
+    expect(proposal.charts.map(chart => chart.templateId)).toEqual(['kpi-grid', 'table-grid'])
+    expect(proposal.warnings.some(warning => warning.includes('Line could not be generated'))).toBeTruthy()
+    expect(proposal.warnings.some(warning => warning.includes('Generated 2 of 5'))).toBeTruthy()
   })
 
   test('validates proposals before one atomic RPC applies the whole suite', () => {
