@@ -15,9 +15,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { buildDeterministicChartSuiteProposal, type ChartSuiteCopilotProposal } from '@/lib/ai/chart-suite-copilot'
 import { demoChart, demoChartAudit, demoCharts, demoDataset, demoDatasetPlan, demoProjects, DEMO_TENANT_ID, DEMO_PROJECT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
-import { buildGuidedChartRecommendations } from '@/lib/dashboardos/guided-review'
 import type { DashboardChartAudit, DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
 import type { ChartCompatibilityResult, ChartTemplateId, DatasetShape } from '@/types/chart-template'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -200,6 +200,11 @@ export function DashboardChartsAdminPanel() {
   const [aiRefinementRollout, setAiRefinementRollout] = useState<AiRefinementRolloutState | null>(null)
   const [savingRolloutScope, setSavingRolloutScope] = useState<AiRolloutScopeType | null>(null)
   const [advancedComposerOpen, setAdvancedComposerOpen] = useState(false)
+  const [suiteInstruction, setSuiteInstruction] = useState('Create 5 charts: KPI summaries, a time trend, and the most useful business comparisons.')
+  const [suiteProposal, setSuiteProposal] = useState<ChartSuiteCopilotProposal | null>(null)
+  const [suiteSource, setSuiteSource] = useState<'ai' | 'deterministic' | null>(null)
+  const [generatingSuite, setGeneratingSuite] = useState(false)
+  const [applyingSuite, setApplyingSuite] = useState(false)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -208,12 +213,6 @@ export function DashboardChartsAdminPanel() {
     plan?.chartOptions?.compatibility.filter(option => option.status !== 'blocked') ?? []
   ), [plan])
   const recommendedOption = allowedOptions.find(option => option.status === 'recommended') ?? allowedOptions[0]
-  const guidedChartRecommendations = useMemo(() => buildGuidedChartRecommendations({
-    shape: plan?.chartOptions?.shape,
-    compatibility: plan?.chartOptions?.compatibility,
-    fields: plan?.fields,
-    metrics: plan?.metrics,
-  }), [plan])
   const auditByChartId = useMemo(() => new Map(
     chartAudit?.items.map(item => [item.chart.id, item]) ?? [],
   ), [chartAudit])
@@ -403,6 +402,100 @@ export function DashboardChartsAdminPanel() {
     if (!templateId && recommendedOption?.template.id) setTemplateId(recommendedOption.template.id)
   }, [recommendedOption, templateId])
 
+  async function handleGenerateSuite() {
+    if (!selectedDataset || !plan) {
+      toast.error('Select a published dataset first')
+      return
+    }
+    setGeneratingSuite(true)
+    try {
+      let proposal: ChartSuiteCopilotProposal
+      let source: 'ai' | 'deterministic'
+      let warning: string | undefined
+      if (demoMode) {
+        proposal = buildDeterministicChartSuiteProposal({
+          instruction: suiteInstruction,
+          datasetName: selectedDataset.name,
+          fields: plan.fields,
+          metrics: plan.metrics,
+          allowedTemplateIds: allowedOptions.map(option => option.template.id),
+        })
+        source = 'deterministic'
+      } else {
+        const response = await fetch(`/api/admin/datasets/${selectedDataset.id}/chart-suite-proposal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction: suiteInstruction }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.proposal) throw new Error(errorToText(payload) || `Chart suite proposal failed (${response.status})`)
+        proposal = payload.proposal as ChartSuiteCopilotProposal
+        source = payload.source === 'ai' ? 'ai' : 'deterministic'
+        warning = typeof payload.warning === 'string' ? payload.warning : undefined
+      }
+      setSuiteProposal(proposal)
+      setSuiteSource(source)
+      if (warning) toast.warning('AI provider was unavailable; generated a compatible rules-based suite instead.')
+      else toast.success(`Generated ${proposal.charts.length} editable chart drafts`)
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setGeneratingSuite(false)
+    }
+  }
+
+  async function handleApplySuite() {
+    if (!selectedProject || !selectedDataset || !suiteProposal) return
+    setApplyingSuite(true)
+    try {
+      let createdCharts: DashboardChartConfig[]
+      if (demoMode) {
+        const now = new Date().toISOString()
+        createdCharts = suiteProposal.charts.map((draft, index) => ({
+          ...demoChart,
+          id: `demo-suite-chart-${Date.now()}-${index}`,
+          name: draft.name,
+          description: draft.description,
+          templateId: draft.templateId,
+          encoding: draft.encoding,
+          presentation: draft.presentation,
+          interactions: {},
+          layout: draft.layout,
+          status: 'draft',
+          validationState: 'valid',
+          publishedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      } else {
+        const response = await fetch('/api/admin/dashboard-charts/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenantId: selectedProject.tenantId,
+            projectId: selectedProject.id,
+            datasetId: selectedDataset.id,
+            charts: suiteProposal.charts,
+          }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) throw new Error(errorToText(payload) || `Chart suite apply failed (${response.status})`)
+        createdCharts = Array.isArray(payload?.charts) ? payload.charts as DashboardChartConfig[] : []
+      }
+      setCharts(current => [...createdCharts, ...current])
+      for (const chart of createdCharts) addBuilderChartId(chart.id)
+      setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'dashboard')
+      if (!demoMode) void fetchChartAudit(selectedProject.id)
+      setSuiteProposal(null)
+      setSuiteSource(null)
+      toast.success(`Created ${createdCharts.length} editable chart drafts atomically`)
+    } catch (error) {
+      toast.error(errorToText(error))
+    } finally {
+      setApplyingSuite(false)
+    }
+  }
+
   async function handleSave() {
     if (!selectedProject || !selectedDataset || !templateId) {
       toast.error('Select a project, dataset, and chart template first')
@@ -522,46 +615,52 @@ export function DashboardChartsAdminPanel() {
       </section>
 
       <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[color:var(--dos-text-primary)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Auto proposals</Badge>
-            <h2 className="mt-3 text-lg font-semibold">Chart proposals</h2>
-            <div className="mt-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-xs leading-5 text-[color:var(--dos-text-muted)]" data-testid="guided-chart-lineage">
-              {selectedDataset
-                ? `${selectedDataset.name}: ${selectedDataset.description ?? 'Dataset lineage will be attached to generated dashboard drafts.'}`
-                : 'Select a governed dataset to preview dashboard recommendations.'}
-            </div>
+            <h2 className="text-lg font-semibold">Dashboard Composer</h2>
+            <p className="mt-1 text-xs text-[color:var(--dos-text-muted)]">{selectedDataset?.name ?? 'Select a governed dataset below'}</p>
           </div>
           <Button variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]" onClick={() => setAdvancedComposerOpen(open => !open)}>
-            {advancedComposerOpen ? 'Hide advanced composer' : 'Customize chart manually'}
+            {advancedComposerOpen ? 'Close chart editor' : 'Create one manually'}
           </Button>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {guidedChartRecommendations.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-5 text-sm text-[color:var(--dos-text-muted)] md:col-span-2 xl:col-span-4">
-              Select a published dataset to see chart recommendations.
-            </div>
-          ) : guidedChartRecommendations.map(recommendation => (
-            <button
-              key={recommendation.id}
-              type="button"
-              onClick={() => {
-                if (allowedOptions.some(option => option.template.id === recommendation.chartType)) {
-                  setTemplateId(recommendation.chartType as ChartTemplateId)
-                }
-                setName(current => current || recommendation.title)
-              }}
-              className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4 text-left transition-colors hover:border-[color:var(--dos-chart-success)] hover:bg-[var(--dos-success-soft)]"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold text-[color:var(--dos-text-primary)]">{recommendation.title}</p>
-                <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[color:var(--dos-text-muted)]">{recommendation.confidence}%</Badge>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-[color:var(--dos-text-muted)]">{recommendation.reason}</p>
-              <p className="mt-3 font-mono text-[11px] text-[color:var(--dos-chart-info)]">{recommendation.chartType}</p>
-            </button>
-          ))}
+        <div className="mt-4 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="space-y-1.5">
+            <Label htmlFor="chart-suite-requirement" className="text-xs text-[color:var(--dos-text-muted)]">Dashboard requirement</Label>
+            <Input
+              id="chart-suite-requirement"
+              value={suiteInstruction}
+              onChange={event => setSuiteInstruction(event.target.value)}
+              placeholder="Example: create 6 charts with 2 KPIs, a monthly trend, and regional comparisons"
+              disabled={generatingSuite || applyingSuite}
+            />
+          </div>
+          <Button className="self-end" onClick={() => void handleGenerateSuite()} disabled={generatingSuite || applyingSuite || !selectedDataset || !plan || selectedDataset.status !== 'published' || suiteInstruction.trim().length < 3}>
+            {generatingSuite ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            Generate suite
+          </Button>
         </div>
+        {suiteProposal ? (
+          <div className="mt-4 border-t border-[color:var(--dos-border-soft)] pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold">{suiteProposal.title}</p>
+                <Badge variant="outline" className="border-[color:var(--dos-accent-primary)] text-[color:var(--dos-accent-primary)]">{suiteSource === 'ai' ? 'AI' : 'Rules'} · {suiteProposal.charts.length} charts</Badge>
+              </div>
+              <Button onClick={() => void handleApplySuite()} disabled={applyingSuite}>
+                {applyingSuite ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                Create editable drafts
+              </Button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {suiteProposal.charts.map((chart, index) => (
+                <span key={`${chart.name}-${index}`} className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-2.5 py-1.5 text-xs text-[color:var(--dos-text-secondary)]">
+                  {chart.name} · {chart.templateId}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -582,6 +681,8 @@ export function DashboardChartsAdminPanel() {
                   setDatasetId('')
                   setPlan(null)
                   setTemplateId('')
+                  setSuiteProposal(null)
+                  setSuiteSource(null)
                   if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'charts')
                 }}>
                   <SelectTrigger className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]">
@@ -599,6 +700,8 @@ export function DashboardChartsAdminPanel() {
                 <Select value={datasetId} onValueChange={(value) => {
                   setDatasetId(value)
                   setTemplateId('')
+                  setSuiteProposal(null)
+                  setSuiteSource(null)
                 }}>
                   <SelectTrigger className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]">
                     <SelectValue placeholder="Select dataset" />
