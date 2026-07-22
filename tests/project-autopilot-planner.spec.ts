@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { expect, test } from '@playwright/test'
 
-import { buildProjectAutopilotPlan } from '../src/lib/ai/project-autopilot'
+import { buildProjectAutopilotDashboardSlots, buildProjectAutopilotPlan } from '../src/lib/ai/project-autopilot'
 
 const brief = {
   objective: 'Build an executive sales dashboard with revenue and order trends.',
@@ -45,10 +45,43 @@ test.describe('project autopilot planner', () => {
       semanticModel: { id: 'model', status: 'approved', fieldCount: 14, metricCount: 4 },
       dataset: { id: 'dataset', status: 'published' },
       chartCount: 6,
+      dashboard: { id: 'dashboard', versionId: 'version', slotCount: 6 },
     }, { ...brief, chartTypes: [...brief.chartTypes] })
     expect(publishReview.currentStep).toBe('publish_review')
     expect(publishReview.status).toBe('awaiting_review')
-    expect(publishReview.steps[4].automatic).toBe(false)
+    expect(publishReview.steps[4]).toMatchObject({ status: 'succeeded', automatic: true })
+    expect(publishReview.steps[5].automatic).toBe(false)
+  })
+
+  test('keeps dashboard composition automatic but blocks publication until review', () => {
+    const composition = buildProjectAutopilotPlan({
+      selectedRelationCount: 2,
+      selectedColumnCount: 18,
+      semanticModel: { id: 'model', status: 'approved', fieldCount: 14, metricCount: 4 },
+      dataset: { id: 'dataset', status: 'published' },
+      chartCount: 6,
+      dashboard: null,
+    }, { ...brief, chartTypes: [...brief.chartTypes] })
+    expect(composition.currentStep).toBe('dashboard')
+    expect(composition.steps[4]).toMatchObject({ status: 'ready', automatic: true })
+    expect(composition.steps[5]).toMatchObject({ status: 'blocked', automatic: false })
+  })
+
+  test('builds a deterministic responsive grid without overlapping a row', () => {
+    const slots = buildProjectAutopilotDashboardSlots([
+      { id: 'kpi-1', name: 'Revenue', templateId: 'kpi-card', layout: { order: 0 } },
+      { id: 'kpi-2', name: 'Orders', templateId: 'kpi-card', layout: { order: 1 } },
+      { id: 'trend', name: 'Monthly trend', templateId: 'line', layout: { order: 2 } },
+      { id: 'table', name: 'Operational detail', templateId: 'table-grid', layout: { order: 3 } },
+    ])
+    expect(slots.map(slot => [slot.rowIndex, slot.columnIndex, slot.width])).toEqual([
+      [0, 0, 4],
+      [0, 4, 4],
+      [1, 0, 12],
+      [2, 0, 12],
+    ])
+    expect(new Set(slots.map(slot => slot.slotKey)).size).toBe(slots.length)
+    expect(slots.every(slot => slot.settings.editable === true)).toBeTruthy()
   })
 
   test('persists resumable runs and individual idempotent steps', () => {
@@ -60,5 +93,13 @@ test.describe('project autopilot planner', () => {
     expect(migration).toContain('create table if not exists project_autopilot_steps')
     expect(migration).toContain('unique (run_id, step_key)')
     expect(migration).toContain('never performs final dashboard publication')
+    const compositionMigration = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20260722130000_autopilot_dashboard_composition.sql'),
+      'utf8',
+    )
+    expect(compositionMigration).toContain('compose_project_autopilot_dashboard_draft')
+    expect(compositionMigration).toContain('perform pg_advisory_xact_lock')
+    expect(compositionMigration).toContain("'dashboard', 'publish_review'")
+    expect(compositionMigration).not.toContain('publish_dashboard_release')
   })
 })

@@ -13,6 +13,7 @@ export type ProjectAutopilotStepKey =
   | 'semantic_model'
   | 'dataset'
   | 'charts'
+  | 'dashboard'
   | 'publish_review'
 
 export type ProjectAutopilotStepStatus =
@@ -37,6 +38,9 @@ export interface ProjectAutopilotArtifacts {
   semanticModelId?: string
   datasetId?: string
   chartIds?: string[]
+  dashboardId?: string
+  dashboardVersionId?: string
+  dashboardPageId?: string
 }
 
 export interface ProjectAutopilotStepPlan {
