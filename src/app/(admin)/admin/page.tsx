@@ -1,7 +1,13 @@
-import { Database, Gauge, ShieldCheck } from 'lucide-react'
+import { Database, Gauge, ShieldCheck, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 
 const QUICK_ACTIONS = [
+  {
+    label: 'Start Autopilot',
+    href: '/admin/autopilot',
+    detail: 'Build semantics, datasets, and editable charts from one brief.',
+    icon: Sparkles,
+  },
   {
     label: 'Connect data',
     href: '/admin/data-sources',
@@ -30,7 +36,7 @@ export default function AdminOverviewPage() {
         <p className="mt-1 text-sm text-[color:var(--dos-text-muted)]">Open the area you want to work on.</p>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {QUICK_ACTIONS.map(action => {
           const Icon = action.icon
           return (

@@ -20,6 +20,7 @@ import {
   Settings,
   Shield,
   SlidersHorizontal,
+  Sparkles,
   UserRound,
   Users,
   X,
@@ -121,6 +122,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const navigation = useMemo<ShellNavItem[]>(() => [
     { name: 'DashboardOS', href: '/admin', icon: Network, show: true },
+    { name: 'Autopilot', href: '/admin/autopilot', icon: Sparkles, show: true },
     { name: 'Tenants', href: '/admin/tenants', icon: Users, show: true },
     { name: 'Data Sources', href: '/admin/data-sources', icon: Database, show: true },
     { name: 'Semantic Model', href: '/admin/semantic-model', icon: GitBranch, show: true },
