@@ -48,16 +48,12 @@ export function GuidedPublishReadinessPanel({
               <Clock3 className="h-3.5 w-3.5" />
               Checked {new Date(readiness.evaluatedAt).toLocaleString()}
             </span>
+            <span className="text-[11px] text-[color:var(--dos-text-muted)]">
+              {source === 'server-preflight' ? 'Server' : source === 'prepared-reference' ? 'Reference' : 'Local'}
+            </span>
           </div>
           <h3 className="mt-2 text-sm font-semibold">Publish readiness</h3>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-[color:var(--dos-text-muted)]">{readiness.summary}</p>
-          <p className="mt-1 max-w-2xl text-[11px] leading-4 text-[color:var(--dos-text-muted)]" data-testid="guided-readiness-source">
-            {source === 'server-preflight'
-              ? 'Server preflight was recomputed from current project data. Publish still revalidates before release.'
-              : source === 'prepared-reference'
-                ? 'Prepared readiness snapshot for this reference release. Real project publishing always runs server preflight and publish-time revalidation.'
-                : 'Local readiness preview. Run server preflight before publishing real project data.'}
-          </p>
         </div>
         {readiness.nextFixAction ? (
           <Button asChild size="sm" variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface)]">

@@ -517,9 +517,6 @@ export function DashboardChartsAdminPanel() {
         <div>
           <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Chart registry</p>
           <h1 className="mt-2 text-xl font-semibold tracking-tight text-[color:var(--dos-text-primary)]">Validated chart workbench</h1>
-          <p className="mt-2 max-w-2xl text-sm text-[color:var(--dos-text-muted)]">
-            Review suggested dashboard blocks from governed datasets, then customize only when the default needs adjustment.
-          </p>
         </div>
         <div className="text-xs text-[var(--dos-text-muted)]"><strong className="font-mono text-lg text-[var(--dos-text-primary)]">{charts.length}</strong> saved configurations</div>
       </section>
@@ -527,12 +524,8 @@ export function DashboardChartsAdminPanel() {
       <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[color:var(--dos-text-primary)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Guided mode</Badge>
-            <h2 className="mt-3 text-lg font-semibold">Review suggested charts</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[color:var(--dos-text-muted)]">
-              Recommendations come from the selected governed dataset. Automatic dashboard assembly is intentionally
-              unavailable in this release; reviewed charts can still be composed manually and published only after readiness checks.
-            </p>
+            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Auto proposals</Badge>
+            <h2 className="mt-3 text-lg font-semibold">Chart proposals</h2>
             <div className="mt-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-xs leading-5 text-[color:var(--dos-text-muted)]" data-testid="guided-chart-lineage">
               {selectedDataset
                 ? `${selectedDataset.name}: ${selectedDataset.description ?? 'Dataset lineage will be attached to generated dashboard drafts.'}`
@@ -541,10 +534,6 @@ export function DashboardChartsAdminPanel() {
           </div>
           <Button variant="outline" className="border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]" onClick={() => setAdvancedComposerOpen(open => !open)}>
             {advancedComposerOpen ? 'Hide advanced composer' : 'Customize chart manually'}
-          </Button>
-          <Button disabled title="Automatic assembly is intentionally unavailable in this release">
-            <TriangleAlert className="mr-2 h-4 w-4" />
-            Automatic assembly unavailable
           </Button>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

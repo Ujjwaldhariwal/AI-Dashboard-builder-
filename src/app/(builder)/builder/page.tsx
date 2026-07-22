@@ -23,7 +23,6 @@ import { DragDropCanvas } from "@/components/builder/canvas/drag-drop-canvas";
 import { WidgetConfigDialog } from "@/components/builder/widget-config-dialog";
 import { MagicPasteModal } from "@/components/builder/magic-paste-modal";
 import { DashboardBriefDialog } from "@/components/builder/dashboard-brief-dialog";
-import { BuilderGuideDialog } from "@/components/builder/builder-guide-dialog";
 import { ConfigChatbot } from "@/components/builder/ai-assistant/config-chatbot";
 import { ChartSuggester } from "@/components/builder/ai-assistant/chart-suggester";
 import { WidgetStylePanel } from "@/components/builder/style-panel/widget-style-panel";
@@ -51,7 +50,6 @@ import {
   RefreshCw,
   MoreHorizontal,
   ListChecks,
-  HelpCircle,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -143,7 +141,6 @@ export default function BuilderPage() {
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [magicOpen, setMagicOpen] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
   const [exportConfigOpen, setExportConfigOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
@@ -486,15 +483,11 @@ export default function BuilderPage() {
               <FolderKanban className="h-4 w-4" />
             </div>
             <h1 className="mt-4 text-xl font-semibold tracking-tight">Create a dashboard workspace</h1>
-            <div className="mt-5 flex justify-center gap-2">
+            <div className="mt-5 flex justify-center">
               <Button onClick={() => router.push("/workspaces")}>Open workspaces</Button>
-              <Button variant="outline" onClick={() => setGuideOpen(true)}>
-                <HelpCircle className="mr-2 h-4 w-4" /> Guide
-              </Button>
             </div>
           </div>
         </div>
-        <BuilderGuideDialog open={guideOpen} onOpenChange={setGuideOpen} widgetCount={0} endpointCount={0} />
       </div>
     );
   }
@@ -516,7 +509,6 @@ export default function BuilderPage() {
               onAddWidget={() => setAddWidgetOpen(true)}
               onOpenAssistant={openAi}
               onOpenBrief={() => setBriefOpen(true)}
-              onOpenGuide={() => setGuideOpen(true)}
               onMagicOpen={() => setMagicOpen(true)}
               onExport={handleExport}
               onScanApis={handleScanApis}
@@ -532,14 +524,11 @@ export default function BuilderPage() {
                 <Database className="h-4 w-4" />
               </div>
               <h2 className="mt-4 text-xl font-semibold tracking-tight">Connect data to start</h2>
-              <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
+              <div className="mt-5 flex justify-center">
                 <Button asChild>
                   <Link href="/api-config">
                     <Settings2 className="mr-2 h-4 w-4" /> Configure data
                   </Link>
-                </Button>
-                <Button variant="outline" onClick={() => setGuideOpen(true)}>
-                  <HelpCircle className="mr-2 h-4 w-4" /> Guide
                 </Button>
               </div>
             </div>
@@ -548,7 +537,6 @@ export default function BuilderPage() {
         <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
         <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
         <DashboardBriefDialog open={briefOpen} onOpenChange={setBriefOpen} />
-        <BuilderGuideDialog open={guideOpen} onOpenChange={setGuideOpen} widgetCount={0} endpointCount={0} />
         {currentDash && (
           <ExportConfigModal
             open={exportConfigOpen}
@@ -581,7 +569,6 @@ export default function BuilderPage() {
             onAddWidget={() => setAddWidgetOpen(true)}
             onOpenAssistant={openAi}
             onOpenBrief={() => setBriefOpen(true)}
-            onOpenGuide={() => setGuideOpen(true)}
             onMagicOpen={() => setMagicOpen(true)}
             onExport={handleExport}
             onScanApis={handleScanApis}
@@ -610,12 +597,7 @@ export default function BuilderPage() {
         <section className="min-w-0 overflow-hidden rounded-lg border bg-background" onClick={handleCanvasClick}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
             <p className="text-sm font-medium">Canvas</p>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[11px] text-muted-foreground">{visibleWidgets.length}</span>
-              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setGuideOpen(true)} aria-label="Open builder guide">
-                <HelpCircle className="h-4 w-4" />
-              </Button>
-            </div>
+            <span className="font-mono text-[11px] text-muted-foreground">{visibleWidgets.length}</span>
           </div>
           <div className="bg-muted/15 p-4 md:p-5">
             <DragDropCanvas
@@ -651,7 +633,6 @@ export default function BuilderPage() {
       <WidgetConfigDialog open={addWidgetOpen} onOpenChange={setAddWidgetOpen} />
       <MagicPasteModal isOpen={magicOpen} onClose={() => setMagicOpen(false)} />
       <DashboardBriefDialog open={briefOpen} onOpenChange={setBriefOpen} />
-      <BuilderGuideDialog open={guideOpen} onOpenChange={setGuideOpen} widgetCount={widgets.length} endpointCount={dashboardEndpoints.length} />
       {currentDash && (
         <ExportConfigModal
           open={exportConfigOpen}
@@ -681,7 +662,6 @@ interface BuilderHeaderProps {
   onAddWidget: () => void;
   onOpenAssistant: () => void;
   onOpenBrief: () => void;
-  onOpenGuide: () => void;
   onMagicOpen: () => void;
   onExport: () => void;
   onScanApis: () => void;
@@ -700,7 +680,6 @@ function BuilderHeader({
   onAddWidget,
   onOpenAssistant,
   onOpenBrief,
-  onOpenGuide,
   onMagicOpen,
   onExport,
   onScanApis,
@@ -779,10 +758,6 @@ function BuilderHeader({
                 <Settings2 className="mr-2 h-3.5 w-3.5" />
                 Data sources
               </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onOpenGuide}>
-              <HelpCircle className="mr-2 h-3.5 w-3.5" />
-              Builder guide
             </DropdownMenuItem>
             <div className="sm:hidden">
               <DropdownMenuItem asChild>

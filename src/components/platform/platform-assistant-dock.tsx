@@ -46,7 +46,7 @@ function localHelpAnswer(prompt: string, pagePath: string, hasScope: boolean) {
     return `Use a Dashboard Brief to specify the required chart count and types. Autopilot maps them to real fields, and every generated chart remains editable manually or through natural language.${scopeNote}`
   }
   if (normalized.includes('next')) {
-    return `You are on ${pagePath}. Follow the workflow in order: data source → reviewed business meaning → generated datasets/charts → preview → publish.${scopeNote}`
+    return `You are on ${pagePath}. Help with the current task and keep answers concise.${scopeNote}`
   }
   return `You are on ${pagePath}. I can explain data sources, semantic models, datasets, charts, dashboard briefs, validation, and publishing.${scopeNote}`
 }
@@ -193,4 +193,3 @@ export function PlatformAssistantDock() {
     </aside>
   )
 }
-

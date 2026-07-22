@@ -263,7 +263,7 @@ export function DatasetsAdminPanel() {
           updatedAt: new Date().toISOString(),
         }
         setDatasets(current => [dataset, ...current])
-        toast.success('Demo guided dataset draft created')
+        toast.success('Demo dataset draft created')
         return
       }
       const response = await fetch('/api/admin/guided-review/dataset-draft', {
@@ -284,7 +284,7 @@ export function DatasetsAdminPanel() {
         setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'charts')
         setBuilderSemanticModelId(modelId)
       }
-      toast.success('Guided dataset draft created')
+      toast.success('Dataset draft created')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -456,9 +456,6 @@ export function DatasetsAdminPanel() {
         <div>
           <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Dataset registry</p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--dos-text-primary)]">Governed dataset workbench</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
-          Start from suggested dataset recipes, then customize only when the recommendation needs adjustment.
-          </p>
         </div>
         <div className="flex gap-5 text-xs text-[var(--dos-text-muted)]"><span><strong className="font-mono text-[var(--dos-text-primary)]">{datasets.length}</strong> datasets</span><span><strong className="font-mono text-[var(--dos-text-primary)]">{guidedRecipes.length}</strong> recipes</span></div>
       </section>
@@ -466,11 +463,8 @@ export function DatasetsAdminPanel() {
       <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[var(--dos-text-primary)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Guided mode</Badge>
-            <h3 className="mt-3 text-lg font-semibold">Suggested dataset recipes</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
-              Recipes use the approved semantic model asset. Generated drafts keep lineage back to the semantic draft version so reviewers know what the dataset came from.
-            </p>
+            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Auto proposals</Badge>
+            <h3 className="mt-3 text-lg font-semibold">Dataset proposals</h3>
           </div>
           <Button variant="outline" onClick={() => setAdvancedOpen(open => !open)}>
             {advancedOpen ? 'Hide advanced' : 'Customize manually'}

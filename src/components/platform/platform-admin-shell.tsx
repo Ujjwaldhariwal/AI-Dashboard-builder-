@@ -10,7 +10,6 @@ import {
   Moon,
   PanelsTopLeft,
   LayoutDashboard,
-  LockKeyhole,
   Network,
   SlidersHorizontal,
   Sun,
@@ -21,7 +20,6 @@ import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { BuilderFlowIndicator } from '@/components/platform/builder-flow-indicator'
 import { enableDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { DASHBOARDOS_THEME_STORAGE_KEY, getDashboardOsThemeVars, type DashboardOsThemeMode } from '@/lib/dashboardos/theme'
 import { useAuthStore } from '@/store/auth-store'
@@ -132,15 +130,6 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
             </div>
           </Link>
 
-          <div className="mt-7 rounded-md border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] p-3">
-            <div className="flex items-center gap-2 text-xs font-medium text-[var(--dos-warning-text)]">
-              <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
-              Tenant isolation first
-            </div>
-            <p className="mt-2 text-[11px] leading-5 text-slate-400">
-              Every dashboard, dataset, and report must resolve through tenant and assignment checks.
-            </p>
-          </div>
         </div>
 
         <nav className="mt-7 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
@@ -165,9 +154,6 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
               Sign out
             </Button>
           </div>
-          <Button asChild variant="outline" className="w-full border-[color:var(--dos-warning)] bg-transparent text-[var(--dos-text-primary)] hover:bg-[var(--dos-warning-soft)] hover:text-[var(--dos-warning-text)]">
-            <Link href="/admin/publishing">Review publishing readiness</Link>
-          </Button>
         </div>
       </aside>
 
@@ -207,7 +193,6 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
         </header>
 
         <main className="mx-auto w-full max-w-[1600px] px-4 py-6 lg:px-8">
-          <BuilderFlowIndicator />
           {children}
         </main>
       </div>

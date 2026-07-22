@@ -535,9 +535,6 @@ export function PublishedDashboardsAdminPanel() {
             <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">Immutable releases</Badge>
           </div>
           <h2 className="mt-3 text-xl font-semibold tracking-tight text-[var(--dos-text-primary)]">Release governance workbench</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">
-            Publishing captures release-owned chart, dataset, and semantic state. Later source edits stay in the editing workflow until a new release is published.
-          </p>
         </div>
         <div className="w-full max-w-xs">
           <Label className="text-xs text-[var(--dos-text-muted)]">Project</Label>
@@ -578,10 +575,8 @@ export function PublishedDashboardsAdminPanel() {
       </section>
 
       {demoMode ? (
-        <section className="rounded-lg border border-[color:var(--dos-info)] bg-[var(--dos-info-soft)] px-4 py-3 text-xs leading-5 text-[var(--dos-info-text)]" data-testid="prepared-release-notice">
-          <span className="font-semibold">Prepared release walkthrough.</span>{' '}
-          Draft creation and publish mutations are disabled in this reference workspace. Readiness, health,
-          immutable release details, and the client view reflect the prepared Northstar release.
+        <section className="rounded-md border border-[color:var(--dos-info)] bg-[var(--dos-info-soft)] px-3 py-2 text-xs text-[var(--dos-info-text)]" data-testid="prepared-release-notice">
+          Reference mode · mutations disabled
         </section>
       ) : null}
 
