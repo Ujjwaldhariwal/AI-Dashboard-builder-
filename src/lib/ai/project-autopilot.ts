@@ -43,6 +43,7 @@ export interface ProjectAutopilotSnapshot {
     id: string
     versionId: string
     slotCount: number
+    status: 'draft' | 'published'
   } | null
 }
 
@@ -190,17 +191,22 @@ export function buildProjectAutopilotPlan(
   }
 
   const dashboardReady = Boolean(dashboard && dashboard.slotCount >= brief.chartCount)
-  steps.push(dashboardReady
-    ? step('publish_review', 'awaiting_review', 'Review layout and readiness before explicitly publishing an immutable release.', false)
-    : step('publish_review', 'blocked', 'Waiting for the composed dashboard draft.', false))
+  const dashboardPublished = dashboardReady && dashboard?.status === 'published'
+  steps.push(dashboardPublished
+    ? step('publish_review', 'succeeded', 'The immutable dashboard release was explicitly published.', false)
+    : dashboardReady
+      ? step('publish_review', 'awaiting_review', 'Review layout and readiness before explicitly publishing an immutable release.', false)
+      : step('publish_review', 'blocked', 'Waiting for the composed dashboard draft.', false))
 
   const firstIncomplete = steps.find(item => item.status !== 'succeeded') ?? steps[steps.length - 1]
   const completed = steps.filter(item => item.status === 'succeeded').length
-  const status = firstIncomplete.key === 'publish_review' && firstIncomplete.status === 'awaiting_review'
-    ? 'awaiting_review' as const
-    : firstIncomplete.status === 'awaiting_review' || firstIncomplete.status === 'blocked'
+  const status = completed === steps.length
+    ? 'succeeded' as const
+    : firstIncomplete.key === 'publish_review' && firstIncomplete.status === 'awaiting_review'
       ? 'awaiting_review' as const
-      : 'queued' as const
+      : firstIncomplete.status === 'awaiting_review' || firstIncomplete.status === 'blocked'
+        ? 'awaiting_review' as const
+        : 'queued' as const
 
   return {
     status,

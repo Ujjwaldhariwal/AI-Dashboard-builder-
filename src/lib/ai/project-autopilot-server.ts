@@ -5,7 +5,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildDeterministicChartSuiteProposal } from '@/lib/ai/chart-suite-copilot'
 import { buildDeterministicDatasetProposal } from '@/lib/ai/dataset-copilot'
 import {
+  buildProjectAutopilotDashboardSlots,
   buildProjectAutopilotPlan,
+  projectAutopilotDashboardName,
   projectAutopilotInstruction,
   type ProjectAutopilotSnapshot,
 } from '@/lib/ai/project-autopilot'
@@ -184,15 +186,46 @@ export async function loadProjectAutopilotSnapshot({
         .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .eq('dataset_id', dataset.id)
+        .eq('validation_state', 'valid')
         .neq('status', 'archived')
     : { count: 0, error: null }
   if (error) throw new Error(error.message)
+  let dashboard: ProjectAutopilotSnapshot['dashboard'] = null
+  if (artifacts.dashboardId && artifacts.dashboardVersionId) {
+    const { data: version, error: versionError } = await supabase
+      .from('dashboard_versions')
+      .select('id, dashboard_id, status')
+      .eq('id', artifacts.dashboardVersionId)
+      .eq('dashboard_id', artifacts.dashboardId)
+      .eq('tenant_id', tenantId)
+      .eq('project_id', projectId)
+      .in('status', ['draft', 'published'])
+      .maybeSingle()
+    if (versionError) throw new Error(versionError.message)
+    if (version) {
+      const { count: slotCount, error: slotError } = await supabase
+        .from('dashboard_chart_slots')
+        .select('id', { count: 'exact', head: true })
+        .eq('version_id', artifacts.dashboardVersionId)
+        .eq('dashboard_id', artifacts.dashboardId)
+        .eq('tenant_id', tenantId)
+        .eq('project_id', projectId)
+      if (slotError) throw new Error(slotError.message)
+      dashboard = {
+        id: artifacts.dashboardId,
+        versionId: artifacts.dashboardVersionId,
+        slotCount: slotCount ?? 0,
+        status: String((version as Record<string, unknown>).status) as 'draft' | 'published',
+      }
+    }
+  }
   return {
     selectedRelationCount: relationIds.length,
     selectedColumnCount: columns.length,
     semanticModel,
     dataset,
     chartCount: count ?? 0,
+    dashboard,
   }
 }
 
@@ -471,7 +504,16 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
   const [fieldResult, metricResult, chartResult] = await Promise.all([
     fieldIds.length ? supabase.from('business_fields').select('*').in('id', fieldIds) : Promise.resolve({ data: [], error: null }),
     metricIds.length ? supabase.from('business_metrics').select('*').in('id', metricIds) : Promise.resolve({ data: [], error: null }),
-    supabase.from('dashboard_chart_configs').select('id').eq('dataset_id', datasetId).neq('status', 'archived'),
+    supabase
+      .from('dashboard_chart_configs')
+      .select('id')
+      .eq('dataset_id', datasetId)
+      .eq('tenant_id', context.tenantId)
+      .eq('project_id', context.projectId)
+      .eq('validation_state', 'valid')
+      .neq('status', 'archived')
+      .order('created_at', { ascending: false })
+      .limit(context.brief.chartCount),
   ])
   const error = fieldResult.error ?? metricResult.error ?? chartResult.error
   if (error) throw new Error(error.message)
@@ -495,7 +537,7 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
   })
   const charts = proposal.charts.slice(0, remaining).map(chart => {
     const validation = validateDashboardChartConfig({ templateId: chart.templateId, encoding: chart.encoding, fields: rawFields, metrics: rawMetrics })
-    if (validation.state === 'invalid') throw new Error(`Generated chart ${chart.name} failed compatibility validation`)
+    if (validation.state !== 'valid') throw new Error(`Generated chart ${chart.name} requires review before Autopilot can compose it`)
     return { ...chart, validationState: validation.state, validationIssues: validation.issues }
   })
   const { data, error: rpcError } = await supabase.rpc('create_dashboard_chart_drafts', {
@@ -506,6 +548,45 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
   })
   if (rpcError) throw new Error(rpcError.message)
   return [...existingIds, ...((data ?? []) as Record<string, unknown>[]).map(row => String(row.id))]
+}
+
+async function ensureDashboardDraft(supabase: SupabaseClient, context: RunContext, chartIds: string[]) {
+  const selectedIds = [...new Set(chartIds)].slice(0, context.brief.chartCount)
+  if (selectedIds.length < context.brief.chartCount) throw new Error('Autopilot does not have enough valid charts to compose the requested dashboard')
+  const { data, error } = await supabase
+    .from('dashboard_chart_configs')
+    .select('id, name, template_id, presentation, layout, validation_state, status')
+    .eq('tenant_id', context.tenantId)
+    .eq('project_id', context.projectId)
+    .eq('dataset_id', context.artifacts.datasetId as string)
+    .in('id', selectedIds)
+  if (error) throw new Error(error.message)
+  const chartById = new Map(((data ?? []) as Record<string, unknown>[]).map(chart => [String(chart.id), chart]))
+  const charts = selectedIds.map(id => chartById.get(id)).filter(Boolean) as Record<string, unknown>[]
+  if (charts.length !== selectedIds.length) throw new Error('Autopilot dashboard charts no longer match the governed dataset')
+  const slots = buildProjectAutopilotDashboardSlots(charts.map(chart => ({
+    id: String(chart.id),
+    name: String(chart.name),
+    templateId: String(chart.template_id) as ProjectAutopilotBrief['chartTypes'][number],
+    presentation: record(chart.presentation) as { size?: 'compact' | 'standard' | 'wide' | 'full' },
+    layout: record(chart.layout) as { order?: number; gridSpan?: number },
+  })))
+  const { data: composed, error: composeError } = await supabase.rpc('compose_project_autopilot_dashboard_draft', {
+    p_run_id: context.runId,
+    p_tenant_id: context.tenantId,
+    p_project_id: context.projectId,
+    p_dashboard_name: projectAutopilotDashboardName(context.brief),
+    p_dashboard_description: context.brief.objective,
+    p_slots: slots,
+  })
+  if (composeError) throw new Error(composeError.message)
+  const result = ((composed ?? []) as Record<string, unknown>[])[0]
+  if (!result?.dashboard_id || !result?.version_id || !result?.page_id) throw new Error('Autopilot dashboard composition returned no draft identity')
+  return {
+    dashboardId: String(result.dashboard_id),
+    dashboardVersionId: String(result.version_id),
+    dashboardPageId: String(result.page_id),
+  }
 }
 
 export async function executeProjectAutopilot(supabase: SupabaseClient, context: RunContext) {
@@ -544,6 +625,14 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
 
   if (plan.currentStep === 'charts' && artifacts.datasetId) {
     artifacts.chartIds = await ensureChartSuite(supabase, { ...context, artifacts }, artifacts.datasetId)
+    snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
+    plan = buildProjectAutopilotPlan(snapshot, context.brief)
+  }
+
+  if (plan.currentStep === 'dashboard' && artifacts.datasetId) {
+    artifacts.chartIds = await ensureChartSuite(supabase, { ...context, artifacts }, artifacts.datasetId)
+    await persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
+    Object.assign(artifacts, await ensureDashboardDraft(supabase, { ...context, artifacts }, artifacts.chartIds))
     snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
     plan = buildProjectAutopilotPlan(snapshot, context.brief)
   }

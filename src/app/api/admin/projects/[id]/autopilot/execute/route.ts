@@ -40,13 +40,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ run })
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
+    const { data: latestRow } = await auth.supabase
+      .from('project_autopilot_runs')
+      .select('*')
+      .eq('id', current.id)
+      .eq('tenant_id', current.tenantId)
+      .eq('project_id', current.projectId)
+      .maybeSingle()
+    const latest = latestRow ? mapProjectAutopilotRun(latestRow as Record<string, unknown>) : current
     const failed = await persistProjectAutopilotPlan({
       supabase: auth.supabase,
-      runId: current.id,
-      tenantId: current.tenantId,
-      projectId: current.projectId,
-      plan: current.plan,
-      artifacts: current.artifacts,
+      runId: latest.id,
+      tenantId: latest.tenantId,
+      projectId: latest.projectId,
+      plan: latest.plan,
+      artifacts: latest.artifacts,
       errorCode: 'autopilot_execution_failed',
       errorMessage: message,
     }).catch(() => null)
