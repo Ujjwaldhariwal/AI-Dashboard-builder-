@@ -16,6 +16,11 @@ import {
   mapDashboardVersion,
   mapPublishedDashboard,
 } from '@/lib/publishing/dashboard-publishing'
+import {
+  IMMUTABLE_RELEASE_MIGRATION,
+  IMMUTABLE_RELEASE_SETUP_MESSAGE,
+  isMissingImmutableReleaseSchema,
+} from '@/lib/publishing/immutable-release-schema'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 import type { SemanticDataset } from '@/types/semantic-dataset'
 
@@ -36,6 +41,8 @@ export interface GuidedPublishPreflightMetadata {
   slotCount: number
   guidedReviewStorage: 'ready' | 'migration_required'
   guidedReviewMigration: string | null
+  releaseStorage: 'ready' | 'migration_required'
+  releaseStorageMigration: string | null
 }
 
 export interface GuidedPublishPreflightResult {
@@ -124,6 +131,8 @@ export async function evaluateGuidedPublishReadinessForProject({
     chartsResult,
     dashboardsResult,
     dataSourcesResult,
+    releaseChartStorageResult,
+    releaseDatasetStorageResult,
   ] = await Promise.all([
     supabase
       .from('guided_schema_profiles')
@@ -158,15 +167,27 @@ export async function evaluateGuidedPublishReadinessForProject({
       .select('id, schema_last_status, schema_last_error, schema_hash, schema_scope_status')
       .eq('tenant_id', tenantId)
       .eq('project_id', projectId),
+    supabase
+      .from('dashboard_release_chart_snapshots')
+      .select('id')
+      .limit(1),
+    supabase
+      .from('dashboard_release_dataset_snapshots')
+      .select('id')
+      .limit(1),
   ])
 
   const guidedReviewSchemaMissing = isMissingGuidedReviewSchema(profileResult.error)
+  const releaseStorageMissing = isMissingImmutableReleaseSchema(releaseChartStorageResult.error)
+    || isMissingImmutableReleaseSchema(releaseDatasetStorageResult.error)
   if (profileResult.error && !guidedReviewSchemaMissing) throw new Error(profileResult.error.message)
   if (modelsResult.error) throw new Error(modelsResult.error.message)
   if (datasetsResult.error) throw new Error(datasetsResult.error.message)
   if (chartsResult.error) throw new Error(chartsResult.error.message)
   if (dashboardsResult.error) throw new Error(dashboardsResult.error.message)
   if (dataSourcesResult.error) throw new Error(dataSourcesResult.error.message)
+  if (releaseChartStorageResult.error && !isMissingImmutableReleaseSchema(releaseChartStorageResult.error)) throw new Error(releaseChartStorageResult.error.message)
+  if (releaseDatasetStorageResult.error && !isMissingImmutableReleaseSchema(releaseDatasetStorageResult.error)) throw new Error(releaseDatasetStorageResult.error.message)
 
   const profileState = guidedReviewSchemaMissing ? null : profileStateFromRows(profileResult.data)
   const profileDataSourceId = profileState?.lineage?.schemaProfile.dataSourceId ?? null
@@ -228,6 +249,10 @@ export async function evaluateGuidedPublishReadinessForProject({
     versions,
     pages,
     slots,
+    releaseStorage: {
+      ready: !releaseStorageMissing,
+      error: releaseStorageMissing ? IMMUTABLE_RELEASE_SETUP_MESSAGE : null,
+    },
     selectedDashboardId: selectedDashboardId ?? selectedDashboard?.id ?? null,
     selectedVersionId: selectedVersionId ?? selectedVersion?.id ?? null,
     clientUrl: tenantSlug ? `/client/${tenantSlug}` : null,
@@ -252,6 +277,8 @@ export async function evaluateGuidedPublishReadinessForProject({
       slotCount: slots.length,
       guidedReviewStorage: guidedReviewSchemaMissing ? 'migration_required' : 'ready',
       guidedReviewMigration: guidedReviewSchemaMissing ? GUIDED_REVIEW_STATE_MIGRATION : null,
+      releaseStorage: releaseStorageMissing ? 'migration_required' : 'ready',
+      releaseStorageMigration: releaseStorageMissing ? IMMUTABLE_RELEASE_MIGRATION : null,
     },
   }
 }

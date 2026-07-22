@@ -12,6 +12,7 @@ import {
   type DashboardReleaseDatasetSnapshot,
 } from '../src/lib/publishing/dashboard-release-snapshots'
 import { releasedSourceContractIssues } from '../src/lib/publishing/dashboard-health-auditor'
+import { isMissingImmutableReleaseSchema } from '../src/lib/publishing/immutable-release-schema'
 
 const tenantId = '11111111-1111-4111-8111-111111111111'
 const projectId = '22222222-2222-4222-8222-222222222222'
@@ -129,6 +130,19 @@ function chartSnapshot(chartConfig?: Record<string, unknown>): DashboardReleaseC
 }
 
 test.describe('immutable dashboard release snapshots', () => {
+  test('recognizes missing immutable release storage without treating unrelated errors as setup issues', () => {
+    expect(isMissingImmutableReleaseSchema({
+      code: 'PGRST205',
+      message: "Could not find the table 'public.dashboard_release_chart_snapshots' in the schema cache",
+    })).toBe(true)
+    expect(isMissingImmutableReleaseSchema(new Error('Dashboard entitlement was denied'))).toBe(false)
+
+    const clientPage = readFileSync(join(process.cwd(), 'src/app/(client)/client/[tenantSlug]/page.tsx'), 'utf8')
+    expect(clientPage).toContain('ReleaseStorageUnavailableRuntime')
+    expect(clientPage).toContain('data-testid="release-storage-setup"')
+    expect(clientPage).toContain('isMissingImmutableReleaseSchema(releaseChartsError)')
+  })
+
   test('uses release-owned identity and content after the source chart is edited', () => {
     const mutableSourceChart = chartSnapshot().chartConfig
     const capturedChart = structuredClone(mutableSourceChart)

@@ -13,6 +13,10 @@ import { DASHBOARDOS_DEMO_COOKIE, shouldUseDashboardOsDemoRuntime } from '@/lib/
 import { demoCharts, demoDashboard, demoDataset, demoPage, demoSlots, demoVersion } from '@/lib/dashboardos/demo-data'
 import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
 import { mapDashboardReleaseChartSnapshot, mapReleasedChartConfig } from '@/lib/publishing/dashboard-release-snapshots'
+import {
+  IMMUTABLE_RELEASE_MIGRATION,
+  isMissingImmutableReleaseSchema,
+} from '@/lib/publishing/immutable-release-schema'
 import { listEntitledDashboardIds, listEntitledDatasetIds } from '@/lib/security/entitlements'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
@@ -151,6 +155,40 @@ function AccessDeniedRuntime({ tenantSlug }: { tenantSlug: string }) {
             Ask a workspace admin to add your employee account as a tenant member or grant a dashboard entitlement. Source credentials and unpublished semantic assets remain hidden.
           </div>
           </aside>
+        </section>
+      </main>
+    </ClientThemeShell>
+  )
+}
+
+function ReleaseStorageUnavailableRuntime({ tenantName, dashboardName }: { tenantName: string; dashboardName: string }) {
+  return (
+    <ClientThemeShell>
+      <header className="border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]">
+            <LayoutDashboard className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-mono text-xs text-[var(--dos-chart-warning)]">{tenantName}</p>
+            <h1 className="text-xl font-semibold tracking-tight">{dashboardName}</h1>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto flex min-h-[calc(100vh-80px)] max-w-3xl items-center px-4 py-10">
+        <section className="w-full rounded-lg border border-[color:var(--dos-warning)] bg-[var(--dos-surface)] p-8 text-center" data-testid="release-storage-setup">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-[var(--dos-warning-soft)] text-[var(--dos-chart-warning)]">
+            <ShieldAlert className="h-6 w-6" />
+          </div>
+          <h2 className="mt-5 text-xl font-semibold">Dashboard release is being prepared</h2>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[var(--dos-text-muted)]">
+            The immutable published chart snapshot is not available yet. Ask a workspace administrator to complete release storage setup and reopen this dashboard.
+          </p>
+          {process.env.NODE_ENV !== 'production' ? (
+            <p className="mx-auto mt-4 max-w-xl rounded-md bg-[var(--dos-surface-muted)] px-3 py-2 font-mono text-xs text-[var(--dos-text-secondary)]">
+              Required AI Builder migration: {IMMUTABLE_RELEASE_MIGRATION}
+            </p>
+          ) : null}
         </section>
       </main>
     </ClientThemeShell>
@@ -407,6 +445,11 @@ export default async function TenantClientPage({
         .limit(1),
     ])
 
+    const releaseStorageMissing = isMissingImmutableReleaseSchema(versionError)
+      || isMissingImmutableReleaseSchema(releaseChartsError)
+    if (releaseStorageMissing) {
+      return <ReleaseStorageUnavailableRuntime tenantName={activeTenant.name} dashboardName={dashboard.name} />
+    }
     if (versionError || pagesError || slotsError || releaseChartsError || healthError) {
       throw new Error(versionError?.message ?? pagesError?.message ?? slotsError?.message ?? releaseChartsError?.message ?? healthError?.message ?? 'Failed to load published dashboard')
     }

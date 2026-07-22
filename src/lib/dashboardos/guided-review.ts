@@ -196,6 +196,7 @@ export interface GuidedPublishReadinessCheck {
     | 'review_exceptions'
     | 'dataset_draft'
     | 'dashboard_draft'
+    | 'release_storage'
     | 'publish_target'
     | 'runtime_validation'
   label: string
@@ -262,6 +263,10 @@ export interface GuidedPublishReadinessInput {
   versions?: Array<Pick<DashboardVersion, 'id' | 'dashboardId' | 'status' | 'versionNumber' | 'notes'>> | null
   pages?: Array<Pick<DashboardPage, 'id' | 'versionId' | 'slug'>> | null
   slots?: Array<Pick<DashboardChartSlot, 'id' | 'versionId' | 'chartConfigId'>> | null
+  releaseStorage?: {
+    ready: boolean
+    error?: string | null
+  } | null
   selectedDashboardId?: string | null
   selectedVersionId?: string | null
   clientUrl?: string | null
@@ -471,6 +476,17 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
   checks.push(hasDashboardStructure
     ? readinessCheck('dashboard_draft', 'Dashboard structure', 'ready', `${slots.length} persisted chart slot${slots.length === 1 ? '' : 's'} belong to the selected dashboard version.`)
     : readinessCheck('dashboard_draft', 'Dashboard structure', datasetHasContent ? 'blocker' : 'warning', 'Publish requires a selected dashboard version with at least one persisted page and chart slot.', DEFAULT_GUIDED_ACTIONS.preview))
+
+  if (input.releaseStorage) {
+    checks.push(input.releaseStorage.ready
+      ? readinessCheck('release_storage', 'Immutable release storage', 'ready', 'Immutable dashboard release storage is available.')
+      : readinessCheck(
+        'release_storage',
+        'Immutable release storage',
+        'blocker',
+        input.releaseStorage.error ?? 'Immutable dashboard release storage must be configured before publishing.',
+      ))
+  }
 
   const targetIdentified = Boolean(input.clientUrl && dashboard?.slug && version && version.dashboardId === dashboard.id)
   checks.push(targetIdentified

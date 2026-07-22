@@ -467,6 +467,8 @@ export function PublishedDashboardsAdminPanel() {
             slotCount: demoSlots.length,
             guidedReviewStorage: 'ready',
             guidedReviewMigration: null,
+            releaseStorage: 'ready',
+            releaseStorageMigration: null,
           },
         })
         toast.success('Prepared readiness snapshot loaded')

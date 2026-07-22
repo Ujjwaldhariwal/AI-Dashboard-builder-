@@ -212,11 +212,17 @@ class Query {
   }
 }
 
-function createSupabase(tables: Record<string, Record<string, unknown>[]>, missingGuidedReviewSchema = false) {
+function createSupabase(tables: Record<string, Record<string, unknown>[]>, options: {
+  missingGuidedReviewSchema?: boolean
+  missingReleaseStorage?: boolean
+} = {}) {
   return {
     from(table: string) {
-      if (missingGuidedReviewSchema && table === 'guided_schema_profiles') {
-        return new MissingTableQuery()
+      if (options.missingGuidedReviewSchema && table === 'guided_schema_profiles') {
+        return new MissingTableQuery('guided_schema_profiles')
+      }
+      if (options.missingReleaseStorage && table === 'dashboard_release_chart_snapshots') {
+        return new MissingTableQuery('dashboard_release_chart_snapshots')
       }
       return new Query(tables[table] ?? [])
     },
@@ -224,6 +230,7 @@ function createSupabase(tables: Record<string, Record<string, unknown>[]>, missi
 }
 
 class MissingTableQuery {
+  constructor(private table: string) {}
   select() { return this }
   order() { return this }
   eq() { return this }
@@ -233,7 +240,7 @@ class MissingTableQuery {
       data: null,
       error: {
         code: 'PGRST205',
-        message: "Could not find the table 'public.guided_schema_profiles' in the schema cache",
+        message: `Could not find the table 'public.${this.table}' in the schema cache`,
       },
     })
   }
@@ -309,7 +316,7 @@ test.describe('guided publish preflight', () => {
 
   test('keeps project assets visible and fails closed when guided review storage is not migrated', async () => {
     const result = await evaluateGuidedPublishReadinessForProject({
-      supabase: createSupabase(seededTables(), true) as never,
+      supabase: createSupabase(seededTables(), { missingGuidedReviewSchema: true }) as never,
       projectId,
       selectedDashboardId: dashboardId,
       selectedVersionId: versionId,
@@ -323,5 +330,21 @@ test.describe('guided publish preflight', () => {
     expect(result.metadata.dashboardCount).toBe(1)
     expect(result.metadata.chartCount).toBe(1)
     expect(result.metadata.slotCount).toBe(1)
+  })
+
+  test('blocks publication before the client route when immutable release storage is not migrated', async () => {
+    const result = await evaluateGuidedPublishReadinessForProject({
+      supabase: createSupabase(seededTables(), { missingReleaseStorage: true }) as never,
+      projectId,
+      selectedDashboardId: dashboardId,
+      selectedVersionId: versionId,
+      evaluatedAt: '2026-07-13T02:15:00.000Z',
+    })
+
+    expect(result.readiness.publishEligible).toBe(false)
+    expect(result.readiness.blockers.find(check => check.id === 'release_storage')?.message)
+      .toContain('20260714160000_immutable_dashboard_releases.sql')
+    expect(result.metadata.releaseStorage).toBe('migration_required')
+    expect(result.metadata.releaseStorageMigration).toBe('20260714160000_immutable_dashboard_releases.sql')
   })
 })
