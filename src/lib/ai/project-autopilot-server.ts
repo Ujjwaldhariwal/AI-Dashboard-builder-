@@ -518,6 +518,7 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
 
   if (plan.currentStep === 'semantic_model') {
     if (snapshot.semanticModel?.status === 'review' || snapshot.semanticModel?.status === 'draft' && snapshot.semanticModel.fieldCount > 0) {
+      artifacts.semanticModelId = snapshot.semanticModel.id
       return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
     }
     const modelId = await ensureDraftSemanticModel(supabase, { ...context, artifacts })
@@ -533,6 +534,7 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
     return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
   }
   artifacts.semanticModelId = modelId
+  if (snapshot.dataset?.status === 'published') artifacts.datasetId = snapshot.dataset.id
 
   if (plan.currentStep === 'dataset') {
     artifacts.datasetId = await ensurePublishedDataset(supabase, { ...context, artifacts }, modelId)

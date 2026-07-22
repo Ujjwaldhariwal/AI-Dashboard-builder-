@@ -28,6 +28,7 @@ test.describe('project autopilot API', () => {
     expect(server).toContain('buildDeterministicDatasetProposal')
     expect(server).toContain('buildDeterministicChartSuiteProposal')
     expect(server).toContain("rpc('create_dashboard_chart_drafts'")
+    expect(server).toContain("if (snapshot.dataset?.status === 'published') artifacts.datasetId = snapshot.dataset.id")
     expect(server).not.toContain("rpc('publish_dashboard'")
     expect(executeRoute).toContain('requireProjectAccess')
     expect(executeRoute).toContain('executeProjectAutopilot')
