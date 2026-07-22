@@ -15,9 +15,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { buildDeterministicSemanticProposal, type SemanticCopilotProposal } from '@/lib/ai/semantic-copilot'
 import { demoColumns, demoEntities, demoMetrics, demoModel, demoProjects, demoRelationships, DEMO_MODEL_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
-import { buildGuidedSchemaProfile, buildGuidedSemanticDraft, type GuidedReviewDecisionAction, type GuidedReviewState } from '@/lib/dashboardos/guided-review'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
 import type { BusinessFieldRole, BusinessMetric, BusinessMetricAggregation, BusinessModel, BusinessModelStatus, BusinessRelationship, BusinessRelationshipType } from '@/types/semantic-model'
 
@@ -60,10 +60,7 @@ interface MappingSuggestion {
   aggregation?: BusinessMetricAggregation
 }
 
-interface GuidedProfileApiRecord {
-  id: string
-  state: GuidedReviewState
-}
+type RelationshipSuggestion = SemanticCopilotProposal['relationships'][number]
 
 const FIELD_ROLES: BusinessFieldRole[] = ['identifier', 'dimension', 'metric_source', 'date', 'attribute', 'hidden']
 const CONTROL_CLASS = 'border-white/10 bg-slate-950/70 text-slate-100 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-slate-900/70 disabled:text-slate-400 disabled:opacity-100'
@@ -104,7 +101,7 @@ function inferRole(column: DataSourceColumnMetadata): BusinessFieldRole {
   const name = normalizeToken(column.columnName)
   if (isDateType(column.dataType) || name.endsWith('_date') || name.includes('created_at') || name.includes('month')) return 'date'
   if (name === 'id' || name.endsWith('_id') || name.includes('uuid')) return 'identifier'
-  if (isNumericType(column.dataType) && /(revenue|sales|amount|bill|total|count|quantity|orders|customers|users|price|cost|profit|margin|duration|score|usage|units|kwh|consumed|outage|load)/i.test(name)) return 'metric_source'
+  if (isNumericType(column.dataType) && /(revenue|sales|amount|total|count|quantity|price|cost|profit|margin|duration|score|usage|units|rate|balance)/i.test(name)) return 'metric_source'
   if (/(name|type|status|segment|region|category|country|city|channel|provider|priority|plan|tier|connection)/i.test(name)) return 'dimension'
   if (/(password|secret|token|payload|metadata|raw|hash)/i.test(name)) return 'hidden'
   return isNumericType(column.dataType) ? 'metric_source' : 'attribute'
@@ -114,7 +111,7 @@ function inferEntityType(columns: DataSourceColumnMetadata[]): MappingSuggestion
   const joined = columns.map(column => `${column.tableName}_${column.columnName}`).join(' ').toLowerCase()
   const metricCount = columns.filter(column => inferRole(column) === 'metric_source').length
   if (/(event|events|log|logs|orders|payments|items|tickets|usage)/.test(joined)) return 'event'
-  if (metricCount >= 2 || /(fact|revenue|sales|summary|monthly|readings|billing|electricity)/.test(joined)) return 'fact'
+  if (metricCount >= 2 || /(fact|revenue|sales|summary|transaction|aggregate)/.test(joined)) return 'fact'
   return 'dimension'
 }
 
@@ -155,20 +152,16 @@ export function SemanticModelAdminPanel() {
   const [relationshipType, setRelationshipType] = useState<BusinessRelationshipType>('many_to_one')
   const [columnSearch, setColumnSearch] = useState('')
   const [suggestions, setSuggestions] = useState<MappingSuggestion[]>([])
+  const [relationshipSuggestions, setRelationshipSuggestions] = useState<RelationshipSuggestion[]>([])
   const [selectedSuggestionIds, setSelectedSuggestionIds] = useState<Set<string>>(new Set())
+  const [semanticInstruction, setSemanticInstruction] = useState('Create a reusable business model for dashboards and operational analysis.')
+  const [proposalSource, setProposalSource] = useState<'ai' | 'deterministic' | null>(null)
   const [schemaScannedAt, setSchemaScannedAt] = useState<Date | null>(null)
-  const [guidedProfileRecord, setGuidedProfileRecord] = useState<GuidedProfileApiRecord | null>(null)
-  const [guidedSavingItemId, setGuidedSavingItemId] = useState<string | null>(null)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
   const selectedModel = models.find(model => model.id === modelId)
   const selectedColumn = columns.find(column => column.id === selectedColumnId)
-  const guidedProfile = useMemo(() => buildGuidedSchemaProfile(columns), [columns])
-  const computedSemanticDraft = useMemo(() => buildGuidedSemanticDraft(guidedProfile), [guidedProfile])
-  const guidedState = guidedProfileRecord?.state
-  const semanticDraft = guidedState?.semanticDraft ?? computedSemanticDraft
-  const semanticAsset = guidedState?.semanticAsset ?? null
   const visibleColumns = useMemo(() => {
     const search = columnSearch.trim().toLowerCase()
     if (!search) return columns
@@ -269,7 +262,7 @@ export function SemanticModelAdminPanel() {
       setSchemaScannedAt(new Date())
       return
     }
-    const params = new URLSearchParams({ projectId: nextProjectId })
+    const params = new URLSearchParams({ projectId: nextProjectId, scope: 'selected' })
     if (nextDataSourceId) params.set('dataSourceId', nextDataSourceId)
     const response = await fetch(`/api/admin/schema-columns?${params.toString()}`, { cache: 'no-store' })
     const payload = await response.json().catch(() => null)
@@ -323,21 +316,6 @@ export function SemanticModelAdminPanel() {
     setRelationships(Array.isArray(payload?.relationships) ? payload.relationships : [])
   }
 
-  const fetchGuidedProfile = async (nextProjectId: string) => {
-    if (!nextProjectId) {
-      setGuidedProfileRecord(null)
-      return
-    }
-    if (demoMode) {
-      setGuidedProfileRecord(null)
-      return
-    }
-    const response = await fetch(`/api/admin/guided-review/profile?projectId=${encodeURIComponent(nextProjectId)}`, { cache: 'no-store' })
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) throw new Error(errorToText(payload))
-    setGuidedProfileRecord(payload?.profile ?? null)
-  }
-
   useEffect(() => {
     let mounted = true
     setLoading(true)
@@ -358,7 +336,6 @@ export function SemanticModelAdminPanel() {
     void Promise.all([
       fetchModels(projectId),
       fetchColumns(projectId, builderDataSourceId),
-      fetchGuidedProfile(projectId),
     ]).catch(error => toast.error(error instanceof Error ? error.message : String(error)))
   }, [builderDataSourceId, projectId])
 
@@ -452,58 +429,6 @@ export function SemanticModelAdminPanel() {
     }
   }
 
-  const handleGuidedDecision = async (itemId: string, action: GuidedReviewDecisionAction) => {
-    if (demoMode || !guidedProfileRecord) {
-      toast.success(`Demo review decision recorded: ${action}`)
-      return
-    }
-    setGuidedSavingItemId(itemId)
-    try {
-      const response = await fetch('/api/admin/guided-review/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profileId: guidedProfileRecord.id, itemId, action }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(errorToText(payload))
-      setGuidedProfileRecord(payload.profile as GuidedProfileApiRecord)
-      toast.success('Review decision saved')
-    } catch (error) {
-      toast.error(errorToText(error))
-    } finally {
-      setGuidedSavingItemId(null)
-    }
-  }
-
-  const handleApproveGuidedDraft = async () => {
-    if (demoMode || !guidedProfileRecord) {
-      toast.success('Demo semantic draft approved')
-      return
-    }
-    setGuidedSavingItemId('semantic-draft')
-    try {
-      const response = await fetch('/api/admin/guided-review/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profileId: guidedProfileRecord.id, action: 'approve_semantic_draft' }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(errorToText(payload))
-      const nextProfile = payload.profile as GuidedProfileApiRecord
-      setGuidedProfileRecord(nextProfile)
-      await fetchModels(projectId)
-      if (nextProfile.state.semanticAsset?.modelId) {
-        setModelId(nextProfile.state.semanticAsset.modelId)
-        setBuilderSemanticModelId(nextProfile.state.semanticAsset.modelId)
-      }
-      toast.success('Semantic draft approved and model created')
-    } catch (error) {
-      toast.error(errorToText(error))
-    } finally {
-      setGuidedSavingItemId(null)
-    }
-  }
-
   const openMapping = (column: DataSourceColumnMetadata) => {
     const tableColumns = columns.filter(candidate => (
       candidate.dataSourceId === column.dataSourceId
@@ -580,90 +505,72 @@ export function SemanticModelAdminPanel() {
     }
   }
 
-  const buildSuggestions = () => {
+  const buildSuggestions = async () => {
     if (!selectedModel) {
       toast.error('Create or select a business model first')
       return
     }
-
-    const byTable = new Map<string, DataSourceColumnMetadata[]>()
-    for (const column of columns) {
-      const key = `${column.schemaName}.${column.tableName}.${column.columnName}`
-      if (mappedSourceKeys.has(key)) continue
-      const tableKey = `${column.schemaName}.${column.tableName}`
-      byTable.set(tableKey, [...(byTable.get(tableKey) ?? []), column])
-    }
-
-    const rankedTables = Array.from(byTable.entries())
-      .map(([tableKey, tableColumns]) => {
-        const tableText = tableKey.toLowerCase()
-        const roles = tableColumns.map(inferRole)
-        const score =
-          (tableText.includes('electricity_readings') ? 120 : 0)
-          + (tableText.includes('electricity_customers') ? 96 : 0)
-          + (tableText.includes('electricity') ? 64 : 0)
-          + (tableText.includes('billing') || tableText.includes('readings') ? 32 : 0)
-          + (tableText.includes('v_monthly_revenue') ? 24 : 0)
-          + (tableText.includes('sales') ? 28 : 0)
-          + (tableText.includes('support') ? 12 : 0)
-          + roles.filter(role => role === 'metric_source').length * 10
-          + roles.filter(role => role === 'date').length * 8
-          + roles.filter(role => role === 'dimension').length * 5
-          - (tableText.startsWith('auth.') || tableText.startsWith('storage.') ? 100 : 0)
-        return { tableKey, tableColumns, score }
-      })
-      .filter(table => table.score > 0)
-      .sort((left, right) => right.score - left.score)
-
-    const table = rankedTables[0]
-    if (!table) {
-      toast.error('No unmapped business-looking columns found')
+    if (columns.length === 0) {
+      toast.error('Confirm the datasource table selection before generating a semantic proposal')
       return
     }
 
-    const entityName = titleFromColumn(table.tableKey.split('.').at(-1) ?? 'Business Entity')
-    const entityType = inferEntityType(table.tableColumns)
-    const nextSuggestions = table.tableColumns
-      .map(column => {
-        const role = inferRole(column)
-        const fieldName = titleFromColumn(column.columnName)
-        const suggestion: MappingSuggestion = {
-          id: `${column.id}:${role}`,
-          column,
-          entityName,
-          entityType,
-          fieldName,
-          role,
-          confidence: role === 'attribute' ? 70 : role === 'hidden' ? 65 : 88,
-          reason: role === 'metric_source'
-            ? 'Numeric business measure detected.'
-            : role === 'date'
-              ? 'Date or time grain detected.'
-              : role === 'dimension'
-                ? 'Good filter or grouping column.'
-                : role === 'identifier'
-                  ? 'Identifier-style column detected.'
-                  : role === 'hidden'
-                    ? 'Technical or sensitive-looking column.'
-                    : 'Useful descriptive attribute.',
-        }
-        if (role === 'metric_source') {
-          suggestion.metricName = inferMetricName(column.columnName)
-          suggestion.aggregation = column.columnName.toLowerCase().includes('count') ? 'count' : 'sum'
-        }
-        return suggestion
-      })
-      .filter(suggestion => suggestion.role !== 'hidden')
-      .sort((left, right) => {
-        const order: BusinessFieldRole[] = ['date', 'dimension', 'metric_source', 'identifier', 'attribute', 'hidden']
-        return order.indexOf(left.role) - order.indexOf(right.role)
-      })
-      .slice(0, 12)
+    setSaving(true)
+    try {
+      let proposal: SemanticCopilotProposal
+      let source: 'ai' | 'deterministic'
+      let warning: string | undefined
+      if (demoMode) {
+        proposal = buildDeterministicSemanticProposal(columns, semanticInstruction)
+        source = 'deterministic'
+      } else {
+        const response = await fetch(`/api/admin/semantic-models/${selectedModel.id}/ai-proposal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instruction: semanticInstruction,
+            ...(builderDataSourceId ? { dataSourceId: builderDataSourceId } : {}),
+          }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.proposal) throw new Error(errorToText(payload) || `Semantic proposal failed (${response.status})`)
+        proposal = payload.proposal as SemanticCopilotProposal
+        source = payload.source === 'ai' ? 'ai' : 'deterministic'
+        warning = typeof payload.warning === 'string' ? payload.warning : undefined
+      }
 
-    setSuggestions(nextSuggestions)
-    setSelectedSuggestionIds(new Set(nextSuggestions.map(suggestion => suggestion.id)))
-    setColumnSearch(table.tableKey)
-    toast.success(`Generated ${nextSuggestions.length} suggestions from ${table.tableKey}`)
+      const columnById = new Map(columns.map(column => [column.id, column]))
+      const nextSuggestions = proposal.mappings.flatMap(mapping => {
+        const column = columnById.get(mapping.columnId)
+        if (!column || mapping.role === 'hidden') return []
+        const sourceKey = `${column.schemaName}.${column.tableName}.${column.columnName}`
+        if (mappedSourceKeys.has(sourceKey)) return []
+        return [{
+          id: `${mapping.columnId}:${mapping.role}`,
+          column,
+          entityName: mapping.entityName,
+          entityType: mapping.entityType,
+          fieldName: mapping.fieldName,
+          role: mapping.role,
+          confidence: Math.round(mapping.confidence * 100),
+          reason: mapping.reason,
+          metricName: mapping.metric?.name,
+          aggregation: mapping.metric?.aggregation,
+        } satisfies MappingSuggestion]
+      })
+
+      setSuggestions(nextSuggestions)
+      setRelationshipSuggestions(proposal.relationships)
+      setSelectedSuggestionIds(new Set(nextSuggestions.map(suggestion => suggestion.id)))
+      setProposalSource(source)
+      setColumnSearch('')
+      if (warning) toast.warning('AI provider was unavailable; generated a deterministic schema proposal instead.')
+      else toast.success(`Generated ${nextSuggestions.length} mappings and ${proposal.relationships.length} join proposals`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toggleSuggestion = (id: string) => {
@@ -707,7 +614,25 @@ export function SemanticModelAdminPanel() {
       }))
 
       const createdMetricSources: Array<{ suggestion: MappingSuggestion, entityId?: string, fieldId: string }> = []
+      const materializedFields = new Map<string, { entityId: string, fieldId: string }>()
+      for (const entity of entities) {
+        for (const field of entity.fields) {
+          const source = field.sourceColumn
+          const column = source ? columns.find(candidate => (
+            candidate.schemaName === source.schemaName
+            && candidate.tableName === source.tableName
+            && candidate.columnName === source.columnName
+          )) : null
+          if (column) materializedFields.set(column.id, { entityId: entity.id, fieldId: field.id })
+        }
+      }
       for (const { suggestion, payload } of mappingResults) {
+        if (typeof payload?.entity?.id === 'string' && typeof payload?.field?.id === 'string') {
+          materializedFields.set(suggestion.column.id, {
+            entityId: payload.entity.id,
+            fieldId: payload.field.id,
+          })
+        }
         if (suggestion.role === 'metric_source' && payload?.field?.id) {
           createdMetricSources.push({
             suggestion,
@@ -732,10 +657,33 @@ export function SemanticModelAdminPanel() {
         if (!response.ok) throw new Error(errorToText(payload) || `Metric suggestion failed (${response.status})`)
       }
 
-      await Promise.all([fetchEntities(selectedModel.id), fetchMetrics(selectedModel.id)])
+      let createdRelationshipCount = 0
+      for (const suggestion of relationshipSuggestions) {
+        const from = materializedFields.get(suggestion.fromColumnId)
+        const to = materializedFields.get(suggestion.toColumnId)
+        if (!from || !to || from.entityId === to.entityId) continue
+        const response = await fetch(`/api/admin/semantic-models/${selectedModel.id}/relationships`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromEntityId: from.entityId,
+            toEntityId: to.entityId,
+            fromFieldId: from.fieldId,
+            toFieldId: to.fieldId,
+            type: suggestion.type,
+            description: suggestion.reason,
+          }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) throw new Error(errorToText(payload) || `Join suggestion failed (${response.status})`)
+        createdRelationshipCount += 1
+      }
+
+      await Promise.all([fetchEntities(selectedModel.id), fetchMetrics(selectedModel.id), fetchRelationships(selectedModel.id)])
       setSuggestions(current => current.filter(suggestion => !selectedSuggestionIds.has(suggestion.id)))
+      setRelationshipSuggestions([])
       setSelectedSuggestionIds(new Set())
-      toast.success(`Applied ${selectedSuggestions.length} mappings and ${createdMetricSources.length} starter metrics`)
+      toast.success(`Applied ${selectedSuggestions.length} mappings, ${createdMetricSources.length} metrics, and ${createdRelationshipCount} joins`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -855,99 +803,6 @@ export function SemanticModelAdminPanel() {
         </dl>
       </section>
 
-      <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[var(--dos-text-primary)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Auto draft</Badge>
-              <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-muted)]">{semanticDraft.needsReview.length} to review</Badge>
-            </div>
-            <h3 className="mt-3 text-lg font-semibold">Semantic auto-draft</h3>
-            {semanticAsset ? (
-              <p className="mt-2 text-xs text-[var(--dos-text-muted)]">
-                {semanticAsset.modelName} v{semanticAsset.modelVersion} · {semanticAsset.fieldCount} fields · {semanticAsset.metricCount} metrics
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" className={SUGGESTION_BUTTON_CLASS} onClick={buildSuggestions} disabled={saving || !selectedModel || columns.length === 0}>
-              <Sparkles className="mr-2 h-4 w-4" />
-              Refresh draft
-            </Button>
-            <Button size="sm" onClick={handleApproveGuidedDraft} disabled={guidedSavingItemId === 'semantic-draft' || Boolean(semanticAsset) || semanticDraft.needsReview.length > 0 || semanticDraft.approvedFields.length === 0}>
-              {guidedSavingItemId === 'semantic-draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-              Approve and create model
-            </Button>
-          </div>
-        </div>
-        <dl className="mt-5 grid border-y border-[color:var(--dos-border-soft)] md:grid-cols-5 md:divide-x md:divide-[color:var(--dos-border-soft)]">
-          {[
-            ['Approved fields', semanticDraft.approvedFields.length],
-            ['Suggested metrics', semanticDraft.suggestedMetrics.length],
-            ['Suggested joins', semanticDraft.suggestedRelationships.length],
-            ['Hidden sensitive', semanticDraft.hiddenSensitiveFields.length],
-            ['Needs review', semanticDraft.needsReview.length],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="flex items-center justify-between gap-4 border-b border-[color:var(--dos-border-soft)] py-3 last:border-b-0 md:block md:border-b-0 md:px-4 md:first:pl-0 md:last:pr-0">
-              <dt className="text-xs text-[var(--dos-text-muted)]">{label}</dt>
-              <dd className="font-mono text-lg font-semibold text-[var(--dos-text-primary)] md:mt-2">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h4 className="text-sm font-semibold">Review queue</h4>
-              {semanticDraft.needsReview.length > 0 ? (
-                <span className="text-[11px] text-[var(--dos-text-muted)]">
-                  Next {Math.min(5, semanticDraft.needsReview.length)} of {semanticDraft.needsReview.length}
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-3 grid gap-2">
-              {semanticDraft.needsReview.length === 0 ? (
-                <p className="text-xs text-[var(--dos-text-muted)]">No unresolved review items remain in the current profile.</p>
-              ) : semanticDraft.needsReview.slice(0, 5).map(entry => (
-                <div key={entry.id} className="grid gap-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-3 py-2 text-xs sm:grid-cols-[1fr_auto]">
-                  <span>
-                    <span className="block font-medium text-[var(--dos-text-primary)]">{entry.label}</span>
-                    <span className="mt-1 block text-[var(--dos-text-muted)]">{entry.reason}</span>
-                  </span>
-                  <span className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="shrink-0 border-[color:var(--dos-border-soft)] text-[var(--dos-text-muted)]">{entry.confidence}%</Badge>
-                    <Button size="sm" variant="outline" className="h-7 border-[color:var(--dos-success)] bg-transparent px-2 text-[10px] text-[var(--dos-success-text)]" disabled={guidedSavingItemId === entry.id} onClick={() => void handleGuidedDecision(entry.id, entry.kind === 'relationship_candidate' ? 'confirm_relationship' : 'approve')}>
-                      Approve
-                    </Button>
-                    <Button size="sm" variant="outline" className="h-7 border-[color:var(--dos-warning)] bg-transparent px-2 text-[10px] text-[var(--dos-warning-text)]" disabled={guidedSavingItemId === entry.id} onClick={() => void handleGuidedDecision(entry.id, entry.kind === 'relationship_candidate' ? 'reject_relationship' : 'reject')}>
-                      Reject
-                    </Button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
-            <h4 className="text-sm font-semibold">Protected by default</h4>
-            <p className="mt-2 text-xs leading-5 text-[var(--dos-text-muted)]">
-              Sensitive-looking fields stay excluded from dashboard and AI defaults until explicitly reviewed.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {semanticDraft.hiddenSensitiveFields.slice(0, 4).map(entry => (
-                <span key={entry.id} className="inline-flex items-center gap-2 rounded-full border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] px-2 py-1 text-[11px] text-[var(--dos-warning-text)]">
-                  {entry.label}
-                  <button type="button" className="font-semibold underline-offset-2 hover:underline" disabled={guidedSavingItemId === entry.id} onClick={() => void handleGuidedDecision(entry.id, 'keep_hidden')}>
-                    keep hidden
-                  </button>
-                </span>
-              ))}
-              {semanticDraft.hiddenSensitiveFields.length === 0 ? (
-                <span className="text-xs text-[var(--dos-text-muted)]">No sensitive candidates detected in current scan.</span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(19rem,0.75fr)]">
         <Card className="min-w-0 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]">
           <CardHeader className="space-y-4">
@@ -957,10 +812,6 @@ export function SemanticModelAdminPanel() {
                 {selectedModel ? <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">{selectedModel.status}</Badge> : null}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" className={SUGGESTION_BUTTON_CLASS} onClick={buildSuggestions} disabled={saving || !selectedModel || columns.length === 0}>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Generate Suggestions
-                </Button>
                 <Button size="sm" variant="outline" className={DISABLED_BUTTON_CLASS} onClick={openMetric} disabled={saving || !selectedModel || metricFieldOptions.length === 0}>
                   <BrainCircuit className="mr-2 h-4 w-4" />
                   New Metric
@@ -992,6 +843,8 @@ export function SemanticModelAdminPanel() {
                   setProjectId(value)
                   setModelId('')
                   setSuggestions([])
+                  setRelationshipSuggestions([])
+                  setProposalSource(null)
                   if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'semantic_model')
                 }}
                 disabled={loading || projects.length === 0}
@@ -1011,6 +864,9 @@ export function SemanticModelAdminPanel() {
                 value={modelId}
                 onValueChange={(value) => {
                   setModelId(value)
+                  setSuggestions([])
+                  setRelationshipSuggestions([])
+                  setProposalSource(null)
                   setBuilderSemanticModelId(value || null)
                   if (selectedProject) {
                     setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'semantic_model')
@@ -1030,16 +886,41 @@ export function SemanticModelAdminPanel() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="space-y-1.5">
+                <Label htmlFor="semantic-objective" className="text-xs text-[var(--dos-text-muted)]">Business objective</Label>
+                <Input
+                  id="semantic-objective"
+                  className={CONTROL_CLASS}
+                  value={semanticInstruction}
+                  onChange={event => setSemanticInstruction(event.target.value)}
+                  placeholder="Describe the business questions this model should support"
+                  disabled={saving}
+                />
+              </div>
+              <Button
+                className={`${SUGGESTION_BUTTON_CLASS} self-end`}
+                variant="outline"
+                onClick={() => void buildSuggestions()}
+                disabled={saving || !selectedModel || selectedModel.status !== 'draft' || columns.length === 0 || semanticInstruction.trim().length < 3}
+              >
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                Generate proposal
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             {suggestions.length > 0 ? (
               <div className="rounded-md border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-[var(--dos-text-primary)]">Smart mapping suggestions</h3>
-                    <p className="mt-1 text-xs text-[var(--dos-text-muted)]">
-                      Review the generated fields, uncheck anything wrong, then apply. Starter metrics are created for selected metric sources.
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--dos-text-primary)]">Semantic proposal</h3>
+                      <Badge variant="outline" className="border-[color:var(--dos-accent-primary)] text-[var(--dos-accent-primary)]">
+                        {proposalSource === 'ai' ? 'AI' : 'Rules'} · {relationshipSuggestions.length} joins
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--dos-text-muted)]">Uncheck exceptions, then materialize the selected fields, metrics, and joins.</p>
                   </div>
                   <Button size="sm" onClick={handleApplySuggestions} disabled={saving || selectedSuggestions.length === 0}>
                     {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
@@ -1158,11 +1039,8 @@ export function SemanticModelAdminPanel() {
               className={CONTROL_CLASS}
               value={columnSearch}
               onChange={event => setColumnSearch(event.target.value)}
-              placeholder="Search schema, table, or column, e.g. electricity readings"
+              placeholder="Search schema, table, or column"
             />
-            <p className="text-xs leading-5 text-[var(--dos-text-muted)]">
-              Tip: type <span className="font-mono text-[var(--dos-text-secondary)]">electricity</span>, then map customers, readings, metrics, and the customer relationship.
-            </p>
           </CardHeader>
           <CardContent className="max-h-[620px] space-y-4 overflow-auto">
             {columns.length === 0 ? (
