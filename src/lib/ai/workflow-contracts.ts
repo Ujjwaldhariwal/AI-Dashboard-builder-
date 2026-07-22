@@ -4,6 +4,7 @@ export const AI_WORKFLOW_CONTRACT_VERSION = 'dashboardos.ai.workflow.v1' as cons
 
 export const AI_WORKFLOW_TYPES = [
   'semantic_mapping',
+  'dataset_planning',
   'dashboard_composition',
   'report_generation',
   'chart_refinement',

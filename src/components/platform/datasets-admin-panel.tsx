@@ -14,9 +14,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { buildDeterministicDatasetProposal, type DatasetCopilotProposal } from '@/lib/ai/dataset-copilot'
 import { demoDataset, demoDatasetPlan, demoEntities, demoMetrics, demoModel, demoProjects, demoRelationships, demoChartRows, DEMO_MODEL_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
-import { buildGuidedDatasetRecipes, type GuidedDatasetRecipe } from '@/lib/dashboardos/guided-review'
 import type { ChartCompatibilityResult, DatasetShape } from '@/types/chart-template'
 import type { BusinessFieldRole, BusinessMetric, BusinessModel, BusinessRelationship } from '@/types/semantic-model'
 import type { SemanticDataset } from '@/types/semantic-dataset'
@@ -114,7 +114,10 @@ export function DatasetsAdminPanel() {
   const [plan, setPlan] = useState<DatasetPlan | null>(null)
   const [runResult, setRunResult] = useState<DatasetRunResult | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [generatingRecipeId, setGeneratingRecipeId] = useState<string | null>(null)
+  const [datasetInstruction, setDatasetInstruction] = useState('Create a decision-ready dataset for the most important trends, comparisons, and filters.')
+  const [proposalSource, setProposalSource] = useState<'ai' | 'deterministic' | null>(null)
+  const [proposalWarnings, setProposalWarnings] = useState<string[]>([])
+  const [generating, setGenerating] = useState(false)
   const demoMode = isDashboardOsDemoMode()
 
   const selectedProject = projects.find(project => project.id === projectId)
@@ -124,12 +127,6 @@ export function DatasetsAdminPanel() {
       .filter(field => field.role !== 'hidden')
       .map(field => ({ ...field, entityName: entity.name }))
   )), [entities])
-  const guidedRecipes = useMemo(() => buildGuidedDatasetRecipes({
-    fields: fieldOptions,
-    metrics,
-    relationships,
-  }), [fieldOptions, metrics, relationships])
-
   const fetchProjects = useCallback(async () => {
     if (demoMode) {
       setProjects(demoProjects)
@@ -232,63 +229,54 @@ export function DatasetsAdminPanel() {
     setValues(values.includes(value) ? values.filter(item => item !== value) : [...values, value])
   }
 
-  const applyRecipe = (recipe: GuidedDatasetRecipe) => {
-    const recipeFieldIds = fieldOptions
-      .filter(field => recipe.suggestedFieldLabels.includes(field.name))
-      .map(field => field.id)
-    const recipeMetricIds = metrics
-      .filter(metric => recipe.suggestedMetricLabels.includes(metric.name))
-      .map(metric => metric.id)
-    setName(recipe.title)
-    setFieldIds(recipeFieldIds)
-    setMetricIds(recipeMetricIds)
-    setRelationshipIds(relationships.slice(0, 2).map(relationship => relationship.id))
-    toast.success(`Recipe selected: ${recipe.title}`)
-  }
-
-  const handleGenerateRecipeDraft = async (recipe: GuidedDatasetRecipe) => {
+  const handleGenerateProposal = async () => {
     if (!selectedProject || !modelId) {
-      toast.error('Select an approved model before generating a dataset draft')
+      toast.error('Select an approved semantic model before generating a dataset')
       return
     }
-    setGeneratingRecipeId(recipe.id)
+    if (datasetInstruction.trim().length < 3) {
+      toast.error('Describe the business outcome for this dataset')
+      return
+    }
+    setGenerating(true)
     try {
+      let proposal: DatasetCopilotProposal
+      let source: 'ai' | 'deterministic'
+      let warning: string | undefined
       if (demoMode) {
-        applyRecipe(recipe)
-        const dataset: SemanticDataset = {
-          ...demoDataset,
-          id: `demo-guided-dataset-${Date.now()}`,
-          name: recipe.title,
-          status: 'draft',
-          updatedAt: new Date().toISOString(),
-        }
-        setDatasets(current => [dataset, ...current])
-        toast.success('Demo dataset draft created')
-        return
+        proposal = buildDeterministicDatasetProposal({
+          instruction: datasetInstruction,
+          fields: fieldOptions.map(field => ({ ...field, entityId: entities.find(entity => entity.name === field.entityName)?.id ?? '' })),
+          metrics: metrics.map(metric => ({ ...metric, entityId: metric.entityId ?? null })),
+          relationships,
+        })
+        source = 'deterministic'
+      } else {
+        const response = await fetch(`/api/admin/semantic-models/${modelId}/dataset-proposal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction: datasetInstruction }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload?.proposal) throw new Error(errorToText(payload) || `Dataset proposal failed (${response.status})`)
+        proposal = payload.proposal as DatasetCopilotProposal
+        source = payload.source === 'ai' ? 'ai' : 'deterministic'
+        warning = typeof payload.warning === 'string' ? payload.warning : undefined
       }
-      const response = await fetch('/api/admin/guided-review/dataset-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: selectedProject.tenantId,
-          projectId: selectedProject.id,
-          modelId,
-          recipeId: recipe.id,
-        }),
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok) throw new Error(errorToText(payload))
-      if (payload?.dataset) {
-        const dataset = payload.dataset as SemanticDataset
-        setDatasets(current => [dataset, ...current])
-        setBuilderScope({ tenantId: selectedProject.tenantId, projectId: selectedProject.id }, 'charts')
-        setBuilderSemanticModelId(modelId)
-      }
-      toast.success('Dataset draft created')
+
+      setName(proposal.name)
+      setFieldIds(proposal.fieldIds)
+      setMetricIds(proposal.metricIds)
+      setRelationshipIds(proposal.relationshipIds)
+      setProposalSource(source)
+      setProposalWarnings(proposal.warnings)
+      setAdvancedOpen(false)
+      if (warning) toast.warning('AI provider was unavailable; generated a governed rules-based proposal instead.')
+      else toast.success(`Proposed ${proposal.fieldIds.length} fields, ${proposal.metricIds.length} metrics, and ${proposal.relationshipIds.length} joins`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
-      setGeneratingRecipeId(null)
+      setGenerating(false)
     }
   }
 
@@ -305,7 +293,7 @@ export function DatasetsAdminPanel() {
           id: `demo-dataset-${Date.now()}`,
           name: name.trim() || demoDataset.name,
           selection: { fieldIds, metricIds, relationshipIds },
-          status: 'published',
+          status: 'draft',
           updatedAt: new Date().toISOString(),
         }
         setDatasets(current => [dataset, ...current])
@@ -322,6 +310,7 @@ export function DatasetsAdminPanel() {
           projectId: selectedProject.id,
           modelId,
           name,
+          description: `Generated for: ${datasetInstruction.trim()}`,
           fieldIds,
           metricIds,
           relationshipIds,
@@ -336,6 +325,8 @@ export function DatasetsAdminPanel() {
       setFieldIds([])
       setMetricIds([])
       setRelationshipIds([])
+      setProposalSource(null)
+      setProposalWarnings([])
       toast.success('Dataset created')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
@@ -457,57 +448,49 @@ export function DatasetsAdminPanel() {
           <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Dataset registry</p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--dos-text-primary)]">Governed dataset workbench</h2>
         </div>
-        <div className="flex gap-5 text-xs text-[var(--dos-text-muted)]"><span><strong className="font-mono text-[var(--dos-text-primary)]">{datasets.length}</strong> datasets</span><span><strong className="font-mono text-[var(--dos-text-primary)]">{guidedRecipes.length}</strong> recipes</span></div>
+        <div className="flex gap-5 text-xs text-[var(--dos-text-muted)]"><span><strong className="font-mono text-[var(--dos-text-primary)]">{datasets.length}</strong> datasets</span><span><strong className="font-mono text-[var(--dos-text-primary)]">{approvedModels.length}</strong> approved models</span></div>
       </section>
 
       <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 text-[var(--dos-text-primary)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <Badge className="bg-[var(--dos-success-soft)] text-[var(--dos-success-text)] hover:bg-[var(--dos-success-soft)]">Auto proposals</Badge>
-            <h3 className="mt-3 text-lg font-semibold">Dataset proposals</h3>
+            <h3 className="text-lg font-semibold">Dataset Copilot</h3>
+            {proposalSource ? <Badge variant="outline" className="mt-2 border-[color:var(--dos-accent-primary)] text-[var(--dos-accent-primary)]">{proposalSource === 'ai' ? 'AI proposal' : 'Rules fallback'}</Badge> : null}
           </div>
-          <Button variant="outline" onClick={() => setAdvancedOpen(open => !open)}>
-            {advancedOpen ? 'Hide advanced' : 'Customize manually'}
+          <Button variant="outline" onClick={() => setAdvancedOpen(open => !open)} disabled={!modelId}>
+            {advancedOpen ? 'Close field editor' : 'Edit fields'}
           </Button>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          {guidedRecipes.length === 0 ? (
-            <div className="rounded-md border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-5 text-sm text-[var(--dos-text-muted)] lg:col-span-3">
-              Approve a semantic model with at least one metric to generate recipes.
-            </div>
-          ) : guidedRecipes.map(recipe => (
-            <div
-              key={recipe.id}
-              className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4 transition-colors hover:border-[var(--dos-accent-primary)]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--dos-text-primary)]">{recipe.title}</p>
-                  <p className="mt-2 text-xs leading-5 text-[var(--dos-text-muted)]">{recipe.description}</p>
-                </div>
-                <Badge variant="outline" className="border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)]">{recipe.confidence}%</Badge>
-              </div>
-              <p className="mt-3 text-[11px] text-[var(--dos-text-muted)]">
-                {recipe.suggestedMetricLabels.slice(0, 3).join(', ') || 'Metrics pending'}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => void handleGenerateRecipeDraft(recipe)} disabled={generatingRecipeId === recipe.id || !modelId}>
-                  {generatingRecipeId === recipe.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                  Generate draft
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => applyRecipe(recipe)}>
-                  Review manually
-                </Button>
-              </div>
-            </div>
-          ))}
+        <div className="mt-4 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="space-y-1.5">
+            <Label htmlFor="dataset-objective" className="text-xs text-[var(--dos-text-muted)]">Business request</Label>
+            <Input
+              id="dataset-objective"
+              value={datasetInstruction}
+              onChange={event => setDatasetInstruction(event.target.value)}
+              placeholder="Example: compare monthly revenue by region and customer segment"
+              disabled={generating}
+            />
+          </div>
+          <Button className="self-end" onClick={() => void handleGenerateProposal()} disabled={generating || !modelId || datasetInstruction.trim().length < 3}>
+            {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            Generate proposal
+          </Button>
         </div>
+        {proposalSource ? (
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[color:var(--dos-border-soft)] pt-4 text-xs text-[var(--dos-text-muted)]">
+            <span><strong className="font-mono text-[var(--dos-text-primary)]">{fieldIds.length}</strong> fields</span>
+            <span><strong className="font-mono text-[var(--dos-text-primary)]">{metricIds.length}</strong> metrics</span>
+            <span><strong className="font-mono text-[var(--dos-text-primary)]">{relationshipIds.length}</strong> joins</span>
+            {proposalWarnings.map(warning => <span key={warning} className="text-[var(--dos-warning-text)]">{warning}</span>)}
+          </div>
+        ) : null}
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
         <Card className={advancedOpen ? 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)]' : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)] opacity-90'}>
           <CardHeader>
-            <CardTitle className="text-sm">{advancedOpen ? 'Advanced dataset customization' : 'Review selected recipe'}</CardTitle>
+            <CardTitle className="text-sm">{advancedOpen ? 'Field-level editor' : 'Review generated dataset'}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -518,6 +501,8 @@ export function DatasetsAdminPanel() {
                   const selected = projects.find(project => project.id === value)
                   setProjectId(value)
                   setModelId('')
+                  setProposalSource(null)
+                  setProposalWarnings([])
                   if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'charts')
                 }}
                 disabled={loading || projects.length === 0}
@@ -536,6 +521,8 @@ export function DatasetsAdminPanel() {
                 value={modelId}
                 onValueChange={(value) => {
                   setModelId(value)
+                  setProposalSource(null)
+                  setProposalWarnings([])
                   setBuilderSemanticModelId(value || null)
                 }}
                 disabled={approvedModels.length === 0}
@@ -550,7 +537,7 @@ export function DatasetsAdminPanel() {
             </div>
             <div className="space-y-2">
               <Label>Name</Label>
-              <Input value={name} onChange={event => setName(event.target.value)} placeholder="Executive Revenue Dataset" />
+              <Input value={name} onChange={event => setName(event.target.value)} placeholder="Business analysis dataset" />
             </div>
             <div className={advancedOpen ? 'space-y-2' : 'hidden'}>
               <Label>Fields</Label>
@@ -615,11 +602,11 @@ export function DatasetsAdminPanel() {
             </div>
             <Button onClick={handleCreate} disabled={saving || !modelId || !name.trim() || (fieldIds.length === 0 && metricIds.length === 0)}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Create reviewed dataset
+              Create dataset draft
             </Button>
             {!advancedOpen ? (
               <div className="rounded-md border border-white/10 bg-slate-950/50 p-3 text-xs leading-5 text-slate-400">
-                Current draft: {fieldIds.length} fields, {metricIds.length} metrics, {relationshipIds.length} joins. Use Customize manually for raw field selection.
+                Current proposal: {fieldIds.length} fields, {metricIds.length} metrics, {relationshipIds.length} joins.
               </div>
             ) : null}
             {approvedModels.length === 0 ? (

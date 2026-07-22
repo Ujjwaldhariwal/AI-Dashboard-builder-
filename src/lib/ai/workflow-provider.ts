@@ -12,6 +12,7 @@ type EnvLike = Record<string, string | undefined>
 
 const WORKFLOW_ENV_KEYS: Record<AiWorkflowType, string> = {
   semantic_mapping: 'SEMANTIC',
+  dataset_planning: 'DATASET',
   dashboard_composition: 'DASHBOARD',
   report_generation: 'REPORT',
   chart_refinement: 'CHART',
