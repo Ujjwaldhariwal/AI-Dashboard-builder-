@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { buildDeterministicChartSuiteProposal, ChartSuiteCopilotProposalSchema } from '@/lib/ai/chart-suite-copilot'
 import { AI_WORKFLOW_CONTRACT_VERSION, AiWorkflowRequestSchema } from '@/lib/ai/workflow-contracts'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
+import { classifyAiWorkflowFallback } from '@/lib/ai/workflow-fallback'
 import { createAiWorkflowProposal, failAiWorkflowRun, markAiWorkflowAwaitingReview, startAiWorkflowRun } from '@/lib/ai/workflow-runs'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
@@ -123,9 +124,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json({ proposalId: saved.id, proposal: checked.proposal, validation, source: 'ai' })
     } catch (aiError) {
       const message = aiError instanceof Error ? aiError.message : 'Chart suite AI generation failed'
+      const fallback = classifyAiWorkflowFallback(aiError)
       if (run) await failAiWorkflowRun({ supabase: auth.supabase, runId: run.id, tenantId, projectId, errorCode: 'chart_suite_generation_failed', errorMessage: message, latencyMs: Date.now() - startedAt }).catch(() => undefined)
       const checked = validate(deterministic)
-      return NextResponse.json({ proposalId: null, proposal: checked.proposal, validation: { state: checked.state, issues: checked.issues }, source: 'deterministic', warning: message.slice(0, 500) })
+      return NextResponse.json({
+        proposalId: null,
+        proposal: checked.proposal,
+        validation: { state: checked.state, issues: checked.issues },
+        source: 'deterministic',
+        warning: message.slice(0, 500),
+        fallback,
+      })
     }
   } catch (error) {
     return NextResponse.json({ proposal: null, error: error instanceof Error ? error.message : String(error) }, { status: 500 })

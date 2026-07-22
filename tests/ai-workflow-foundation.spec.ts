@@ -13,6 +13,7 @@ import {
   mapAiWorkflowRun,
 } from '../src/lib/ai/workflow-runs'
 import { resolveAiWorkflowModelSelection } from '../src/lib/ai/workflow-provider'
+import { classifyAiWorkflowFallback } from '../src/lib/ai/workflow-fallback'
 
 const tenantId = '11111111-1111-4111-8111-111111111111'
 const projectId = '22222222-2222-4222-8222-222222222222'
@@ -114,6 +115,24 @@ test.describe('governed AI workflow foundation', () => {
         AI_MODEL: 'local-model',
       },
     })).toThrow('AI_COMPATIBLE_BASE_URL')
+  })
+
+  test('distinguishes missing workflow storage from an AI provider outage', () => {
+    expect(classifyAiWorkflowFallback(new Error('relation "ai_workflow_runs" does not exist'))).toMatchObject({
+      reason: 'setup_required',
+      migrations: [
+        '20260716090000_ai_workflow_foundation.sql',
+        '20260722090000_dataset_planning_workflow.sql',
+      ],
+    })
+    expect(classifyAiWorkflowFallback(new Error('Missing Google AI key.'))).toMatchObject({
+      reason: 'provider_configuration',
+      migrations: [],
+    })
+    expect(classifyAiWorkflowFallback(new Error('429 quota exceeded'))).toMatchObject({
+      reason: 'provider_unavailable',
+      migrations: [],
+    })
   })
 
   test('maps persisted run rows without exposing untracked columns', () => {

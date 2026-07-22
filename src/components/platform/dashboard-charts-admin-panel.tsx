@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { buildDeterministicChartSuiteProposal, type ChartSuiteCopilotProposal } from '@/lib/ai/chart-suite-copilot'
+import type { AiWorkflowFallback } from '@/lib/ai/workflow-fallback'
 import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
 import { demoChart, demoChartAudit, demoCharts, demoDataset, demoDatasetPlan, demoProjects, DEMO_TENANT_ID, DEMO_PROJECT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
@@ -204,6 +205,7 @@ export function DashboardChartsAdminPanel() {
   const [suiteInstruction, setSuiteInstruction] = useState('Create 5 charts: KPI summaries, a time trend, and the most useful business comparisons.')
   const [suiteProposal, setSuiteProposal] = useState<ChartSuiteCopilotProposal | null>(null)
   const [suiteSource, setSuiteSource] = useState<'ai' | 'deterministic' | null>(null)
+  const [suiteFallback, setSuiteFallback] = useState<AiWorkflowFallback | null>(null)
   const [generatingSuite, setGeneratingSuite] = useState(false)
   const [applyingSuite, setApplyingSuite] = useState(false)
   const demoMode = isDashboardOsDemoMode()
@@ -417,7 +419,7 @@ export function DashboardChartsAdminPanel() {
     try {
       let proposal: ChartSuiteCopilotProposal
       let source: 'ai' | 'deterministic'
-      let warning: string | undefined
+      let fallback: AiWorkflowFallback | null = null
       if (demoMode) {
         proposal = buildDeterministicChartSuiteProposal({
           instruction: suiteInstruction,
@@ -437,11 +439,14 @@ export function DashboardChartsAdminPanel() {
         if (!response.ok || !payload?.proposal) throw new Error(errorToText(payload) || `Chart suite proposal failed (${response.status})`)
         proposal = payload.proposal as ChartSuiteCopilotProposal
         source = payload.source === 'ai' ? 'ai' : 'deterministic'
-        warning = typeof payload.warning === 'string' ? payload.warning : undefined
+        fallback = payload.fallback && typeof payload.fallback === 'object'
+          ? payload.fallback as AiWorkflowFallback
+          : null
       }
       setSuiteProposal(proposal)
       setSuiteSource(source)
-      if (warning) toast.warning('AI provider was unavailable; generated a compatible rules-based suite instead.')
+      setSuiteFallback(fallback)
+      if (fallback) toast.warning(fallback.message)
       else toast.success(`Generated ${proposal.charts.length} editable chart drafts`)
     } catch (error) {
       toast.error(errorToText(error))
@@ -665,6 +670,13 @@ export function DashboardChartsAdminPanel() {
                 </span>
               ))}
             </div>
+            {[...(suiteFallback ? [suiteFallback.message] : []), ...suiteProposal.warnings].length > 0 ? (
+              <div className="mt-3 rounded-md border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] px-3 py-2 text-xs text-[var(--dos-warning-text)]">
+                {[...(suiteFallback ? [suiteFallback.message] : []), ...suiteProposal.warnings].map(message => (
+                  <p key={message}>{message}</p>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -689,6 +701,7 @@ export function DashboardChartsAdminPanel() {
                   setTemplateId('')
                   setSuiteProposal(null)
                   setSuiteSource(null)
+                  setSuiteFallback(null)
                   if (selected) setBuilderScope({ tenantId: selected.tenantId, projectId: selected.id }, 'charts')
                 }}>
                   <SelectTrigger className="border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)]">
