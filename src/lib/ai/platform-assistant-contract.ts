@@ -4,8 +4,8 @@ export const PLATFORM_ASSISTANT_INTENT_STORAGE_KEY = 'dashboardos:assistant-inte
 
 const PlatformAssistantActionObjectSchema = z.object({
   action: z.literal('navigate_workflow'),
-  target: z.enum(['data_sources', 'semantic_model', 'datasets', 'charts', 'publishing', 'builder']),
-  path: z.enum(['/admin/data-sources', '/admin/semantic-model', '/admin/datasets', '/admin/charts', '/admin/publishing', '/builder']),
+  target: z.enum(['autopilot', 'data_sources', 'semantic_model', 'datasets', 'charts', 'publishing', 'builder']),
+  path: z.enum(['/admin/autopilot', '/admin/data-sources', '/admin/semantic-model', '/admin/datasets', '/admin/charts', '/admin/publishing', '/builder']),
   label: z.string().trim().min(2).max(80),
   reason: z.string().trim().min(2).max(300),
   instruction: z.string().trim().min(3).max(2_000).optional(),
@@ -13,6 +13,7 @@ const PlatformAssistantActionObjectSchema = z.object({
 
 function validateTargetPath(action: z.infer<typeof PlatformAssistantActionObjectSchema>, context: z.RefinementCtx) {
   const expectedPath = {
+    autopilot: '/admin/autopilot',
     data_sources: '/admin/data-sources',
     semantic_model: '/admin/semantic-model',
     datasets: '/admin/datasets',

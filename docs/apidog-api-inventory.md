@@ -1275,6 +1275,24 @@ Response:
 
 ## Governed Automation and Operations
 
+### `GET /api/admin/projects/{id}/autopilot`
+
+Purpose: retrieve the latest durable Autopilot run and resumable step state for an authorized project.
+
+Auth: authenticated project member with matching tenant and project scope.
+
+### `POST /api/admin/projects/{id}/autopilot`
+
+Purpose: validate one dashboard brief and create or reuse an idempotent governed Autopilot run.
+
+Auth: authenticated project editor with matching tenant and project scope.
+
+### `POST /api/admin/projects/{id}/autopilot/execute`
+
+Purpose: execute or resume safe Autopilot steps, pausing at semantic approval and final publishing gates.
+
+Auth: authenticated project editor with matching tenant and project scope.
+
 ### `DELETE /api/admin/data-sources/{id}`
 
 Purpose: remove a project data source and its dependent inventory after editor confirmation.

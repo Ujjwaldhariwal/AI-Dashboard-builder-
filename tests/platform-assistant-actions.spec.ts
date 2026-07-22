@@ -9,10 +9,10 @@ test.describe('platform assistant actions', () => {
   test('accepts bounded navigation and prefill actions', () => {
     const action = PlatformAssistantActionSchema.parse({
       action: 'navigate_workflow',
-      target: 'charts',
-      path: '/admin/charts',
-      label: 'Compose dashboard charts',
-      reason: 'Open the chart workbench with the approved requirement ready for review.',
+      target: 'autopilot',
+      path: '/admin/autopilot',
+      label: 'Build dashboard',
+      reason: 'Open Autopilot with the business requirement ready to run.',
       instruction: 'Create 6 charts with 2 KPIs and monthly regional trends.',
     })
     const intent = PlatformAssistantIntentSchema.parse({
@@ -22,7 +22,7 @@ test.describe('platform assistant actions', () => {
       createdAt: '2026-07-22T00:00:00.000Z',
     })
 
-    expect(intent.target).toBe('charts')
+    expect(intent.target).toBe('autopilot')
     expect(intent.instruction).toContain('6 charts')
   })
 
@@ -49,6 +49,7 @@ test.describe('platform assistant actions', () => {
     const semantic = readFileSync(join(process.cwd(), 'src/components/platform/semantic-model-admin-panel.tsx'), 'utf8')
     const datasets = readFileSync(join(process.cwd(), 'src/components/platform/datasets-admin-panel.tsx'), 'utf8')
     const charts = readFileSync(join(process.cwd(), 'src/components/platform/dashboard-charts-admin-panel.tsx'), 'utf8')
+    const autopilot = readFileSync(join(process.cwd(), 'src/components/platform/project-autopilot-panel.tsx'), 'utf8')
 
     expect(route).toContain('loadPlatformWorkflowSnapshot')
     expect(route).toContain('PlatformAssistantActionSchema.safeParse')
@@ -59,5 +60,8 @@ test.describe('platform assistant actions', () => {
     expect(semantic).toContain("readPlatformAssistantIntent('semantic_model')")
     expect(datasets).toContain("readPlatformAssistantIntent('datasets')")
     expect(charts).toContain("readPlatformAssistantIntent('charts')")
+    expect(autopilot).toContain("readPlatformAssistantIntent('autopilot')")
+    expect(dock).toContain("target: 'autopilot'")
+    expect(route).toContain('autopilot|data_sources')
   })
 })

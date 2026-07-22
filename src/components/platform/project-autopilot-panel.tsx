@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
 import type { ChartTemplateId } from '@/types/chart-template'
 import type { ProjectAutopilotRun, ProjectAutopilotStepPlan } from '@/types/project-autopilot'
 
@@ -65,6 +66,13 @@ export function ProjectAutopilotPanel() {
 
   const selectedProject = useMemo(() => projects.find(project => project.id === projectId) ?? null, [projectId, projects])
 
+  useEffect(() => {
+    const intent = readPlatformAssistantIntent('autopilot')
+    if (!intent) return
+    setProjectId(intent.projectId)
+    if (intent.instruction) setObjective(intent.instruction)
+  }, [])
+
   const loadLatest = async (project: ProjectOption) => {
     const response = await fetch(`/api/admin/projects/${project.id}/autopilot?tenantId=${encodeURIComponent(project.tenantId)}`, { cache: 'no-store' })
     const payload = await response.json().catch(() => null)
@@ -88,7 +96,7 @@ export function ProjectAutopilotPanel() {
         const next = Array.isArray(payload?.projects) ? payload.projects as ProjectOption[] : []
         if (!active) return
         setProjects(next)
-        setProjectId(current => current || next[0]?.id || '')
+        setProjectId(current => next.some(project => project.id === current) ? current : next[0]?.id || '')
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error))
       } finally {

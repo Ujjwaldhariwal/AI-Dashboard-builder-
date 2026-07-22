@@ -49,7 +49,7 @@ function localHelpAnswer(prompt: string, pagePath: string, hasScope: boolean) {
     return `A dataset is the governed query shape behind one or more charts. Autopilot should generate it from approved fields and metrics; use the dataset page for advanced inspection.${scopeNote}`
   }
   if (normalized.includes('chart') || normalized.includes('dashboard')) {
-    return `Use a Dashboard Brief to specify the required chart count and types. Autopilot maps them to real fields, and every generated chart remains editable manually or through natural language.${scopeNote}`
+    return `Describe the required dashboard in Autopilot, including audience, chart count, and preferred visuals. It maps the brief to governed semantics, a dataset, and editable charts, while keeping semantic approval and publishing under human control.${scopeNote}`
   }
   if (normalized.includes('next')) {
     return `You are on ${pagePath}. Help with the current task and keep answers concise.${scopeNote}`
@@ -60,6 +60,8 @@ function localHelpAnswer(prompt: string, pagePath: string, hasScope: boolean) {
 function localHelpAction(prompt: string, stage: string): PlatformAssistantAction | null {
   const normalized = prompt.toLowerCase()
   const requestInstruction = /create|generate|build|plan|compose/.test(normalized) ? prompt : undefined
+  const requestsDashboardBuild = Boolean(requestInstruction) && /dashboard|brief|autopilot/.test(normalized)
+  if (requestsDashboardBuild) return { action: 'navigate_workflow', target: 'autopilot', path: '/admin/autopilot', label: 'Open Autopilot', reason: 'Turn this brief into governed semantics, a dataset, and editable chart drafts.', instruction: requestInstruction }
   if (normalized.includes('semantic')) return { action: 'navigate_workflow', target: 'semantic_model', path: '/admin/semantic-model', label: 'Open semantic workbench', reason: 'Review or generate the governed business model.', ...(requestInstruction ? { instruction: requestInstruction } : {}) }
   if (normalized.includes('dataset')) return { action: 'navigate_workflow', target: 'datasets', path: '/admin/datasets', label: 'Open dataset workbench', reason: 'Generate a governed dataset proposal from an approved model.', ...(requestInstruction ? { instruction: requestInstruction } : {}) }
   if (normalized.includes('chart') || normalized.includes('dashboard')) return { action: 'navigate_workflow', target: 'charts', path: '/admin/charts', label: 'Open dashboard composer', reason: 'Generate an editable chart suite from the business requirement.', ...(requestInstruction ? { instruction: requestInstruction } : {}) }
@@ -68,8 +70,8 @@ function localHelpAction(prompt: string, stage: string): PlatformAssistantAction
   if (!normalized.includes('next')) return null
   if (stage === 'user' || stage === 'tenant') return { action: 'navigate_workflow', target: 'data_sources', path: '/admin/data-sources', label: 'Start with a data source', reason: 'Attach the project database before modeling analytics.' }
   if (stage === 'data_source') return { action: 'navigate_workflow', target: 'data_sources', path: '/admin/data-sources', label: 'Continue with data sources', reason: 'Confirm the database and selected table inventory.' }
-  if (stage === 'semantic_model') return { action: 'navigate_workflow', target: 'semantic_model', path: '/admin/semantic-model', label: 'Continue with semantics', reason: 'Generate and approve the business model.' }
-  if (stage === 'charts') return { action: 'navigate_workflow', target: 'datasets', path: '/admin/datasets', label: 'Continue with datasets', reason: 'Generate a governed dataset from the approved model.' }
+  if (stage === 'semantic_model') return { action: 'navigate_workflow', target: 'autopilot', path: '/admin/autopilot', label: 'Continue in Autopilot', reason: 'Generate the governed model and pause only for semantic approval.' }
+  if (stage === 'charts') return { action: 'navigate_workflow', target: 'autopilot', path: '/admin/autopilot', label: 'Continue in Autopilot', reason: 'Generate the dataset and editable chart suite from one brief.' }
   if (stage === 'dashboard') return { action: 'navigate_workflow', target: 'charts', path: '/admin/charts', label: 'Continue with charts', reason: 'Compose and review editable chart drafts.' }
   return { action: 'navigate_workflow', target: 'publishing', path: '/admin/publishing', label: 'Review publishing readiness', reason: 'Validate the release before explicit publication.' }
 }

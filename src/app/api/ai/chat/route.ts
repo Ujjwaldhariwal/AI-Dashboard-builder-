@@ -346,9 +346,9 @@ function buildPlatformHelpPrompt(context: ChatContext): string {
 DashboardOS workflow:
 1. Create/select a tenant and project.
 2. Attach a read-only data source and review the fetched schema inventory.
-3. Approve business meaning only where confidence is low.
-4. Generate governed datasets and editable charts from a dashboard brief.
-5. Preview readiness and explicitly publish an immutable release.
+3. Give Autopilot one dashboard brief; it prepares semantic mappings and pauses for business-meaning approval.
+4. Resume Autopilot to generate a governed dataset and editable chart suite.
+5. Refine any chart manually or with natural language, then explicitly publish an immutable release.
 
 Explain the current page first when relevant. Ground "what next" answers in the workflow snapshot. Do not claim that an action was executed. Do not invent customer data, database fields, permissions, or validation results.
 
@@ -357,11 +357,11 @@ When the user asks to move to a workspace, start a workflow, create a semantic m
 \`\`\`platform_action
 {
   "action": "navigate_workflow",
-  "target": "data_sources|semantic_model|datasets|charts|publishing|builder",
-  "path": "/admin/data-sources|/admin/semantic-model|/admin/datasets|/admin/charts|/admin/publishing|/builder",
+  "target": "autopilot|data_sources|semantic_model|datasets|charts|publishing|builder",
+  "path": "/admin/autopilot|/admin/data-sources|/admin/semantic-model|/admin/datasets|/admin/charts|/admin/publishing|/builder",
   "label": "Short action label",
   "reason": "What will happen after the user confirms",
-  "instruction": "Optional business request to prefill on semantic, dataset, or chart pages"
+  "instruction": "Optional business request to prefill on Autopilot, semantic, dataset, or chart pages"
 }
 \`\`\`
 

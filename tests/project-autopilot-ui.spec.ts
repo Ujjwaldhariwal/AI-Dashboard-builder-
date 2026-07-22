@@ -11,6 +11,7 @@ test.describe('project autopilot workspace', () => {
     expect(panel).toContain('Start Autopilot')
     expect(panel).toContain('Resume Autopilot')
     expect(panel).toContain('/autopilot/execute')
+    expect(panel).toContain("readPlatformAssistantIntent('autopilot')")
     expect(panel).toContain('Review and publish')
     expect(panel).not.toContain('Step 1 of')
     expect(shell).toContain("href: '/admin/autopilot'")
