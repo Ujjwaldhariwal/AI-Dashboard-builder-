@@ -31,7 +31,10 @@ function routePathFromFile(filePath) {
 
 function routeMethods(filePath) {
   const source = readFileSync(filePath, 'utf8')
-  return Array.from(source.matchAll(methodPattern)).map(match => match[1])
+  const directMethods = Array.from(source.matchAll(methodPattern)).map(match => match[1])
+  const reexportMethods = Array.from(source.matchAll(/export\s*\{([^}]+)\}\s*from/g))
+    .flatMap(match => match[1].match(/\b(GET|POST|PATCH|PUT|DELETE)\b/g) ?? [])
+  return [...new Set([...directMethods, ...reexportMethods])]
 }
 
 const actual = apiRoots

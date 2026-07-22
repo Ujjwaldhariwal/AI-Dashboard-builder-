@@ -1273,6 +1273,66 @@ Response:
 }
 ```
 
+## Governed Automation and Operations
+
+### `DELETE /api/admin/data-sources/{id}`
+
+Purpose: remove a project data source and its dependent inventory after editor confirmation.
+
+### `GET /api/admin/dashboard-charts/ai-refinement-rollout`
+
+Purpose: inspect effective global, tenant, project, and user rollout policies for AI chart refinement.
+
+### `PATCH /api/admin/dashboard-charts/ai-refinement-rollout`
+
+Purpose: create, update, or clear a scoped AI refinement rollout override.
+
+### `GET /api/admin/dashboard-charts/ai-refinement-summary`
+
+Purpose: return privacy-safe aggregate refinement outcomes for the selected project and time window.
+
+### `GET /api/admin/guided-review/profile`
+
+Purpose: retrieve the persisted schema review profile for a project.
+
+### `PATCH /api/admin/guided-review/profile`
+
+Purpose: persist a bounded review decision or approve the reviewed semantic draft.
+
+### `POST /api/admin/guided-review/dataset-draft`
+
+Purpose: materialize a deterministic dataset draft from a persisted governed recipe.
+
+### `POST /api/admin/guided-review/dashboard-draft`
+
+Purpose: reserved legacy composition endpoint; currently fails closed with `409` and performs no writes while the active chart-suite composer handles reviewed draft creation.
+
+### `GET /api/admin/guided-review/publish-readiness`
+
+Purpose: recompute persisted dashboard, chart, preview, and release blockers for a project before publication.
+
+### `GET /api/admin/schema-profiles`
+
+Purpose: retrieve versioned, masked schema-intelligence profiles for authorized project sources.
+
+### `POST /api/admin/semantic-models/{id}/ai-proposal`
+
+Purpose: propose mappings, metrics, and joins from only the confirmed schema relations; the proposal requires review before materialization.
+
+### `POST /api/admin/semantic-models/{id}/dataset-proposal`
+
+Purpose: convert a business request into a reviewed field, metric, and relationship selection from an approved semantic model.
+
+### `POST /api/admin/datasets/{id}/chart-suite-proposal`
+
+Purpose: convert dashboard requirements into a compatibility-validated suite of editable chart drafts for a published dataset.
+
+### `POST /api/admin/dashboard-charts/batch`
+
+Purpose: validate a complete chart suite and atomically materialize all drafts through `create_dashboard_chart_drafts`; any invalid chart leaves the database unchanged.
+
+All endpoints above require an authenticated project context. Mutating endpoints require editor access and preserve tenant/project scope.
+
 ## Apidog Sprint Notes
 
 When we do the Apidog import sprint:
