@@ -212,11 +212,30 @@ class Query {
   }
 }
 
-function createSupabase(tables: Record<string, Record<string, unknown>[]>) {
+function createSupabase(tables: Record<string, Record<string, unknown>[]>, missingGuidedReviewSchema = false) {
   return {
     from(table: string) {
+      if (missingGuidedReviewSchema && table === 'guided_schema_profiles') {
+        return new MissingTableQuery()
+      }
       return new Query(tables[table] ?? [])
     },
+  }
+}
+
+class MissingTableQuery {
+  select() { return this }
+  order() { return this }
+  eq() { return this }
+  limit() { return this }
+  then(resolve: (value: { data: null; error: { code: string; message: string } }) => void) {
+    resolve({
+      data: null,
+      error: {
+        code: 'PGRST205',
+        message: "Could not find the table 'public.guided_schema_profiles' in the schema cache",
+      },
+    })
   }
 }
 
@@ -286,5 +305,23 @@ test.describe('guided publish preflight', () => {
     expect(first.readiness.publishEligible).toBe(false)
     expect(second.readiness.publishEligible).toBe(true)
     expect(second.readiness.evaluatedAt).toBe('2026-07-13T02:05:00.000Z')
+  })
+
+  test('keeps project assets visible and fails closed when guided review storage is not migrated', async () => {
+    const result = await evaluateGuidedPublishReadinessForProject({
+      supabase: createSupabase(seededTables(), true) as never,
+      projectId,
+      selectedDashboardId: dashboardId,
+      selectedVersionId: versionId,
+      evaluatedAt: '2026-07-13T02:10:00.000Z',
+    })
+
+    expect(result.readiness.publishEligible).toBe(false)
+    expect(result.readiness.blockers.find(check => check.id === 'schema_introspection')?.message)
+      .toContain('20260713090000_guided_review_state.sql')
+    expect(result.metadata.guidedReviewStorage).toBe('migration_required')
+    expect(result.metadata.dashboardCount).toBe(1)
+    expect(result.metadata.chartCount).toBe(1)
+    expect(result.metadata.slotCount).toBe(1)
   })
 })

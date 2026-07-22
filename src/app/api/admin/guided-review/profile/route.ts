@@ -8,6 +8,11 @@ import {
   updateGuidedProfileDecision,
 } from '@/lib/dashboardos/guided-review-store'
 import { GuidedReviewStateConflictError } from '@/lib/dashboardos/guided-review'
+import {
+  GUIDED_REVIEW_SETUP_MESSAGE,
+  GUIDED_REVIEW_STATE_MIGRATION,
+  isMissingGuidedReviewSchema,
+} from '@/lib/dashboardos/guided-review-schema'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 
@@ -45,10 +50,6 @@ const ApprovalSchema = z.object({
   action: z.literal('approve_semantic_draft'),
 }).strict()
 
-function isMissingGuidedSchema(message: string) {
-  return /relation .*guided_schema_profiles.* does not exist|schema cache|could not find the table/i.test(message)
-}
-
 export async function GET(req: NextRequest) {
   try {
     const auth = await getAuthedSupabase()
@@ -70,7 +71,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ profile })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return NextResponse.json({ profile: null, error: message }, { status: isMissingGuidedSchema(message) ? 503 : 500 })
+    if (isMissingGuidedReviewSchema(error)) {
+      return NextResponse.json({
+        profile: null,
+        setup: {
+          status: 'migration_required',
+          migration: GUIDED_REVIEW_STATE_MIGRATION,
+          message: GUIDED_REVIEW_SETUP_MESSAGE,
+        },
+      })
+    }
+    return NextResponse.json({ profile: null, error: message }, { status: 500 })
   }
 }
 
@@ -153,6 +164,6 @@ export async function PATCH(req: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const conflict = error instanceof GuidedProfileConflictError || error instanceof GuidedReviewStateConflictError
-    return NextResponse.json({ profile: null, error: message }, { status: conflict ? 409 : isMissingGuidedSchema(message) ? 503 : 500 })
+    return NextResponse.json({ profile: null, error: message }, { status: conflict ? 409 : isMissingGuidedReviewSchema(error) ? 503 : 500 })
   }
 }

@@ -65,6 +65,12 @@ interface GuidedProfileApiRecord {
   state: GuidedReviewState
 }
 
+interface GuidedProfileSetup {
+  status: 'migration_required'
+  migration: string
+  message: string
+}
+
 function errorToText(value: unknown) {
   if (typeof value === 'string') return value
   if (value && typeof value === 'object') {
@@ -129,6 +135,7 @@ export function PublishedDashboardsAdminPanel() {
   const [dashboards, setDashboards] = useState<PublishedDashboard[]>([])
   const [charts, setCharts] = useState<DashboardChartConfig[]>([])
   const [guidedProfile, setGuidedProfile] = useState<GuidedProfileApiRecord | null>(null)
+  const [guidedProfileSetup, setGuidedProfileSetup] = useState<GuidedProfileSetup | null>(null)
   const [models, setModels] = useState<Array<{ id: string; status?: string | null; version?: number | null }>>([])
   const [datasets, setDatasets] = useState<SemanticDataset[]>([])
   const [history, setHistory] = useState<VersionHistory>({ versions: [], pages: [], slots: [] })
@@ -218,6 +225,7 @@ export function PublishedDashboardsAdminPanel() {
       setDashboards([demoDashboard])
       setCharts(demoCharts)
       setGuidedProfile(buildDemoGuidedProfile())
+      setGuidedProfileSetup(null)
       setModels([demoModel])
       setDatasets([demoDataset])
       setDashboardId(DEMO_DASHBOARD_ID)
@@ -246,6 +254,7 @@ export function PublishedDashboardsAdminPanel() {
     setDashboards(nextDashboards)
     setCharts(nextCharts)
     setGuidedProfile(profilePayload?.profile as GuidedProfileApiRecord | null)
+    setGuidedProfileSetup((profilePayload?.setup as GuidedProfileSetup | undefined) ?? null)
     setModels(Array.isArray(modelsPayload?.models) ? modelsPayload.models as Array<{ id: string; status?: string | null; version?: number | null }> : [])
     setDatasets(Array.isArray(datasetsPayload?.datasets) ? datasetsPayload.datasets as SemanticDataset[] : [])
     setDashboardId(current => {
@@ -456,6 +465,8 @@ export function PublishedDashboardsAdminPanel() {
             versionCount: 1,
             pageCount: 1,
             slotCount: demoSlots.length,
+            guidedReviewStorage: 'ready',
+            guidedReviewMigration: null,
           },
         })
         toast.success('Prepared readiness snapshot loaded')
@@ -582,6 +593,13 @@ export function PublishedDashboardsAdminPanel() {
       {demoMode ? (
         <section className="rounded-md border border-[color:var(--dos-info)] bg-[var(--dos-info-soft)] px-3 py-2 text-xs text-[var(--dos-info-text)]" data-testid="prepared-release-notice">
           Reference mode · mutations disabled
+        </section>
+      ) : null}
+
+      {guidedProfileSetup ? (
+        <section className="flex items-center gap-2 rounded-md border border-[color:var(--dos-warning)] bg-[var(--dos-warning-soft)] px-3 py-2 text-xs text-[var(--dos-warning-text)]" data-testid="guided-review-setup-notice">
+          <TriangleAlert className="h-4 w-4 shrink-0" />
+          <span><span className="font-semibold">AI Builder setup needed.</span> {guidedProfileSetup.message}</span>
         </section>
       ) : null}
 

@@ -6,6 +6,11 @@ import {
   type GuidedReviewState,
 } from '@/lib/dashboardos/guided-review'
 import {
+  GUIDED_REVIEW_SETUP_MESSAGE,
+  GUIDED_REVIEW_STATE_MIGRATION,
+  isMissingGuidedReviewSchema,
+} from '@/lib/dashboardos/guided-review-schema'
+import {
   mapDashboardChartSlot,
   mapDashboardPage,
   mapDashboardVersion,
@@ -29,6 +34,8 @@ export interface GuidedPublishPreflightMetadata {
   versionCount: number
   pageCount: number
   slotCount: number
+  guidedReviewStorage: 'ready' | 'migration_required'
+  guidedReviewMigration: string | null
 }
 
 export interface GuidedPublishPreflightResult {
@@ -153,14 +160,15 @@ export async function evaluateGuidedPublishReadinessForProject({
       .eq('project_id', projectId),
   ])
 
-  if (profileResult.error) throw new Error(profileResult.error.message)
+  const guidedReviewSchemaMissing = isMissingGuidedReviewSchema(profileResult.error)
+  if (profileResult.error && !guidedReviewSchemaMissing) throw new Error(profileResult.error.message)
   if (modelsResult.error) throw new Error(modelsResult.error.message)
   if (datasetsResult.error) throw new Error(datasetsResult.error.message)
   if (chartsResult.error) throw new Error(chartsResult.error.message)
   if (dashboardsResult.error) throw new Error(dashboardsResult.error.message)
   if (dataSourcesResult.error) throw new Error(dataSourcesResult.error.message)
 
-  const profileState = profileStateFromRows(profileResult.data)
+  const profileState = guidedReviewSchemaMissing ? null : profileStateFromRows(profileResult.data)
   const profileDataSourceId = profileState?.lineage?.schemaProfile.dataSourceId ?? null
   const schemaSource = ((dataSourcesResult.data ?? []) as Record<string, unknown>[])
     .find(source => String(source.id) === profileDataSourceId)
@@ -198,7 +206,10 @@ export async function evaluateGuidedPublishReadinessForProject({
   const readiness = buildGuidedPublishReadiness({
     evaluatedAt,
     profileState,
-    schemaIntrospection: schemaSource ? {
+    schemaIntrospection: guidedReviewSchemaMissing ? {
+      status: 'error',
+      error: GUIDED_REVIEW_SETUP_MESSAGE,
+    } : schemaSource ? {
       dataSourceId: String(schemaSource.id),
       status: typeof schemaSource.schema_last_status === 'string' ? schemaSource.schema_last_status : null,
       error: typeof schemaSource.schema_last_error === 'string' ? schemaSource.schema_last_error : null,
@@ -239,6 +250,8 @@ export async function evaluateGuidedPublishReadinessForProject({
       versionCount: versions.length,
       pageCount: pages.length,
       slotCount: slots.length,
+      guidedReviewStorage: guidedReviewSchemaMissing ? 'migration_required' : 'ready',
+      guidedReviewMigration: guidedReviewSchemaMissing ? GUIDED_REVIEW_STATE_MIGRATION : null,
     },
   }
 }
