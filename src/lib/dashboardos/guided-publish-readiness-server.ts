@@ -23,6 +23,7 @@ import {
 } from '@/lib/publishing/immutable-release-schema'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 import type { SemanticDataset } from '@/types/semantic-dataset'
+import { validateSemanticReferencesForModel } from '@/lib/semantic/semantic-hardening'
 
 export interface GuidedPublishPreflightMetadata {
   strategy: 'recomputed'
@@ -190,6 +191,25 @@ export async function evaluateGuidedPublishReadinessForProject({
   if (releaseDatasetStorageResult.error && !isMissingImmutableReleaseSchema(releaseDatasetStorageResult.error)) throw new Error(releaseDatasetStorageResult.error.message)
 
   const profileState = guidedReviewSchemaMissing ? null : profileStateFromRows(profileResult.data)
+  const datasets = ((datasetsResult.data ?? []) as Record<string, unknown>[]).map(mapDataset)
+  const activeSemanticModelId = typeof project.active_business_model_id === 'string'
+    ? project.active_business_model_id
+    : null
+  const guidedSemanticModelId = profileState?.semanticAsset?.modelId ?? null
+  const selectedDataset = guidedSemanticModelId
+    ? datasets.find(dataset => dataset.modelId === guidedSemanticModelId && dataset.status === 'published')
+      ?? datasets.find(dataset => dataset.modelId === guidedSemanticModelId)
+      ?? null
+    : null
+  const datasetSemanticValidation = selectedDataset && activeSemanticModelId === selectedDataset.modelId
+    ? await validateSemanticReferencesForModel({
+        supabase,
+        tenantId,
+        projectId,
+        modelId: selectedDataset.modelId,
+        selection: selectedDataset.selection,
+      })
+    : null
   const profileDataSourceId = profileState?.lineage?.schemaProfile.dataSourceId ?? null
   const schemaSource = ((dataSourcesResult.data ?? []) as Record<string, unknown>[])
     .find(source => String(source.id) === profileDataSourceId)
@@ -242,8 +262,15 @@ export async function evaluateGuidedPublishReadinessForProject({
       status: typeof row.status === 'string' ? row.status : null,
       version: typeof row.version === 'number' ? row.version : Number(row.version ?? 0),
     })),
-    activeSemanticModelId: typeof project.active_business_model_id === 'string' ? project.active_business_model_id : null,
-    datasets: ((datasetsResult.data ?? []) as Record<string, unknown>[]).map(mapDataset),
+    activeSemanticModelId,
+    datasets,
+    datasetSemanticValidation: selectedDataset && datasetSemanticValidation
+      ? {
+          datasetId: selectedDataset.id,
+          ok: datasetSemanticValidation.ok,
+          error: datasetSemanticValidation.error ?? null,
+        }
+      : null,
     charts: ((chartsResult.data ?? []) as Record<string, unknown>[]).map(mapChart),
     dashboards,
     versions,

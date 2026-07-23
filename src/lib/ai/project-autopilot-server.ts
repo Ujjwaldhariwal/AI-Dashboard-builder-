@@ -15,6 +15,7 @@ import { buildDeterministicSemanticProposal } from '@/lib/ai/semantic-copilot'
 import { validateSemanticReferencesForModel } from '@/lib/semantic/semantic-hardening'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { analyzeDatasetChartOptions } from '@/lib/semantic/dataset-shape-analyzer'
+import type { DashboardChartConfig } from '@/types/dashboard-chart'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
 import type {
   ProjectAutopilotArtifacts,
@@ -152,14 +153,19 @@ async function loadSemanticModel(
 async function loadDataset(supabase: SupabaseClient, scope: ProjectScope, modelId?: string, preferredId?: string) {
   let query = supabase
     .from('semantic_datasets')
-    .select('id, status, model_id, updated_at')
+    .select('id, status, model_id, selection, updated_at')
     .eq('tenant_id', scope.tenantId)
     .eq('project_id', scope.projectId)
   if (preferredId) query = query.eq('id', preferredId)
-  else if (modelId) query = query.eq('model_id', modelId)
+  if (modelId) query = query.eq('model_id', modelId)
   const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle()
   if (error) throw new Error(error.message)
-  return data ? { id: String(data.id), status: String(data.status) as SemanticDatasetStatus } : null
+  return data ? {
+    id: String(data.id),
+    status: String(data.status) as SemanticDatasetStatus,
+    modelId: String(data.model_id),
+    selection: record(data.selection),
+  } : null
 }
 
 export async function loadProjectAutopilotSnapshot({
@@ -451,7 +457,21 @@ async function semanticEvidence(supabase: SupabaseClient, modelId: string) {
 
 async function ensurePublishedDataset(supabase: SupabaseClient, context: RunContext, modelId: string) {
   const existing = await loadDataset(supabase, context, modelId, context.artifacts.datasetId)
-  if (existing?.status === 'published') return existing.id
+  if (existing?.status === 'published') {
+    const existingSelection = record(existing.selection)
+    const existingValidation = await validateSemanticReferencesForModel({
+      supabase,
+      tenantId: context.tenantId,
+      projectId: context.projectId,
+      modelId,
+      selection: {
+        fieldIds: strings(existingSelection.fieldIds),
+        metricIds: strings(existingSelection.metricIds),
+        relationshipIds: strings(existingSelection.relationshipIds),
+      },
+    })
+    if (existingValidation.ok) return existing.id
+  }
   const evidence = await semanticEvidence(supabase, modelId)
   const proposal = buildDeterministicDatasetProposal({ instruction: context.brief.objective, ...evidence })
   const selection = {
@@ -471,6 +491,18 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
   if (existing) {
     const { error } = await supabase.from('semantic_datasets').update({ selection, status: 'published', updated_at: nowIso }).eq('id', existing.id)
     if (error) throw new Error(error.message)
+    const { error: chartInvalidationError } = await supabase
+      .from('dashboard_chart_configs')
+      .update({
+        validation_state: 'invalid',
+        last_validated_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq('tenant_id', context.tenantId)
+      .eq('project_id', context.projectId)
+      .eq('dataset_id', existing.id)
+      .neq('status', 'archived')
+    if (chartInvalidationError) throw new Error(chartInvalidationError.message)
     return existing.id
   }
   const { data, error } = await supabase.from('semantic_datasets').insert({
@@ -506,7 +538,7 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
     metricIds.length ? supabase.from('business_metrics').select('*').in('id', metricIds) : Promise.resolve({ data: [], error: null }),
     supabase
       .from('dashboard_chart_configs')
-      .select('id')
+      .select('id, template_id, encoding')
       .eq('dataset_id', datasetId)
       .eq('tenant_id', context.tenantId)
       .eq('project_id', context.projectId)
@@ -517,11 +549,31 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
   ])
   const error = fieldResult.error ?? metricResult.error ?? chartResult.error
   if (error) throw new Error(error.message)
-  const existingIds = (chartResult.data ?? []).map(row => String(row.id))
-  const remaining = Math.max(0, context.brief.chartCount - existingIds.length)
-  if (remaining === 0) return existingIds
   const rawFields = (fieldResult.data ?? []) as Record<string, unknown>[]
   const rawMetrics = (metricResult.data ?? []) as Record<string, unknown>[]
+  const existingRows = (chartResult.data ?? []) as Record<string, unknown>[]
+  const reusableRows = existingRows.filter(chart => validateDashboardChartConfig({
+    templateId: String(chart.template_id),
+    encoding: record(chart.encoding) as unknown as DashboardChartConfig['encoding'],
+    fields: rawFields,
+    metrics: rawMetrics,
+  }).state === 'valid')
+  const rejectedIds = existingRows
+    .filter(chart => !reusableRows.includes(chart))
+    .map(chart => String(chart.id))
+  if (rejectedIds.length > 0) {
+    const nowIso = new Date().toISOString()
+    const { error: invalidationError } = await supabase
+      .from('dashboard_chart_configs')
+      .update({ validation_state: 'invalid', last_validated_at: nowIso, updated_at: nowIso })
+      .in('id', rejectedIds)
+      .eq('tenant_id', context.tenantId)
+      .eq('project_id', context.projectId)
+    if (invalidationError) throw new Error(invalidationError.message)
+  }
+  const existingIds = reusableRows.map(row => String(row.id))
+  const remaining = Math.max(0, context.brief.chartCount - existingIds.length)
+  if (remaining === 0) return existingIds
   const fields = rawFields.map(field => ({ id: String(field.id), name: String(field.name), role: String(field.role) }))
   const metrics = rawMetrics.map(metric => ({ id: String(metric.id), name: String(metric.name), aggregation: String(metric.aggregation) }))
   const allowedTemplateIds = analyzeDatasetChartOptions({ fields: rawFields, metrics: rawMetrics }).compatibility
@@ -616,12 +668,9 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
   }
   artifacts.semanticModelId = modelId
   if (snapshot.dataset?.status === 'published') artifacts.datasetId = snapshot.dataset.id
-
-  if (plan.currentStep === 'dataset') {
-    artifacts.datasetId = await ensurePublishedDataset(supabase, { ...context, artifacts }, modelId)
-    snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
-    plan = buildProjectAutopilotPlan(snapshot, context.brief)
-  }
+  artifacts.datasetId = await ensurePublishedDataset(supabase, { ...context, artifacts }, modelId)
+  snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
+  plan = buildProjectAutopilotPlan(snapshot, context.brief)
 
   if (plan.currentStep === 'charts' && artifacts.datasetId) {
     artifacts.chartIds = await ensureChartSuite(supabase, { ...context, artifacts }, artifacts.datasetId)

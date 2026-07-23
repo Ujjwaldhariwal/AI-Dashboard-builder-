@@ -92,6 +92,40 @@ function seededTables(overrides: {
       status: 'approved',
       version: 2,
     }],
+    business_entities: [{
+      id: 'entity-revenue',
+      model_id: modelId,
+    }],
+    business_fields: [
+      {
+        id: 'field-month',
+        entity_id: 'entity-revenue',
+        source_column: { dataSourceId: 'seed-source', schemaName: 'public', tableName: 'monthly_revenue', columnName: 'month' },
+      },
+      {
+        id: 'field-region',
+        entity_id: 'entity-revenue',
+        source_column: { dataSourceId: 'seed-source', schemaName: 'public', tableName: 'monthly_revenue', columnName: 'region' },
+      },
+      {
+        id: 'field-revenue',
+        entity_id: 'entity-revenue',
+        source_column: { dataSourceId: 'seed-source', schemaName: 'public', tableName: 'monthly_revenue', columnName: 'revenue_amount' },
+      },
+    ],
+    business_metrics: [{
+      id: 'metric-revenue',
+      model_id: modelId,
+      entity_id: 'entity-revenue',
+      expression: { type: 'field_aggregation', fieldId: 'field-revenue' },
+    }],
+    business_relationships: [],
+    data_source_columns: [
+      { id: 'column-month', tenant_id: tenantId, project_id: projectId, data_source_id: 'seed-source', schema_name: 'public', table_name: 'monthly_revenue', column_name: 'month', relation_id: 'relation-revenue' },
+      { id: 'column-region', tenant_id: tenantId, project_id: projectId, data_source_id: 'seed-source', schema_name: 'public', table_name: 'monthly_revenue', column_name: 'region', relation_id: 'relation-revenue' },
+      { id: 'column-revenue', tenant_id: tenantId, project_id: projectId, data_source_id: 'seed-source', schema_name: 'public', table_name: 'monthly_revenue', column_name: 'revenue_amount', relation_id: 'relation-revenue' },
+    ],
+    data_source_relation_selections: [{ relation_id: 'relation-revenue', status: 'included' }],
     semantic_datasets: [{
       id: datasetId,
       tenant_id: tenantId,
@@ -197,11 +231,19 @@ class Query {
     this.filters.push(row => allowed.has(row[column]))
     return this
   }
+  filter(column: string, operator: string, value: unknown) {
+    if (operator === 'eq') this.filters.push(row => row[column] === value)
+    return this
+  }
   limit(count: number) {
     this.limitCount = count
     return this
   }
   single() {
+    this.singleMode = true
+    return this
+  }
+  maybeSingle() {
     this.singleMode = true
     return this
   }
@@ -291,6 +333,27 @@ test.describe('guided publish preflight', () => {
     expect(result.readiness.status).toBe('blocked_by_validation')
     expect(result.readiness.publishEligible).toBe(false)
     expect(result.readiness.blockers.map(check => check.id)).toContain('runtime_validation')
+  })
+
+  test('blocks publication when a published dataset contains stale semantic field ids', async () => {
+    const tables = seededTables()
+    tables.semantic_datasets[0].selection = {
+      fieldIds: ['field-month', 'deleted-field'],
+      metricIds: ['metric-revenue'],
+      relationshipIds: [],
+    }
+
+    const result = await evaluateGuidedPublishReadinessForProject({
+      supabase: createSupabase(tables) as never,
+      projectId,
+      selectedDashboardId: dashboardId,
+      selectedVersionId: versionId,
+      evaluatedAt: '2026-07-13T02:00:00.000Z',
+    })
+
+    expect(result.readiness.publishEligible).toBe(false)
+    expect(result.readiness.blockers.find(check => check.id === 'dataset_draft')?.message)
+      .toContain('stale semantic references')
   })
 
   test('recomputes preflight instead of caching stale results', async () => {

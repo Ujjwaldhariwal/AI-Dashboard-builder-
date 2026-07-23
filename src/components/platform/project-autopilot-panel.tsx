@@ -146,6 +146,7 @@ export function ProjectAutopilotPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId: selectedProject.tenantId,
+          idempotencyKey: crypto.randomUUID(),
           brief: {
             objective,
             audience: audience.trim() || null,

@@ -258,6 +258,11 @@ export interface GuidedPublishReadinessInput {
   models?: Array<{ id: string; status?: string | null; version?: number | null }> | null
   activeSemanticModelId?: string | null
   datasets?: Array<Pick<SemanticDataset, 'id' | 'modelId' | 'status' | 'selection'> & { description?: string | null }> | null
+  datasetSemanticValidation?: {
+    datasetId: string
+    ok: boolean
+    error?: string | null
+  } | null
   charts?: Array<Pick<DashboardChartConfig, 'id' | 'datasetId' | 'status' | 'validationState' | 'encoding' | 'templateId'>> | null
   dashboards?: Array<Pick<PublishedDashboard, 'id' | 'slug' | 'status' | 'currentVersionId' | 'publishedAt'>> | null
   versions?: Array<Pick<DashboardVersion, 'id' | 'dashboardId' | 'status' | 'versionNumber' | 'notes'>> | null
@@ -398,6 +403,10 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
     ?? linkedDatasets.find(item => item.status === 'draft')
     ?? linkedDatasets[0]
     ?? null
+  const datasetSemanticValidation = input.datasetSemanticValidation?.datasetId === dataset?.id
+    ? input.datasetSemanticValidation
+    : null
+  const datasetSemanticReferencesValid = datasetSemanticValidation?.ok ?? true
   const charts = input.charts ?? []
   const dashboard = input.selectedDashboardId
     ? firstById(input.dashboards ?? [], input.selectedDashboardId)
@@ -461,14 +470,18 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
     : readinessCheck('review_exceptions', 'Review exceptions', 'blocker', `${reviewOpenCount} guided review item${reviewOpenCount === 1 ? '' : 's'} still need a decision.`, DEFAULT_GUIDED_ACTIONS.review_findings))
 
   const datasetHasContent = Boolean(dataset && ((dataset.selection.fieldIds.length + dataset.selection.metricIds.length) > 0))
-  const datasetPublishable = Boolean(datasetHasContent && dataset?.status === 'published')
+  const datasetPublishable = Boolean(datasetHasContent && dataset?.status === 'published' && datasetSemanticReferencesValid)
   checks.push(datasetPublishable
     ? readinessCheck('dataset_draft', 'Dataset release', 'ready', 'A published dataset is linked to the active semantic model.')
     : readinessCheck(
       'dataset_draft',
       'Dataset release',
       hasActiveSemanticAsset ? 'blocker' : 'warning',
-      datasetHasContent ? 'The linked dataset is previewable but must be published before dashboard release.' : 'Create and publish a dataset from the active semantic model.',
+      !datasetSemanticReferencesValid
+        ? `The linked dataset contains stale semantic references${datasetSemanticValidation?.error ? `: ${datasetSemanticValidation.error}` : ''}. Run Autopilot to rebuild the dataset and chart drafts before publishing.`
+        : datasetHasContent
+          ? 'The linked dataset is previewable but must be published before dashboard release.'
+          : 'Create and publish a dataset from the active semantic model.',
       DEFAULT_GUIDED_ACTIONS.generate_draft_dashboard,
     ))
 
@@ -495,6 +508,7 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
 
   if (
     hasDashboardStructure
+    && datasetSemanticReferencesValid
     && slots.every(slot => validCharts.some(chart => chart.id === slot.chartConfigId))
     && invalidCharts.length === 0
     && warningCharts.length === 0
