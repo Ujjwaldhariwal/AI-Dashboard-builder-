@@ -217,5 +217,14 @@ test.describe('immutable dashboard release snapshots', () => {
     expect(migration).toContain('v_new_snapshot_status is distinct from \'pending\'')
     expect(migration).toContain('revoke all on dashboard_release_chart_snapshots from anon, authenticated')
     expect(migration).not.toMatch(/grant\s+(insert|update|delete|all).*dashboard_release_chart_snapshots\s+to\s+authenticated/i)
+
+    const integrityMigration = readFileSync(
+      join(process.cwd(), 'supabase/migrations/20260723113000_release_semantic_snapshot_integrity.sql'),
+      'utf8',
+    )
+    expect(integrityMigration).toContain('dashboard_release_semantic_snapshot_is_valid')
+    expect(integrityMigration).toContain('dashboard_release_dataset_snapshot_integrity')
+    expect(integrityMigration).toContain('before insert on dashboard_release_dataset_snapshots')
+    expect(integrityMigration).toContain('stale or incomplete semantic references')
   })
 })
