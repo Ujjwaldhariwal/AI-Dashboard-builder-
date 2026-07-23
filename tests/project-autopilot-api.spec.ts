@@ -7,6 +7,7 @@ import {
   canAutopilotUseSemanticModel,
   evaluateAutopilotSemanticApproval,
   nextProjectArtifactName,
+  normalizeAutopilotRelationshipJoin,
   projectAutopilotIdempotencyKey,
   rebindProjectAutopilotArtifacts,
 } from '../src/lib/ai/project-autopilot-server'
@@ -98,6 +99,28 @@ test.describe('project autopilot API', () => {
     ])).toBe('Executive Operations Dataset (3)')
   })
 
+  test('repairs reversed joins and drops joins whose fields belong elsewhere', () => {
+    const ownership = new Map([
+      ['customer-id', 'customers'],
+      ['usage-customer-id', 'usage'],
+      ['payment-id', 'payments'],
+    ])
+    expect(normalizeAutopilotRelationshipJoin({
+      fromEntityId: 'customers',
+      toEntityId: 'usage',
+      leftFieldId: 'usage-customer-id',
+      rightFieldId: 'customer-id',
+      fieldEntityById: ownership,
+    })).toEqual({ action: 'swap', leftFieldId: 'customer-id', rightFieldId: 'usage-customer-id' })
+    expect(normalizeAutopilotRelationshipJoin({
+      fromEntityId: 'customers',
+      toEntityId: 'usage',
+      leftFieldId: 'payment-id',
+      rightFieldId: 'usage-customer-id',
+      fieldEntityById: ownership,
+    }).action).toBe('drop')
+  })
+
   test('chains governed artifacts without auto-publishing a dashboard release', () => {
     const server = readFileSync(join(process.cwd(), 'src/lib/ai/project-autopilot-server.ts'), 'utf8')
     const runRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/route.ts'), 'utf8')
@@ -106,6 +129,7 @@ test.describe('project autopilot API', () => {
     expect(server).toContain('buildDeterministicSemanticProposal')
     expect(server).toContain('validateAndApproveAutopilotSemanticModel')
     expect(server).toContain('resolveProjectSemanticModel')
+    expect(server).toContain('repairAutopilotRelationships')
     expect(server).toContain("action: 'business_model.approved'")
     expect(server).toContain('buildDeterministicDatasetProposal')
     expect(server).toContain('buildDeterministicChartSuiteProposal')

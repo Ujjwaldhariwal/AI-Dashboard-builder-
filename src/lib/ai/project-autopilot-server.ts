@@ -78,6 +78,30 @@ export function nextProjectArtifactName(baseName: string, existingNames: string[
   return `${baseName.slice(0, 112).trim()} (${suffix})`
 }
 
+export function normalizeAutopilotRelationshipJoin({
+  fromEntityId,
+  toEntityId,
+  leftFieldId,
+  rightFieldId,
+  fieldEntityById,
+}: {
+  fromEntityId: string
+  toEntityId: string
+  leftFieldId: string
+  rightFieldId: string
+  fieldEntityById: ReadonlyMap<string, string>
+}) {
+  const leftEntityId = fieldEntityById.get(leftFieldId)
+  const rightEntityId = fieldEntityById.get(rightFieldId)
+  if (leftEntityId === fromEntityId && rightEntityId === toEntityId) {
+    return { action: 'keep' as const, leftFieldId, rightFieldId }
+  }
+  if (leftEntityId === toEntityId && rightEntityId === fromEntityId) {
+    return { action: 'swap' as const, leftFieldId: rightFieldId, rightFieldId: leftFieldId }
+  }
+  return { action: 'drop' as const, leftFieldId, rightFieldId }
+}
+
 export function evaluateAutopilotSemanticApproval({
   modelName,
   fieldCount,
@@ -586,6 +610,65 @@ async function semanticEvidence(supabase: SupabaseClient, modelId: string) {
   return { fields, metrics, relationships, rawFields, rawMetrics }
 }
 
+async function repairAutopilotRelationships(supabase: SupabaseClient, modelId: string) {
+  const { data: entities, error: entityError } = await supabase
+    .from('business_entities')
+    .select('id')
+    .eq('model_id', modelId)
+  if (entityError) throw new Error(entityError.message)
+  const entityIds = (entities ?? []).map(entity => String(entity.id))
+  const [fieldResult, relationshipResult] = await Promise.all([
+    entityIds.length
+      ? supabase.from('business_fields').select('id, entity_id').in('entity_id', entityIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('business_relationships').select('id, from_entity_id, to_entity_id, join_config').eq('model_id', modelId),
+  ])
+  const error = fieldResult.error ?? relationshipResult.error
+  if (error) throw new Error(error.message)
+
+  const fieldEntityById = new Map(
+    (fieldResult.data ?? []).map(field => [String(field.id), String(field.entity_id)]),
+  )
+  let swapped = 0
+  let dropped = 0
+  for (const relationship of relationshipResult.data ?? []) {
+    const join = record(relationship.join_config)
+    const normalized = normalizeAutopilotRelationshipJoin({
+      fromEntityId: String(relationship.from_entity_id),
+      toEntityId: String(relationship.to_entity_id),
+      leftFieldId: String(join.leftFieldId ?? ''),
+      rightFieldId: String(join.rightFieldId ?? ''),
+      fieldEntityById,
+    })
+    if (normalized.action === 'keep') continue
+    if (normalized.action === 'swap') {
+      const { error: updateError } = await supabase
+        .from('business_relationships')
+        .update({
+          join_config: {
+            ...join,
+            leftFieldId: normalized.leftFieldId,
+            rightFieldId: normalized.rightFieldId,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', relationship.id)
+        .eq('model_id', modelId)
+      if (updateError) throw new Error(updateError.message)
+      swapped += 1
+      continue
+    }
+    const { error: deleteError } = await supabase
+      .from('business_relationships')
+      .delete()
+      .eq('id', relationship.id)
+      .eq('model_id', modelId)
+    if (deleteError) throw new Error(deleteError.message)
+    dropped += 1
+  }
+  return { swapped, dropped }
+}
+
 async function validateAndApproveAutopilotSemanticModel(
   supabase: SupabaseClient,
   context: RunContext,
@@ -606,6 +689,9 @@ async function validateAndApproveAutopilotSemanticModel(
     return { approved: false, reason: `Semantic model status ${String(model.status)} cannot be approved automatically.` }
   }
 
+  const relationshipRepairs = model.name === AUTOPILOT_SEMANTIC_MODEL_NAME
+    ? await repairAutopilotRelationships(supabase, modelId)
+    : { swapped: 0, dropped: 0 }
   const evidence = await semanticEvidence(supabase, modelId)
   const validation = await validateSemanticReferencesForModel({
     supabase,
@@ -657,6 +743,7 @@ async function validateAndApproveAutopilotSemanticModel(
       fieldCount: evidence.fields.length,
       metricCount: evidence.metrics.length,
       relationshipCount: evidence.relationships.length,
+      relationshipRepairs,
     },
     created_at: nowIso,
   })
