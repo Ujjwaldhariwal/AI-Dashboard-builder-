@@ -156,7 +156,7 @@ export function buildProjectAutopilotPlan(
   } else if (!model || model.fieldCount === 0 || model.metricCount === 0) {
     steps.push(step('semantic_model', 'ready', 'Autopilot can create and populate a draft semantic model.', true))
   } else if (model.status !== 'approved') {
-    steps.push(step('semantic_model', 'awaiting_review', `Review ${model.fieldCount} fields and ${model.metricCount} metrics, then approve the model.`, false))
+    steps.push(step('semantic_model', 'ready', `Autopilot will validate ${model.fieldCount} fields and ${model.metricCount} metrics, then approve safe mappings automatically.`, true))
   } else {
     steps.push(step('semantic_model', 'succeeded', `${model.fieldCount} fields and ${model.metricCount} metrics are approved.`, false))
   }

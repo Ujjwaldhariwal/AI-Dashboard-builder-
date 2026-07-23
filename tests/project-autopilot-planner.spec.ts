@@ -28,7 +28,7 @@ test.describe('project autopilot planner', () => {
     expect(plan.steps[1].status).toBe('blocked')
   })
 
-  test('automates drafts but preserves semantic and publish review gates', () => {
+  test('automates safe semantic approval but preserves the final publish review gate', () => {
     const semanticReview = buildProjectAutopilotPlan({
       selectedRelationCount: 2,
       selectedColumnCount: 18,
@@ -37,7 +37,8 @@ test.describe('project autopilot planner', () => {
       chartCount: 0,
     }, { ...brief, chartTypes: [...brief.chartTypes] })
     expect(semanticReview.currentStep).toBe('semantic_model')
-    expect(semanticReview.steps[1]).toMatchObject({ status: 'awaiting_review', automatic: false })
+    expect(semanticReview.steps[1]).toMatchObject({ status: 'ready', automatic: true })
+    expect(semanticReview.steps[1].detail).toContain('approve safe mappings automatically')
 
     const publishReview = buildProjectAutopilotPlan({
       selectedRelationCount: 2,

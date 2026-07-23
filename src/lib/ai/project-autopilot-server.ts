@@ -39,6 +39,37 @@ interface RunContext extends ProjectScope {
   artifacts: ProjectAutopilotArtifacts
 }
 
+export interface AutopilotSemanticApprovalDecision {
+  approved: boolean
+  reason: string
+}
+
+export function evaluateAutopilotSemanticApproval({
+  modelName,
+  fieldCount,
+  metricCount,
+  validation,
+}: {
+  modelName: string
+  fieldCount: number
+  metricCount: number
+  validation: { ok: boolean; error?: string }
+}): AutopilotSemanticApprovalDecision {
+  if (modelName !== 'Autopilot Business Model') {
+    return { approved: false, reason: 'Only an Autopilot-owned semantic model can be approved automatically.' }
+  }
+  if (fieldCount === 0) {
+    return { approved: false, reason: 'No source-backed semantic fields were generated.' }
+  }
+  if (metricCount === 0) {
+    return { approved: false, reason: 'No aggregatable metrics were detected for dashboard generation.' }
+  }
+  if (!validation.ok) {
+    return { approved: false, reason: validation.error ?? 'Semantic reference validation failed.' }
+  }
+  return { approved: true, reason: 'All generated fields, metrics, joins, and source columns passed governed validation.' }
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
@@ -455,6 +486,84 @@ async function semanticEvidence(supabase: SupabaseClient, modelId: string) {
   return { fields, metrics, relationships, rawFields, rawMetrics }
 }
 
+async function validateAndApproveAutopilotSemanticModel(
+  supabase: SupabaseClient,
+  context: RunContext,
+  modelId: string,
+): Promise<AutopilotSemanticApprovalDecision> {
+  const { data: model, error: modelError } = await supabase
+    .from('business_models')
+    .select('id, name, status, version')
+    .eq('id', modelId)
+    .eq('tenant_id', context.tenantId)
+    .eq('project_id', context.projectId)
+    .single()
+  if (modelError || !model) throw new Error(modelError?.message ?? 'Autopilot semantic model not found')
+  if (model.status === 'approved') {
+    return { approved: true, reason: 'The Autopilot semantic model is already approved.' }
+  }
+  if (model.status !== 'draft' && model.status !== 'review') {
+    return { approved: false, reason: `Semantic model status ${String(model.status)} cannot be approved automatically.` }
+  }
+
+  const evidence = await semanticEvidence(supabase, modelId)
+  const validation = await validateSemanticReferencesForModel({
+    supabase,
+    tenantId: context.tenantId,
+    projectId: context.projectId,
+    modelId,
+    selection: {
+      fieldIds: evidence.fields.map(field => field.id),
+      metricIds: evidence.metrics.map(metric => metric.id),
+      relationshipIds: evidence.relationships.map(relationship => relationship.id),
+    },
+  })
+  const decision = evaluateAutopilotSemanticApproval({
+    modelName: String(model.name),
+    fieldCount: evidence.fields.length,
+    metricCount: evidence.metrics.length,
+    validation,
+  })
+  if (!decision.approved) return decision
+
+  const nowIso = new Date().toISOString()
+  const { error: approvalError } = await supabase
+    .from('business_models')
+    .update({ status: 'approved', approved_at: nowIso, updated_at: nowIso })
+    .eq('id', modelId)
+    .eq('tenant_id', context.tenantId)
+    .eq('project_id', context.projectId)
+    .in('status', ['draft', 'review'])
+  if (approvalError) throw new Error(approvalError.message)
+
+  const { error: projectError } = await supabase
+    .from('dashboard_projects')
+    .update({ active_business_model_id: modelId, updated_at: nowIso })
+    .eq('id', context.projectId)
+    .eq('tenant_id', context.tenantId)
+  if (projectError) throw new Error(projectError.message)
+
+  await supabase.from('audit_logs').insert({
+    tenant_id: context.tenantId,
+    project_id: context.projectId,
+    actor_user_id: context.actorUserId,
+    action: 'business_model.approved',
+    target_type: 'business_model',
+    target_id: modelId,
+    metadata: {
+      source: 'project_autopilot',
+      validation: 'governed_semantic_references',
+      version: Number(model.version ?? 1),
+      fieldCount: evidence.fields.length,
+      metricCount: evidence.metrics.length,
+      relationshipCount: evidence.relationships.length,
+    },
+    created_at: nowIso,
+  })
+
+  return decision
+}
+
 async function ensurePublishedDataset(supabase: SupabaseClient, context: RunContext, modelId: string) {
   const existing = await loadDataset(supabase, context, modelId, context.artifacts.datasetId)
   if (existing?.status === 'published') {
@@ -650,16 +759,37 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
   }
 
   if (plan.currentStep === 'semantic_model') {
-    if (snapshot.semanticModel?.status === 'review' || snapshot.semanticModel?.status === 'draft' && snapshot.semanticModel.fieldCount > 0) {
-      artifacts.semanticModelId = snapshot.semanticModel.id
-      return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
+    let semanticModelId: string
+    if (
+      snapshot.semanticModel?.status === 'review'
+      && snapshot.semanticModel.fieldCount > 0
+      && snapshot.semanticModel.metricCount > 0
+    ) {
+      semanticModelId = snapshot.semanticModel.id
+    } else {
+      semanticModelId = await ensureDraftSemanticModel(supabase, { ...context, artifacts })
+      artifacts.semanticModelId = semanticModelId
+      await materializeSemanticModel(supabase, { ...context, artifacts }, semanticModelId)
     }
-    const modelId = await ensureDraftSemanticModel(supabase, { ...context, artifacts })
-    artifacts.semanticModelId = modelId
-    await materializeSemanticModel(supabase, { ...context, artifacts }, modelId)
+    artifacts.semanticModelId = semanticModelId
+    const approval = await validateAndApproveAutopilotSemanticModel(
+      supabase,
+      { ...context, artifacts },
+      semanticModelId,
+    )
     snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
     plan = buildProjectAutopilotPlan(snapshot, context.brief)
-    return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
+    if (!approval.approved) {
+      plan = {
+        ...plan,
+        status: 'awaiting_review',
+        currentStep: 'semantic_model',
+        steps: plan.steps.map(item => item.key === 'semantic_model'
+          ? { ...item, status: 'awaiting_review', automatic: false, detail: `Automatic approval paused: ${approval.reason}` }
+          : item),
+      }
+      return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
+    }
   }
 
   const modelId = snapshot.semanticModel?.id

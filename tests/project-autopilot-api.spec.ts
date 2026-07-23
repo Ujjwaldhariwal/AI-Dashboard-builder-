@@ -3,7 +3,10 @@ import { join } from 'node:path'
 
 import { expect, test } from '@playwright/test'
 
-import { projectAutopilotIdempotencyKey } from '../src/lib/ai/project-autopilot-server'
+import {
+  evaluateAutopilotSemanticApproval,
+  projectAutopilotIdempotencyKey,
+} from '../src/lib/ai/project-autopilot-server'
 
 const brief = {
   objective: 'Build a sales dashboard for executives using governed revenue metrics.',
@@ -21,12 +24,44 @@ test.describe('project autopilot API', () => {
     expect(left).toHaveLength(64)
   })
 
+  test('auto-approves only source-valid Autopilot models with usable metrics', () => {
+    expect(evaluateAutopilotSemanticApproval({
+      modelName: 'Autopilot Business Model',
+      fieldCount: 14,
+      metricCount: 4,
+      validation: { ok: true },
+    })).toMatchObject({ approved: true })
+
+    expect(evaluateAutopilotSemanticApproval({
+      modelName: 'Manually Curated Model',
+      fieldCount: 14,
+      metricCount: 4,
+      validation: { ok: true },
+    })).toMatchObject({ approved: false })
+
+    expect(evaluateAutopilotSemanticApproval({
+      modelName: 'Autopilot Business Model',
+      fieldCount: 14,
+      metricCount: 0,
+      validation: { ok: true },
+    })).toMatchObject({ approved: false })
+
+    expect(evaluateAutopilotSemanticApproval({
+      modelName: 'Autopilot Business Model',
+      fieldCount: 14,
+      metricCount: 4,
+      validation: { ok: false, error: 'Metric source field is invalid or missing' },
+    })).toMatchObject({ approved: false, reason: 'Metric source field is invalid or missing' })
+  })
+
   test('chains governed artifacts without auto-publishing a dashboard release', () => {
     const server = readFileSync(join(process.cwd(), 'src/lib/ai/project-autopilot-server.ts'), 'utf8')
     const runRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/route.ts'), 'utf8')
     const executeRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/execute/route.ts'), 'utf8')
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/project-autopilot-panel.tsx'), 'utf8')
     expect(server).toContain('buildDeterministicSemanticProposal')
+    expect(server).toContain('validateAndApproveAutopilotSemanticModel')
+    expect(server).toContain("action: 'business_model.approved'")
     expect(server).toContain('buildDeterministicDatasetProposal')
     expect(server).toContain('buildDeterministicChartSuiteProposal')
     expect(server).toContain("rpc('create_dashboard_chart_drafts'")

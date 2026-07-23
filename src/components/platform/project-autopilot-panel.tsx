@@ -197,7 +197,7 @@ export function ProjectAutopilotPanel() {
     <div className="mx-auto max-w-6xl space-y-5">
       <section className="border-b border-[color:var(--dos-border-soft)] pb-5">
         <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--dos-text-primary)]">Build the governed dashboard from one brief</h1>
-        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot prepares semantic fields, a dataset, editable charts, and a responsive dashboard draft. You approve meaning and publishing.</p>
+        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot maps and validates source fields, approves safe semantics, and creates an editable dashboard draft. You only review exceptions and the final publish.</p>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
