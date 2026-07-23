@@ -1,6 +1,16 @@
 import { expect, test } from '@playwright/test'
 
-import { resolvePublishedChartFields } from '../src/lib/client/published-chart-runtime'
+import {
+  publishedDashboardDisplayName,
+  resolvePublishedChartFields,
+} from '../src/lib/client/published-chart-runtime'
+
+test('removes automation timestamps from the displayed dashboard title', () => {
+  expect(publishedDashboardDisplayName('Electricity Operations Command Center 20260707062439'))
+    .toBe('Electricity Operations Command Center')
+  expect(publishedDashboardDisplayName('Executive Revenue'))
+    .toBe('Executive Revenue')
+})
 
 test('keeps exact runtime field names from a published chart result', () => {
   expect(resolvePublishedChartFields({

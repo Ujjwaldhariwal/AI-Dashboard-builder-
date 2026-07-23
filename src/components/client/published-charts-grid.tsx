@@ -1,9 +1,9 @@
 'use client'
 
-/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 
-import { AlertTriangle, BarChart3, CheckCircle2, Clock3, Loader2, Table2 } from 'lucide-react'
+import { AlertTriangle, ChartNoAxesCombined, Loader2, RotateCcw, Table2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ModernBarChart } from '@/components/charts/modern-bar-chart'
@@ -13,12 +13,11 @@ import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-hori
 import { ModernLineChart } from '@/components/charts/modern-line-chart'
 import { ModernPieChart } from '@/components/charts/modern-pie-chart'
 import { DASHBOARDOS_THEME_CHANGE_EVENT } from '@/components/client/client-theme-shell'
-import { Badge } from '@/components/ui/badge'
+import { resolvePublishedChartFields } from '@/lib/client/published-chart-runtime'
 import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
 import { getDemoChartElapsedMs, getDemoChartFields, getDemoChartRows } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { getEnterpriseChartColors } from '@/lib/echarts/theme'
-import { resolvePublishedChartFields } from '@/lib/client/published-chart-runtime'
 import type { ChartTemplateId } from '@/types/chart-template'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 
@@ -174,7 +173,7 @@ function DataTable({
 }) {
   const columns = fieldNames.length > 0 ? fieldNames.slice(0, 8) : Object.keys(rows[0] ?? {}).slice(0, 8)
   return (
-    <div className="overflow-x-auto rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
+    <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] table-fixed text-left text-xs">
         <thead className="bg-[var(--dos-surface-muted)] text-[11px] uppercase text-[var(--dos-text-muted)]">
           <tr>
@@ -211,13 +210,13 @@ function KpiView({
   const metrics = chart.encoding.yMetricIds.slice(0, chart.templateId === 'kpi-card' ? 1 : 6)
   const firstRow = rows[0] ?? {}
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid border-y border-[color:var(--dos-border-soft)] sm:grid-cols-2">
       {metrics.map((metricId, index) => {
         const label = labels[index] || fieldNameFromId(chart, metricId)
         return (
-          <div key={metricId} className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
+          <div key={metricId} className="border-b border-[color:var(--dos-border-soft)] p-4 last:border-b-0 sm:border-r sm:even:border-r-0">
             <p className="text-xs font-medium text-[var(--dos-text-muted)]">{label}</p>
-            <p className="mt-2 text-2xl font-semibold text-[var(--dos-text-primary)]">
+            <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-[var(--dos-text-primary)]">
               {toNumber(firstRow[label]).toLocaleString('en')}
             </p>
           </div>
@@ -231,14 +230,16 @@ function ChartBody({
   chart,
   state,
   dark,
+  onRetry,
 }: {
   chart: DashboardChartConfig
   state: ChartRunState
   dark: boolean
+  onRetry: () => void
 }) {
   if (state.status === 'loading') {
     return (
-      <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]/40 px-6 text-center">
+      <div className="flex h-64 flex-col items-center justify-center bg-[var(--dos-surface-muted)]/40 px-6 text-center">
         <Loader2 className="h-5 w-5 animate-spin text-[var(--dos-chart-info)]" />
         <p className="mt-3 text-sm font-semibold text-[var(--dos-text-primary)]">Loading governed data</p>
         <p className="mt-1 max-w-xs text-xs text-[var(--dos-text-muted)]">Running the published semantic query with read-only access.</p>
@@ -248,10 +249,18 @@ function ChartBody({
 
   if (state.status === 'error') {
     return (
-      <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]/35 px-6 text-center">
+      <div className="flex min-h-64 flex-col items-center justify-center bg-[var(--dos-surface-muted)]/35 px-6 text-center">
         <AlertTriangle className="h-5 w-5 text-[var(--dos-chart-warning)]" />
-        <p className="mt-3 text-sm font-semibold text-[var(--dos-text-primary)]">Chart is preparing</p>
+        <p className="mt-3 text-sm font-semibold text-[var(--dos-text-primary)]">Chart data could not load</p>
         <p className="mt-1 max-w-sm text-xs leading-5 text-[var(--dos-text-muted)]">{state.error}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-4 inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-md border border-[color:var(--dos-border-mid)] px-3 text-xs font-semibold text-[var(--dos-text-secondary)] hover:border-[color:var(--dos-accent-primary)] hover:text-[var(--dos-accent-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] focus-visible:ring-offset-2 active:bg-[var(--dos-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Retry chart
+        </button>
       </div>
     )
   }
@@ -267,7 +276,7 @@ function ChartBody({
 
   if (!rows.length) {
     return (
-      <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-[color:var(--dos-border-mid)] bg-[var(--dos-surface-muted)]/30 p-6 text-center">
+      <div className="flex min-h-64 flex-col items-center justify-center bg-[var(--dos-surface-muted)]/30 p-6 text-center">
         <Table2 className="h-5 w-5 text-[var(--dos-text-muted)]" />
         <p className="mt-3 text-sm font-semibold text-[var(--dos-text-primary)]">No rows returned</p>
         <p className="mt-1 text-xs text-[var(--dos-text-muted)]">The chart is valid, but the current dataset filter returned no records.</p>
@@ -308,12 +317,23 @@ function ChartBody({
 
 export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridProps) {
   const [chartRuns, setChartRuns] = useState<Record<string, ChartRunState>>({})
+  const [selectedChartId, setSelectedChartId] = useState('all')
+  const [reloadToken, setReloadToken] = useState(0)
   const dark = useDashboardChartDarkMode()
   const demoMode = isDashboardOsDemoMode()
   const chartIds = useMemo(() => charts.map(chart => chart.id), [charts])
   const chartById = useMemo(() => new Map(charts.map(chart => [chart.id, chart])), [charts])
 
   const chartKey = useMemo(() => chartIds.join('|'), [chartIds])
+  const visibleCharts = selectedChartId === 'all'
+    ? charts
+    : charts.filter(chart => chart.id === selectedChartId)
+
+  useEffect(() => {
+    if (selectedChartId !== 'all' && !chartById.has(selectedChartId)) {
+      setSelectedChartId('all')
+    }
+  }, [chartById, selectedChartId])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -379,45 +399,49 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
 
     if (ids.length > 0) void loadCharts()
     return () => controller.abort()
-  }, [chartById, chartKey, charts, demoMode, tenantSlug])
+  }, [chartById, chartKey, charts, demoMode, reloadToken, tenantSlug])
 
   if (charts.length === 0) return null
 
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--dos-chart-success)]">Operations Overview</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight">Published dashboard charts</h2>
-          <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Validated chart configs rendered from read-only semantic datasets.</p>
+    <section className="space-y-5" aria-label="Dashboard charts">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2">
+          <ChartNoAxesCombined className="h-4 w-4 shrink-0 text-[var(--dos-accent-primary)]" />
+          <h2 className="text-sm font-semibold text-[var(--dos-text-secondary)]">Chart view</h2>
         </div>
-        <Badge variant="outline" className="border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[var(--dos-chart-info)]">
-          {charts.length} live charts
-        </Badge>
+        <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--dos-text-muted)]">
+          <span className="shrink-0">Show</span>
+          <select
+            value={selectedChartId}
+            onChange={event => setSelectedChartId(event.target.value)}
+            className="min-h-11 min-w-0 flex-1 rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface)] px-3 text-sm font-medium text-[var(--dos-text-primary)] outline-none hover:border-[color:var(--dos-accent-primary)] focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:border-[color:var(--dos-accent-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:w-72 sm:flex-none"
+          >
+            <option value="all">All charts ({charts.length})</option>
+            {charts.map(chart => <option key={chart.id} value={chart.id}>{chart.name}</option>)}
+          </select>
+        </label>
       </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-4">
-        {charts.map(chart => {
+        {visibleCharts.map(chart => {
           const state = chartRuns[chart.id] ?? EMPTY_STATE
-          const statusLabel = state.status === 'ready' ? 'Live' : state.status === 'loading' ? 'Loading' : state.status === 'error' ? 'Review' : 'Queued'
+          const statusLabel = state.status === 'ready' ? 'Live' : state.status === 'loading' ? 'Loading' : state.status === 'error' ? 'Unavailable' : 'Queued'
           return (
-            <article key={chart.id} className={`${sizeClass(chart)} rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-5 shadow-sm transition-colors hover:border-[color:var(--dos-border-mid)]`}>
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <article key={chart.id} className={`${selectedChartId === 'all' ? sizeClass(chart) : 'lg:col-span-4'} min-w-0 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4 sm:p-5`}>
+              <div className="mb-4 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 text-[var(--dos-chart-success)]" />
-                    <h3 className="truncate text-base font-semibold tracking-tight">{chart.name}</h3>
-                  </div>
-                  <p className="mt-1 text-xs text-[var(--dos-text-muted)]">Read-only semantic query</p>
+                  <h3 className="truncate text-base font-semibold tracking-tight">{chart.name}</h3>
+                  {chart.description ? <p className="mt-1 line-clamp-2 text-xs text-[var(--dos-text-muted)]">{chart.description}</p> : null}
                 </div>
-                <Badge variant="outline" className="gap-1 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] text-[var(--dos-text-secondary)]">
-                  {state.status === 'ready' ? <CheckCircle2 className="h-3 w-3 text-[var(--dos-chart-success)]" /> : <Clock3 className="h-3 w-3 text-[var(--dos-chart-warning)]" />}
+                <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-[var(--dos-text-muted)]">
+                  <span className={`h-1.5 w-1.5 rounded-full ${state.status === 'ready' ? 'bg-[var(--dos-chart-success)]' : state.status === 'error' ? 'bg-[var(--dos-chart-risk)]' : 'bg-[var(--dos-chart-warning)]'}`} />
                   {statusLabel}
-                </Badge>
+                </span>
               </div>
-              <ChartBody chart={chart} state={state} dark={dark} />
+              <ChartBody chart={chart} state={state} dark={dark} onRetry={() => setReloadToken(token => token + 1)} />
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--dos-border-soft)] pt-3 text-[11px] text-[var(--dos-text-muted)]">
-                <span>{chart.templateId}</span>
-                <span>{state.rowCount} rows{state.elapsedMs ? ` / ${state.elapsedMs}ms` : ''}</span>
+                <span>{chart.templateId.replace(/-/g, ' ')}</span>
+                <span className="font-mono tabular-nums">{state.rowCount} rows{state.elapsedMs ? ` / ${state.elapsedMs}ms` : ''}</span>
               </div>
             </article>
           )

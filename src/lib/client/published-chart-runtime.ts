@@ -14,6 +14,11 @@ export interface PublishedChartFieldResolution {
   sortField: string
 }
 
+export function publishedDashboardDisplayName(value: string) {
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  return normalized.replace(/\s+\d{12,17}$/, '').trim() || normalized
+}
+
 function comparableFieldName(value: string) {
   return value.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, '')
 }

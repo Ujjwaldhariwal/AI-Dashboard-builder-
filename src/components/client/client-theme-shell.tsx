@@ -38,7 +38,7 @@ export function ClientThemeShell({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className="dashboardos-client min-h-screen bg-[var(--dos-background-base)] text-[var(--dos-text-primary)] transition-colors duration-300"
+      className="dashboardos-client min-h-screen bg-[var(--dos-background-base)] text-[var(--dos-text-primary)]"
       data-dashboardos-theme={mode}
       style={getDashboardOsThemeVars(mode)}
     >
@@ -47,7 +47,7 @@ export function ClientThemeShell({ children }: { children: ReactNode }) {
         aria-label={`Switch to ${nextMode} mode`}
         title={`Switch to ${nextMode} mode`}
         onClick={() => setMode(nextMode)}
-        className="fixed right-4 top-4 z-50 inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[var(--dos-text-primary)] shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur transition hover:border-[color:var(--dos-accent-primary)] hover:text-[var(--dos-accent-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--dos-accent-primary)]"
+        className="fixed right-4 top-3 z-50 inline-flex h-9 w-9 items-center justify-center rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface-raised)] text-[var(--dos-text-primary)] hover:border-[color:var(--dos-accent-primary)] hover:text-[var(--dos-accent-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] focus-visible:ring-offset-2 active:bg-[var(--dos-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Icon className="h-4 w-4" />
       </button>
