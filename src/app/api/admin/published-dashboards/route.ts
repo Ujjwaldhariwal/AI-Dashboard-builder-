@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
   let query = auth.supabase
     .from('published_dashboards')
     .select('*')
+    .neq('status', 'archived')
     .order('updated_at', { ascending: false })
 
   if (projectId) query = query.eq('project_id', projectId)

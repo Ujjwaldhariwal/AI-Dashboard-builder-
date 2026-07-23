@@ -3,7 +3,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight, Check, Circle, Loader2, Play, RefreshCw, TriangleAlert } from 'lucide-react'
+import { ArrowRight, Check, Circle, Loader2, Play, RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -136,40 +136,76 @@ export function ProjectAutopilotPanel() {
     return payload.run as ProjectAutopilotRun
   }
 
+  const createAndExecute = async () => {
+    if (!selectedProject) return toast.error('Select a project first')
+    if (objective.trim().length < 10) return toast.error('Describe the dashboard objective')
+    const response = await fetch(`/api/admin/projects/${selectedProject.id}/autopilot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tenantId: selectedProject.tenantId,
+        idempotencyKey: crypto.randomUUID(),
+        brief: {
+          objective,
+          audience: audience.trim() || null,
+          chartCount,
+          chartTypes,
+          autoApply: true,
+        },
+      }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.run) throw new Error(errorText(payload))
+    const created = payload.run as ProjectAutopilotRun
+    setRun(created)
+    await execute(created)
+  }
+
+  const handleExecutionError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/compose_project_autopilot_dashboard_draft/i.test(message)) {
+      toast.error('Apply migration 20260722130000_autopilot_dashboard_composition.sql in the AI Builder Supabase.')
+    } else if (/project_autopilot_runs|project_autopilot_steps/i.test(message)) {
+      toast.error('Apply migration 20260722113000_project_autopilot_runs.sql in the AI Builder Supabase.')
+    } else {
+      toast.error(message)
+    }
+  }
+
   const start = async () => {
     if (!selectedProject) return toast.error('Select a project first')
     if (objective.trim().length < 10) return toast.error('Describe the dashboard objective')
     setRunning(true)
     try {
-      const response = await fetch(`/api/admin/projects/${selectedProject.id}/autopilot`, {
+      await createAndExecute()
+    } catch (error) {
+      handleExecutionError(error)
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const resetAndStart = async () => {
+    if (!selectedProject) return toast.error('Select a project first')
+    if (objective.trim().length < 10) return toast.error('Describe the dashboard objective')
+    const confirmed = window.confirm(
+      'Reset generated semantic mappings, datasets, charts, and dashboard drafts for this project? The attached data source and selected schema stay connected.',
+    )
+    if (!confirmed) return
+    setRunning(true)
+    try {
+      const response = await fetch(`/api/admin/projects/${selectedProject.id}/autopilot/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: selectedProject.tenantId,
-          idempotencyKey: crypto.randomUUID(),
-          brief: {
-            objective,
-            audience: audience.trim() || null,
-            chartCount,
-            chartTypes,
-            autoApply: true,
-          },
-        }),
+        body: JSON.stringify({ tenantId: selectedProject.tenantId }),
       })
       const payload = await response.json().catch(() => null)
-      if (!response.ok || !payload?.run) throw new Error(errorText(payload))
-      const created = payload.run as ProjectAutopilotRun
-      setRun(created)
-      await execute(created)
+      if (!response.ok || !payload?.reset) throw new Error(errorText(payload))
+      setRun(null)
+      toast.success(`Workspace reset. Preserved ${payload.reset.dataSourcesPreserved} data source.`)
+      await createAndExecute()
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (/compose_project_autopilot_dashboard_draft/i.test(message)) {
-        toast.error('Apply migration 20260722130000_autopilot_dashboard_composition.sql in the AI Builder Supabase.')
-      } else if (/project_autopilot_runs|project_autopilot_steps/i.test(message)) {
-        toast.error('Apply migration 20260722113000_project_autopilot_runs.sql in the AI Builder Supabase.')
-      } else {
-        toast.error(message)
-      }
+      handleExecutionError(error)
     } finally {
       setRunning(false)
     }
@@ -250,9 +286,15 @@ export function ProjectAutopilotPanel() {
               </div>
             </div>
 
-            <Button onClick={() => void start()} isLoading={running} disabled={!selectedProject} className="mt-1 min-h-11 w-full sm:w-auto">
-              <Play className="h-4 w-4" /> Start Autopilot
-            </Button>
+            <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+              <Button onClick={() => void start()} isLoading={running} disabled={!selectedProject} className="min-h-11 w-full sm:w-auto">
+                <Play className="h-4 w-4" /> Start Autopilot
+              </Button>
+              <Button variant="outline" onClick={() => void resetAndStart()} disabled={!selectedProject || running} className="min-h-11 w-full sm:w-auto">
+                <RotateCcw className="h-4 w-4" /> Reset &amp; run fresh
+              </Button>
+            </div>
+            <p className="text-xs text-[var(--dos-text-muted)]">Fresh reset preserves the connected data source, introspected schema, and selected tables.</p>
           </div>
         </section>
 

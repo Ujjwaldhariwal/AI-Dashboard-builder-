@@ -70,6 +70,14 @@ export function rebindProjectAutopilotArtifacts(
   return semanticModelId ? { semanticModelId } : {}
 }
 
+export function nextProjectArtifactName(baseName: string, existingNames: string[]) {
+  const occupied = new Set(existingNames.map(name => name.trim().toLowerCase()))
+  if (!occupied.has(baseName.trim().toLowerCase())) return baseName.slice(0, 120)
+  let suffix = 2
+  while (occupied.has(`${baseName.trim().toLowerCase()} (${suffix})`)) suffix += 1
+  return `${baseName.slice(0, 112).trim()} (${suffix})`
+}
+
 export function evaluateAutopilotSemanticApproval({
   modelName,
   fieldCount,
@@ -410,6 +418,16 @@ async function ensureDraftSemanticModel(supabase: SupabaseClient, context: RunCo
 
   const existing = await loadLatestAutopilotSemanticModel(supabase, context)
   if (existing && (existing.status === 'draft' || existing.status === 'review')) return existing.id
+  const { data: latestVersion, error: versionError } = await supabase
+    .from('business_models')
+    .select('version')
+    .eq('tenant_id', context.tenantId)
+    .eq('project_id', context.projectId)
+    .eq('name', AUTOPILOT_SEMANTIC_MODEL_NAME)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (versionError) throw new Error(versionError.message)
   const nowIso = new Date().toISOString()
   const { data, error } = await supabase
     .from('business_models')
@@ -419,7 +437,7 @@ async function ensureDraftSemanticModel(supabase: SupabaseClient, context: RunCo
       name: AUTOPILOT_SEMANTIC_MODEL_NAME,
       description: `Generated for: ${context.brief.objective}`.slice(0, 500),
       status: 'draft',
-      version: 1,
+      version: Number(latestVersion?.version ?? 0) + 1,
       created_at: nowIso,
       updated_at: nowIso,
     })
@@ -678,6 +696,16 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
     selection,
   })
   if (!validation.ok) throw new Error(validation.error)
+  const { data: namedDatasets, error: nameError } = await supabase
+    .from('semantic_datasets')
+    .select('name')
+    .eq('tenant_id', context.tenantId)
+    .eq('project_id', context.projectId)
+  if (nameError) throw new Error(nameError.message)
+  const datasetName = nextProjectArtifactName(
+    proposal.name,
+    (namedDatasets ?? []).map(row => String(row.name)),
+  )
   const nowIso = new Date().toISOString()
   if (existing) {
     const { error } = await supabase.from('semantic_datasets').update({ selection, status: 'published', updated_at: nowIso }).eq('id', existing.id)
@@ -700,7 +728,7 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
     tenant_id: context.tenantId,
     project_id: context.projectId,
     model_id: modelId,
-    name: proposal.name,
+    name: datasetName,
     description: proposal.description,
     status: 'published',
     selection,

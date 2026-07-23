@@ -6,6 +6,7 @@ import { expect, test } from '@playwright/test'
 import {
   canAutopilotUseSemanticModel,
   evaluateAutopilotSemanticApproval,
+  nextProjectArtifactName,
   projectAutopilotIdempotencyKey,
   rebindProjectAutopilotArtifacts,
 } from '../src/lib/ai/project-autopilot-server'
@@ -88,6 +89,13 @@ test.describe('project autopilot API', () => {
       dashboardId: 'stale-dashboard',
       dashboardVersionId: 'stale-version',
     }, 'approved-model')).toEqual({ semanticModelId: 'approved-model' })
+  })
+
+  test('versions fresh dataset names past archived workspace artifacts', () => {
+    expect(nextProjectArtifactName('Executive Operations Dataset', [
+      'Executive Operations Dataset',
+      'Executive Operations Dataset (2)',
+    ])).toBe('Executive Operations Dataset (3)')
   })
 
   test('chains governed artifacts without auto-publishing a dashboard release', () => {

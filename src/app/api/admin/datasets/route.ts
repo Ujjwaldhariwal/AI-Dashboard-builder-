@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  let query = auth.supabase.from('semantic_datasets').select('*').order('updated_at', { ascending: false })
+  let query = auth.supabase.from('semantic_datasets').select('*').neq('status', 'archived').order('updated_at', { ascending: false })
   if (projectId) query = query.eq('project_id', projectId)
 
   const { data, error } = await query

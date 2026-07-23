@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
     let query = auth.supabase
       .from('business_models')
       .select('*')
+      .neq('status', 'archived')
       .order('updated_at', { ascending: false })
 
     if (tenantId) query = query.eq('tenant_id', tenantId)
