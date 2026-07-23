@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Network,
   SlidersHorizontal,
+  Sparkles,
   Sun,
   UserRound,
   Users,
@@ -27,6 +28,7 @@ import { PlatformAssistantDock } from '@/components/platform/platform-assistant-
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
+  { href: '/admin/autopilot', label: 'Autopilot', icon: Sparkles },
   { href: '/admin/tenants', label: 'Tenants', icon: Users },
   { href: '/admin/data-sources', label: 'Data Sources', icon: Database },
   { href: '/admin/semantic-model', label: 'Semantic Model', icon: Network },
