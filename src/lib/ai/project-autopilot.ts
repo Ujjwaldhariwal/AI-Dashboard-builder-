@@ -30,6 +30,7 @@ export interface ProjectAutopilotSnapshot {
   selectedColumnCount: number
   semanticModel: {
     id: string
+    name?: string
     status: BusinessModelStatus
     fieldCount: number
     metricCount: number

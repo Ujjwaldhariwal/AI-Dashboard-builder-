@@ -39,9 +39,35 @@ interface RunContext extends ProjectScope {
   artifacts: ProjectAutopilotArtifacts
 }
 
+const AUTOPILOT_SEMANTIC_MODEL_NAME = 'Autopilot Business Model'
+
+interface SemanticModelSummary {
+  id: string
+  name: string
+  status: BusinessModelStatus
+  fieldCount: number
+  metricCount: number
+}
+
 export interface AutopilotSemanticApprovalDecision {
   approved: boolean
   reason: string
+}
+
+export function canAutopilotUseSemanticModel(model: SemanticModelSummary) {
+  if (model.status === 'approved') {
+    return model.fieldCount > 0 && model.metricCount > 0
+  }
+  return model.name === AUTOPILOT_SEMANTIC_MODEL_NAME
+    && (model.status === 'draft' || model.status === 'review')
+}
+
+export function rebindProjectAutopilotArtifacts(
+  artifacts: ProjectAutopilotArtifacts,
+  semanticModelId?: string,
+): ProjectAutopilotArtifacts {
+  if (artifacts.semanticModelId === semanticModelId) return { ...artifacts }
+  return semanticModelId ? { semanticModelId } : {}
 }
 
 export function evaluateAutopilotSemanticApproval({
@@ -55,7 +81,7 @@ export function evaluateAutopilotSemanticApproval({
   metricCount: number
   validation: { ok: boolean; error?: string }
 }): AutopilotSemanticApprovalDecision {
-  if (modelName !== 'Autopilot Business Model') {
+  if (modelName !== AUTOPILOT_SEMANTIC_MODEL_NAME) {
     return { approved: false, reason: 'Only an Autopilot-owned semantic model can be approved automatically.' }
   }
   if (fieldCount === 0) {
@@ -149,18 +175,18 @@ async function selectedColumns(supabase: SupabaseClient, scope: ProjectScope) {
   return { relationIds, columns: (data ?? []).map(row => mapColumn(row as Record<string, unknown>)) }
 }
 
-async function loadSemanticModel(
+async function loadSemanticModelById(
   supabase: SupabaseClient,
   scope: ProjectScope,
-  preferredId?: string,
+  modelId: string,
 ) {
-  let query = supabase
+  const { data, error } = await supabase
     .from('business_models')
-    .select('id, status, updated_at')
+    .select('id, name, status, updated_at')
     .eq('tenant_id', scope.tenantId)
     .eq('project_id', scope.projectId)
-  if (preferredId) query = query.eq('id', preferredId)
-  const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle()
+    .eq('id', modelId)
+    .maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) return null
   const { data: entities, error: entityError } = await supabase.from('business_entities').select('id').eq('model_id', data.id)
@@ -175,10 +201,55 @@ async function loadSemanticModel(
   if (fieldResult.error || metricResult.error) throw new Error(fieldResult.error?.message ?? metricResult.error?.message)
   return {
     id: String(data.id),
+    name: String(data.name),
     status: String(data.status) as BusinessModelStatus,
     fieldCount: fieldResult.count ?? 0,
     metricCount: metricResult.count ?? 0,
+  } satisfies SemanticModelSummary
+}
+
+async function loadActiveSemanticModel(supabase: SupabaseClient, scope: ProjectScope) {
+  const { data, error } = await supabase
+    .from('dashboard_projects')
+    .select('active_business_model_id')
+    .eq('tenant_id', scope.tenantId)
+    .eq('id', scope.projectId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const modelId = typeof data?.active_business_model_id === 'string' ? data.active_business_model_id : null
+  return modelId ? loadSemanticModelById(supabase, scope, modelId) : null
+}
+
+async function loadLatestAutopilotSemanticModel(supabase: SupabaseClient, scope: ProjectScope) {
+  const { data, error } = await supabase
+    .from('business_models')
+    .select('id')
+    .eq('tenant_id', scope.tenantId)
+    .eq('project_id', scope.projectId)
+    .eq('name', AUTOPILOT_SEMANTIC_MODEL_NAME)
+    .in('status', ['draft', 'review', 'approved'])
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data ? loadSemanticModelById(supabase, scope, String(data.id)) : null
+}
+
+async function resolveProjectSemanticModel(
+  supabase: SupabaseClient,
+  scope: ProjectScope,
+  preferredId?: string,
+) {
+  const active = await loadActiveSemanticModel(supabase, scope)
+  if (active && active.status === 'approved' && canAutopilotUseSemanticModel(active)) return active
+
+  if (preferredId && preferredId !== active?.id) {
+    const preferred = await loadSemanticModelById(supabase, scope, preferredId)
+    if (preferred && canAutopilotUseSemanticModel(preferred)) return preferred
   }
+
+  const generated = await loadLatestAutopilotSemanticModel(supabase, scope)
+  return generated && canAutopilotUseSemanticModel(generated) ? generated : null
 }
 
 async function loadDataset(supabase: SupabaseClient, scope: ProjectScope, modelId?: string, preferredId?: string) {
@@ -213,9 +284,12 @@ export async function loadProjectAutopilotSnapshot({
   const scope = { tenantId, projectId }
   const [{ relationIds, columns }, semanticModel] = await Promise.all([
     selectedColumns(supabase, scope),
-    loadSemanticModel(supabase, scope, artifacts.semanticModelId),
+    resolveProjectSemanticModel(supabase, scope, artifacts.semanticModelId),
   ])
-  const dataset = await loadDataset(supabase, scope, semanticModel?.id, artifacts.datasetId)
+  const artifactsMatchModel = Boolean(semanticModel && artifacts.semanticModelId === semanticModel.id)
+  const dataset = semanticModel
+    ? await loadDataset(supabase, scope, semanticModel.id, artifactsMatchModel ? artifacts.datasetId : undefined)
+    : null
   const { count, error } = dataset
     ? await supabase
         .from('dashboard_chart_configs')
@@ -228,7 +302,7 @@ export async function loadProjectAutopilotSnapshot({
     : { count: 0, error: null }
   if (error) throw new Error(error.message)
   let dashboard: ProjectAutopilotSnapshot['dashboard'] = null
-  if (artifacts.dashboardId && artifacts.dashboardVersionId) {
+  if (artifactsMatchModel && artifacts.dashboardId && artifacts.dashboardVersionId) {
     const { data: version, error: versionError } = await supabase
       .from('dashboard_versions')
       .select('id, dashboard_id, status')
@@ -326,15 +400,23 @@ export async function persistProjectAutopilotPlan({
 }
 
 async function ensureDraftSemanticModel(supabase: SupabaseClient, context: RunContext) {
-  const existing = await loadSemanticModel(supabase, context, context.artifacts.semanticModelId)
-  if (existing) return existing.id
+  const preferred = context.artifacts.semanticModelId
+    ? await loadSemanticModelById(supabase, context, context.artifacts.semanticModelId)
+    : null
+  if (
+    preferred?.name === AUTOPILOT_SEMANTIC_MODEL_NAME
+    && (preferred.status === 'draft' || preferred.status === 'review')
+  ) return preferred.id
+
+  const existing = await loadLatestAutopilotSemanticModel(supabase, context)
+  if (existing && (existing.status === 'draft' || existing.status === 'review')) return existing.id
   const nowIso = new Date().toISOString()
   const { data, error } = await supabase
     .from('business_models')
     .insert({
       tenant_id: context.tenantId,
       project_id: context.projectId,
-      name: 'Autopilot Business Model',
+      name: AUTOPILOT_SEMANTIC_MODEL_NAME,
       description: `Generated for: ${context.brief.objective}`.slice(0, 500),
       status: 'draft',
       version: 1,
@@ -751,8 +833,12 @@ async function ensureDashboardDraft(supabase: SupabaseClient, context: RunContex
 }
 
 export async function executeProjectAutopilot(supabase: SupabaseClient, context: RunContext) {
-  const artifacts = { ...context.artifacts }
+  let artifacts = { ...context.artifacts }
   let snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
+  if (snapshot.semanticModel?.id !== artifacts.semanticModelId) {
+    artifacts = rebindProjectAutopilotArtifacts(artifacts, snapshot.semanticModel?.id)
+    snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
+  }
   let plan = buildProjectAutopilotPlan(snapshot, context.brief)
   if (plan.currentStep === 'schema_scope') {
     return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })

@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 import {
+  canAutopilotUseSemanticModel,
   evaluateAutopilotSemanticApproval,
   projectAutopilotIdempotencyKey,
+  rebindProjectAutopilotArtifacts,
 } from '../src/lib/ai/project-autopilot-server'
 
 const brief = {
@@ -54,6 +56,40 @@ test.describe('project autopilot API', () => {
     })).toMatchObject({ approved: false, reason: 'Metric source field is invalid or missing' })
   })
 
+  test('reuses complete approved models and rejects stale manual review artifacts', () => {
+    expect(canAutopilotUseSemanticModel({
+      id: 'approved-model',
+      name: 'Dashboard Workspace Business Model v1',
+      status: 'approved',
+      fieldCount: 14,
+      metricCount: 4,
+    })).toBeTruthy()
+    expect(canAutopilotUseSemanticModel({
+      id: 'stale-manual-model',
+      name: 'Dashboard Workspace Business Model v1',
+      status: 'review',
+      fieldCount: 14,
+      metricCount: 4,
+    })).toBeFalsy()
+    expect(canAutopilotUseSemanticModel({
+      id: 'autopilot-model',
+      name: 'Autopilot Business Model',
+      status: 'review',
+      fieldCount: 14,
+      metricCount: 4,
+    })).toBeTruthy()
+  })
+
+  test('drops stale downstream artifacts when an approved project model is adopted', () => {
+    expect(rebindProjectAutopilotArtifacts({
+      semanticModelId: 'stale-model',
+      datasetId: 'stale-dataset',
+      chartIds: ['stale-chart'],
+      dashboardId: 'stale-dashboard',
+      dashboardVersionId: 'stale-version',
+    }, 'approved-model')).toEqual({ semanticModelId: 'approved-model' })
+  })
+
   test('chains governed artifacts without auto-publishing a dashboard release', () => {
     const server = readFileSync(join(process.cwd(), 'src/lib/ai/project-autopilot-server.ts'), 'utf8')
     const runRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/route.ts'), 'utf8')
@@ -61,6 +97,7 @@ test.describe('project autopilot API', () => {
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/project-autopilot-panel.tsx'), 'utf8')
     expect(server).toContain('buildDeterministicSemanticProposal')
     expect(server).toContain('validateAndApproveAutopilotSemanticModel')
+    expect(server).toContain('resolveProjectSemanticModel')
     expect(server).toContain("action: 'business_model.approved'")
     expect(server).toContain('buildDeterministicDatasetProposal')
     expect(server).toContain('buildDeterministicChartSuiteProposal')
