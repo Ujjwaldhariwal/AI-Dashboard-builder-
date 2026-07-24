@@ -208,6 +208,41 @@ export function getChartCompatibility(shape: DatasetShape): ChartCompatibilityRe
   ))
 }
 
+export function getDatasetTemplateAvailability(shape: DatasetShape): ChartCompatibilityResult[] {
+  const evaluated = CHART_TEMPLATE_REGISTRY.map(template => {
+    const { requirement } = template
+    const blockReason = shape.dimensionCount < requirement.minDimensions
+      ? `Needs at least ${requirement.minDimensions} dimension(s).`
+      : shape.metricCount < requirement.minMetrics
+        ? `Needs at least ${requirement.minMetrics} metric(s).`
+        : requirement.requiresDateAxis && !shape.hasDateAxis
+          ? 'Requires a date/time axis.'
+          : null
+    if (blockReason) {
+      return {
+        template,
+        status: 'blocked' as const,
+        score: 0,
+        reasons: [blockReason],
+      }
+    }
+
+    return {
+      template,
+      status: 'allowed' as const,
+      score: scoreTemplate(template, shape),
+      reasons: ['The dataset contains enough fields and metrics to build this chart projection.'],
+    }
+  }).sort((a, b) => b.score - a.score || a.template.name.localeCompare(b.template.name))
+
+  const firstAllowed = evaluated.find(result => result.status === 'allowed')
+  return evaluated.map(result => (
+    result === firstAllowed
+      ? { ...result, status: 'recommended' as const, reasons: ['Best available projection from this dataset.'] }
+      : result
+  ))
+}
+
 export function analyzeDatasetChartOptions(input: {
   fields: SemanticFieldRow[]
   metrics: SemanticMetricRow[]
@@ -215,6 +250,6 @@ export function analyzeDatasetChartOptions(input: {
   const shape = analyzeDatasetShape(input)
   return {
     shape,
-    compatibility: getChartCompatibility(shape),
+    compatibility: getDatasetTemplateAvailability(shape),
   }
 }

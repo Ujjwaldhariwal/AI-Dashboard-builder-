@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 import { buildDeterministicChartSuiteProposal } from '../src/lib/ai/chart-suite-copilot'
+import { validateDashboardChartConfig } from '../src/lib/semantic/chart-config-validator'
+import { analyzeDatasetChartOptions } from '../src/lib/semantic/dataset-shape-analyzer'
 
 const fields = [
   { id: '10000000-0000-4000-8000-000000000001', name: 'Month', role: 'date' },
@@ -60,6 +62,51 @@ test.describe('chart suite copilot', () => {
     expect(proposal.charts.map(chart => chart.templateId)).toEqual(['kpi-grid', 'table-grid'])
     expect(proposal.warnings.some(warning => warning.includes('Line could not be generated'))).toBeTruthy()
     expect(proposal.warnings.some(warning => warning.includes('Generated 2 of 5'))).toBeTruthy()
+  })
+
+  test('builds focused KPI, trend, and comparison projections from a rich dataset', () => {
+    const richFields = [
+      ...fields,
+      { id: '10000000-0000-4000-8000-000000000003', name: 'Status', role: 'dimension' },
+      { id: '10000000-0000-4000-8000-000000000004', name: 'Segment', role: 'attribute' },
+    ]
+    const richMetrics = [
+      ...metrics,
+      { id: '20000000-0000-4000-8000-000000000003', name: 'Margin', aggregation: 'avg' },
+    ]
+    const available = analyzeDatasetChartOptions({ fields: richFields, metrics: richMetrics })
+      .compatibility.filter(item => item.status !== 'blocked').map(item => item.template.id)
+
+    expect(available).toEqual(expect.arrayContaining(['kpi-card', 'line', 'bar']))
+    expect(validateDashboardChartConfig({
+      templateId: 'kpi-card',
+      encoding: {
+        yMetricIds: [richMetrics[0].id],
+        stackMetricIds: [],
+        tooltipFieldIds: [richMetrics[0].id],
+        labelById: {},
+        colorById: {},
+        filters: [],
+        limit: 1,
+      },
+      fields: richFields,
+      metrics: richMetrics,
+    }).state).toBe('valid')
+    expect(validateDashboardChartConfig({
+      templateId: 'line',
+      encoding: {
+        xAxisFieldId: richFields[0].id,
+        yMetricIds: [richMetrics[0].id],
+        stackMetricIds: [],
+        tooltipFieldIds: [richFields[0].id, richMetrics[0].id],
+        labelById: {},
+        colorById: {},
+        filters: [],
+        limit: 25,
+      },
+      fields: richFields,
+      metrics: richMetrics,
+    }).state).toBe('valid')
   })
 
   test('validates proposals before one atomic RPC applies the whole suite', () => {

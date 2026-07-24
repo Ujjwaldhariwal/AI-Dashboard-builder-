@@ -29,6 +29,10 @@ const monthFieldId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const revenueFieldId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 const revenueMetricId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
 const dataSourceId = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+const customerEntityId = '12121212-1212-4212-8212-121212121212'
+const revenueCustomerFieldId = '13131313-1313-4313-8313-131313131313'
+const customerIdFieldId = '14141414-1414-4414-8414-141414141414'
+const relationshipId = '15151515-1515-4515-8515-151515151515'
 const capturedAt = '2026-07-14T12:00:00.000Z'
 
 function datasetSnapshot(): DashboardReleaseDatasetSnapshot {
@@ -170,6 +174,74 @@ test.describe('immutable dashboard release snapshots', () => {
     expect(releasedSourceSchemaHash(snapshot, dataSourceId)).toBe('schema-v1')
     expect(releasedSourceSchemaContracts(snapshot)).toEqual({ [dataSourceId]: 'schema-v1' })
     expect(releasedDatasetCacheTtl(snapshot)).toBe(120)
+  })
+
+  test('loads relationship join keys as runtime support fields without projecting them', () => {
+    const snapshot = datasetSnapshot()
+    snapshot.datasetConfig = {
+      ...snapshot.datasetConfig,
+      selection: {
+        fieldIds: [monthFieldId],
+        metricIds: [revenueMetricId],
+        relationshipIds: [relationshipId],
+      },
+    }
+    snapshot.semanticSnapshot = {
+      ...snapshot.semanticSnapshot,
+      entities: [
+        ...(snapshot.semanticSnapshot.entities as Record<string, unknown>[]),
+        { id: customerEntityId, model_id: sourceModelId, name: 'Customer' },
+      ],
+      fields: [
+        ...(snapshot.semanticSnapshot.fields as Record<string, unknown>[]),
+        {
+          id: revenueCustomerFieldId,
+          entity_id: entityId,
+          name: 'Customer ID',
+          role: 'identifier',
+          source_column: {
+            dataSourceId,
+            schemaName: 'public',
+            tableName: 'monthly_revenue',
+            columnName: 'customer_id',
+          },
+        },
+        {
+          id: customerIdFieldId,
+          entity_id: customerEntityId,
+          name: 'Customer ID',
+          role: 'identifier',
+          source_column: {
+            dataSourceId,
+            schemaName: 'public',
+            tableName: 'customers',
+            columnName: 'id',
+          },
+        },
+      ],
+      relationships: [{
+        id: relationshipId,
+        model_id: sourceModelId,
+        from_entity_id: entityId,
+        to_entity_id: customerEntityId,
+        type: 'many_to_one',
+        join_config: {
+          leftFieldId: revenueCustomerFieldId,
+          rightFieldId: customerIdFieldId,
+          operator: '=',
+        },
+      }],
+    }
+
+    const resolution = resolveReleasedSemanticReferences(snapshot)
+
+    expect(resolution.ok).toBe(true)
+    expect(resolution.fields.map(field => field.id)).toEqual([monthFieldId])
+    expect(resolution.metricSourceFields.map(field => field.id)).toEqual(expect.arrayContaining([
+      revenueFieldId,
+      revenueCustomerFieldId,
+      customerIdFieldId,
+    ]))
   })
 
   test('fails closed when captured semantic lineage is incomplete', () => {

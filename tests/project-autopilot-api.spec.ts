@@ -150,4 +150,12 @@ test.describe('project autopilot API', () => {
     expect(runRoute).not.toContain(".upsert({\n      tenant_id: parsed.data.tenantId")
     expect(panel).toContain('idempotencyKey: crypto.randomUUID()')
   })
+
+  test('counts only currently available schema relations in Autopilot scope', () => {
+    const server = readFileSync(join(process.cwd(), 'src/lib/ai/project-autopilot-server.ts'), 'utf8')
+
+    expect(server).toContain(".from('data_source_relations')")
+    expect(server).toContain(".eq('is_available', true)")
+    expect(server).toContain(".in('relation_id', availableRelationIds)")
+  })
 })

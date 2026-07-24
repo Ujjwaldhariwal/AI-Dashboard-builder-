@@ -30,7 +30,20 @@ export function validateDashboardChartConfig({
   const template = getChartTemplate(templateId as ChartTemplateId)
   const fieldIds = new Set(fields.map(field => String(field.id)))
   const metricIds = new Set(metrics.map(metric => String(metric.id)))
-  const { shape, compatibility } = analyzeDatasetChartOptions({ fields, metrics })
+  const projectedFieldIds = new Set([
+    encoding.xAxisFieldId,
+    encoding.seriesFieldId,
+  ].filter((id): id is string => Boolean(id)))
+  const projectedMetricIds = new Set([
+    ...encoding.yMetricIds,
+    ...(encoding.stackMetricIds ?? []),
+  ])
+  const projectedFields = fields.filter(field => projectedFieldIds.has(String(field.id)))
+  const projectedMetrics = metrics.filter(metric => projectedMetricIds.has(String(metric.id)))
+  const { shape, compatibility } = analyzeDatasetChartOptions({
+    fields: projectedFields,
+    metrics: projectedMetrics,
+  })
 
   if (!template) {
     addIssue(issues, 'error', 'unknown_template', `Unknown chart template "${templateId}".`)

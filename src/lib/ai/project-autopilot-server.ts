@@ -182,12 +182,23 @@ export function mapProjectAutopilotRun(row: Record<string, unknown>): ProjectAut
 }
 
 async function selectedRelationIds(supabase: SupabaseClient, scope: ProjectScope) {
+  const { data: availableRelations, error: relationError } = await supabase
+    .from('data_source_relations')
+    .select('id')
+    .eq('tenant_id', scope.tenantId)
+    .eq('project_id', scope.projectId)
+    .eq('is_available', true)
+  if (relationError) throw new Error(relationError.message)
+  const availableRelationIds = (availableRelations ?? []).map(row => String(row.id))
+  if (availableRelationIds.length === 0) return []
+
   const { data, error } = await supabase
     .from('data_source_relation_selections')
     .select('relation_id')
     .eq('tenant_id', scope.tenantId)
     .eq('project_id', scope.projectId)
     .eq('status', 'included')
+    .in('relation_id', availableRelationIds)
   if (error) throw new Error(error.message)
   return (data ?? []).map(row => String(row.relation_id))
 }

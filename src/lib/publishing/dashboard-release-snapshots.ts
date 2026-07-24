@@ -1,4 +1,5 @@
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
+import { semanticSupportFieldIds } from '@/lib/semantic/semantic-hardening'
 
 interface ReleaseSemanticSelection {
   fieldIds: string[]
@@ -188,18 +189,18 @@ export function resolveReleasedSemanticReferences(snapshot: DashboardReleaseData
     return { ok: false, error: 'Released dataset snapshot is missing selected semantic relationships', fields, metrics, relationships, metricSourceFields: [] }
   }
 
-  const selectedFieldIds = new Set(fields.map(field => String(field.id)))
-  const metricSourceFieldIds = Array.from(new Set(metrics.map(metric => {
-    const expression = asRecord(metric.expression)
-    return typeof expression.fieldId === 'string' ? expression.fieldId : ''
-  }).filter(Boolean)))
-  const metricSourceFields = metricSourceFieldIds
-    .filter(fieldId => !selectedFieldIds.has(fieldId))
+  const selectedFieldIds = fields.map(field => String(field.id))
+  const supportFieldIds = semanticSupportFieldIds({
+    selectedFieldIds,
+    metrics,
+    relationships,
+  })
+  const metricSourceFields = supportFieldIds
     .map(fieldId => fieldById.get(fieldId))
     .filter((field): field is Record<string, unknown> => Boolean(field))
 
-  if (metricSourceFields.length !== metricSourceFieldIds.filter(fieldId => !selectedFieldIds.has(fieldId)).length) {
-    return { ok: false, error: 'Released semantic snapshot is missing metric source fields', fields, metrics, relationships, metricSourceFields }
+  if (metricSourceFields.length !== supportFieldIds.length) {
+    return { ok: false, error: 'Released semantic snapshot is missing metric or relationship support fields', fields, metrics, relationships, metricSourceFields }
   }
 
   const resolvedFieldById = new Map([...fields, ...metricSourceFields].map(field => [String(field.id), field]))

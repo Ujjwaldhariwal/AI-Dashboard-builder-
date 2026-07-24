@@ -12,6 +12,8 @@ export interface SemanticReferenceValidation {
   fields: Record<string, unknown>[]
   metrics: Record<string, unknown>[]
   relationships: Record<string, unknown>[]
+  // Runtime support fields include metric inputs and relationship join keys that
+  // should not be projected as visible dataset columns.
   metricSourceFields: Record<string, unknown>[]
 }
 
@@ -21,6 +23,38 @@ function unique(values: string[]) {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+export function semanticSupportFieldIds({
+  selectedFieldIds,
+  metrics,
+  relationships,
+}: {
+  selectedFieldIds: string[]
+  metrics: Record<string, unknown>[]
+  relationships: Record<string, unknown>[]
+}) {
+  const selected = new Set(selectedFieldIds)
+  const metricFieldIds = metrics.map(metric => {
+    const expression = asRecord(metric.expression)
+    return typeof expression.fieldId === 'string' ? expression.fieldId : ''
+  })
+  const relationshipFieldIds = relationships.flatMap(relationship => {
+    const joinConfig = asRecord(relationship.join_config)
+    return [
+      typeof joinConfig.leftFieldId === 'string'
+        ? joinConfig.leftFieldId
+        : typeof joinConfig.left_field_id === 'string'
+          ? joinConfig.left_field_id
+          : '',
+      typeof joinConfig.rightFieldId === 'string'
+        ? joinConfig.rightFieldId
+        : typeof joinConfig.right_field_id === 'string'
+          ? joinConfig.right_field_id
+          : '',
+    ]
+  })
+  return unique([...metricFieldIds, ...relationshipFieldIds]).filter(fieldId => !selected.has(fieldId))
 }
 
 function sourceColumn(field: Record<string, unknown>) {
@@ -200,18 +234,18 @@ export async function validateSemanticReferencesForModel({
     return { ok: false, error: 'Dataset contains relationships outside the selected semantic model', fields, metrics, relationships, metricSourceFields: [] }
   }
 
-  const metricFieldIds = unique(metrics.map(metric => {
-    const expression = asRecord(metric.expression)
-    return typeof expression.fieldId === 'string' ? expression.fieldId : ''
-  }))
   const selectedFieldIds = new Set(fields.map(field => String(field.id)))
-  const missingMetricFieldIds = metricFieldIds.filter(fieldId => !selectedFieldIds.has(fieldId))
-  const metricSourceFields = missingMetricFieldIds.length > 0
-    ? await loadFieldsForEntityIds(supabase, entityIds, missingMetricFieldIds)
+  const supportFieldIds = semanticSupportFieldIds({
+    selectedFieldIds: [...selectedFieldIds],
+    metrics,
+    relationships,
+  })
+  const metricSourceFields = supportFieldIds.length > 0
+    ? await loadFieldsForEntityIds(supabase, entityIds, supportFieldIds)
     : []
 
-  if (metricSourceFields.length !== missingMetricFieldIds.length) {
-    return { ok: false, error: 'Metric source fields must belong to the same semantic model', fields, metrics, relationships, metricSourceFields }
+  if (metricSourceFields.length !== supportFieldIds.length) {
+    return { ok: false, error: 'Metric and relationship support fields must belong to the same semantic model', fields, metrics, relationships, metricSourceFields }
   }
 
   const allFields = [...fields, ...metricSourceFields]
