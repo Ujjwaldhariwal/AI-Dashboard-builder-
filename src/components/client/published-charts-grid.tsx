@@ -15,6 +15,7 @@ import { ModernPieChart } from '@/components/charts/modern-pie-chart'
 import { DASHBOARDOS_THEME_CHANGE_EVENT } from '@/components/client/client-theme-shell'
 import { AiChartRefinementDialog } from '@/components/platform/ai-chart-refinement-dialog'
 import { resolvePublishedChartFields } from '@/lib/client/published-chart-runtime'
+import { parsePublishedChartRunResponse } from '@/lib/client/published-chart-response'
 import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
 import { getDemoChartElapsedMs, getDemoChartFields, getDemoChartRows } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
@@ -32,25 +33,6 @@ interface PublishedChartsGridProps {
 }
 
 type PublishedChartViewMode = 'chart' | 'table'
-
-interface ChartRunPayload {
-  result?: {
-    rows?: Record<string, unknown>[]
-    fields?: Array<string | { name?: string }>
-    rowCount?: number
-    elapsedMs?: number
-    warnings?: string[]
-    chart?: {
-      resolved?: {
-        xField?: string
-        yFields?: string[]
-        tooltipFields?: string[]
-        sortField?: string
-      }
-    }
-  } | null
-  error?: string
-}
 
 interface ChartRunState {
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -397,13 +379,13 @@ export function PublishedChartsGrid({
       setChartRuns(Object.fromEntries(ids.map(id => [id, { ...EMPTY_STATE, status: 'loading' as const }])))
       const entries = await Promise.all(ids.map(async chartId => {
         try {
-          const response = await fetch(`/api/client/${encodeURIComponent(tenantSlug)}/charts/${encodeURIComponent(chartId)}/run`, {
+          const response = await fetch('/api/client/chart-run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
+            body: JSON.stringify({ tenantSlug, chartId }),
             signal: controller.signal,
           })
-          const payload = await response.json() as ChartRunPayload
+          const payload = await parsePublishedChartRunResponse(response)
           if (!response.ok) throw new Error(payload.error || 'Chart query failed')
           const rows = payload.result?.rows ?? []
           const fieldNames = fieldNamesFromResult(payload.result?.fields)

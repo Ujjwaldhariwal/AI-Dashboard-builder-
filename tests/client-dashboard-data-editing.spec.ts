@@ -131,6 +131,8 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(gridSource).toContain("type PublishedChartViewMode = 'chart' | 'table'")
     expect(gridSource).toContain('aria-label="Dashboard data view"')
     expect(gridSource).toContain('<DataTable rows={state.rows}')
+    expect(gridSource).toContain("fetch('/api/client/chart-run'")
+    expect(gridSource).toContain('parsePublishedChartRunResponse(response)')
     expect(gridSource).toContain('Edit with AI')
     expect(gridSource).toContain('<AiChartRefinementDialog')
     expect(gridSource).toContain('dashboardChartPresentationToWidgetStyle')
@@ -140,5 +142,13 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(pageSource).toContain('editor: true')
     expect(pageSource).toContain('.from(\'dashboard_chart_configs\')')
     expect(pageSource).toContain('indexPublishedChartEditors')
+
+    const stableRouteSource = readFileSync(
+      join(process.cwd(), 'src/app/api/client/chart-run/route.ts'),
+      'utf8',
+    )
+    expect(stableRouteSource).toContain('runPublishedChartRequest')
+    expect(stableRouteSource).toContain('tenantSlug')
+    expect(stableRouteSource).toContain('chartId')
   })
 })
