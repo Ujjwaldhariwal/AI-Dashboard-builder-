@@ -122,7 +122,45 @@ function chartSnapshot(chartConfig?: Record<string, unknown>): DashboardReleaseC
         filters: [],
         limit: 100,
       },
-      presentation: { size: 'standard', showLegend: true, showLabels: false, valueFormat: 'currency' },
+      presentation: {
+        size: 'standard',
+        showLegend: true,
+        showLabels: true,
+        valueFormat: 'currency',
+        colors: ['#EC4899', '#8B5CF6'],
+        showGrid: false,
+        legendPosition: 'bottom',
+        xAxis: {
+          show: true,
+          title: 'Month',
+          labelColor: '#4B5563',
+          labelFontSize: 13,
+          labelFontWeight: 'bold',
+          labelRotation: 15,
+        },
+        yAxis: {
+          show: true,
+          title: 'Revenue',
+          labelColor: '#6B7280',
+          labelFontSize: 12,
+          labelFontWeight: 'medium',
+        },
+        labels: {
+          color: '#BE185D',
+          fontSize: 12,
+          fontWeight: 'bold',
+          position: 'top',
+        },
+        tooltip: {
+          enabled: true,
+          backgroundColor: '#111827',
+          borderColor: '#EC4899',
+          textColor: '#F9FAFB',
+        },
+        margins: { top: 20, right: 24, bottom: 32, left: 40 },
+        line: { smooth: true, width: 4 },
+        bar: { radius: 6 },
+      },
       interactions: {},
       layout: { order: 0, gridSpan: 1 },
       validation_state: 'valid',
@@ -161,6 +199,11 @@ test.describe('immutable dashboard release snapshots', () => {
     expect(releasedAfterEdit.datasetId).toBe(datasetSnapshotId)
     expect(releasedAfterEdit.name).toBe('Revenue trend')
     expect(releasedAfterEdit.presentation.showLegend).toBe(true)
+    expect(releasedAfterEdit.presentation.colors).toEqual(['#EC4899', '#8B5CF6'])
+    expect(releasedAfterEdit.presentation.xAxis?.title).toBe('Month')
+    expect(releasedAfterEdit.presentation.tooltip?.backgroundColor).toBe('#111827')
+    expect(releasedAfterEdit.presentation.margins).toEqual({ top: 20, right: 24, bottom: 32, left: 40 })
+    expect(releasedAfterEdit.presentation.line).toEqual({ smooth: true, width: 4 })
   })
 
   test('resolves runtime semantic inputs and schema contract only from the dataset snapshot', () => {

@@ -10,6 +10,7 @@ import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-tr
 import { withAlpha } from '@/lib/echarts/utils' // ← Fix #6
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
+  chartFontWeight,
   getChartMargin,
   showValueLabels,
 } from '@/lib/charts/chart-constants'
@@ -49,7 +50,7 @@ export function ModernHorizontalBarChart({
   const s      = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const colors = s.colors
   const r      = s.barRadius ?? 6
-  const margin = getChartMargin(sizePreset)
+  const margin = getChartMargin(sizePreset, s.chartMargin)
   const axis   = getAxisColors()
   const tt     = getTooltipStyle(s)
 
@@ -72,7 +73,7 @@ export function ModernHorizontalBarChart({
       .map(([name, value]) => ({ name, value }))
   }, [data, xField, yField])
 
-  const displayLabels = showValueLabels(sizePreset, chartData.length)
+  const displayLabels = s.showLabels ?? showValueLabels(sizePreset, chartData.length)
 
   const option = useMemo(() => ({
     animation:         true,
@@ -88,6 +89,7 @@ export function ModernHorizontalBarChart({
       containLabel: true,
     },
     tooltip: {
+      show: s.tooltipEnabled !== false,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
@@ -97,10 +99,16 @@ export function ModernHorizontalBarChart({
       },
     },
     xAxis: {
+      show: s.showXAxis !== false,
       type: 'value',
+      name: s.xAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 34,
       axisLabel: {
-        color:     axis.label,
-        fontSize:  11,
+        color:     s.xAxisLabelColor ?? axis.label,
+        fontSize:  s.xAxisLabelFontSize ?? 11,
+        fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
+        rotate: s.xAxisLabelRotation ?? 0,
         formatter: (v: number) => fmtValue(v, s.labelFormat),
       },
       axisLine:  { show: false },
@@ -111,9 +119,17 @@ export function ModernHorizontalBarChart({
       },
     },
     yAxis: {
+      show: s.showYAxis !== false,
       type:      'category',
+      name: s.yAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 52,
       data:      chartData.map(d => d.name),
-      axisLabel: { color: axis.label, fontSize: 11 },
+      axisLabel: {
+        color: s.yAxisLabelColor ?? axis.label,
+        fontSize: s.yAxisLabelFontSize ?? 11,
+        fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
+      },
       axisLine:  { show: false },
       axisTick:  { show: false },
     },
@@ -134,11 +150,12 @@ export function ModernHorizontalBarChart({
       })),
       label: {
         show:      displayLabels,
-        position:  'right' as const,
+        position:  s.labelPosition === 'inside' ? 'insideRight' as const : 'right' as const,
         // ── Fix #5 — typed label formatter ───────────────────
         formatter: (p: LabelParam) => fmtValue(p.value, s.labelFormat),
-        fontSize:  10,
-        color:     axis.label,
+        fontSize:  s.labelFontSize ?? 10,
+        fontWeight: chartFontWeight(s.labelFontWeight),
+        color:     s.labelColor ?? axis.label,
       },
       emphasis: {
         itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' },

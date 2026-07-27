@@ -24,6 +24,10 @@ import {
 import { compileDatasetQueryPlan } from '../src/lib/semantic/dataset-query-compiler'
 import { queryResultCacheKey } from '../src/lib/semantic/query-result-cache'
 import {
+  dashboardChartPresentationToWidgetStyle,
+  normalizeDashboardChartPresentation,
+} from '../src/lib/charts/dashboard-chart-presentation'
+import {
   buildAiChartExamplePrompts,
   canRenderAiChartPreview,
   describeAiChartDiff,
@@ -248,6 +252,107 @@ test.describe('AI data access guardrails', () => {
     expect(currentChart.name).toBe('Billing by City')
   })
 
+  test('supports bounded NLP presentation edits and deep-merges nested styles', () => {
+    const patch = ChartAiPatchSchema.parse({
+      templateId: 'line',
+      presentation: {
+        size: 'compact',
+        colors: ['#EC4899', '#8B5CF6'],
+        showLegend: true,
+        legendPosition: 'bottom',
+        showLabels: true,
+        showGrid: false,
+        xAxis: {
+          show: true,
+          title: 'Billing month',
+          labelColor: '#334155',
+          labelFontSize: 14,
+          labelFontWeight: 'bold',
+          labelRotation: 30,
+        },
+        yAxis: {
+          title: 'Bill amount',
+          labelFontWeight: 'medium',
+        },
+        labels: {
+          color: '#BE185D',
+          fontSize: 12,
+          fontWeight: 'bold',
+          position: 'top',
+        },
+        tooltip: {
+          enabled: true,
+          backgroundColor: '#111827',
+          borderColor: '#EC4899',
+          textColor: '#F9FAFB',
+        },
+        margins: { top: 24, right: 20, bottom: 36, left: 44 },
+        line: { smooth: true, width: 4 },
+        bar: { radius: 10 },
+      },
+    })
+
+    const styled = applyChartAiPatch(currentChart, patch)
+    expect(styled.templateId).toBe('line')
+    expect(styled.presentation).toMatchObject({
+      size: 'compact',
+      colors: ['#EC4899', '#8B5CF6'],
+      showLabels: true,
+      showGrid: false,
+      xAxis: { title: 'Billing month', labelFontWeight: 'bold', labelRotation: 30 },
+      tooltip: { backgroundColor: '#111827', textColor: '#F9FAFB' },
+      margins: { top: 24, left: 44 },
+      line: { smooth: true, width: 4 },
+    })
+
+    const restyled = applyChartAiPatch(styled, ChartAiPatchSchema.parse({
+      presentation: {
+        xAxis: { labelRotation: 0 },
+        tooltip: { enabled: false },
+      },
+    }))
+    expect(restyled.presentation.xAxis).toMatchObject({
+      title: 'Billing month',
+      labelFontWeight: 'bold',
+      labelRotation: 0,
+    })
+    expect(restyled.presentation.tooltip).toMatchObject({
+      enabled: false,
+      backgroundColor: '#111827',
+      textColor: '#F9FAFB',
+    })
+
+    const widgetStyle = dashboardChartPresentationToWidgetStyle(
+      normalizeDashboardChartPresentation(restyled.presentation),
+      ['#4F46E5'],
+    )
+    expect(widgetStyle).toMatchObject({
+      colors: ['#EC4899', '#8B5CF6'],
+      showLabels: true,
+      showGrid: false,
+      xAxisTitle: 'Billing month',
+      xAxisLabelRotation: 0,
+      tooltipEnabled: false,
+      lineWidth: 4,
+      barRadius: 10,
+    })
+  })
+
+  test('rejects unsafe or unbounded NLP presentation values', () => {
+    expect(ChartAiPatchSchema.safeParse({
+      presentation: { colors: ['pink'] },
+    }).success).toBe(false)
+    expect(ChartAiPatchSchema.safeParse({
+      presentation: { colors: ['url(javascript:alert(1))'] },
+    }).success).toBe(false)
+    expect(ChartAiPatchSchema.safeParse({
+      presentation: { margins: { left: 1000 } },
+    }).success).toBe(false)
+    expect(ChartAiPatchSchema.safeParse({
+      presentation: { xAxis: { labelFontSize: 72 } },
+    }).success).toBe(false)
+  })
+
   test('builds AI prompt suggestions only from allowed fields and metrics', () => {
     const context: AiChartContext = {
       contractVersion: 'dashboardos.ai.chart_context.v1',
@@ -270,6 +375,7 @@ test.describe('AI data access guardrails', () => {
       { label: 'Title', before: 'Billing by City', after: 'Monthly Billing Trend' },
       { label: 'Chart type', before: 'bar', after: 'line' },
     ]))
+    expect(prompts.join(' ')).toContain('pink palette')
   })
 
   test('validates narrow AI filter patches against allowed fields only', () => {

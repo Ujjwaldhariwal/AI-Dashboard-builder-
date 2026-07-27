@@ -19,6 +19,8 @@ import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
 import { getDemoChartElapsedMs, getDemoChartFields, getDemoChartRows } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { getEnterpriseChartColors } from '@/lib/echarts/theme'
+import { dashboardChartPresentationToWidgetStyle } from '@/lib/charts/dashboard-chart-presentation'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import type { ChartTemplateId } from '@/types/chart-template'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 
@@ -157,12 +159,17 @@ function useDashboardChartDarkMode() {
 
 function chartStyle(chart: DashboardChartConfig, dark: boolean) {
   const colors = Object.values(chart.encoding.colorById).filter(Boolean)
-  return {
-    colors: colors.length > 0 ? colors : getEnterpriseChartColors(dark),
-    showLegend: chart.presentation.showLegend,
-    showGrid: true,
-    labelFormat: chart.presentation.valueFormat === 'currency' ? 'currency' as const : undefined,
-  }
+  return dashboardChartPresentationToWidgetStyle(
+    chart.presentation,
+    colors.length > 0 ? colors : getEnterpriseChartColors(dark),
+  )
+}
+
+function chartSizePreset(chart: DashboardChartConfig): WidgetSizePreset {
+  if (chart.presentation.size === 'compact') return 'small'
+  if (chart.presentation.size === 'wide') return 'large'
+  if (chart.presentation.size === 'full') return 'full'
+  return 'medium'
 }
 
 function isChartTemplate(templateId: ChartTemplateId, supported: ChartTemplateId[]) {
@@ -224,7 +231,9 @@ function KpiView({
           <div key={metricId} className="border-b border-[color:var(--dos-border-soft)] p-4 last:border-b-0 sm:border-r sm:even:border-r-0">
             <p className="text-xs font-medium text-[var(--dos-text-muted)]">{label}</p>
             <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-[var(--dos-text-primary)]">
-              {toNumber(firstRow[label]).toLocaleString('en')}
+              <span style={{ color: chart.presentation.colors?.[index % (chart.presentation.colors?.length || 1)] }}>
+                {toNumber(firstRow[label]).toLocaleString('en')}
+              </span>
             </p>
           </div>
         )
@@ -281,6 +290,7 @@ function ChartBody({
     : chart.encoding.yMetricIds.map(metricId => fieldNameFromId(chart, metricId)).filter(Boolean)
   const primaryMetric = yFields[0] ?? state.fieldNames.find(field => field !== xField) ?? 'value'
   const style = chartStyle(chart, dark)
+  const sizePreset = chartSizePreset(chart)
   const height = chartHeight(chart)
 
   if (!state.rows.length) {
@@ -302,27 +312,27 @@ function ChartBody({
   }
 
   if (chart.templateId === 'bar') {
-    return <div className={height}><ModernBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} /></div>
+    return <div className={height}><ModernBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'horizontal-bar') {
-    return <div className={height}><ModernHorizontalBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} /></div>
+    return <div className={height}><ModernHorizontalBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'grouped-bar') {
-    return <div className={height}><ModernGroupedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} /></div>
+    return <div className={height}><ModernGroupedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'horizontal-stacked-bar') {
-    return <div className={height}><ModernHorizontalStackedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} /></div>
+    return <div className={height}><ModernHorizontalStackedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'line' || chart.templateId === 'trend-composed') {
-    return <div className={height}><ModernLineChart data={chartRows} xField={xField} yField={primaryMetric} style={style} /></div>
+    return <div className={height}><ModernLineChart data={chartRows} xField={xField} yField={primaryMetric} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'pie' || chart.templateId === 'gauge' || chart.templateId === 'ring-gauge') {
-    return <div className={height}><ModernPieChart data={chartRows} nameField={xField} valueField={primaryMetric} donut={chart.templateId !== 'pie'} style={style} /></div>
+    return <div className={height}><ModernPieChart data={chartRows} nameField={xField} valueField={primaryMetric} donut={chart.templateId !== 'pie'} style={style} sizePreset={sizePreset} /></div>
   }
 
   return <DataTable rows={chartRows} fieldNames={state.fieldNames} />

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { ChartSuiteDraftSchema } from '@/lib/ai/chart-suite-copilot'
+import { normalizeDashboardChartPresentation } from '@/lib/charts/dashboard-chart-presentation'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -29,7 +30,7 @@ function mapChart(row: Record<string, unknown>): DashboardChartConfig {
     status: String(row.status) as DashboardChartConfig['status'],
     templateId: String(row.template_id) as DashboardChartConfig['templateId'],
     encoding: row.encoding as DashboardChartConfig['encoding'],
-    presentation: row.presentation as DashboardChartConfig['presentation'],
+    presentation: normalizeDashboardChartPresentation(row.presentation),
     interactions: row.interactions as DashboardChartConfig['interactions'],
     layout: row.layout as DashboardChartConfig['layout'],
     validationState: String(row.validation_state) as DashboardChartConfig['validationState'],
@@ -70,7 +71,13 @@ export async function POST(request: Request) {
     const metrics = (metricResult.data ?? []) as Record<string, unknown>[]
     const validated = parsed.data.charts.map((chart) => ({
       chart,
-      validation: validateDashboardChartConfig({ templateId: chart.templateId, encoding: chart.encoding, fields, metrics }),
+      validation: validateDashboardChartConfig({
+        templateId: chart.templateId,
+        encoding: chart.encoding,
+        presentation: chart.presentation,
+        fields,
+        metrics,
+      }),
     }))
     const invalid = validated.filter(item => item.validation.state === 'invalid')
     if (invalid.length > 0) {

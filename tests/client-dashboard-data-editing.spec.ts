@@ -51,8 +51,40 @@ const sourceChartRow = {
   presentation: {
     size: 'wide',
     showLegend: true,
-    showLabels: false,
+    showLabels: true,
     valueFormat: 'currency',
+    colors: ['#EC4899', '#8B5CF6'],
+    showGrid: false,
+    legendPosition: 'bottom',
+    xAxis: {
+      show: true,
+      title: 'Month',
+      labelColor: '#4B5563',
+      labelFontSize: 13,
+      labelFontWeight: 'bold',
+      labelRotation: 15,
+    },
+    yAxis: {
+      show: true,
+      title: 'Revenue',
+      labelColor: '#6B7280',
+      labelFontSize: 12,
+      labelFontWeight: 'medium',
+    },
+    labels: {
+      color: '#BE185D',
+      fontSize: 12,
+      fontWeight: 'bold',
+      position: 'top',
+    },
+    tooltip: {
+      enabled: true,
+      backgroundColor: '#111827',
+      borderColor: '#EC4899',
+      textColor: '#F9FAFB',
+    },
+    margins: { top: 20, right: 24, bottom: 32, left: 40 },
+    line: { smooth: true, width: 4 },
   },
   interactions: {},
   layout: { order: 0, gridSpan: 4 },
@@ -69,6 +101,10 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(mapped.datasetId).toBe('dataset-1')
     expect(mapped.templateId).toBe('line')
     expect(mapped.validationState).toBe('valid')
+    expect(mapped.presentation.colors).toEqual(['#EC4899', '#8B5CF6'])
+    expect(mapped.presentation.xAxis?.title).toBe('Month')
+    expect(mapped.presentation.tooltip?.backgroundColor).toBe('#111827')
+    expect(mapped.presentation.margins?.left).toBe(40)
 
     const editors = indexPublishedChartEditors({
       releaseSnapshots: [
@@ -97,6 +133,8 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(gridSource).toContain('<DataTable rows={state.rows}')
     expect(gridSource).toContain('Edit with AI')
     expect(gridSource).toContain('<AiChartRefinementDialog')
+    expect(gridSource).toContain('dashboardChartPresentationToWidgetStyle')
+    expect(gridSource).toContain('sizePreset={sizePreset}')
     expect(gridSource).toContain('The live published dashboard remains unchanged until a new version is published.')
 
     expect(pageSource).toContain('editor: true')

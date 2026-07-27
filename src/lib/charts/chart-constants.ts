@@ -7,15 +7,36 @@ function normalizeSizePreset(sizePreset?: WidgetSizePreset): WidgetSizePreset {
   return sizePreset ?? 'medium'
 }
 
-export function getChartMargin(sizePreset?: WidgetSizePreset) {
-  return normalizeSizePreset(sizePreset) === 'small'
+export function getChartMargin(
+  sizePreset?: WidgetSizePreset,
+  override?: Partial<{ top: number; right: number; bottom: number; left: number }>,
+) {
+  const base = normalizeSizePreset(sizePreset) === 'small'
     ? COMPACT_CHART_MARGIN
     : DEFAULT_CHART_MARGIN
+  return { ...base, ...(override ?? {}) }
 }
 
 export function getLegendVisibility(sizePreset: WidgetSizePreset | undefined, showLegendFlag?: boolean) {
+  if (showLegendFlag !== undefined) return showLegendFlag
   if (normalizeSizePreset(sizePreset) === 'small') return false
   return showLegendFlag !== false
+}
+
+export function chartFontWeight(value?: 'normal' | 'medium' | 'bold') {
+  if (value === 'bold') return 700
+  if (value === 'medium') return 500
+  return 400
+}
+
+export function getLegendLayout(
+  position: 'top' | 'right' | 'bottom' | 'left' | undefined,
+  margin: { top: number; right: number; bottom: number; left: number },
+) {
+  if (position === 'right') return { orient: 'vertical' as const, right: margin.right, top: 'middle' as const }
+  if (position === 'left') return { orient: 'vertical' as const, left: margin.left, top: 'middle' as const }
+  if (position === 'bottom') return { orient: 'horizontal' as const, bottom: margin.bottom - 8, left: 'center' as const }
+  return { orient: 'horizontal' as const, top: margin.top - 4, right: margin.right }
 }
 
 export function getCategoryTickInterval(sizePreset: WidgetSizePreset | undefined, dataLen: number) {

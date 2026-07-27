@@ -11,7 +11,9 @@ import { withAlpha } from '@/lib/echarts/utils'
 import { sortLabels } from '@/lib/charts/domain-order'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
+  chartFontWeight,
   getChartMargin,
+  getLegendLayout,
   getLegendVisibility,
   showValueLabels,
 } from '@/lib/charts/chart-constants'
@@ -72,7 +74,7 @@ export function ModernHorizontalStackedBarChart({
   const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
-  const margin = getChartMargin(sizePreset)
+  const margin = getChartMargin(sizePreset, s.chartMargin)
   const metrics = useMemo(
     () => getNumericFields(data, xField, yField, yFields),
     [data, xField, yField, yFields],
@@ -106,7 +108,7 @@ export function ModernHorizontalStackedBarChart({
     }))
   }, [data, seriesMeta, xField])
   const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
-  const displayLabels = showValueLabels(sizePreset, rows.length)
+  const displayLabels = s.showLabels ?? showValueLabels(sizePreset, rows.length)
 
   const option = useMemo(() => ({
     animation: true,
@@ -122,38 +124,35 @@ export function ModernHorizontalStackedBarChart({
       containLabel: true,
     },
     tooltip: {
+      show: s.tooltipEnabled !== false,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
       valueFormatter: (v: number) => fmtValue(v, s.labelFormat),
     },
     legend: displayLegend
-      ? sizePreset === 'medium'
-        ? {
-            show: true,
-            top: margin.top - 4,
-            right: margin.right,
-            icon: 'roundRect',
-            itemWidth: 10,
-            itemHeight: 6,
-            textStyle: { fontSize: 10, color: axis.label },
-          }
-        : {
-            show: true,
-            bottom: margin.bottom - 8,
-            icon: 'roundRect',
-            itemWidth: 10,
-            itemHeight: 6,
-            textStyle: { fontSize: 10, color: axis.label },
-          }
+      ? {
+          show: true,
+          ...getLegendLayout(s.legendPosition, margin),
+          icon: 'roundRect',
+          itemWidth: 10,
+          itemHeight: 6,
+          textStyle: { fontSize: 10, color: axis.label },
+        }
       : { show: false },
     xAxis: {
+      show: s.showXAxis !== false,
       type: 'value',
+      name: s.xAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 34,
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: axis.label,
-        fontSize: 10,
+        color: s.xAxisLabelColor ?? axis.label,
+        fontSize: s.xAxisLabelFontSize ?? 10,
+        fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
+        rotate: s.xAxisLabelRotation ?? 0,
         formatter: (v: number) => fmtValue(v, s.labelFormat),
       },
       splitLine: {
@@ -162,11 +161,19 @@ export function ModernHorizontalStackedBarChart({
       },
     },
     yAxis: {
+      show: s.showYAxis !== false,
       type: 'category',
+      name: s.yAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 54,
       data: rows.map(r => r.name),
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: axis.label, fontSize: 11 },
+      axisLabel: {
+        color: s.yAxisLabelColor ?? axis.label,
+        fontSize: s.yAxisLabelFontSize ?? 11,
+        fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
+      },
     },
     series: seriesMeta.map((meta, idx) => ({
       name: meta.label,
@@ -178,14 +185,17 @@ export function ModernHorizontalStackedBarChart({
       label: displayLabels
         ? {
             show: true,
-            position: 'insideRight',
-            fontSize: 9,
-            color: '#f8fafc',
+            position: s.labelPosition === 'right' ? 'right' as const : 'insideRight' as const,
+            fontSize: s.labelFontSize ?? 9,
+            fontWeight: chartFontWeight(s.labelFontWeight),
+            color: s.labelColor ?? '#f8fafc',
             formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
           }
         : { show: false },
       itemStyle: {
-        borderRadius: idx === seriesMeta.length - 1 ? [0, 8, 8, 0] : 0,
+        borderRadius: idx === seriesMeta.length - 1
+          ? [0, s.barRadius ?? 8, s.barRadius ?? 8, 0]
+          : 0,
         color: new graphic.LinearGradient(1, 0, 0, 0, [
           { offset: 0, color: withAlpha(meta.color, 0.95) },
           { offset: 1, color: withAlpha(meta.color, 0.6) },
@@ -200,10 +210,7 @@ export function ModernHorizontalStackedBarChart({
     axis.splitLine,
     displayLabels,
     displayLegend,
-    margin.bottom,
-    margin.left,
-    margin.right,
-    margin.top,
+    margin,
     rows,
     s,
     seriesMeta,

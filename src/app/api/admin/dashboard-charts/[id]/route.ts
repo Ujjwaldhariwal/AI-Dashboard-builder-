@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
+import { normalizeDashboardChartPresentation } from '@/lib/charts/dashboard-chart-presentation'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -37,9 +38,7 @@ function mapChart(row: Record<string, unknown>): DashboardChartConfig {
     encoding: row.encoding && typeof row.encoding === 'object'
       ? row.encoding as DashboardChartConfig['encoding']
       : { yMetricIds: [], tooltipFieldIds: [], labelById: {}, colorById: {} },
-    presentation: row.presentation && typeof row.presentation === 'object'
-      ? row.presentation as DashboardChartConfig['presentation']
-      : { size: 'standard', showLegend: true, showLabels: false, valueFormat: null },
+    presentation: normalizeDashboardChartPresentation(row.presentation),
     interactions: row.interactions && typeof row.interactions === 'object'
       ? row.interactions as DashboardChartConfig['interactions']
       : {},
@@ -119,6 +118,7 @@ export async function PATCH(
     const validation = validateDashboardChartConfig({
       templateId: chart.templateId,
       encoding: chart.encoding as DashboardChartEncoding,
+      presentation: chart.presentation,
       fields: (fieldsResult.data ?? []) as Record<string, unknown>[],
       metrics: (metricsResult.data ?? []) as Record<string, unknown>[],
     })

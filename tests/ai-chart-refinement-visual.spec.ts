@@ -14,6 +14,48 @@ const previewChart: DashboardChartConfig = {
     yMetricIds: ['demo-metric-revenue'],
     limit: 4,
   },
+  presentation: {
+    ...demoChart.presentation,
+    size: 'compact',
+    colors: ['#EC4899', '#8B5CF6'],
+    showLabels: true,
+    showGrid: false,
+    legendPosition: 'bottom',
+    xAxis: {
+      show: true,
+      title: 'Month',
+      labelFontSize: 14,
+      labelFontWeight: 'bold',
+      labelRotation: 20,
+    },
+    yAxis: {
+      show: true,
+      title: 'Revenue',
+      labelFontWeight: 'medium',
+    },
+    labels: {
+      color: '#BE185D',
+      fontSize: 12,
+      fontWeight: 'bold',
+      position: 'top',
+    },
+    tooltip: {
+      enabled: true,
+      backgroundColor: '#111827',
+      borderColor: '#EC4899',
+      textColor: '#F9FAFB',
+    },
+    margins: {
+      top: 20,
+      right: 20,
+      bottom: 32,
+      left: 40,
+    },
+    line: {
+      smooth: true,
+      width: 4,
+    },
+  },
   updatedAt: '2026-07-08T09:00:00.000Z',
 }
 
@@ -24,6 +66,7 @@ const previewPatch = {
     yMetricIds: previewChart.encoding.yMetricIds,
     limit: previewChart.encoding.limit,
   },
+  presentation: previewChart.presentation,
 }
 
 const chartContext = {
@@ -254,6 +297,10 @@ test.describe('AI chart refinement visual states', () => {
     await expect(page.getByTestId('ai-refinement-mini-preview')).toBeVisible()
     await expect(page.getByTestId('ai-refinement-status')).toContainText('preview ready')
     await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('Structured patch preview')
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('Palette')
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('#EC4899')
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('X axis style')
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('Tooltip style')
     await expect(page.getByTestId('ai-refinement-mini-preview')).toContainText('Monthly Revenue Trend')
 
     await page.getByRole('button', { name: 'Accept patch' }).click()

@@ -3,6 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
 import {
+  DashboardChartPresentationPatchSchema,
+  mergeDashboardChartPresentation,
+  normalizeDashboardChartPresentation,
+} from '@/lib/charts/dashboard-chart-presentation'
+import {
   classifyFieldForAi,
   isFieldAllowedForAiPreview,
   isMetricAllowedForAi,
@@ -45,12 +50,7 @@ export const ChartAiPatchSchema = z.object({
       ]),
     }).strict()).max(4).optional(),
   }).strict().optional(),
-  presentation: z.object({
-    size: z.enum(['compact', 'standard', 'wide', 'full']).optional(),
-    showLegend: z.boolean().optional(),
-    showLabels: z.boolean().optional(),
-    valueFormat: z.string().max(80).nullable().optional(),
-  }).strict().optional(),
+  presentation: DashboardChartPresentationPatchSchema.optional(),
 }).strict()
 
 export type ChartAiPatch = z.infer<typeof ChartAiPatchSchema>
@@ -194,14 +194,7 @@ function mapChart(row: Record<string, unknown>): DashboardChartConfig {
         ? encoding.filters as DashboardChartEncoding['filters']
         : [],
     },
-    presentation: {
-      size: typeof presentation.size === 'string'
-        ? presentation.size as DashboardChartConfig['presentation']['size']
-        : 'standard',
-      showLegend: typeof presentation.showLegend === 'boolean' ? presentation.showLegend : true,
-      showLabels: typeof presentation.showLabels === 'boolean' ? presentation.showLabels : false,
-      valueFormat: typeof presentation.valueFormat === 'string' ? presentation.valueFormat : null,
-    },
+    presentation: normalizeDashboardChartPresentation(presentation),
     interactions: asRecord(row.interactions) as DashboardChartConfig['interactions'],
     layout: asRecord(row.layout) as DashboardChartConfig['layout'],
     validationState: String(row.validation_state ?? 'unknown') as DashboardChartConfig['validationState'],
@@ -235,25 +228,18 @@ export function applyChartAiPatch(chart: DashboardChartConfig, patch: ChartAiPat
     description: patch.description === undefined ? chart.description ?? null : patch.description,
     templateId: (patch.templateId ?? chart.templateId) as DashboardChartConfig['templateId'],
     encoding: mergeEncoding(chart.encoding, patch.encoding),
-    presentation: {
-      ...chart.presentation,
-      ...(patch.presentation ?? {}),
-    },
+    presentation: mergeDashboardChartPresentation(chart.presentation, patch.presentation),
   }
 }
 
 export function serializeGovernedAiChartContext<
   T extends Awaited<ReturnType<typeof buildGovernedAiChartContext>>,
 >(context: T) {
-  const {
-    allowedFieldIds: _allowedFieldIds,
-    allowedMetricIds: _allowedMetricIds,
-    fields: _fields,
-    metrics: _metrics,
-    blockedFields,
-    blockedMetrics,
-    ...publicContext
-  } = context
+  const { blockedFields, blockedMetrics } = context
+  const privateKeys = new Set(['allowedFieldIds', 'allowedMetricIds', 'fields', 'metrics', 'blockedFields', 'blockedMetrics'])
+  const publicContext = Object.fromEntries(
+    Object.entries(context).filter(([key]) => !privateKeys.has(key)),
+  )
 
   return {
     ...publicContext,
@@ -305,6 +291,7 @@ export function validateChartAiPatchAgainstAllowlist({
   const validation = validateDashboardChartConfig({
     templateId: nextChart.templateId,
     encoding: nextChart.encoding,
+    presentation: nextChart.presentation,
     fields,
     metrics,
   })

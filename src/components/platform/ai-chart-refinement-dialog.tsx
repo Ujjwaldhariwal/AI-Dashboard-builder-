@@ -1,9 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Bot, CheckCircle2, Eye, Loader2, SlidersHorizontal, Sparkles, TriangleAlert, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { ModernBarChart } from '@/components/charts/modern-bar-chart'
+import { ModernGroupedBarChart } from '@/components/charts/modern-grouped-bar-chart'
+import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
+import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-horizontal-stacked-bar-chart'
+import { ModernLineChart } from '@/components/charts/modern-line-chart'
+import { ModernPieChart } from '@/components/charts/modern-pie-chart'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,6 +22,8 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import type { ChartAiPatch } from '@/lib/ai/chart-ai-contract'
+import { dashboardChartPresentationToWidgetStyle } from '@/lib/charts/dashboard-chart-presentation'
+import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 
 export interface AiFieldDescriptor {
@@ -196,6 +204,14 @@ function filterLabels(filters: DashboardChartConfig['encoding']['filters'], labe
   }).join('; ')
 }
 
+function presentationSummary(value: Record<string, unknown> | undefined) {
+  if (!value || Object.keys(value).length === 0) return 'Theme default'
+  return Object.entries(value)
+    .filter(([, item]) => item !== undefined && item !== null)
+    .map(([key, item]) => `${key}: ${String(item)}`)
+    .join(', ')
+}
+
 export function describeAiChartDiff({
   before,
   after,
@@ -218,6 +234,12 @@ export function describeAiChartDiff({
   const beforeMetrics = metricLabels(before.encoding.yMetricIds, labels)
   const afterMetrics = metricLabels(after.encoding.yMetricIds, labels)
   if (beforeMetrics !== afterMetrics) changes.push({ label: 'Metrics', before: beforeMetrics, after: afterMetrics })
+
+  const beforeTooltips = metricLabels(before.encoding.tooltipFieldIds, labels)
+  const afterTooltips = metricLabels(after.encoding.tooltipFieldIds, labels)
+  if (beforeTooltips !== afterTooltips) {
+    changes.push({ label: 'Tooltip fields', before: beforeTooltips, after: afterTooltips })
+  }
 
   if ((before.encoding.seriesFieldId ?? '') !== (after.encoding.seriesFieldId ?? '')) {
     changes.push({
@@ -243,6 +265,26 @@ export function describeAiChartDiff({
     changes.push({ label: 'Card size', before: before.presentation.size, after: after.presentation.size })
   }
 
+  const presentationChanges: Array<[string, string, string]> = [
+    [
+      'Palette',
+      before.presentation.colors?.join(', ') ?? 'Theme default',
+      after.presentation.colors?.join(', ') ?? 'Theme default',
+    ],
+    ['Legend', `${before.presentation.showLegend ? 'shown' : 'hidden'} / ${before.presentation.legendPosition ?? 'auto'}`, `${after.presentation.showLegend ? 'shown' : 'hidden'} / ${after.presentation.legendPosition ?? 'auto'}`],
+    ['Value labels', `${before.presentation.showLabels ? 'shown' : 'hidden'} / ${presentationSummary(before.presentation.labels)}`, `${after.presentation.showLabels ? 'shown' : 'hidden'} / ${presentationSummary(after.presentation.labels)}`],
+    ['Grid', before.presentation.showGrid === false ? 'hidden' : 'shown', after.presentation.showGrid === false ? 'hidden' : 'shown'],
+    ['X axis style', presentationSummary(before.presentation.xAxis), presentationSummary(after.presentation.xAxis)],
+    ['Y axis style', presentationSummary(before.presentation.yAxis), presentationSummary(after.presentation.yAxis)],
+    ['Tooltip style', presentationSummary(before.presentation.tooltip), presentationSummary(after.presentation.tooltip)],
+    ['Margins', presentationSummary(before.presentation.margins), presentationSummary(after.presentation.margins)],
+    ['Line style', presentationSummary(before.presentation.line), presentationSummary(after.presentation.line)],
+    ['Bar style', presentationSummary(before.presentation.bar), presentationSummary(after.presentation.bar)],
+  ]
+  presentationChanges.forEach(([label, beforeValue, afterValue]) => {
+    if (beforeValue !== afterValue) changes.push({ label, before: beforeValue, after: afterValue })
+  })
+
   return changes
 }
 
@@ -261,23 +303,17 @@ export function buildAiChartExamplePrompts(chart: DashboardChartConfig, context:
     'Sort by highest value and show the top 10',
     dateField ? `Filter ${dateField.label} to the latest period` : '',
     `Rename this to ${dateField ? 'Monthly Billing Trend' : 'Executive Operations Trend'}`,
-  ].filter(Boolean).slice(0, 6)
-}
-
-function toNumber(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value.replace(/,/g, '').trim())
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return 0
+    'Use a pink palette, show bold value labels, and keep the card compact',
+    'Add clear axis titles, rotate X labels 30 degrees, and use 14px bold axis labels',
+    'Move the legend to the bottom, use 24px margins, and enable a dark tooltip',
+  ].filter(Boolean).slice(0, 9)
 }
 
 function previewBindings(chart: DashboardChartConfig, context: AiChartContext | null) {
   const labels = labelById(chart, context)
   const xField = chart.encoding.xAxisFieldId ? labels.get(chart.encoding.xAxisFieldId) ?? '' : ''
-  const yField = chart.encoding.yMetricIds[0] ? labels.get(chart.encoding.yMetricIds[0]) ?? '' : ''
-  return { xField, yField }
+  const yFields = chart.encoding.yMetricIds.map(metricId => labels.get(metricId) ?? '').filter(Boolean)
+  return { xField, yField: yFields[0] ?? '', yFields }
 }
 
 export function canRenderAiChartPreview(chart: DashboardChartConfig, context: AiChartContext | null) {
@@ -287,19 +323,21 @@ export function canRenderAiChartPreview(chart: DashboardChartConfig, context: Ai
     && Boolean(xField)
     && Boolean(yField)
     && rows.some(row => Object.prototype.hasOwnProperty.call(row, xField) && Object.prototype.hasOwnProperty.call(row, yField))
-    && ['bar', 'horizontal-bar', 'line', 'trend-composed', 'pie', 'ring-gauge'].includes(chart.templateId)
+    && [
+      'bar',
+      'horizontal-bar',
+      'grouped-bar',
+      'horizontal-stacked-bar',
+      'line',
+      'trend-composed',
+      'pie',
+      'ring-gauge',
+    ].includes(chart.templateId)
 }
 
 function MiniChartPreview({ chart, context }: { chart: DashboardChartConfig; context: AiChartContext | null }) {
   const rows = (context?.preview?.rows ?? []).slice(0, chart.encoding.limit ?? 8)
-  const { xField, yField } = previewBindings(chart, context)
-  const colors = [
-    'var(--dos-chart-info)',
-    'var(--dos-chart-success)',
-    'var(--dos-chart-warning)',
-    'var(--dos-chart-risk)',
-    'var(--dos-accent-primary)',
-  ]
+  const { xField, yField, yFields } = previewBindings(chart, context)
 
   if (!canRenderAiChartPreview(chart, context)) {
     return (
@@ -313,68 +351,39 @@ function MiniChartPreview({ chart, context }: { chart: DashboardChartConfig; con
     )
   }
 
-  const values = rows.map(row => toNumber(row[yField]))
-  const max = Math.max(...values, 1)
+  const style = dashboardChartPresentationToWidgetStyle(chart.presentation, [
+    '#4F46E5',
+    '#10B981',
+    '#F59E0B',
+    '#EF4444',
+    '#06B6D4',
+  ])
+  const sizePreset: WidgetSizePreset = chart.presentation.size === 'compact'
+    ? 'small'
+    : chart.presentation.size === 'wide'
+      ? 'large'
+      : chart.presentation.size === 'full'
+        ? 'full'
+        : 'medium'
 
+  let preview: ReactNode
   if (chart.templateId === 'line' || chart.templateId === 'trend-composed') {
-    const points = values.map((value, index) => {
-      const x = rows.length <= 1 ? 10 : 10 + (index / (rows.length - 1)) * 280
-      const y = 130 - (value / max) * 105
-      return `${x},${y}`
-    }).join(' ')
-    return (
-      <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
-        <svg viewBox="0 0 300 150" className="h-56 w-full overflow-visible">
-          <polyline points={points} fill="none" stroke={colors[0]} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          {values.map((value, index) => {
-            const x = rows.length <= 1 ? 10 : 10 + (index / (rows.length - 1)) * 280
-            const y = 130 - (value / max) * 105
-            return <circle key={`${x}-${y}`} cx={x} cy={y} r="4" fill={colors[1]} />
-          })}
-        </svg>
-        <p className="text-xs text-[color:var(--dos-text-muted)]">{xField} / {yField}</p>
-      </div>
-    )
-  }
-
-  if (chart.templateId === 'pie' || chart.templateId === 'ring-gauge') {
-    const total = values.reduce((sum, value) => sum + value, 0) || 1
-    return (
-      <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
-        <div className="grid gap-3">
-          {rows.slice(0, 6).map((row, index) => {
-            const pct = Math.round((toNumber(row[yField]) / total) * 100)
-            return (
-              <div key={`${String(row[xField])}-${index}`} className="flex items-center gap-3">
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
-                <span className="min-w-0 flex-1 truncate text-xs text-[color:var(--dos-text-secondary)]">{String(row[xField] ?? `#${index + 1}`)}</span>
-                <span className="text-xs font-semibold text-[color:var(--dos-text-primary)]">{pct}%</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
+    preview = <ModernLineChart data={rows} xField={xField} yField={yField} style={style} sizePreset={sizePreset} />
+  } else if (chart.templateId === 'pie' || chart.templateId === 'ring-gauge') {
+    preview = <ModernPieChart data={rows} nameField={xField} valueField={yField} donut={chart.templateId === 'ring-gauge'} style={style} sizePreset={sizePreset} />
+  } else if (chart.templateId === 'horizontal-bar') {
+    preview = <ModernHorizontalBarChart data={rows} xField={xField} yField={yField} style={style} sizePreset={sizePreset} />
+  } else if (chart.templateId === 'grouped-bar') {
+    preview = <ModernGroupedBarChart data={rows} xField={xField} yFields={yFields} style={style} sizePreset={sizePreset} />
+  } else if (chart.templateId === 'horizontal-stacked-bar') {
+    preview = <ModernHorizontalStackedBarChart data={rows} xField={xField} yFields={yFields} style={style} sizePreset={sizePreset} />
+  } else {
+    preview = <ModernBarChart data={rows} xField={xField} yField={yField} style={style} sizePreset={sizePreset} />
   }
 
   return (
-    <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
-      <div className="space-y-3">
-        {rows.slice(0, 8).map((row, index) => {
-          const value = toNumber(row[yField])
-          const width = Math.max(4, Math.round((value / max) * 100))
-          return (
-            <div key={`${String(row[xField])}-${index}`} className={chart.templateId === 'horizontal-bar' ? 'space-y-1' : 'grid grid-cols-[96px_minmax(0,1fr)] items-center gap-3'}>
-              <span className="truncate text-xs text-[color:var(--dos-text-muted)]">{String(row[xField] ?? `#${index + 1}`)}</span>
-              <div className="h-7 overflow-hidden rounded-md bg-[var(--dos-surface-muted)]">
-                <div className="flex h-full items-center justify-end rounded-md px-2 text-[10px] font-semibold text-white" style={{ width: `${width}%`, backgroundColor: colors[index % colors.length] }}>
-                  {value.toLocaleString('en')}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+    <div className="h-72 rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-2">
+      {preview}
     </div>
   )
 }
@@ -408,6 +417,8 @@ export function AiChartRefinementDialog({
       { label: 'Group', prompt: prompts.find(item => item.toLowerCase().startsWith('group')) ?? '' },
       { label: 'Compare', prompt: prompts.find(item => item.toLowerCase().startsWith('compare')) ?? '' },
       { label: 'Sort/Limit', prompt: prompts.find(item => item.toLowerCase().includes('top 10')) ?? 'Sort by highest value and show the top 10' },
+      { label: 'Style', prompt: prompts.find(item => item.toLowerCase().includes('pink palette')) ?? 'Use a pink palette and bold value labels' },
+      { label: 'Axes', prompt: prompts.find(item => item.toLowerCase().includes('axis titles')) ?? 'Add clear axis titles and bold axis labels' },
     ].filter(action => action.prompt)
   }, [chart, context])
   const diff = useMemo(() => (

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
+import {
+  DashboardChartPresentationSchema,
+  normalizeDashboardChartPresentation,
+} from '@/lib/charts/dashboard-chart-presentation'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
@@ -39,12 +43,7 @@ const ChartSchema = z.object({
   description: z.string().max(500).optional().or(z.literal('')),
   templateId: z.string().min(2).max(80),
   encoding: EncodingSchema,
-  presentation: z.object({
-    size: z.enum(['compact', 'standard', 'wide', 'full']).default('standard'),
-    showLegend: z.boolean().default(true),
-    showLabels: z.boolean().default(false),
-    valueFormat: z.string().max(80).nullable().optional(),
-  }).strict().default({
+  presentation: DashboardChartPresentationSchema.default({
     size: 'standard',
     showLegend: true,
     showLabels: false,
@@ -91,9 +90,7 @@ function mapChart(row: Record<string, unknown>): DashboardChartConfig {
     encoding: row.encoding && typeof row.encoding === 'object'
       ? row.encoding as DashboardChartConfig['encoding']
       : { yMetricIds: [], tooltipFieldIds: [], labelById: {}, colorById: {} },
-    presentation: row.presentation && typeof row.presentation === 'object'
-      ? row.presentation as DashboardChartConfig['presentation']
-      : { size: 'standard', showLegend: true, showLabels: false, valueFormat: null },
+    presentation: normalizeDashboardChartPresentation(row.presentation),
     interactions: row.interactions && typeof row.interactions === 'object'
       ? row.interactions as DashboardChartConfig['interactions']
       : {},
@@ -193,6 +190,7 @@ export async function POST(req: NextRequest) {
     const validation = validateDashboardChartConfig({
       templateId: parsed.data.templateId,
       encoding: parsed.data.encoding as DashboardChartEncoding,
+      presentation: parsed.data.presentation,
       fields: (fieldsResult.data ?? []) as Record<string, unknown>[],
       metrics: (metricsResult.data ?? []) as Record<string, unknown>[],
     })

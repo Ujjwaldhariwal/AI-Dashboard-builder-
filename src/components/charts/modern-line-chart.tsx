@@ -9,8 +9,10 @@ import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
+  chartFontWeight,
   getCategoryTickInterval,
   getChartMargin,
+  getLegendLayout,
   getLegendVisibility,
 } from '@/lib/charts/chart-constants'
 
@@ -50,7 +52,7 @@ export function ModernLineChart({ data, xField, yField, style, sizePreset = 'med
       : 0
   , [chartData])
 
-  const margin = getChartMargin(sizePreset)
+  const margin = getChartMargin(sizePreset, s.chartMargin)
   const rotate = sizePreset === 'small' ? chartData.length > 5 : chartData.length > 8
   const tickInterval = getCategoryTickInterval(sizePreset, chartData.length)
   const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
@@ -71,6 +73,7 @@ export function ModernLineChart({ data, xField, yField, style, sizePreset = 'med
       containLabel: true,
     },
     tooltip: {
+      show: s.tooltipEnabled !== false,
       trigger: 'axis',
       ...tt,
       // ── Fix #5 — typed formatter param ─────────────────────
@@ -80,13 +83,18 @@ export function ModernLineChart({ data, xField, yField, style, sizePreset = 'med
       },
     },
     xAxis: {
+      show: s.showXAxis !== false,
       type: 'category',
+      name: s.xAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 34,
       data: chartData.map(d => d.name),
       boundaryGap: false,
       axisLabel: {
-        color:     axis.label,
-        fontSize:  chartData.length > 15 ? 10 : 11,
-        rotate:    rotate ? -35 : 0,
+        color:     s.xAxisLabelColor ?? axis.label,
+        fontSize:  s.xAxisLabelFontSize ?? (chartData.length > 15 ? 10 : 11),
+        fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
+        rotate:    s.xAxisLabelRotation ?? (rotate ? -35 : 0),
         interval:  tickInterval,
         formatter: (v: string) => v.length > 14 ? v.slice(0, 12) + '…' : v,
       },
@@ -95,10 +103,15 @@ export function ModernLineChart({ data, xField, yField, style, sizePreset = 'med
       splitLine: { show: false },
     },
     yAxis: {
+      show: s.showYAxis !== false,
       type: 'value',
+      name: s.yAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 48,
       axisLabel: {
-        color:    axis.label,
-        fontSize: 11,
+        color:    s.yAxisLabelColor ?? axis.label,
+        fontSize: s.yAxisLabelFontSize ?? 11,
+        fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
         formatter: (v: number) => fmtValue(v, s.labelFormat),
       },
       axisLine:  { show: false },
@@ -109,28 +122,31 @@ export function ModernLineChart({ data, xField, yField, style, sizePreset = 'med
       },
     },
     legend: displayLegend
-      ? sizePreset === 'medium'
-        ? {
-            show: true,
-            top: margin.top - 4,
-            right: margin.right,
-            textStyle: { fontSize: 10, color: axis.label },
-          }
-        : {
-            show: true,
-            bottom: margin.bottom - 8,
-            textStyle: { fontSize: 11, color: axis.label },
-          }
+      ? {
+          show: true,
+          ...getLegendLayout(s.legendPosition, margin),
+          textStyle: { fontSize: 10, color: axis.label },
+        }
       : { show: false },
     series: [{
       type:       'line',
       name:       yField,
       data:       chartData.map(d => d.value),
-      smooth:     0.3,
+      smooth:     s.lineSmooth === false ? false : 0.3,
       symbol:     'circle',
       symbolSize: chartData.length < 25 ? 5 : 0,
-      lineStyle:  { width: 2.5, color: colors[0] },
+      lineStyle:  { width: s.lineWidth ?? 2.5, color: colors[0] },
       itemStyle:  { color: colors[0] },
+      label: s.showLabels
+        ? {
+            show: true,
+            position: s.labelPosition === 'inside' ? 'inside' as const : 'top' as const,
+            color: s.labelColor ?? axis.label,
+            fontSize: s.labelFontSize ?? 10,
+            fontWeight: chartFontWeight(s.labelFontWeight),
+            formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
+          }
+        : { show: false },
       // ── Fix #4 — gradient area fill for enterprise look ─────
       areaStyle: {
         color: new graphic.LinearGradient(0, 0, 0, 1, [
@@ -159,10 +175,7 @@ export function ModernLineChart({ data, xField, yField, style, sizePreset = 'med
     chartData,
     colors,
     displayLegend,
-    margin.bottom,
-    margin.left,
-    margin.right,
-    margin.top,
+    margin,
     rotate,
     s,
     sizePreset,

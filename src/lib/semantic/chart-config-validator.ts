@@ -1,7 +1,12 @@
 import { getChartTemplate } from '@/lib/semantic/chart-template-registry'
+import { DashboardChartPresentationSchema } from '@/lib/charts/dashboard-chart-presentation'
 import { analyzeDatasetChartOptions } from '@/lib/semantic/dataset-shape-analyzer'
 import type { ChartTemplateId } from '@/types/chart-template'
-import type { DashboardChartEncoding, DashboardChartValidationIssue } from '@/types/dashboard-chart'
+import type {
+  DashboardChartEncoding,
+  DashboardChartPresentation,
+  DashboardChartValidationIssue,
+} from '@/types/dashboard-chart'
 
 type SemanticFieldRow = Record<string, unknown>
 type SemanticMetricRow = Record<string, unknown>
@@ -18,11 +23,13 @@ function addIssue(
 export function validateDashboardChartConfig({
   templateId,
   encoding,
+  presentation,
   fields,
   metrics,
 }: {
   templateId: string
   encoding: DashboardChartEncoding
+  presentation?: DashboardChartPresentation
   fields: SemanticFieldRow[]
   metrics: SemanticMetricRow[]
 }) {
@@ -44,6 +51,18 @@ export function validateDashboardChartConfig({
     fields: projectedFields,
     metrics: projectedMetrics,
   })
+
+  if (presentation) {
+    const presentationResult = DashboardChartPresentationSchema.safeParse(presentation)
+    if (!presentationResult.success) {
+      addIssue(
+        issues,
+        'error',
+        'invalid_presentation',
+        presentationResult.error.issues[0]?.message ?? 'Chart presentation settings are invalid.',
+      )
+    }
+  }
 
   if (!template) {
     addIssue(issues, 'error', 'unknown_template', `Unknown chart template "${templateId}".`)

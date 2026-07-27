@@ -271,7 +271,10 @@ Privacy and safety rules:
 - Use only allowedFields and allowedMetrics from the governed context.
 - Never invent SQL, source table names, source column names, code, credentials, or raw records.
 - Blocked fields are not exposed. If the request cannot be done with allowed fields, return an empty JSON object.
-- Prefer small, valid changes and omit unsupported presentation requests.`
+- Prefer small, valid changes.
+- Convert common color names to six-digit hex values.
+- Keep typography, margins, line widths, and bar radii within the supplied schema bounds.
+- Axis field and metric changes must use semantic UUIDs from the governed context.`
 
       const prompt = `chartPatch shape:
 {
@@ -293,9 +296,42 @@ Privacy and safety rules:
   },
   "presentation": {
     "size": "compact|standard|wide|full",
+    "colors": ["#EC4899"],
     "showLegend": true,
+    "legendPosition": "top|right|bottom|left",
     "showLabels": false,
-    "valueFormat": "optional"
+    "showGrid": true,
+    "valueFormat": "currency|percent|null",
+    "xAxis": {
+      "show": true,
+      "title": "optional title or null",
+      "labelColor": "#475569 or null",
+      "labelFontSize": 8,
+      "labelFontWeight": "normal|medium|bold",
+      "labelRotation": 0
+    },
+    "yAxis": {
+      "show": true,
+      "title": "optional title or null",
+      "labelColor": "#475569 or null",
+      "labelFontSize": 8,
+      "labelFontWeight": "normal|medium|bold"
+    },
+    "labels": {
+      "color": "#0F172A or null",
+      "fontSize": 8,
+      "fontWeight": "normal|medium|bold",
+      "position": "auto|top|right|inside|outside"
+    },
+    "tooltip": {
+      "enabled": true,
+      "backgroundColor": "#FFFFFF or null",
+      "borderColor": "#E2E8F0 or null",
+      "textColor": "#0F172A or null"
+    },
+    "margins": { "top": 16, "right": 16, "bottom": 16, "left": 16 },
+    "line": { "smooth": true, "width": 2.5 },
+    "bar": { "radius": 8 }
   }
 }
 

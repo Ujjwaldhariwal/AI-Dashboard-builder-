@@ -30,7 +30,7 @@ export function getTooltipStyle(style?: WidgetStyle) {
   return {
     backgroundColor: style?.tooltipBg    ?? (dark ? '#1e2433' : '#ffffff'),
     borderColor:     style?.tooltipBorder ?? (dark ? '#334155' : '#e2e8f0'),
-    textStyle:       { color: dark ? '#e2e8f0' : '#1e293b', fontSize: 11 },
+    textStyle:       { color: style?.tooltipTextColor ?? (dark ? '#e2e8f0' : '#1e293b'), fontSize: 11 },
     padding:         [6, 10] as [number, number],
     extraCssText:    'border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);',
   }

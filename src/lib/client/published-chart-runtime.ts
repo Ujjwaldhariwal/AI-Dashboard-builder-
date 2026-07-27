@@ -1,5 +1,6 @@
 import type { DashboardReleaseChartSnapshot } from '@/lib/publishing/dashboard-release-snapshots'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
+import { normalizeDashboardChartPresentation } from '@/lib/charts/dashboard-chart-presentation'
 
 export interface PublishedChartFieldResolutionInput {
   fieldNames: string[]
@@ -30,9 +31,7 @@ export function mapPublishedChartEditableSource(row: Record<string, unknown>): D
     encoding: row.encoding && typeof row.encoding === 'object'
       ? row.encoding as DashboardChartConfig['encoding']
       : { yMetricIds: [], tooltipFieldIds: [], labelById: {}, colorById: {} },
-    presentation: row.presentation && typeof row.presentation === 'object'
-      ? row.presentation as DashboardChartConfig['presentation']
-      : { size: 'standard', showLegend: true, showLabels: false, valueFormat: null },
+    presentation: normalizeDashboardChartPresentation(row.presentation),
     interactions: row.interactions && typeof row.interactions === 'object'
       ? row.interactions as DashboardChartConfig['interactions']
       : {},

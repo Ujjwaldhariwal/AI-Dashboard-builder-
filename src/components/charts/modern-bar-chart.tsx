@@ -9,8 +9,10 @@ import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
+  chartFontWeight,
   getCategoryTickInterval,
   getChartMargin,
+  getLegendLayout,
   getLegendVisibility,
   showValueLabels,
 } from '@/lib/charts/chart-constants'
@@ -259,10 +261,10 @@ export function ModernBarChart({
     [chartData, logarithmic],
   )
 
-  const margin = getChartMargin(sizePreset)
+  const margin = getChartMargin(sizePreset, s.chartMargin)
   const tickInterval = getCategoryTickInterval(sizePreset, chartData.length)
   const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
-  const displayLabels = showValueLabels(sizePreset, chartData.length)
+  const displayLabels = s.showLabels ?? showValueLabels(sizePreset, chartData.length)
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
   const barMaxWidth = chartData.length <= 6 ? 34 : chartData.length <= 12 ? 28 : 22
@@ -281,6 +283,7 @@ export function ModernBarChart({
       containLabel: true,
     },
     tooltip: {
+      show: s.tooltipEnabled !== false,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
@@ -291,12 +294,17 @@ export function ModernBarChart({
       },
     },
     xAxis: {
+      show: s.showXAxis !== false,
       type: 'category',
+      name: s.xAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 38,
       data: chartData.map(d => d.name),
       axisLabel: {
-        color: axis.label,
-        fontSize: labelLayout.shouldRotate ? 10 : (chartData.length > 15 ? 10 : 11),
-        rotate: labelLayout.shouldRotate ? labelLayout.angle : 0,
+        color: s.xAxisLabelColor ?? axis.label,
+        fontSize: s.xAxisLabelFontSize ?? (labelLayout.shouldRotate ? 10 : (chartData.length > 15 ? 10 : 11)),
+        fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
+        rotate: s.xAxisLabelRotation ?? (labelLayout.shouldRotate ? labelLayout.angle : 0),
         interval: tickInterval,
         hideOverlap: !labelLayout.shouldRotate,
         lineHeight: labelLayout.shouldRotate ? 12 : 14,
@@ -309,12 +317,17 @@ export function ModernBarChart({
       splitLine: { show: false },
     },
     yAxis: {
+      show: s.showYAxis !== false,
       type: logarithmic ? 'log' : 'value',
+      name: s.yAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 48,
       min: logarithmic ? 0.1 : 0,
       logBase: logarithmic ? 10 : undefined,
       axisLabel: {
-        color: axis.label,
-        fontSize: 11,
+        color: s.yAxisLabelColor ?? axis.label,
+        fontSize: s.yAxisLabelFontSize ?? 11,
+        fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
         formatter: (v: number) => fmtAxisTick(v, s.labelFormat, logarithmic),
       },
       axisLine: { show: false },
@@ -325,18 +338,11 @@ export function ModernBarChart({
       },
     },
     legend: displayLegend
-      ? sizePreset === 'medium'
-        ? {
-            show: true,
-            top: margin.top - 4,
-            right: margin.right,
-            textStyle: { fontSize: 10, color: axis.label },
-          }
-        : {
-            show: true,
-            bottom: margin.bottom - 8,
-            textStyle: { fontSize: 11, color: axis.label },
-          }
+      ? {
+          show: true,
+          ...getLegendLayout(s.legendPosition, margin),
+          textStyle: { fontSize: 10, color: axis.label },
+        }
       : { show: false },
     series: [{
       type: 'bar',
@@ -345,9 +351,14 @@ export function ModernBarChart({
       label: displayLabels
         ? {
             show: true,
-            position: 'top',
-            fontSize: 10,
-            color: axis.label,
+            position: s.labelPosition === 'inside'
+              ? 'inside' as const
+              : s.labelPosition === 'right'
+                ? 'right' as const
+                : 'top' as const,
+            fontSize: s.labelFontSize ?? 10,
+            fontWeight: chartFontWeight(s.labelFontWeight),
+            color: s.labelColor ?? axis.label,
             formatter: (p: { data?: { rawValue?: number }; value: number }) => {
               const rawValue = p?.data?.rawValue ?? p.value
               return fmtValue(Number(rawValue), s.labelFormat)

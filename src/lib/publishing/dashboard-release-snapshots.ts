@@ -1,4 +1,5 @@
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
+import { normalizeDashboardChartPresentation } from '@/lib/charts/dashboard-chart-presentation'
 import { semanticSupportFieldIds } from '@/lib/semantic/semantic-hardening'
 
 interface ReleaseSemanticSelection {
@@ -133,7 +134,6 @@ export function mapDashboardReleaseChartSnapshot(row: Record<string, unknown>): 
 
 export function mapReleasedChartConfig(snapshot: DashboardReleaseChartSnapshot): DashboardChartConfig {
   const row = snapshot.chartConfig
-  const presentation = asRecord(row.presentation)
   return {
     id: snapshot.id,
     tenantId: snapshot.tenantId,
@@ -144,12 +144,7 @@ export function mapReleasedChartConfig(snapshot: DashboardReleaseChartSnapshot):
     status: 'published',
     templateId: String(row.template_id) as DashboardChartConfig['templateId'],
     encoding: releaseEncoding(row.encoding),
-    presentation: {
-      size: String(presentation.size ?? 'standard') as DashboardChartConfig['presentation']['size'],
-      showLegend: presentation.showLegend !== false,
-      showLabels: presentation.showLabels === true,
-      valueFormat: typeof presentation.valueFormat === 'string' ? presentation.valueFormat : null,
-    },
+    presentation: normalizeDashboardChartPresentation(row.presentation),
     interactions: asRecord(row.interactions) as DashboardChartConfig['interactions'],
     layout: asRecord(row.layout) as DashboardChartConfig['layout'],
     validationState: String(row.validation_state ?? 'invalid') as DashboardChartConfig['validationState'],

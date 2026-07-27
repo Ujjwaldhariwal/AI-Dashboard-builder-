@@ -15,10 +15,37 @@ export interface WidgetStyle {
   colors:        string[]
   tooltipBg?:    string
   tooltipBorder?: string
+  tooltipTextColor?: string
+  tooltipEnabled?: boolean
   labelFormat?:  LabelFormat   // ← Fix #1: was string
   barRadius?:    number
   showLegend?:   boolean
+  legendPosition?: 'top' | 'right' | 'bottom' | 'left'
   showGrid?:     boolean
+  showLabels?:   boolean
+  labelColor?:   string
+  labelFontSize?: number
+  labelFontWeight?: 'normal' | 'medium' | 'bold'
+  labelPosition?: 'auto' | 'top' | 'right' | 'inside' | 'outside'
+  showXAxis?: boolean
+  showYAxis?: boolean
+  xAxisTitle?: string
+  yAxisTitle?: string
+  xAxisLabelColor?: string
+  yAxisLabelColor?: string
+  xAxisLabelFontSize?: number
+  yAxisLabelFontSize?: number
+  xAxisLabelFontWeight?: 'normal' | 'medium' | 'bold'
+  yAxisLabelFontWeight?: 'normal' | 'medium' | 'bold'
+  xAxisLabelRotation?: number
+  chartMargin?: {
+    top?: number
+    right?: number
+    bottom?: number
+    left?: number
+  }
+  lineSmooth?: boolean
+  lineWidth?: number
   // ── Fix #4 — customCSS removed (unused in all chart components)
 }
 

@@ -8,6 +8,7 @@ import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils'
 import { sortNamedValues } from '@/lib/charts/domain-order'
+import { chartFontWeight, getChartMargin, getLegendLayout } from '@/lib/charts/chart-constants'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 
 function useEnterpriseTheme() {
@@ -260,10 +261,13 @@ export function ModernPieChart({
 }: ModernPieChartProps) {
   useEnterpriseTheme()
 
-  const s = { ...DEFAULT_STYLE, ...style }
+  const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
   const displayLegend = s.showLegend !== false
+  const displayLabels = s.showLabels ?? true
+  const margin = getChartMargin(sizePreset, s.chartMargin)
+  const legendPosition = s.legendPosition ?? 'bottom'
 
   const maxSlices = sizePreset === 'small' ? 6 : sizePreset === 'medium' ? 8 : 10
 
@@ -296,7 +300,7 @@ export function ModernPieChart({
     [chartData],
   )
 
-  const showBottomLegend = displayLegend
+  const showBottomLegend = displayLegend && legendPosition === 'bottom'
   const shouldUseScrollableLegend = chartData.length > (sizePreset === 'small' ? 4 : 8)
   const legendLabelMaxChars = sizePreset === 'small' ? 14 : sizePreset === 'medium' ? 20 : 26
   const labelMaxChars = sizePreset === 'small' ? 12 : 16
@@ -329,7 +333,8 @@ export function ModernPieChart({
       ? (needsCompactRadius ? '49%' : '51%')
       : (needsCompactRadius ? '50%' : '52%'))
     : '50%'
-  const center = useMemo(() => ['50%', centerY], [centerY])
+  const centerX = legendPosition === 'right' ? '43%' : legendPosition === 'left' ? '57%' : '50%'
+  const center = useMemo(() => [centerX, centerY], [centerX, centerY])
   const donutRadius = useMemo<[string, string]>(() => [
     `${donutInnerRadiusPercent}%`,
     `${donutOuterRadiusPercent}%`,
@@ -348,6 +353,7 @@ export function ModernPieChart({
     backgroundColor: 'transparent',
     color: s.colors,
     tooltip: {
+      show: s.tooltipEnabled !== false,
       trigger: 'item',
       ...tt,
       formatter: (param: TooltipParam) => {
@@ -361,10 +367,7 @@ export function ModernPieChart({
       ? {
           show: true,
           type: shouldUseScrollableLegend ? 'scroll' as const : 'plain' as const,
-          orient: 'horizontal' as const,
-          left: 'center',
-          right: 'center',
-          bottom: 4,
+          ...getLegendLayout(legendPosition, margin),
           width: '94%',
           itemWidth: 10,
           itemHeight: 10,
@@ -384,10 +387,10 @@ export function ModernPieChart({
       : { show: false },
     series: [{
       type: 'pie',
-      left: '4%',
-      right: '4%',
-      top: 10,
-      bottom: seriesBottom,
+      left: margin.left,
+      right: margin.right,
+      top: margin.top + (legendPosition === 'top' && displayLegend ? 24 : 0),
+      bottom: Math.max(seriesBottom, margin.bottom),
       center,
       radius: donut ? donutRadius : ['0%', pieOuterRadius],
       padAngle: donut ? 2 : 1.5,
@@ -396,12 +399,13 @@ export function ModernPieChart({
       avoidLabelOverlap: false,
       data: chartData,
       label: {
-        show: true,
-        position: 'outside' as const,
+        show: displayLabels,
+        position: s.labelPosition === 'inside' ? 'inside' as const : 'outside' as const,
         alignTo: 'labelLine' as const,
         bleedMargin: sizePreset === 'small' ? 2 : 4,
-        color: axis.label,
-        fontSize: sizePreset === 'small' ? 9 : 10,
+        color: s.labelColor ?? axis.label,
+        fontSize: s.labelFontSize ?? (sizePreset === 'small' ? 9 : 10),
+        fontWeight: chartFontWeight(s.labelFontWeight),
         lineHeight: sizePreset === 'small' ? 11 : 13,
         formatter: (param: LabelParam) => {
           const actualPercent = Number(param.data?.actualPercent ?? 0)
@@ -416,7 +420,7 @@ export function ModernPieChart({
         moveOverlap: 'shiftY',
       },
       labelLine: {
-        show: true,
+        show: displayLabels && s.labelPosition !== 'inside',
         length: 10,
         length2: 10,
         minTurnAngle: 30,
@@ -470,12 +474,16 @@ export function ModernPieChart({
     axis.label,
     center,
     chartData,
+    displayLabels,
+    displayLegend,
     donut,
     donutRadius,
     labelMaxChars,
     legendLabelMaxChars,
     pieOuterRadius,
-    s.colors,
+    legendPosition,
+    margin,
+    s,
     seriesBottom,
     shouldUseScrollableLegend,
     showBottomLegend,
