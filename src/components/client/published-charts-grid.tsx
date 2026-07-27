@@ -3,7 +3,7 @@
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 
-import { AlertTriangle, ChartNoAxesCombined, Loader2, RotateCcw, Table2 } from 'lucide-react'
+import { AlertTriangle, ChartNoAxesCombined, Loader2, PencilLine, RotateCcw, Sparkles, Table2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ModernBarChart } from '@/components/charts/modern-bar-chart'
@@ -13,6 +13,7 @@ import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-hori
 import { ModernLineChart } from '@/components/charts/modern-line-chart'
 import { ModernPieChart } from '@/components/charts/modern-pie-chart'
 import { DASHBOARDOS_THEME_CHANGE_EVENT } from '@/components/client/client-theme-shell'
+import { AiChartRefinementDialog } from '@/components/platform/ai-chart-refinement-dialog'
 import { resolvePublishedChartFields } from '@/lib/client/published-chart-runtime'
 import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
 import { getDemoChartElapsedMs, getDemoChartFields, getDemoChartRows } from '@/lib/dashboardos/demo-data'
@@ -24,7 +25,11 @@ import type { DashboardChartConfig } from '@/types/dashboard-chart'
 interface PublishedChartsGridProps {
   tenantSlug: string
   charts: DashboardChartConfig[]
+  canEdit?: boolean
+  editableCharts?: Record<string, DashboardChartConfig>
 }
+
+type PublishedChartViewMode = 'chart' | 'table'
 
 interface ChartRunPayload {
   result?: {
@@ -171,22 +176,24 @@ function DataTable({
   rows: Record<string, unknown>[]
   fieldNames: string[]
 }) {
-  const columns = fieldNames.length > 0 ? fieldNames.slice(0, 8) : Object.keys(rows[0] ?? {}).slice(0, 8)
+  const columns = fieldNames.length > 0 ? fieldNames : Object.keys(rows[0] ?? {})
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[520px] table-fixed text-left text-xs">
-        <thead className="bg-[var(--dos-surface-muted)] text-[11px] uppercase text-[var(--dos-text-muted)]">
+    <div className="max-h-96 overflow-auto rounded-md border border-[color:var(--dos-border-soft)]">
+      <table className="w-full min-w-[640px] text-left text-xs">
+        <thead className="sticky top-0 z-10 bg-[var(--dos-surface-muted)] text-[11px] uppercase text-[var(--dos-text-muted)]">
           <tr>
+            <th className="w-12 px-3 py-2 font-medium">#</th>
             {columns.map(column => (
-              <th key={column} className="w-40 truncate px-3 py-2 font-medium">{column}</th>
+              <th key={column} className="min-w-40 whitespace-nowrap px-3 py-2 font-medium">{column}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-[color:var(--dos-border-soft)]">
-          {rows.slice(0, 10).map((row, index) => (
+          {rows.slice(0, 50).map((row, index) => (
             <tr key={index}>
+              <td className="px-3 py-2 font-mono text-[var(--dos-text-muted)]">{index + 1}</td>
               {columns.map(column => (
-                <td key={column} className="truncate px-3 py-2 text-[var(--dos-text-secondary)]">
+                <td key={column} className="max-w-72 truncate px-3 py-2 text-[var(--dos-text-secondary)]" title={String(row[column] ?? '')}>
                   {String(row[column] ?? '-')}
                 </td>
               ))}
@@ -230,11 +237,13 @@ function ChartBody({
   chart,
   state,
   dark,
+  viewMode,
   onRetry,
 }: {
   chart: DashboardChartConfig
   state: ChartRunState
   dark: boolean
+  viewMode: PublishedChartViewMode
   onRetry: () => void
 }) {
   if (state.status === 'loading') {
@@ -265,7 +274,7 @@ function ChartBody({
     )
   }
 
-  const rows = applyChartLimit(state.rows, chart, state)
+  const chartRows = applyChartLimit(state.rows, chart, state)
   const xField = state.resolved.xField || state.fieldNames[0] || 'name'
   const yFields = state.resolved.yFields.length > 0
     ? state.resolved.yFields
@@ -274,7 +283,7 @@ function ChartBody({
   const style = chartStyle(chart, dark)
   const height = chartHeight(chart)
 
-  if (!rows.length) {
+  if (!state.rows.length) {
     return (
       <div className="flex min-h-64 flex-col items-center justify-center bg-[var(--dos-surface-muted)]/30 p-6 text-center">
         <Table2 className="h-5 w-5 text-[var(--dos-text-muted)]" />
@@ -284,40 +293,54 @@ function ChartBody({
     )
   }
 
+  if (viewMode === 'table') {
+    return <DataTable rows={state.rows} fieldNames={state.fieldNames} />
+  }
+
   if (isChartTemplate(chart.templateId, ['kpi-card', 'kpi-grid'])) {
-    return <KpiView chart={chart} rows={rows} labels={yFields} />
+    return <KpiView chart={chart} rows={chartRows} labels={yFields} />
   }
 
   if (chart.templateId === 'bar') {
-    return <div className={height}><ModernBarChart data={rows} xField={xField} yField={primaryMetric} style={style} /></div>
+    return <div className={height}><ModernBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} /></div>
   }
 
   if (chart.templateId === 'horizontal-bar') {
-    return <div className={height}><ModernHorizontalBarChart data={rows} xField={xField} yField={primaryMetric} style={style} /></div>
+    return <div className={height}><ModernHorizontalBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} /></div>
   }
 
   if (chart.templateId === 'grouped-bar') {
-    return <div className={height}><ModernGroupedBarChart data={rows} xField={xField} yFields={yFields} style={style} /></div>
+    return <div className={height}><ModernGroupedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} /></div>
   }
 
   if (chart.templateId === 'horizontal-stacked-bar') {
-    return <div className={height}><ModernHorizontalStackedBarChart data={rows} xField={xField} yFields={yFields} style={style} /></div>
+    return <div className={height}><ModernHorizontalStackedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} /></div>
   }
 
   if (chart.templateId === 'line' || chart.templateId === 'trend-composed') {
-    return <div className={height}><ModernLineChart data={rows} xField={xField} yField={primaryMetric} style={style} /></div>
+    return <div className={height}><ModernLineChart data={chartRows} xField={xField} yField={primaryMetric} style={style} /></div>
   }
 
   if (chart.templateId === 'pie' || chart.templateId === 'gauge' || chart.templateId === 'ring-gauge') {
-    return <div className={height}><ModernPieChart data={rows} nameField={xField} valueField={primaryMetric} donut={chart.templateId !== 'pie'} style={style} /></div>
+    return <div className={height}><ModernPieChart data={chartRows} nameField={xField} valueField={primaryMetric} donut={chart.templateId !== 'pie'} style={style} /></div>
   }
 
-  return <DataTable rows={rows} fieldNames={state.fieldNames} />
+  return <DataTable rows={chartRows} fieldNames={state.fieldNames} />
 }
 
-export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridProps) {
+export function PublishedChartsGrid({
+  tenantSlug,
+  charts,
+  canEdit = false,
+  editableCharts = {},
+}: PublishedChartsGridProps) {
   const [chartRuns, setChartRuns] = useState<Record<string, ChartRunState>>({})
   const [selectedChartId, setSelectedChartId] = useState('all')
+  const [viewMode, setViewMode] = useState<PublishedChartViewMode>('chart')
+  const [editMode, setEditMode] = useState(false)
+  const [sourceCharts, setSourceCharts] = useState(editableCharts)
+  const [editingReleaseChartId, setEditingReleaseChartId] = useState<string | null>(null)
+  const [draftUpdatedChartIds, setDraftUpdatedChartIds] = useState<string[]>([])
   const [reloadToken, setReloadToken] = useState(0)
   const dark = useDashboardChartDarkMode()
   const demoMode = isDashboardOsDemoMode()
@@ -328,6 +351,11 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
   const visibleCharts = selectedChartId === 'all'
     ? charts
     : charts.filter(chart => chart.id === selectedChartId)
+  const editingChart = editingReleaseChartId ? sourceCharts[editingReleaseChartId] : null
+
+  useEffect(() => {
+    setSourceCharts(editableCharts)
+  }, [editableCharts])
 
   useEffect(() => {
     if (selectedChartId !== 'all' && !chartById.has(selectedChartId)) {
@@ -405,23 +433,69 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
 
   return (
     <section className="space-y-5" aria-label="Dashboard charts">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 items-center gap-2">
-          <ChartNoAxesCombined className="h-4 w-4 shrink-0 text-[var(--dos-accent-primary)]" />
-          <h2 className="text-sm font-semibold text-[var(--dos-text-secondary)]">Chart view</h2>
+          {viewMode === 'chart'
+            ? <ChartNoAxesCombined className="h-4 w-4 shrink-0 text-[var(--dos-accent-primary)]" />
+            : <Table2 className="h-4 w-4 shrink-0 text-[var(--dos-accent-primary)]" />}
+          <h2 className="text-sm font-semibold text-[var(--dos-text-secondary)]">
+            {viewMode === 'chart' ? 'Chart view' : 'Raw table view'}
+          </h2>
         </div>
-        <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--dos-text-muted)]">
-          <span className="shrink-0">Show</span>
-          <select
-            value={selectedChartId}
-            onChange={event => setSelectedChartId(event.target.value)}
-            className="min-h-11 min-w-0 flex-1 rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface)] px-3 text-sm font-medium text-[var(--dos-text-primary)] outline-none hover:border-[color:var(--dos-accent-primary)] focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:border-[color:var(--dos-accent-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:w-72 sm:flex-none"
-          >
-            <option value="all">All charts ({charts.length})</option>
-            {charts.map(chart => <option key={chart.id} value={chart.id}>{chart.name}</option>)}
-          </select>
-        </label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <div className="inline-flex min-h-11 rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface-muted)] p-1" aria-label="Dashboard data view">
+            <button
+              type="button"
+              aria-pressed={viewMode === 'chart'}
+              onClick={() => setViewMode('chart')}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] sm:flex-none ${viewMode === 'chart' ? 'bg-[var(--dos-surface)] text-[var(--dos-text-primary)] shadow-sm' : 'text-[var(--dos-text-muted)] hover:text-[var(--dos-text-primary)]'}`}
+            >
+              <ChartNoAxesCombined className="h-3.5 w-3.5" />
+              Charts
+            </button>
+            <button
+              type="button"
+              aria-pressed={viewMode === 'table'}
+              onClick={() => setViewMode('table')}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] sm:flex-none ${viewMode === 'table' ? 'bg-[var(--dos-surface)] text-[var(--dos-text-primary)] shadow-sm' : 'text-[var(--dos-text-muted)] hover:text-[var(--dos-text-primary)]'}`}
+            >
+              <Table2 className="h-3.5 w-3.5" />
+              Raw table
+            </button>
+          </div>
+          {canEdit ? (
+            <button
+              type="button"
+              aria-pressed={editMode}
+              onClick={() => setEditMode(value => !value)}
+              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] ${editMode ? 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-soft)] text-[var(--dos-accent-primary)]' : 'border-[color:var(--dos-border-mid)] text-[var(--dos-text-secondary)] hover:border-[color:var(--dos-accent-primary)] hover:text-[var(--dos-accent-primary)]'}`}
+            >
+              <PencilLine className="h-3.5 w-3.5" />
+              {editMode ? 'Exit edit mode' : 'Edit mode'}
+            </button>
+          ) : null}
+          <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--dos-text-muted)]">
+            <span className="shrink-0">Show</span>
+            <select
+              value={selectedChartId}
+              onChange={event => setSelectedChartId(event.target.value)}
+              className="min-h-11 min-w-0 flex-1 rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface)] px-3 text-sm font-medium text-[var(--dos-text-primary)] outline-none hover:border-[color:var(--dos-accent-primary)] focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:border-[color:var(--dos-accent-primary)] disabled:cursor-not-allowed disabled:opacity-50 sm:w-72 sm:flex-none"
+            >
+              <option value="all">All charts ({charts.length})</option>
+              {charts.map(chart => <option key={chart.id} value={chart.id}>{chart.name}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
+      {editMode ? (
+        <div className="flex items-start gap-3 rounded-md border border-[color:var(--dos-accent-primary)]/30 bg-[var(--dos-accent-soft)] px-4 py-3 text-xs leading-5 text-[var(--dos-text-secondary)]">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[var(--dos-accent-primary)]" />
+          <p>
+            Describe changes in plain language, review the governed preview, then apply them to the source chart.
+            The live published dashboard remains unchanged until a new version is published.
+          </p>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-4">
         {visibleCharts.map(chart => {
           const state = chartRuns[chart.id] ?? EMPTY_STATE
@@ -433,12 +507,29 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
                   <h3 className="truncate text-base font-semibold tracking-tight">{chart.name}</h3>
                   {chart.description ? <p className="mt-1 line-clamp-2 text-xs text-[var(--dos-text-muted)]">{chart.description}</p> : null}
                 </div>
-                <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-[var(--dos-text-muted)]">
-                  <span className={`h-1.5 w-1.5 rounded-full ${state.status === 'ready' ? 'bg-[var(--dos-chart-success)]' : state.status === 'error' ? 'bg-[var(--dos-chart-risk)]' : 'bg-[var(--dos-chart-warning)]'}`} />
-                  {statusLabel}
-                </span>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-[var(--dos-text-muted)]">
+                    <span className={`h-1.5 w-1.5 rounded-full ${state.status === 'ready' ? 'bg-[var(--dos-chart-success)]' : state.status === 'error' ? 'bg-[var(--dos-chart-risk)]' : 'bg-[var(--dos-chart-warning)]'}`} />
+                    {statusLabel}
+                  </span>
+                  {editMode && sourceCharts[chart.id] ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditingReleaseChartId(chart.id)}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[color:var(--dos-accent-primary)] px-2.5 text-[11px] font-semibold text-[var(--dos-accent-primary)] hover:bg-[var(--dos-accent-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)]"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Edit with AI
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              <ChartBody chart={chart} state={state} dark={dark} onRetry={() => setReloadToken(token => token + 1)} />
+              {draftUpdatedChartIds.includes(chart.id) ? (
+                <div className="mb-3 rounded-md border border-[color:var(--dos-chart-success)]/30 bg-[var(--dos-success-soft)] px-3 py-2 text-[11px] font-medium text-[var(--dos-chart-success)]">
+                  Draft updated — publish a new dashboard version to promote it.
+                </div>
+              ) : null}
+              <ChartBody chart={chart} state={state} dark={dark} viewMode={viewMode} onRetry={() => setReloadToken(token => token + 1)} />
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--dos-border-soft)] pt-3 text-[11px] text-[var(--dos-text-muted)]">
                 <span>{chart.templateId.replace(/-/g, ' ')}</span>
                 <span className="font-mono tabular-nums">{state.rowCount} rows{state.elapsedMs ? ` / ${state.elapsedMs}ms` : ''}</span>
@@ -447,6 +538,24 @@ export function PublishedChartsGrid({ tenantSlug, charts }: PublishedChartsGridP
           )
         })}
       </div>
+      {editingChart ? (
+        <AiChartRefinementDialog
+          chart={editingChart}
+          tenantId={editingChart.tenantId}
+          projectId={editingChart.projectId}
+          open={Boolean(editingReleaseChartId)}
+          onOpenChange={open => {
+            if (!open) setEditingReleaseChartId(null)
+          }}
+          onApplied={updatedChart => {
+            if (!editingReleaseChartId) return
+            setSourceCharts(current => ({ ...current, [editingReleaseChartId]: updatedChart }))
+            setDraftUpdatedChartIds(current => (
+              current.includes(editingReleaseChartId) ? current : [...current, editingReleaseChartId]
+            ))
+          }}
+        />
+      ) : null}
     </section>
   )
 }

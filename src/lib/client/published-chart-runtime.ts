@@ -1,3 +1,6 @@
+import type { DashboardReleaseChartSnapshot } from '@/lib/publishing/dashboard-release-snapshots'
+import type { DashboardChartConfig } from '@/types/dashboard-chart'
+
 export interface PublishedChartFieldResolutionInput {
   fieldNames: string[]
   rows: Record<string, unknown>[]
@@ -12,6 +15,53 @@ export interface PublishedChartFieldResolution {
   yFields: string[]
   tooltipFields: string[]
   sortField: string
+}
+
+export function mapPublishedChartEditableSource(row: Record<string, unknown>): DashboardChartConfig {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    projectId: String(row.project_id),
+    datasetId: String(row.dataset_id),
+    name: String(row.name ?? ''),
+    description: typeof row.description === 'string' ? row.description : null,
+    status: String(row.status ?? 'draft') as DashboardChartConfig['status'],
+    templateId: String(row.template_id) as DashboardChartConfig['templateId'],
+    encoding: row.encoding && typeof row.encoding === 'object'
+      ? row.encoding as DashboardChartConfig['encoding']
+      : { yMetricIds: [], tooltipFieldIds: [], labelById: {}, colorById: {} },
+    presentation: row.presentation && typeof row.presentation === 'object'
+      ? row.presentation as DashboardChartConfig['presentation']
+      : { size: 'standard', showLegend: true, showLabels: false, valueFormat: null },
+    interactions: row.interactions && typeof row.interactions === 'object'
+      ? row.interactions as DashboardChartConfig['interactions']
+      : {},
+    layout: row.layout && typeof row.layout === 'object'
+      ? row.layout as DashboardChartConfig['layout']
+      : { order: 0, gridSpan: 1 },
+    validationState: String(row.validation_state ?? 'unknown') as DashboardChartConfig['validationState'],
+    createdAt: String(row.created_at ?? new Date().toISOString()),
+    updatedAt: String(row.updated_at ?? new Date().toISOString()),
+    publishedAt: typeof row.published_at === 'string' ? row.published_at : null,
+  }
+}
+
+export function indexPublishedChartEditors({
+  releaseSnapshots,
+  sourceChartRows,
+}: {
+  releaseSnapshots: DashboardReleaseChartSnapshot[]
+  sourceChartRows: Record<string, unknown>[]
+}) {
+  const sourceChartsById = new Map(sourceChartRows.map(row => {
+    const chart = mapPublishedChartEditableSource(row)
+    return [chart.id, chart]
+  }))
+
+  return Object.fromEntries(releaseSnapshots.flatMap(snapshot => {
+    const sourceChart = sourceChartsById.get(snapshot.sourceChartConfigId)
+    return sourceChart ? [[snapshot.id, sourceChart] as const] : []
+  }))
 }
 
 export function publishedDashboardDisplayName(value: string) {

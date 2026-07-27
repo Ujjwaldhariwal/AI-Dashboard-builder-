@@ -10,7 +10,10 @@ import { PublishedChartsGrid } from '@/components/client/published-charts-grid'
 import { Badge } from '@/components/ui/badge'
 import { DASHBOARDOS_DEMO_COOKIE, shouldUseDashboardOsDemoRuntime } from '@/lib/dashboardos/demo-mode'
 import { demoCharts, demoDashboard, demoSlots, demoVersion } from '@/lib/dashboardos/demo-data'
-import { publishedDashboardDisplayName } from '@/lib/client/published-chart-runtime'
+import {
+  indexPublishedChartEditors,
+  publishedDashboardDisplayName,
+} from '@/lib/client/published-chart-runtime'
 import { mapDashboardChartSlot, mapDashboardPage, mapDashboardVersion, mapPublishedDashboard } from '@/lib/publishing/dashboard-publishing'
 import { mapDashboardReleaseChartSnapshot, mapReleasedChartConfig } from '@/lib/publishing/dashboard-release-snapshots'
 import {
@@ -18,6 +21,7 @@ import {
   isMissingImmutableReleaseSchema,
 } from '@/lib/publishing/immutable-release-schema'
 import { listEntitledDashboardIds } from '@/lib/security/entitlements'
+import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DashboardChartConfig } from '@/types/dashboard-chart'
 import type { DashboardChartSlot, DashboardPage, DashboardVersion, PublishedDashboard } from '@/types/dashboard-publishing'
@@ -97,6 +101,8 @@ function PublishedDashboardRuntime({
   publishedAt,
   health,
   charts,
+  canEdit = false,
+  editableCharts = {},
 }: {
   tenantName: string
   tenantSlug: string
@@ -105,6 +111,8 @@ function PublishedDashboardRuntime({
   publishedAt?: string | null
   health?: DashboardHealthRunRecord | null
   charts: DashboardChartConfig[]
+  canEdit?: boolean
+  editableCharts?: Record<string, DashboardChartConfig>
 }) {
   const displayName = publishedDashboardDisplayName(dashboardName) || 'Published dashboard'
 
@@ -148,7 +156,12 @@ function PublishedDashboardRuntime({
         </section>
 
         {charts.length > 0 ? (
-          <PublishedChartsGrid tenantSlug={tenantSlug} charts={charts} />
+          <PublishedChartsGrid
+            tenantSlug={tenantSlug}
+            charts={charts}
+            canEdit={canEdit}
+            editableCharts={editableCharts}
+          />
         ) : (
           <section className="rounded-lg border border-dashed border-[color:var(--dos-border-mid)] px-5 py-12 text-center">
             <h2 className="text-base font-semibold">No charts are published yet</h2>
@@ -313,6 +326,8 @@ export default async function TenantClientPage({
 
   let runtimeDashboard: RuntimeDashboard | null = null
   let chartList: DashboardChartConfig[] = []
+  let editableCharts: Record<string, DashboardChartConfig> = {}
+  let canEdit = false
   const dashboardRow = dashboards?.[0] as Record<string, unknown> | undefined
   if (dashboardRow?.current_version_id) {
     const dashboard = mapPublishedDashboard(dashboardRow)
@@ -385,6 +400,35 @@ export default async function TenantClientPage({
       })
       .filter((chart): chart is DashboardChartConfig => chart !== null)
       .sort((left, right) => left.layout.order - right.layout.order)
+
+    const editorAccess = await requireProjectAccess({
+      ...accessContext(auth),
+      tenantId: activeTenant.id,
+      projectId: dashboard.projectId,
+      editor: true,
+    })
+    if (editorAccess.ok) {
+      const releaseSnapshots = Array.from(releaseChartsBySlotId.values())
+      const sourceChartIds = Array.from(new Set(releaseSnapshots.map(snapshot => snapshot.sourceChartConfigId)))
+      const { data: sourceChartRows, error: sourceChartsError } = sourceChartIds.length > 0
+        ? await auth.supabase
+          .from('dashboard_chart_configs')
+          .select('*')
+          .eq('tenant_id', activeTenant.id)
+          .eq('project_id', dashboard.projectId)
+          .in('id', sourceChartIds)
+          .neq('status', 'archived')
+        : { data: [], error: null }
+
+      if (!sourceChartsError) {
+        editableCharts = indexPublishedChartEditors({
+          releaseSnapshots,
+          sourceChartRows: (sourceChartRows ?? []) as Record<string, unknown>[],
+        })
+        canEdit = Object.keys(editableCharts).length > 0
+      }
+    }
+
     runtimeDashboard = {
       dashboard,
       version,
@@ -402,5 +446,7 @@ export default async function TenantClientPage({
     publishedAt={runtimeDashboard?.dashboard.publishedAt ?? runtimeDashboard?.version.publishedAt}
     health={runtimeDashboard?.health}
     charts={chartList}
+    canEdit={canEdit}
+    editableCharts={editableCharts}
   />
 }
