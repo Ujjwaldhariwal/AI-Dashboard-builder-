@@ -208,6 +208,42 @@ test.describe('AI chart refinement visual states', () => {
     await expect(page.getByText('Sensitive fields stay hidden')).toBeVisible()
   })
 
+  test('context failure stops retrying and provides a working retry action', async ({ page }) => {
+    let contextRequests = 0
+    await page.route('**/api/ai/chart-context', async route => {
+      contextRequests += 1
+      if (contextRequests === 1) {
+        await fulfillJson(route, {
+          context: null,
+          errorCode: 'feature_gated',
+          error: 'AI chart refinement is currently gated.',
+        }, 403)
+        return
+      }
+      await fulfillJson(route, { context: chartContext })
+    })
+
+    await page.goto(`${baseUrl}/admin/visual-qa/ai-chart-refinement?demo=1&theme=dark`, {
+      waitUntil: 'domcontentloaded',
+    })
+    await hideFrameworkChrome(page)
+    await page.getByRole('button', { name: 'Open refinement dialog' }).click()
+
+    await expect(page.getByTestId('ai-context-load-error')).toBeVisible()
+    await expect(page.getByTestId('ai-refinement-status')).toContainText('context unavailable')
+    await expect(page.getByTestId('ai-refinement-error')).toContainText('gated for this tenant')
+    await page.getByLabel('Natural-language refinement').fill('Create a safe monthly trend')
+    await expect(page.getByRole('button', { name: 'Generate preview' })).toBeDisabled()
+
+    await page.waitForTimeout(300)
+    expect(contextRequests).toBe(1)
+
+    await page.getByRole('button', { name: 'Retry context' }).click()
+    await expect(page.getByText('3 allowed dimensions')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Generate preview' })).toBeEnabled()
+    expect(contextRequests).toBe(2)
+  })
+
   test('preview-ready and applied states preserve a clear review hierarchy', async ({ page }) => {
     await mockAiRoutes(page)
     await openHarness(page)

@@ -113,11 +113,14 @@ function refinementErrorMessage(payload: RefineResponse | { error?: unknown; err
 
 type AiRefinementVisualState =
   | 'idle'
+  | 'context unavailable'
   | 'generating'
   | 'preview ready'
   | 'restricted request'
   | 'validation failed'
   | 'applied'
+
+type AiContextLoadState = 'idle' | 'loading' | 'ready' | 'error'
 
 const DASHBOARDOS_THEME_VARIABLES = [
   '--dos-background-deep',
@@ -155,6 +158,7 @@ const DASHBOARDOS_THEME_VARIABLES = [
 function refinementStatusClass(status: AiRefinementVisualState) {
   if (status === 'applied') return 'border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] text-[color:var(--dos-chart-success)]'
   if (status === 'preview ready') return 'border-[color:var(--dos-chart-info)] bg-[var(--dos-info-soft)] text-[color:var(--dos-chart-info)]'
+  if (status === 'context unavailable') return 'border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[color:var(--dos-chart-warning)]'
   if (status === 'restricted request') return 'border-[color:var(--dos-chart-warning)] bg-[var(--dos-warning-soft)] text-[color:var(--dos-chart-warning)]'
   if (status === 'validation failed') return 'border-[color:var(--dos-chart-risk)] bg-[var(--dos-danger-soft)] text-[color:var(--dos-chart-risk)]'
   if (status === 'generating') return 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[color:var(--dos-accent-primary)]'
@@ -385,7 +389,7 @@ export function AiChartRefinementDialog({
 }: AiChartRefinementDialogProps) {
   const [context, setContext] = useState<AiChartContext | null>(null)
   const [prompt, setPrompt] = useState('')
-  const [loadingContext, setLoadingContext] = useState(false)
+  const [contextLoadState, setContextLoadState] = useState<AiContextLoadState>('idle')
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [rejecting, setRejecting] = useState(false)
@@ -429,7 +433,7 @@ export function AiChartRefinementDialog({
   }, [chart.id, previewAvailable, projectId, result?.chart, tenantId])
 
   const fetchContext = useCallback(async () => {
-    setLoadingContext(true)
+    setContextLoadState('loading')
     setError('')
     setErrorCode(null)
     try {
@@ -444,19 +448,36 @@ export function AiChartRefinementDialog({
           includePreview: true,
         }),
       })
-      const payload = await response.json().catch(() => null) as { context?: AiChartContext; error?: string } | null
-      if (!response.ok || !payload?.context) throw new Error(errorToText(payload))
+      const payload = await response.json().catch(() => null) as {
+        context?: AiChartContext
+        error?: string
+        errorCode?: RefineResponse['errorCode']
+      } | null
+      if (!response.ok || !payload?.context) {
+        setError(refinementErrorMessage(payload))
+        setErrorCode(payload?.errorCode ?? null)
+        setContextLoadState('error')
+        return
+      }
       setContext(payload.context)
+      setContextLoadState('ready')
     } catch (caught) {
       setError(errorToText(caught))
-    } finally {
-      setLoadingContext(false)
+      setErrorCode(null)
+      setContextLoadState('error')
     }
   }, [chart.id, projectId, tenantId])
 
   useEffect(() => {
-    if (open && !context && !loadingContext) void fetchContext()
-  }, [context, fetchContext, loadingContext, open])
+    if (open && contextLoadState === 'idle') void fetchContext()
+  }, [contextLoadState, fetchContext, open])
+
+  useEffect(() => {
+    setContext(null)
+    setContextLoadState('idle')
+    setError('')
+    setErrorCode(null)
+  }, [chart.id, projectId, tenantId])
 
   useEffect(() => {
     if (!open) return
@@ -475,17 +496,22 @@ export function AiChartRefinementDialog({
 
   async function handleOpenChange(nextOpen: boolean) {
     onOpenChange(nextOpen)
-    if (nextOpen && !context && !loadingContext) void fetchContext()
     if (!nextOpen) {
       setPrompt('')
       setResult(null)
       setError('')
       setErrorCode(null)
       setApplied(false)
+      if (contextLoadState === 'error') setContextLoadState('idle')
     }
   }
 
   async function submitPrompt() {
+    if (contextLoadState !== 'ready' || !context) {
+      setError('Governed chart context is not ready. Retry loading the AI-safe context before generating a preview.')
+      setErrorCode(null)
+      return
+    }
     if (!prompt.trim()) {
       setError('Describe the chart change first.')
       setErrorCode(null)
@@ -591,6 +617,8 @@ export function AiChartRefinementDialog({
       ? 'applied'
       : result?.chart
         ? 'preview ready'
+        : contextLoadState === 'error'
+          ? 'context unavailable'
         : errorCode === 'restricted_field_request'
           ? 'restricted request'
           : error
@@ -768,10 +796,23 @@ export function AiChartRefinementDialog({
                   <Bot className="h-4 w-4 text-[color:var(--dos-chart-success)]" />
                   <p className="text-sm font-semibold">AI-safe context</p>
                 </div>
-                {loadingContext ? (
+                {contextLoadState === 'loading' || contextLoadState === 'idle' ? (
                   <div className="mt-4 flex items-center gap-2 text-xs text-[color:var(--dos-text-muted)]">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Loading governed fields
+                  </div>
+                ) : contextLoadState === 'error' ? (
+                  <div data-testid="ai-context-load-error" className="mt-4 space-y-3 text-xs text-[color:var(--dos-text-muted)]">
+                    <p>Governed fields could not be loaded. No chart changes were made.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void fetchContext()}
+                      className="border-[color:var(--dos-border-soft)] bg-transparent"
+                    >
+                      Retry context
+                    </Button>
                   </div>
                 ) : (
                   <div className="mt-4 space-y-3 text-xs text-[color:var(--dos-text-muted)]">
@@ -834,7 +875,7 @@ export function AiChartRefinementDialog({
             <Button
               type="button"
               onClick={() => void submitPrompt()}
-              disabled={generating || loadingContext || !prompt.trim()}
+              disabled={generating || contextLoadState !== 'ready' || !prompt.trim()}
               className="bg-[var(--dos-accent-primary)] text-[color:var(--dos-background-deep)] hover:bg-[var(--dos-accent-primary-hover)]"
             >
               {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}

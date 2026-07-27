@@ -117,6 +117,18 @@ test.describe('governed AI workflow foundation', () => {
     })).toThrow('AI_COMPATIBLE_BASE_URL')
   })
 
+  test('routes chart refinement through the configured workflow provider', () => {
+    const route = readFileSync(
+      join(process.cwd(), 'src/app/api/ai/chart-refine/route.ts'),
+      'utf8',
+    )
+
+    expect(route).toContain("getAiWorkflowModel({ workflowType: 'chart_refinement' })")
+    expect(route).toContain('generateObject({')
+    expect(route).not.toContain("process.env.OPENAI_API_KEY")
+    expect(route).not.toContain("model: 'gpt-4o-mini'")
+  })
+
   test('distinguishes missing workflow storage from an AI provider outage', () => {
     expect(classifyAiWorkflowFallback(new Error('relation "ai_workflow_runs" does not exist'))).toMatchObject({
       reason: 'setup_required',

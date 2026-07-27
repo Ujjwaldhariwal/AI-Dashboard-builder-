@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { generateObject } from 'ai'
 import { z } from 'zod'
 
 import {
   AI_CHART_PATCH_SCHEMA_VERSION,
   ChartAiPatch,
+  ChartAiPatchSchema,
   buildGovernedAiChartContext,
   doesPromptReferenceBlockedAiDescriptors,
   parseChartAiPatchPayload,
@@ -16,6 +17,7 @@ import {
   buildAiChartRefinementEventMetadata,
   logAiChartRefinementMetric,
 } from '@/lib/ai/chart-refinement-observability'
+import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -29,12 +31,6 @@ const ChartRefineBodySchema = z.object({
   apply: z.boolean().default(false),
   patch: z.unknown().optional(),
 }).strict()
-
-function parseJsonObject(value: string) {
-  const trimmed = value.trim()
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  return JSON.parse(fenced?.[1] ?? trimmed)
-}
 
 async function auditChartRefine({
   auth,
@@ -253,20 +249,31 @@ export async function POST(req: NextRequest) {
       }
       patch = providedPatch.patch
     } else {
-      const apiKey = process.env.OPENAI_API_KEY
-      if (!apiKey) {
-        return NextResponse.json({ patch: null, chart: null, validation: null, error: 'OPENAI_API_KEY is not configured' }, { status: 503 })
+      let ai: ReturnType<typeof getAiWorkflowModel>
+      try {
+        ai = getAiWorkflowModel({ workflowType: 'chart_refinement' })
+      } catch (providerError) {
+        console.error(
+          '[AI Chart Refine Provider]',
+          providerError instanceof Error ? providerError.message : 'AI provider configuration failed',
+        )
+        return NextResponse.json({
+          patch: null,
+          chart: context.chart,
+          validation: null,
+          error: 'AI chart refinement provider is not configured for this environment.',
+        }, { status: 503 })
       }
 
-      const prompt = `You refine DashboardOS chart configs. Return ONLY JSON matching the chartPatch shape.
+      const system = `You refine DashboardOS chart configs. Return only a chart patch that matches the supplied schema.
 
-Privacy rules:
+Privacy and safety rules:
 - Use only allowedFields and allowedMetrics from the governed context.
 - Never invent SQL, source table names, source column names, code, credentials, or raw records.
 - Blocked fields are not exposed. If the request cannot be done with allowed fields, return an empty JSON object.
-- Prefer small, valid changes.
+- Prefer small, valid changes and omit unsupported presentation requests.`
 
-chartPatch shape:
+      const prompt = `chartPatch shape:
 {
   "schemaVersion": "${AI_CHART_PATCH_SCHEMA_VERSION}",
   "name": "optional title",
@@ -298,19 +305,17 @@ ${parsed.data.instruction}
 Governed context:
 ${JSON.stringify(publicContext, null, 2)}`
 
-      const openai = new OpenAI({ apiKey })
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 900,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      })
-
-      const raw = completion.choices[0]?.message?.content ?? '{}'
       let parsedJson: unknown
       try {
-        parsedJson = parseJsonObject(raw)
+        const result = await generateObject({
+          model: ai.model,
+          schema: ChartAiPatchSchema,
+          system,
+          prompt,
+          maxOutputTokens: 900,
+          temperature: 0.1,
+        })
+        parsedJson = result.object
       } catch {
         await auditChartRefine({
           auth,
