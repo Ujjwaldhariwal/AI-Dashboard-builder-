@@ -491,13 +491,15 @@ export function PublishedChartsGrid({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-4">
         {visibleCharts.map(chart => {
           const state = chartRuns[chart.id] ?? EMPTY_STATE
+          const hasDraftPreview = editMode && draftUpdatedChartIds.includes(chart.id) && Boolean(sourceCharts[chart.id])
+          const displayChart = hasDraftPreview ? sourceCharts[chart.id] : chart
           const statusLabel = state.status === 'ready' ? 'Live' : state.status === 'loading' ? 'Loading' : state.status === 'error' ? 'Unavailable' : 'Queued'
           return (
-            <article key={chart.id} className={`${selectedChartId === 'all' ? sizeClass(chart) : 'lg:col-span-4'} min-w-0 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4 sm:p-5`}>
+            <article key={chart.id} data-testid={`published-chart-${chart.id}`} data-draft-preview={hasDraftPreview || undefined} className={`${selectedChartId === 'all' ? sizeClass(displayChart) : 'lg:col-span-4'} min-w-0 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4 sm:p-5`}>
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="truncate text-base font-semibold tracking-tight">{chart.name}</h3>
-                  {chart.description ? <p className="mt-1 line-clamp-2 text-xs text-[var(--dos-text-muted)]">{chart.description}</p> : null}
+                  <h3 className="truncate text-base font-semibold tracking-tight">{displayChart.name}</h3>
+                  {displayChart.description ? <p className="mt-1 line-clamp-2 text-xs text-[var(--dos-text-muted)]">{displayChart.description}</p> : null}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-2">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-[var(--dos-text-muted)]">
@@ -521,9 +523,14 @@ export function PublishedChartsGrid({
                   Draft updated — publish a new dashboard version to promote it.
                 </div>
               ) : null}
-              <ChartBody chart={chart} state={state} dark={dark} viewMode={viewMode} onRetry={() => setReloadToken(token => token + 1)} />
+              {hasDraftPreview ? (
+                <div className="mb-3 rounded-md border border-[color:var(--dos-accent-primary)]/30 bg-[var(--dos-accent-soft)] px-3 py-2 text-[11px] font-medium text-[var(--dos-accent-primary)]">
+                  Previewing saved draft changes in Edit mode.
+                </div>
+              ) : null}
+              <ChartBody chart={displayChart} state={state} dark={dark} viewMode={viewMode} onRetry={() => setReloadToken(token => token + 1)} />
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--dos-border-soft)] pt-3 text-[11px] text-[var(--dos-text-muted)]">
-                <span>{chart.templateId.replace(/-/g, ' ')}</span>
+                <span>{displayChart.templateId.replace(/-/g, ' ')}</span>
                 <span className="font-mono tabular-nums">{state.rowCount} rows{state.elapsedMs ? ` / ${state.elapsedMs}ms` : ''}</span>
               </div>
             </article>

@@ -138,6 +138,9 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(gridSource).toContain('dashboardChartPresentationToWidgetStyle')
     expect(gridSource).toContain('sizePreset={sizePreset}')
     expect(gridSource).toContain('The live published dashboard remains unchanged until a new version is published.')
+    expect(gridSource).toContain('const displayChart = hasDraftPreview ? sourceCharts[chart.id] : chart')
+    expect(gridSource).toContain('Previewing saved draft changes in Edit mode.')
+    expect(gridSource).toContain('<ChartBody chart={displayChart}')
 
     expect(pageSource).toContain('editor: true')
     expect(pageSource).toContain('.from(\'dashboard_chart_configs\')')

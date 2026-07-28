@@ -640,31 +640,35 @@ export function AiChartRefinementDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         data-testid="ai-refinement-dialog"
-        className="dashboardos-admin max-h-[92vh] max-w-4xl overflow-y-auto border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-0 text-[color:var(--dos-text-primary)] [&>button]:z-20"
+        className="dashboardos-admin flex h-[calc(100dvh-1rem)] max-h-[48rem] w-[calc(100%-1rem)] max-w-6xl flex-col gap-0 overflow-hidden rounded-[var(--radius-surface)] border-[color:var(--dos-border-mid)] bg-[var(--dos-surface-raised)] p-0 text-[color:var(--dos-text-primary)] sm:h-[min(48rem,calc(100dvh-2rem))] sm:w-[calc(100%-2rem)] [&>button]:z-20"
         style={dialogThemeStyle}
       >
-        <DialogHeader className="sticky top-0 z-10 border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-5">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--dos-accent-primary-soft)] text-[color:var(--dos-accent-primary)]">
+        <DialogHeader className="shrink-0 border-b border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-5 py-4 sm:px-6">
+          <div className="flex min-w-0 items-start gap-3 pr-9">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[color:var(--dos-accent-primary)]/20 bg-[var(--dos-accent-primary-soft)] text-[color:var(--dos-accent-primary)]">
               <Sparkles className="h-5 w-5" />
             </div>
-            <div>
-              <DialogTitle className="text-lg text-[color:var(--dos-text-primary)]">Refine with AI</DialogTitle>
-              <DialogDescription className="mt-1 text-[color:var(--dos-text-muted)]">
-                Use governed chart context to propose a reviewable patch. Sensitive fields stay hidden, and nothing changes until you accept.
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <DialogTitle className="text-lg font-semibold tracking-tight text-[color:var(--dos-text-primary)]">AI chart refinement</DialogTitle>
+                <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-[color:var(--dos-text-muted)]">Review workspace</span>
+              </div>
+              <DialogDescription className="mt-1 max-w-3xl text-sm leading-5 text-[color:var(--dos-text-muted)]">
+                Propose a governed chart change, review the result, then save it to the source chart. Published viewers are not changed until release.
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="space-y-5 p-6">
-            <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
+        <div data-testid="ai-refinement-scroll-region" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="grid min-h-full gap-0 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <section className="min-w-0 space-y-5 p-5 sm:p-6">
+            <div className="rounded-[var(--radius-surface)] border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-chart-success)]">Current chart</p>
-                  <h3 className="mt-1 text-base font-semibold">{chart.name}</h3>
-                  <p className="mt-1 text-xs text-[color:var(--dos-text-muted)]">{chart.templateId} / {chart.validationState} / dataset {context?.dataset.name ?? chart.datasetId}</p>
+                  <p className="font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-[color:var(--dos-text-muted)]">Current chart</p>
+                  <h3 className="mt-1 text-base font-semibold tracking-tight">{chart.name}</h3>
+                  <p className="mt-1 text-xs text-[color:var(--dos-text-muted)]">{chart.templateId.replace(/-/g, ' ')} · {chart.validationState} · {context?.dataset.name ?? chart.datasetId}</p>
                 </div>
                 <Badge variant="outline" data-testid="ai-refinement-status" className={refinementStatusClass(status)}>
                   {status}
@@ -672,37 +676,41 @@ export function AiChartRefinementDialog({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[color:var(--dos-text-secondary)]" htmlFor={`ai-refine-${chart.id}`}>
-                Natural-language refinement
-              </label>
+            <div className="space-y-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <label className="text-sm font-semibold text-[color:var(--dos-text-primary)]" htmlFor={`ai-refine-${chart.id}`}>
+                  Describe the change
+                </label>
+                <span className="text-xs text-[color:var(--dos-text-muted)]">Nothing is saved until you accept</span>
+              </div>
               <Textarea
                 id={`ai-refine-${chart.id}`}
+                aria-label="Natural-language refinement"
                 value={prompt}
                 onChange={event => setPrompt(event.target.value)}
-                placeholder="Example: make this a line chart and rename it to Monthly Billing Trend"
-                className="min-h-28 border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] text-[color:var(--dos-text-primary)] placeholder:text-[color:var(--dos-text-muted)]"
+                placeholder="For example: use a pink palette, show bold labels, and keep this card compact."
+                className="min-h-32 resize-y rounded-md border-[color:var(--dos-border-mid)] bg-[var(--dos-surface)] px-3 py-3 text-sm leading-6 text-[color:var(--dos-text-primary)] shadow-none placeholder:text-[color:var(--dos-text-muted)] focus-visible:ring-[var(--dos-accent-primary)]"
               />
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" aria-label="Refinement categories">
                 {quickActions.map(action => (
                   <button
                     key={action.label}
                     type="button"
                     onClick={() => setPrompt(action.prompt)}
-                    className="inline-flex items-center gap-1 rounded-full border border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] px-3 py-1 text-xs font-medium text-[color:var(--dos-accent-primary)] transition hover:bg-[var(--dos-surface)]"
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface)] px-2.5 text-xs font-semibold text-[color:var(--dos-text-secondary)] transition-colors duration-150 hover:border-[color:var(--dos-accent-primary)] hover:text-[color:var(--dos-accent-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:bg-[var(--dos-accent-primary-soft)]"
                   >
-                    <SlidersHorizontal className="h-3 w-3" />
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
                     {action.label}
                   </button>
                 ))}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid gap-2 sm:grid-cols-2" aria-label="Suggested refinements">
                 {examples.map(example => (
                   <button
                     key={example}
                     type="button"
                     onClick={() => setPrompt(example)}
-                    className="rounded-full border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-3 py-1 text-xs text-[color:var(--dos-text-secondary)] transition hover:border-[color:var(--dos-accent-primary)] hover:text-[color:var(--dos-accent-primary)]"
+                    className="min-h-10 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-left text-xs leading-5 text-[color:var(--dos-text-secondary)] transition-colors duration-150 hover:border-[color:var(--dos-accent-primary)] hover:bg-[var(--dos-surface)] hover:text-[color:var(--dos-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:bg-[var(--dos-accent-primary-soft)]"
                   >
                     {example}
                   </button>
@@ -800,9 +808,9 @@ export function AiChartRefinementDialog({
             ) : null}
           </section>
 
-          <aside className="border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-6 lg:border-l lg:border-t-0">
+          <aside className="border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-5 sm:p-6 lg:border-l lg:border-t-0">
             <div className="space-y-4">
-              <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
+              <div className="rounded-[var(--radius-surface)] border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
                 <div className="flex items-center gap-2">
                   <Bot className="h-4 w-4 text-[color:var(--dos-chart-success)]" />
                   <p className="text-sm font-semibold">AI-safe context</p>
@@ -834,23 +842,22 @@ export function AiChartRefinementDialog({
                 )}
               </div>
 
-              <div className="rounded-xl border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
-                <p className="text-sm font-semibold">Guardrails</p>
-                <ul className="mt-3 space-y-2 text-xs leading-5 text-[color:var(--dos-text-muted)]">
-                  <li>Feature is gated for controlled rollout</li>
-                  <li>Governed chart context only</li>
-                  <li>No SQL or code generation</li>
-                  <li>Only semantic IDs can change</li>
-                  <li>Patch must pass chart validation</li>
-                  <li>Blocked fields stay hidden</li>
-                  <li>Narrow filters execute in published runtime only after validation</li>
+              <div className="rounded-[var(--radius-surface)] border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] p-4">
+                <p className="text-sm font-semibold">Governance</p>
+                <ul className="mt-3 space-y-2 border-l border-[color:var(--dos-border-mid)] pl-3 text-xs leading-5 text-[color:var(--dos-text-muted)]">
+                  <li>Only governed fields and semantic IDs are available.</li>
+                  <li>Sensitive fields stay hidden.</li>
+                  <li>No SQL, source schema, or raw record generation.</li>
+                  <li>Every patch is validated before it can be saved.</li>
+                  <li>Published releases stay immutable until promotion.</li>
                 </ul>
               </div>
             </div>
           </aside>
+          </div>
         </div>
 
-        <DialogFooter className="sticky bottom-0 z-10 gap-2 border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-6 py-4 sm:space-x-0">
+        <DialogFooter className="shrink-0 gap-2 border-t border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] px-5 py-4 sm:px-6 sm:space-x-0">
           {applied ? (
             <Button
               type="button"

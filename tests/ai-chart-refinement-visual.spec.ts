@@ -365,4 +365,17 @@ test.describe('AI chart refinement visual states', () => {
     await expect(page.getByRole('button', { name: 'Accept patch' })).toBeVisible()
     await expect(page.getByTestId('ai-refinement-mini-preview')).toBeVisible()
   })
+
+  test('keeps the dialog shell fixed while only the review workspace scrolls', async ({ page }) => {
+    await mockAiRoutes(page)
+    await openHarness(page)
+
+    const dialog = page.getByTestId('ai-refinement-dialog')
+    const scrollRegion = page.getByTestId('ai-refinement-scroll-region')
+    await expect(dialog).toBeVisible()
+    await expect(scrollRegion).toBeVisible()
+
+    expect(await dialog.evaluate(element => getComputedStyle(element).overflowY)).toBe('hidden')
+    expect(await scrollRegion.evaluate(element => getComputedStyle(element).overflowY)).toBe('auto')
+  })
 })
