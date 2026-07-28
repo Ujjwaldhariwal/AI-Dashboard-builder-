@@ -178,7 +178,7 @@ export function doesPromptReferenceBlockedAiDescriptors({
   ))
 }
 
-function mapChart(row: Record<string, unknown>): DashboardChartConfig {
+export function mapDashboardChartConfig(row: Record<string, unknown>): DashboardChartConfig {
   const encoding = asRecord(row.encoding)
   const presentation = asRecord(row.presentation)
   return {
@@ -214,6 +214,57 @@ function mapChart(row: Record<string, unknown>): DashboardChartConfig {
     updatedAt: String(row.updated_at ?? new Date().toISOString()),
     publishedAt: typeof row.published_at === 'string' ? row.published_at : null,
   }
+}
+
+/**
+ * Handles presentation-only language without depending on a model response.
+ * This keeps common, low-risk refinements deterministic and inside the same
+ * bounded ChartAiPatch schema used by the model path.
+ */
+export function buildDeterministicPresentationPatch(instruction: string): ChartAiPatch | null {
+  const normalized = instruction.toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!normalized) return null
+
+  // Structural intents remain model-driven because they need governed IDs.
+  if (/\b(rename|make.*\b(chart|bar|line|pie|gauge)\b|change.*\bchart\b.*\bto\s+(a\s+)?(bar|line|pie|gauge|table)\b|group|compare|sort|top \d+|filter|metric|axis field)\b/.test(normalized)) {
+    return null
+  }
+
+  const presentation: NonNullable<ChartAiPatch['presentation']> = {}
+  const color = [
+    ['pink', '#EC4899'],
+    ['purple', '#8B5CF6'],
+    ['blue', '#2563EB'],
+    ['green', '#10B981'],
+    ['orange', '#F97316'],
+    ['red', '#EF4444'],
+  ].find(([name]) => new RegExp(`\\b${name}\\b`).test(normalized))?.[1]
+  if (color) presentation.colors = [color]
+
+  if (/\bcompact\b/.test(normalized)) presentation.size = 'compact'
+  if (/\bwide\b/.test(normalized)) presentation.size = 'wide'
+  if (/\bfull\b/.test(normalized)) presentation.size = 'full'
+  if (/\bshow\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bshow\b/.test(normalized)) presentation.showLabels = true
+  if (/\bhide\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bhide\b/.test(normalized)) presentation.showLabels = false
+  if (/\bbold\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bbold\b/.test(normalized)) {
+    presentation.showLabels = true
+    presentation.labels = { fontWeight: 'bold' }
+  }
+  if (/\bshow\b.*\blegend\b/.test(normalized)) presentation.showLegend = true
+  if (/\bhide\b.*\blegend\b/.test(normalized)) presentation.showLegend = false
+  const legendPosition = ['top', 'right', 'bottom', 'left'].find(position => (
+    new RegExp(`\\blegend\\b.*\\b${position}\\b|\\b${position}\\b.*\\blegend\\b`).test(normalized)
+  ))
+  if (legendPosition) presentation.legendPosition = legendPosition as NonNullable<ChartAiPatch['presentation']>['legendPosition']
+  if (/\bshow\b.*\bgrid\b/.test(normalized)) presentation.showGrid = true
+  if (/\bhide\b.*\bgrid\b/.test(normalized)) presentation.showGrid = false
+  if (/\bdark\b.*\btooltip\b|\btooltip\b.*\bdark\b/.test(normalized)) {
+    presentation.tooltip = { enabled: true, backgroundColor: '#111827', borderColor: '#334155', textColor: '#F8FAFC' }
+  }
+
+  return Object.keys(presentation).length > 0
+    ? { schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION, presentation }
+    : null
 }
 
 function mergeEncoding(current: DashboardChartEncoding, patch?: ChartAiPatch['encoding']): DashboardChartEncoding {
@@ -350,7 +401,7 @@ export async function buildGovernedAiChartContext({
     : { data: null, error: null }
 
   if (chartError) throw new Error(chartError.message)
-  const chart = chartRow ? mapChart(chartRow as Record<string, unknown>) : null
+  const chart = chartRow ? mapDashboardChartConfig(chartRow as Record<string, unknown>) : null
   const resolvedDatasetId = datasetId ?? chart?.datasetId
   if (!resolvedDatasetId) throw new Error('datasetId or chartId is required')
 

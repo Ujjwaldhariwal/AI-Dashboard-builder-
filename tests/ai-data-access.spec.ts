@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import {
   AI_CHART_PATCH_SCHEMA_VERSION,
   ChartAiPatchSchema,
+  buildDeterministicPresentationPatch,
   applyChartAiPatch,
   buildAiChartContextAuditMetadata,
   doesPromptReferenceBlockedAiDescriptors,
@@ -395,6 +396,23 @@ test.describe('AI data access guardrails', () => {
       lineWidth: 4,
       barRadius: 10,
     })
+  })
+
+  test('handles common presentation requests deterministically before calling a provider', () => {
+    expect(buildDeterministicPresentationPatch('Change the chart color to pink')).toEqual({
+      schemaVersion: 'dashboardos.ai.chart_patch.v1',
+      presentation: { colors: ['#EC4899'] },
+    })
+    expect(buildDeterministicPresentationPatch('Use a pink palette, show bold labels, and keep it compact')).toEqual({
+      schemaVersion: 'dashboardos.ai.chart_patch.v1',
+      presentation: {
+        colors: ['#EC4899'],
+        size: 'compact',
+        showLabels: true,
+        labels: { fontWeight: 'bold' },
+      },
+    })
+    expect(buildDeterministicPresentationPatch('Group by City and use pink')).toBeNull()
   })
 
   test('rejects unsafe or unbounded NLP presentation values', () => {

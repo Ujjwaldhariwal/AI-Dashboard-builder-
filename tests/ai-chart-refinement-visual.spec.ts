@@ -378,4 +378,20 @@ test.describe('AI chart refinement visual states', () => {
     expect(await dialog.evaluate(element => getComputedStyle(element).overflowY)).toBe('hidden')
     expect(await scrollRegion.evaluate(element => getComputedStyle(element).overflowY)).toBe('auto')
   })
+
+  test('keeps suggestions inside their cards and resets the workspace scroll on reopen', async ({ page }) => {
+    await mockAiRoutes(page)
+    await openHarness(page)
+    const scrollRegion = page.getByTestId('ai-refinement-scroll-region')
+    await scrollRegion.evaluate(element => { element.scrollTop = 400 })
+    await page.getByRole('button', { name: 'Close' }).click()
+    await page.getByRole('button', { name: 'Open refinement dialog' }).click()
+    await expect.poll(() => scrollRegion.evaluate(element => element.scrollTop)).toBe(0)
+
+    for (const suggestion of await page.locator('[aria-label="Suggested refinements"] button').all()) {
+      expect(await suggestion.getAttribute('title')).toBeTruthy()
+      expect(await suggestion.evaluate(element => getComputedStyle(element).overflowX)).toBe('hidden')
+      expect(await suggestion.evaluate(element => getComputedStyle(element).whiteSpace)).toBe('nowrap')
+    }
+  })
 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Bot, CheckCircle2, Eye, Loader2, SlidersHorizontal, Sparkles, TriangleAlert, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -407,6 +407,7 @@ export function AiChartRefinementDialog({
   const [errorCode, setErrorCode] = useState<RefineResponse['errorCode'] | null>(null)
   const [applied, setApplied] = useState(false)
   const [dialogThemeStyle, setDialogThemeStyle] = useState<CSSProperties>()
+  const scrollRegionRef = useRef<HTMLDivElement>(null)
 
   const examples = useMemo(() => buildAiChartExamplePrompts(chart, context), [chart, context])
   const quickActions = useMemo(() => {
@@ -492,6 +493,7 @@ export function AiChartRefinementDialog({
 
   useEffect(() => {
     if (!open) return
+    const frame = window.requestAnimationFrame(() => scrollRegionRef.current?.scrollTo({ top: 0, left: 0 }))
     const themeSources = document.querySelectorAll<HTMLElement>('[data-dashboardos-theme]')
     const themeSource = themeSources.item(themeSources.length - 1)
     if (!themeSource) return
@@ -503,6 +505,7 @@ export function AiChartRefinementDialog({
         .filter(([, value]) => Boolean(value)),
     ) as CSSProperties
     setDialogThemeStyle(themeVariables)
+    return () => window.cancelAnimationFrame(frame)
   }, [open])
 
   async function handleOpenChange(nextOpen: boolean) {
@@ -660,9 +663,9 @@ export function AiChartRefinementDialog({
           </div>
         </DialogHeader>
 
-        <div data-testid="ai-refinement-scroll-region" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div ref={scrollRegionRef} data-testid="ai-refinement-scroll-region" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           <div className="grid min-h-full gap-0 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <section className="min-w-0 space-y-5 p-5 sm:p-6">
+          <section className="min-w-0 space-y-5 overflow-x-hidden p-5 sm:p-6">
             <div className="rounded-[var(--radius-surface)] border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -697,7 +700,7 @@ export function AiChartRefinementDialog({
                     key={action.label}
                     type="button"
                     onClick={() => setPrompt(action.prompt)}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface)] px-2.5 text-xs font-semibold text-[color:var(--dos-text-secondary)] transition-colors duration-150 hover:border-[color:var(--dos-accent-primary)] hover:text-[color:var(--dos-accent-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:bg-[var(--dos-accent-primary-soft)]"
+                    className="inline-flex min-h-9 min-w-0 items-center gap-1.5 rounded-md border border-[color:var(--dos-border-mid)] bg-[var(--dos-surface)] px-2.5 text-xs font-semibold text-[color:var(--dos-text-secondary)] transition-colors duration-150 hover:border-[color:var(--dos-accent-primary)] hover:text-[color:var(--dos-accent-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:bg-[var(--dos-accent-primary-soft)]"
                   >
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                     {action.label}
@@ -710,7 +713,8 @@ export function AiChartRefinementDialog({
                     key={example}
                     type="button"
                     onClick={() => setPrompt(example)}
-                    className="min-h-10 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-left text-xs leading-5 text-[color:var(--dos-text-secondary)] transition-colors duration-150 hover:border-[color:var(--dos-accent-primary)] hover:bg-[var(--dos-surface)] hover:text-[color:var(--dos-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:bg-[var(--dos-accent-primary-soft)]"
+                    className="min-h-10 min-w-0 truncate rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-left text-xs leading-5 text-[color:var(--dos-text-secondary)] transition-colors duration-150 hover:border-[color:var(--dos-accent-primary)] hover:bg-[var(--dos-surface)] hover:text-[color:var(--dos-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] active:bg-[var(--dos-accent-primary-soft)]"
+                    title={example}
                   >
                     {example}
                   </button>

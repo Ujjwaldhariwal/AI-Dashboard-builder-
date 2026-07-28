@@ -6,9 +6,11 @@ import {
   AI_CHART_PATCH_SCHEMA_VERSION,
   ChartAiPatch,
   ChartAiPatchSchema,
+  buildDeterministicPresentationPatch,
   buildGovernedAiChartContext,
   doesPromptReferenceBlockedAiDescriptors,
   parseChartAiPatchPayload,
+  mapDashboardChartConfig,
   serializeGovernedAiChartContext,
   validateChartAiPatchAgainstAllowlist,
 } from '@/lib/ai/chart-ai-contract'
@@ -249,6 +251,10 @@ export async function POST(req: NextRequest) {
       }
       patch = providedPatch.patch
     } else {
+      const deterministicPatch = buildDeterministicPresentationPatch(parsed.data.instruction)
+      if (deterministicPatch) {
+        patch = deterministicPatch
+      } else {
       let ai: ReturnType<typeof getAiWorkflowModel>
       try {
         ai = getAiWorkflowModel({ workflowType: 'chart_refinement' })
@@ -417,6 +423,7 @@ ${JSON.stringify(publicContext, null, 2)}`
         return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: patchParse.errorCode, error: patchParse.error }, { status: 422 })
       }
       patch = patchParse.patch
+      }
     }
 
     const allowed = validateChartAiPatchAgainstAllowlist({
@@ -567,7 +574,11 @@ ${JSON.stringify(publicContext, null, 2)}`
       }),
     ])
 
-    return NextResponse.json({ patch, chart: chartRow, validation: allowed.validation })
+    return NextResponse.json({
+      patch,
+      chart: mapDashboardChartConfig(chartRow as Record<string, unknown>),
+      validation: allowed.validation,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI chart refinement failed'
     console.error('[AI Chart Refine]', message)
