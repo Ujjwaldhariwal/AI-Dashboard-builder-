@@ -64,11 +64,18 @@ export function classifyFieldForAi(field: Record<string, unknown>): AiFieldClass
     return { classification: 'aggregated_only', reason: `semantic_role_${role}` }
   }
 
+  // An explicitly governed date or dimension is safe even when its business
+  // label contains a measure-like word (for example "Bill Month" or
+  // "Payment Status"). PII/admin checks above still take precedence.
+  if (role === 'date' || role === 'dimension') {
+    return { classification: 'safe_for_ai', reason: 'low_sensitivity_dimension' }
+  }
+
   if (role === 'metric_source' || AGGREGATED_PATTERNS.some(pattern => pattern.test(text))) {
     return { classification: 'aggregated_only', reason: 'numeric_or_financial_measure' }
   }
 
-  if (role === 'date' || role === 'dimension' || SAFE_PATTERNS.some(pattern => pattern.test(text))) {
+  if (SAFE_PATTERNS.some(pattern => pattern.test(text))) {
     return { classification: 'safe_for_ai', reason: 'low_sensitivity_dimension' }
   }
 

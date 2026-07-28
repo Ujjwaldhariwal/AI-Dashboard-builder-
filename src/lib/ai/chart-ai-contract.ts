@@ -142,13 +142,25 @@ export function buildAiChartContextAuditMetadata({
   }
 }
 
+function normalizeDescriptorText(value: unknown) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase('en')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
 function descriptorSearchTerms(value: Record<string, unknown>) {
   return [
     value.label,
     value.semanticKey,
     value.name,
     value.semantic_key,
-  ].map(item => String(item ?? '').toLowerCase()).filter(item => item.length >= 3)
+  ]
+    .map(normalizeDescriptorText)
+    .filter(item => item.length >= 3)
+    .filter((item, index, items) => items.indexOf(item) === index)
 }
 
 export function doesPromptReferenceBlockedAiDescriptors({
@@ -160,9 +172,9 @@ export function doesPromptReferenceBlockedAiDescriptors({
   blockedFields: Record<string, unknown>[]
   blockedMetrics: Record<string, unknown>[]
 }) {
-  const normalized = instruction.toLowerCase()
+  const normalized = ` ${normalizeDescriptorText(instruction)} `
   return [...blockedFields, ...blockedMetrics].some(descriptor => (
-    descriptorSearchTerms(descriptor).some(term => normalized.includes(term))
+    descriptorSearchTerms(descriptor).some(term => normalized.includes(` ${term} `))
   ))
 }
 

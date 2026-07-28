@@ -85,6 +85,34 @@ const billAmountField = {
   },
 }
 
+const billMonthField = {
+  id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  name: 'Bill Month',
+  semantic_key: 'bill_month',
+  role: 'date',
+  source_column: {
+    dataSourceId: '99999999-9999-4999-8999-999999999998',
+    dataType: 'date',
+    schemaName: 'public',
+    tableName: 'electricity_readings',
+    columnName: 'bill_month',
+  },
+}
+
+const paymentStatusField = {
+  id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  name: 'Payment Status',
+  semantic_key: 'payment_status',
+  role: 'dimension',
+  source_column: {
+    dataSourceId: '99999999-9999-4999-8999-999999999998',
+    dataType: 'text',
+    schemaName: 'public',
+    tableName: 'electricity_readings',
+    columnName: 'payment_status',
+  },
+}
+
 const billMetric = {
   id: '44444444-4444-4444-8444-444444444444',
   name: 'Total Bill Amount',
@@ -143,6 +171,19 @@ test.describe('AI data access guardrails', () => {
     const descriptor = sanitizedMetricDescriptor(billMetric, billAmountField)
     expect(descriptor.classification).toBe('aggregated_only')
     expect(descriptor.allowedInPreview).toBe(true)
+  })
+
+  test('keeps governed dates and dimensions safe when labels contain measure words', () => {
+    expect(classifyFieldForAi(billMonthField)).toMatchObject({
+      classification: 'safe_for_ai',
+      reason: 'low_sensitivity_dimension',
+    })
+    expect(classifyFieldForAi(paymentStatusField)).toMatchObject({
+      classification: 'safe_for_ai',
+      reason: 'low_sensitivity_dimension',
+    })
+    expect(isFieldAllowedForAiPreview(billMonthField)).toBe(true)
+    expect(isFieldAllowedForAiPreview(paymentStatusField)).toBe(true)
   })
 
   test('rejects arbitrary fields in structured chart patches without mutating the current chart', () => {
@@ -222,6 +263,24 @@ test.describe('AI data access guardrails', () => {
       blockedFields: [sanitizedFieldDescriptor(piiNameField)],
       blockedMetrics: [],
     })).toBe(false)
+
+    expect(doesPromptReferenceBlockedAiDescriptors({
+      instruction: 'Change the chart color to pink',
+      blockedFields: [{
+        label: 'Age',
+        semanticKey: 'age',
+      }],
+      blockedMetrics: [],
+    })).toBe(false)
+
+    expect(doesPromptReferenceBlockedAiDescriptors({
+      instruction: 'Group this by AGE',
+      blockedFields: [{
+        label: 'Age',
+        semanticKey: 'age',
+      }],
+      blockedMetrics: [],
+    })).toBe(true)
   })
 
   test('supports valid prompt preview then deterministic patch apply', () => {
