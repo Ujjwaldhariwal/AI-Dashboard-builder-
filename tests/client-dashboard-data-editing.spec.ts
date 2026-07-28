@@ -131,7 +131,9 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(gridSource).toContain("type PublishedChartViewMode = 'chart' | 'table'")
     expect(gridSource).toContain('aria-label="Dashboard data view"')
     expect(gridSource).toContain('<DataTable rows={state.rows}')
-    expect(gridSource).toContain("fetch('/api/client/chart-run'")
+    expect(gridSource).toContain("'/api/client/chart-run'")
+    expect(gridSource).toContain("'/api/client/chart-draft-run'")
+    expect(gridSource).toContain('{ tenantSlug, releaseChartId: chartId, sourceChartId: sourceChart.id }')
     expect(gridSource).toContain('parsePublishedChartRunResponse(response)')
     expect(gridSource).toContain('Edit with AI')
     expect(gridSource).toContain('<AiChartRefinementDialog')
@@ -153,5 +155,22 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(stableRouteSource).toContain('runPublishedChartRequest')
     expect(stableRouteSource).toContain('tenantSlug')
     expect(stableRouteSource).toContain('chartId')
+
+    const draftRouteSource = readFileSync(
+      join(process.cwd(), 'src/app/api/client/chart-draft-run/route.ts'),
+      'utf8',
+    )
+    const draftRuntimeSource = readFileSync(
+      join(process.cwd(), 'src/lib/client/draft-chart-run-server.ts'),
+      'utf8',
+    )
+    expect(draftRouteSource).toContain('runDraftChartRequest')
+    expect(draftRouteSource).toContain('releaseChartId')
+    expect(draftRouteSource).toContain('sourceChartId')
+    expect(draftRuntimeSource).toContain('requireProjectAccess')
+    expect(draftRuntimeSource).toContain('editor: true')
+    expect(draftRuntimeSource).toContain('releaseChart.sourceChartConfigId !== sourceChartId')
+    expect(draftRuntimeSource).toContain('validateSemanticReferencesForModel')
+    expect(draftRuntimeSource).toContain('compileDatasetQueryPlan')
   })
 })

@@ -379,10 +379,15 @@ export function PublishedChartsGrid({
       setChartRuns(Object.fromEntries(ids.map(id => [id, { ...EMPTY_STATE, status: 'loading' as const }])))
       const entries = await Promise.all(ids.map(async chartId => {
         try {
-          const response = await fetch('/api/client/chart-run', {
+          const sourceChart = editMode && draftUpdatedChartIds.includes(chartId)
+            ? sourceCharts[chartId]
+            : null
+          const response = await fetch(sourceChart ? '/api/client/chart-draft-run' : '/api/client/chart-run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenantSlug, chartId }),
+            body: JSON.stringify(sourceChart
+              ? { tenantSlug, releaseChartId: chartId, sourceChartId: sourceChart.id }
+              : { tenantSlug, chartId }),
             signal: controller.signal,
           })
           const payload = await parsePublishedChartRunResponse(response)
@@ -419,7 +424,7 @@ export function PublishedChartsGrid({
 
     if (ids.length > 0) void loadCharts()
     return () => controller.abort()
-  }, [chartById, chartKey, charts, demoMode, reloadToken, tenantSlug])
+  }, [chartById, chartKey, charts, demoMode, draftUpdatedChartIds, editMode, reloadToken, sourceCharts, tenantSlug])
 
   if (charts.length === 0) return null
 
