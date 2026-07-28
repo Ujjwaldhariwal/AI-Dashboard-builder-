@@ -333,6 +333,7 @@ export function PublishedChartsGrid({
   const [sourceCharts, setSourceCharts] = useState(editableCharts)
   const [editingReleaseChartId, setEditingReleaseChartId] = useState<string | null>(null)
   const [draftUpdatedChartIds, setDraftUpdatedChartIds] = useState<string[]>([])
+  const [draftPreviewEnabled, setDraftPreviewEnabled] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const dark = useDashboardChartDarkMode()
   const demoMode = isDashboardOsDemoMode()
@@ -379,7 +380,7 @@ export function PublishedChartsGrid({
       setChartRuns(Object.fromEntries(ids.map(id => [id, { ...EMPTY_STATE, status: 'loading' as const }])))
       const entries = await Promise.all(ids.map(async chartId => {
         try {
-          const sourceChart = editMode && draftUpdatedChartIds.includes(chartId)
+          const sourceChart = draftPreviewEnabled && draftUpdatedChartIds.includes(chartId)
             ? sourceCharts[chartId]
             : null
           const response = await fetch(sourceChart ? '/api/client/chart-draft-run' : '/api/client/chart-run', {
@@ -424,7 +425,7 @@ export function PublishedChartsGrid({
 
     if (ids.length > 0) void loadCharts()
     return () => controller.abort()
-  }, [chartById, chartKey, charts, demoMode, draftUpdatedChartIds, editMode, reloadToken, sourceCharts, tenantSlug])
+  }, [chartById, chartKey, charts, demoMode, draftPreviewEnabled, draftUpdatedChartIds, reloadToken, sourceCharts, tenantSlug])
 
   if (charts.length === 0) return null
 
@@ -464,11 +465,25 @@ export function PublishedChartsGrid({
             <button
               type="button"
               aria-pressed={editMode}
-              onClick={() => setEditMode(value => !value)}
+              onClick={() => {
+                const nextEditMode = !editMode
+                setEditMode(nextEditMode)
+                if (nextEditMode && draftUpdatedChartIds.length > 0) setDraftPreviewEnabled(true)
+              }}
               className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] ${editMode ? 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-soft)] text-[var(--dos-accent-primary)]' : 'border-[color:var(--dos-border-mid)] text-[var(--dos-text-secondary)] hover:border-[color:var(--dos-accent-primary)] hover:text-[var(--dos-accent-primary)]'}`}
             >
               <PencilLine className="h-3.5 w-3.5" />
               {editMode ? 'Exit edit mode' : 'Edit mode'}
+            </button>
+          ) : null}
+          {canEdit && draftUpdatedChartIds.length > 0 ? (
+            <button
+              type="button"
+              aria-pressed={draftPreviewEnabled}
+              onClick={() => setDraftPreviewEnabled(enabled => !enabled)}
+              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] ${draftPreviewEnabled ? 'border-[color:var(--dos-chart-success)] bg-[var(--dos-success-soft)] text-[var(--dos-chart-success)]' : 'border-[color:var(--dos-border-mid)] text-[var(--dos-text-secondary)] hover:border-[color:var(--dos-accent-primary)] hover:text-[var(--dos-accent-primary)]'}`}
+            >
+              {draftPreviewEnabled ? 'View published release' : 'View saved draft'}
             </button>
           ) : null}
           <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--dos-text-muted)]">
@@ -496,7 +511,7 @@ export function PublishedChartsGrid({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-4">
         {visibleCharts.map(chart => {
           const state = chartRuns[chart.id] ?? EMPTY_STATE
-          const hasDraftPreview = editMode && draftUpdatedChartIds.includes(chart.id) && Boolean(sourceCharts[chart.id])
+          const hasDraftPreview = draftPreviewEnabled && draftUpdatedChartIds.includes(chart.id) && Boolean(sourceCharts[chart.id])
           const displayChart = hasDraftPreview ? sourceCharts[chart.id] : chart
           const statusLabel = state.status === 'ready' ? 'Live' : state.status === 'loading' ? 'Loading' : state.status === 'error' ? 'Unavailable' : 'Queued'
           return (
@@ -530,7 +545,7 @@ export function PublishedChartsGrid({
               ) : null}
               {hasDraftPreview ? (
                 <div className="mb-3 rounded-md border border-[color:var(--dos-accent-primary)]/30 bg-[var(--dos-accent-soft)] px-3 py-2 text-[11px] font-medium text-[var(--dos-accent-primary)]">
-                  Previewing saved draft changes in Edit mode.
+                  Previewing your saved draft. Published viewers still see the released version until you publish.
                 </div>
               ) : null}
               <ChartBody chart={displayChart} state={state} dark={dark} viewMode={viewMode} onRetry={() => setReloadToken(token => token + 1)} />
@@ -557,6 +572,7 @@ export function PublishedChartsGrid({
             setDraftUpdatedChartIds(current => (
               current.includes(editingReleaseChartId) ? current : [...current, editingReleaseChartId]
             ))
+            setDraftPreviewEnabled(true)
           }}
         />
       ) : null}

@@ -141,7 +141,12 @@ test.describe('client dashboard data and NLP editing', () => {
     expect(gridSource).toContain('sizePreset={sizePreset}')
     expect(gridSource).toContain('The live published dashboard remains unchanged until a new version is published.')
     expect(gridSource).toContain('const displayChart = hasDraftPreview ? sourceCharts[chart.id] : chart')
-    expect(gridSource).toContain('Previewing saved draft changes in Edit mode.')
+    expect(gridSource).toContain('const [draftPreviewEnabled, setDraftPreviewEnabled] = useState(false)')
+    expect(gridSource).toContain('const sourceChart = draftPreviewEnabled && draftUpdatedChartIds.includes(chartId)')
+    expect(gridSource).toContain('const hasDraftPreview = draftPreviewEnabled && draftUpdatedChartIds.includes(chart.id)')
+    expect(gridSource).toContain('View published release')
+    expect(gridSource).toContain('View saved draft')
+    expect(gridSource).toContain('Previewing your saved draft. Published viewers still see the released version until you publish.')
     expect(gridSource).toContain('<ChartBody chart={displayChart}')
 
     expect(pageSource).toContain('editor: true')
