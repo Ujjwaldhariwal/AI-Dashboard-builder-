@@ -72,6 +72,7 @@ interface RefineResponse {
   } | null
   errorCode?: 'feature_gated' | 'restricted_field_request' | 'unsupported_chart_edit' | 'invalid_model_patch' | 'schema_version_mismatch' | 'chart_validation_failed'
     | 'model_parse_failure'
+  resolution?: 'reviewed' | 'deterministic' | 'model'
   error?: string
 }
 
@@ -750,6 +751,11 @@ export function AiChartRefinementDialog({
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-[color:var(--dos-chart-info)]">Before / After</p>
                       <h3 className="mt-1 text-sm font-semibold">Structured patch preview</h3>
+                      {result.resolution ? (
+                        <p className="mt-1 text-[11px] text-[color:var(--dos-text-muted)]">
+                          {result.resolution === 'deterministic' ? 'Resolved from governed chart rules' : result.resolution === 'model' ? 'Resolved with governed AI context' : 'Revalidated reviewed patch'}
+                        </p>
+                      ) : null}
                     </div>
                     <Badge variant="outline" className={result.validation?.state === 'valid'
                       ? 'border-[color:var(--dos-chart-success)] text-[color:var(--dos-chart-success)]'

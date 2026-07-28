@@ -72,6 +72,7 @@ export function buildAiChartRefinementEventMetadata({
   patchProvided,
   includePreview,
   gateSource,
+  resolution,
 }: {
   eventType: AiChartRefinementEventType
   instruction?: string
@@ -82,6 +83,7 @@ export function buildAiChartRefinementEventMetadata({
   patchProvided?: boolean
   includePreview?: boolean
   gateSource?: string | null
+  resolution?: 'reviewed' | 'deterministic' | 'model' | null
 }) {
   return {
     eventType,
@@ -94,6 +96,7 @@ export function buildAiChartRefinementEventMetadata({
     patchProvided: patchProvided ?? null,
     includePreview: includePreview ?? null,
     gateSource: gateSource ?? null,
+    resolution: resolution ?? null,
   }
 }
 

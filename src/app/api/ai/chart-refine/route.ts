@@ -20,6 +20,10 @@ import {
   logAiChartRefinementMetric,
 } from '@/lib/ai/chart-refinement-observability'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
+import {
+  resolveDeterministicChartIntent,
+  selectRelevantChartRefinementExamples,
+} from '@/lib/ai/chart-refinement-intent'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -207,6 +211,7 @@ export async function POST(req: NextRequest) {
 
     const publicContext = serializeGovernedAiChartContext(context)
     let patch: ChartAiPatch
+    let resolution: 'reviewed' | 'deterministic' | 'model' = parsed.data.patch ? 'reviewed' : 'model'
 
     if (parsed.data.patch) {
       const providedPatch = parseChartAiPatchPayload(parsed.data.patch)
@@ -251,9 +256,18 @@ export async function POST(req: NextRequest) {
       }
       patch = providedPatch.patch
     } else {
-      const deterministicPatch = buildDeterministicPresentationPatch(parsed.data.instruction)
+      const deterministicIntent = resolveDeterministicChartIntent({
+        instruction: parsed.data.instruction,
+        context: {
+          chart: context.chart,
+          allowedFields: context.allowedFields,
+          allowedMetrics: context.allowedMetrics,
+        },
+      })
+      const deterministicPatch = deterministicIntent?.patch ?? buildDeterministicPresentationPatch(parsed.data.instruction)
       if (deterministicPatch) {
         patch = deterministicPatch
+        resolution = 'deterministic'
       } else {
       let ai: ReturnType<typeof getAiWorkflowModel>
       try {
@@ -343,6 +357,16 @@ Privacy and safety rules:
 
 User instruction:
 ${parsed.data.instruction}
+
+Relevant approved examples (adapt only using IDs from the governed context):
+${JSON.stringify(selectRelevantChartRefinementExamples({
+  instruction: parsed.data.instruction,
+  context: {
+    chart: context.chart,
+    allowedFields: context.allowedFields,
+    allowedMetrics: context.allowedMetrics,
+  },
+}), null, 2)}
 
 Governed context:
 ${JSON.stringify(publicContext, null, 2)}`
@@ -490,6 +514,7 @@ ${JSON.stringify(publicContext, null, 2)}`
           validationState: allowed.validation.state,
           schemaVersion: patch.schemaVersion,
           gateSource: gate.source,
+          resolution,
         }),
       })
       await logAiChartRefinementMetric({
@@ -505,9 +530,10 @@ ${JSON.stringify(publicContext, null, 2)}`
           validationState: allowed.validation.state,
           schemaVersion: patch.schemaVersion,
           gateSource: gate.source,
+          resolution,
         }),
       })
-      return NextResponse.json({ patch, chart: allowed.nextChart, validation: allowed.validation })
+      return NextResponse.json({ patch, chart: allowed.nextChart, validation: allowed.validation, resolution })
     }
 
     const nowIso = new Date().toISOString()
@@ -555,6 +581,7 @@ ${JSON.stringify(publicContext, null, 2)}`
           validationState: allowed.validation.state,
           schemaVersion: patch.schemaVersion,
           gateSource: gate.source,
+          resolution,
         }),
       }),
       logAiChartRefinementMetric({
@@ -570,6 +597,7 @@ ${JSON.stringify(publicContext, null, 2)}`
           validationState: allowed.validation.state,
           schemaVersion: patch.schemaVersion,
           gateSource: gate.source,
+          resolution,
         }),
       }),
     ])
@@ -578,6 +606,7 @@ ${JSON.stringify(publicContext, null, 2)}`
       patch,
       chart: mapDashboardChartConfig(chartRow as Record<string, unknown>),
       validation: allowed.validation,
+      resolution,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI chart refinement failed'

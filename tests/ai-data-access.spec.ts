@@ -11,6 +11,10 @@ import {
   validateChartAiPatchAgainstAllowlist,
 } from '../src/lib/ai/chart-ai-contract'
 import {
+  resolveDeterministicChartIntent,
+  selectRelevantChartRefinementExamples,
+} from '../src/lib/ai/chart-refinement-intent'
+import {
   buildAiChartRefinementRolloutAuditMetadata,
   createEnvAiChartRefinementGatePolicy,
   inspectAiChartRefinementGatePolicy,
@@ -118,6 +122,14 @@ const billMetric = {
   id: '44444444-4444-4444-8444-444444444444',
   name: 'Total Bill Amount',
   semantic_key: 'metric.total_bill_amount',
+  aggregation: 'sum',
+  expression: { fieldId: billAmountField.id },
+}
+
+const unitMetric = {
+  id: '45454545-4545-4545-8454-454545454545',
+  name: 'Total Units Consumed Kwh',
+  semantic_key: 'metric.total_units_consumed_kwh',
   aggregation: 'sum',
   expression: { fieldId: billAmountField.id },
 }
@@ -413,6 +425,37 @@ test.describe('AI data access guardrails', () => {
       },
     })
     expect(buildDeterministicPresentationPatch('Group by City and use pink')).toBeNull()
+  })
+
+  test('resolves unambiguous governed structural edits and retrieves matching examples', () => {
+    const intentContext = {
+      chart: currentChart,
+      allowedFields: [{ id: safeCityField.id, label: 'City', semanticKey: 'customer.city' }],
+      allowedMetrics: [
+        { id: billMetric.id, label: 'Total Bill Amount', semanticKey: 'total_bill_amount' },
+        { id: unitMetric.id, label: 'Total Units Consumed Kwh', semanticKey: 'total_units_consumed_kwh' },
+      ],
+    }
+
+    expect(resolveDeterministicChartIntent({ instruction: 'Break this down by city', context: intentContext })).toMatchObject({
+      intent: 'grouping',
+      patch: { encoding: { xAxisFieldId: safeCityField.id } },
+    })
+    expect(resolveDeterministicChartIntent({ instruction: 'Compare total bill amount vs total units consumed', context: intentContext })).toMatchObject({
+      intent: 'comparison',
+      patch: { encoding: { yMetricIds: [billMetric.id, unitMetric.id] } },
+    })
+    expect(resolveDeterministicChartIntent({ instruction: 'Show the top 10 by total bill amount', context: intentContext })).toMatchObject({
+      intent: 'sort_limit',
+      patch: { encoding: { limit: 10, sort: { byId: billMetric.id, direction: 'desc' } } },
+    })
+    expect(resolveDeterministicChartIntent({ instruction: 'Group by City and use pink', context: intentContext })).toBeNull()
+
+    const examples = selectRelevantChartRefinementExamples({ instruction: 'Compare billing and units', context: intentContext })
+    expect(examples).toEqual(expect.arrayContaining([
+      expect.objectContaining({ patch: { encoding: { yMetricIds: [billMetric.id, unitMetric.id] } } }),
+    ]))
+    expect(JSON.stringify(examples)).not.toContain(piiNameField.id)
   })
 
   test('rejects unsafe or unbounded NLP presentation values', () => {
@@ -755,6 +798,7 @@ test.describe('AI data access guardrails', () => {
       schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
       previewAvailable: false,
       gateSource: 'tenant_allowlist',
+      resolution: 'deterministic',
     })
 
     expect(metadata).toMatchObject({
@@ -764,6 +808,7 @@ test.describe('AI data access guardrails', () => {
       schemaVersion: AI_CHART_PATCH_SCHEMA_VERSION,
       previewAvailable: false,
       gateSource: 'tenant_allowlist',
+      resolution: 'deterministic',
     })
     expect(JSON.stringify(metadata)).not.toContain('customer name')
   })
