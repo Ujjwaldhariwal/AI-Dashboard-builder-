@@ -1,329 +1,267 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'                          // ✅ added
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Input }   from '@/components/ui/input'
-import { Button }  from '@/components/ui/button'
-import { Label }   from '@/components/ui/label'
-import { BarChart3, Lock, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
-import { toast }   from 'sonner'
-import { createClient }  from '@/lib/supabase/client'
-import { enableDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
-import { useAuthStore }  from '@/store/auth-store'
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  AlertCircle,
+  BarChart3,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+} from "lucide-react";
 
-const supabase = createClient()
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { resolveSafeInternalRedirect } from "@/lib/auth/safe-redirect";
+import { enableDashboardOsDemoMode } from "@/lib/dashboardos/demo-mode";
+import { createClient } from "@/lib/supabase/client";
+import { useAuthStore } from "@/store/auth-store";
 
-// ── All known Supabase auth error messages ────────────────────
-const isInvalidCredentials = (msg: string) =>
-  msg.includes('Invalid login credentials') ||
-  msg.includes('invalid_credentials') ||
-  msg.includes('Invalid email or password') ||
-  msg.includes('Email not confirmed') ||
-  msg.toLowerCase().includes('invalid login')
+const supabase = createClient();
 
-const isUserNotFound = (msg: string) =>
-  msg.includes('User not found') ||
-  msg.includes('user_not_found') ||
-  msg.includes('No user found')
+const isInvalidCredentials = (message: string) =>
+  message.includes("Invalid login credentials") ||
+  message.includes("invalid_credentials") ||
+  message.includes("Invalid email or password") ||
+  message.toLowerCase().includes("invalid login");
 
-const isAlreadyRegistered = (msg: string) =>
-  msg.includes('already registered') ||
-  msg.includes('User already registered') ||
-  msg.includes('email_exists')
-
-const isRateLimit = (msg: string) =>
-  msg.includes('rate limit') ||
-  msg.includes('too many requests') ||
-  msg.includes('over_email_send_rate_limit')
+const isRateLimit = (message: string) =>
+  message.toLowerCase().includes("rate limit") ||
+  message.toLowerCase().includes("too many requests");
 
 type FieldError = {
-  empId?:    string
-  password?: string
-  general?:  string
-}
+  empId?: string;
+  password?: string;
+  general?: string;
+};
 
 export default function LoginPage() {
-  const router = useRouter()                                          // ✅ added
-  const emailDomain = process.env.NEXT_PUBLIC_EMAIL_DOMAIN ?? 'company.com'
+  const router = useRouter();
+  const emailDomain = process.env.NEXT_PUBLIC_EMAIL_DOMAIN ?? "company.com";
+  const [empId, setEmpId] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [fieldError, setFieldError] = useState<FieldError>({});
+  const { checkSession } = useAuthStore();
 
-  const [empId, setEmpId]         = useState('')
-  const [password, setPassword]   = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [showPass, setShowPass]   = useState(false)
-  const [fieldError, setFieldError] = useState<FieldError>({})
-
-  const { checkSession } = useAuthStore()
-
-  const clearErrors = () => setFieldError({})
-
-  const validate = (): boolean => {
-    const errors: FieldError = {}
-
+  function validate() {
+    const errors: FieldError = {};
     if (!empId.trim()) {
-      errors.empId = 'Employee ID is required'
+      errors.empId = "Employee ID is required.";
     } else if (!/^[a-zA-Z0-9_-]+$/.test(empId.trim())) {
-      errors.empId = 'Employee ID can only contain letters, numbers, - and _'
+      errors.empId = "Use letters, numbers, hyphens, or underscores only.";
     }
 
     if (!password) {
-      errors.password = 'Password is required'
-    } else if (password.length < 6) {
-      errors.password = `Password must be at least 6 characters (${6 - password.length} more needed)`
-    } else if (password.length > 72) {
-      errors.password = 'Password cannot exceed 72 characters'
+      errors.password = "Password is required.";
+    } else if (password.length < 6 || password.length > 72) {
+      errors.password = "Password must contain 6 to 72 characters.";
     }
 
-    setFieldError(errors)
-    return Object.keys(errors).length === 0
+    setFieldError(errors);
+    return Object.keys(errors).length === 0;
   }
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    clearErrors()
-    if (!validate()) return
+  async function handleLogin(event: React.FormEvent) {
+    event.preventDefault();
+    setFieldError({});
+    if (!validate()) return;
 
-    setIsLoading(true)
-
-    // ✅ redirectTo — honor middleware redirect param
-    const params     = new URLSearchParams(window.location.search)
-    const redirectTo = params.get('redirectTo') ?? params.get('returnTo') ?? '/admin'
-    const email      = `${empId.trim().toLowerCase()}@${emailDomain}`
-
-    // ✅ Fix #2 — local flag tracks field errors set DURING this call
-    // avoids stale closure on fieldError state in catch block
-    let fieldErrorSet = false
+    setIsLoading(true);
+    const params = new URLSearchParams(window.location.search);
+    const redirectTo = resolveSafeInternalRedirect(
+      params.get("redirectTo") ?? params.get("returnTo"),
+    );
+    const email = `${empId.trim().toLowerCase()}@${emailDomain}`;
 
     try {
-      // ── ATTEMPT 1: Sign in ────────────────────────────────────
-      const { data: signInData, error: signInError } =
-        await supabase.auth.signInWithPassword({ email, password })
-
-      if (!signInError && signInData.session) {
-        toast.success('Welcome back!', { id: 'auth' })
-        await checkSession()
-        if (params.get('demo') === '1') enableDashboardOsDemoMode()
-        router.push(redirectTo)                                       // ✅ uses redirectTo
-        return
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        if (isRateLimit(error.message)) {
+          throw new Error("Too many attempts. Wait a minute, then try again.");
+        }
+        if (isInvalidCredentials(error.message)) {
+          setFieldError({ password: "Employee ID or password is incorrect." });
+          return;
+        }
+        throw new Error("Authentication failed. Please try again.");
       }
 
-      if (signInError) {
-        if (isRateLimit(signInError.message)) {
-          throw new Error('Too many attempts. Please wait a minute and try again.')
-        }
-
-        if (isInvalidCredentials(signInError.message) && !isUserNotFound(signInError.message)) {
-          const { error: probeError } = await supabase.auth.signUp({
-            email,
-            password: 'probe-only-not-used-x9z2',
-            options: { data: { emp_id: empId.trim().toUpperCase() } },
-          })
-
-          if (probeError && isAlreadyRegistered(probeError.message)) {
-            // User exists → wrong password
-            setFieldError({ password: 'Incorrect password. Please try again.' })
-            fieldErrorSet = true                                      // ✅ flag set
-            setIsLoading(false)
-            return
-          }
-          // User does not exist → fall through to registration
-        }
-
-        if (
-          !isInvalidCredentials(signInError.message) &&
-          !isUserNotFound(signInError.message)
-        ) {
-          throw new Error(signInError.message)
-        }
+      if (!data.session) {
+        throw new Error("Sign-in did not create a session. Please try again.");
       }
 
-      // ── ATTEMPT 2: Register new employee ──────────────────────
-      toast.loading('First time login – setting up your account...', { id: 'auth' })
-
-      const { error: signUpError } =
-        await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              emp_id: empId.trim().toUpperCase(),
-              name:   `Employee ${empId.trim().toUpperCase()}`,
-            },
-          },
-        })
-
-      if (signUpError) {
-        if (isAlreadyRegistered(signUpError.message)) {
-          setFieldError({ password: 'Incorrect password. Please try again.' })
-          fieldErrorSet = true                                        // ✅ flag set
-          setIsLoading(false)
-          toast.dismiss('auth')
-          return
-        }
-        if (isRateLimit(signUpError.message)) {
-          throw new Error('Too many attempts. Please wait a minute and try again.')
-        }
-        throw signUpError
-      }
-
-      // ── ATTEMPT 3: Sign in right after sign up ────────────────
-      const { data: finalSignIn, error: finalError } =
-        await supabase.auth.signInWithPassword({ email, password })
-
-      if (finalError) {
-        if (
-          finalError.message.includes('Email not confirmed') ||
-          finalError.message.includes('email_not_confirmed')
-        ) {
-          throw new Error(
-            'A confirmation email has been sent. Please check your inbox, then sign in again.',
-          )
-        }
-        throw new Error('Account created but sign-in failed. Please try logging in again.')
-      }
-
-      if (!finalSignIn.session) {
-        throw new Error(
-          'Account registered. Please check your email to confirm, then sign in.',
-        )
-      }
-
-      toast.success('Account created & signed in!', { id: 'auth' })
-      await checkSession()
-      if (params.get('demo') === '1') enableDashboardOsDemoMode()
-      router.push(redirectTo)                                         // ✅ uses redirectTo
-
-    } catch (err: unknown) {
-      // ✅ Fix #1 — err typed as unknown, safe message extraction
-      const message = err instanceof Error
-        ? err.message
-        : 'Authentication failed. Please try again.'
-
-      console.error('[Auth]', err)
-      toast.dismiss('auth')
-
-      // ✅ Fix #2 — use local flag, not stale fieldError state
-      if (!fieldErrorSet) {
-        setFieldError({ general: message })
-      }
-      setIsLoading(false)
+      await checkSession();
+      if (params.get("demo") === "1") enableDashboardOsDemoMode();
+      router.replace(redirectTo);
+    } catch (error) {
+      console.error("[Auth]", error);
+      setFieldError({
+        general:
+          error instanceof Error
+            ? error.message
+            : "Authentication failed. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
     }
   }
 
-  const passShort = password.length > 0 && password.length < 6
-
   return (
-    <Card className="w-full border-white/10 bg-slate-900/65 shadow-2xl backdrop-blur-xl">
-      <CardHeader className="space-y-3 pb-6 text-center">
-        <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-lg">
-          <BarChart3 className="w-6 h-6 text-white" />
+    <Card className="w-full border-[color:var(--color-rule)] bg-[var(--color-surface)] text-[var(--color-ink)] shadow-[var(--shadow-float)]">
+      <CardHeader className="space-y-0 p-6 pb-5 sm:p-7 sm:pb-5">
+        <div className="mb-7 flex items-center gap-3 lg:hidden">
+          <div className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] border border-[color:var(--color-rule-strong)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
+            <BarChart3 className="h-4 w-4" aria-hidden="true" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold leading-none">DashboardOS</p>
+            <p className="mt-1 text-[11px] text-[var(--color-muted)]">
+              Managed analytics platform
+            </p>
+          </div>
         </div>
-        <CardTitle className="text-2xl font-bold tracking-tight text-slate-50">DashboardOS</CardTitle>
-        <CardDescription className="text-base text-slate-300">
-          Sign in to the governed analytics workspace
+        <CardTitle className="text-2xl font-semibold tracking-[-0.025em] text-[var(--color-ink)]">
+          Welcome back
+        </CardTitle>
+        <CardDescription className="mt-2 text-sm leading-6 text-[var(--color-ink-2)]">
+          Sign in to continue to your governed analytics workspace.
         </CardDescription>
-        <p className="text-[11px] text-slate-400">
-          Login email format: <span className="font-mono">employee@{emailDomain}</span>
+        <p className="mt-4 border-l-2 border-[color:var(--color-accent)] pl-3 text-xs text-[var(--color-muted)]">
+          Account format:{" "}
+          <span className="font-mono text-[var(--color-ink-2)]">
+            employee@{emailDomain}
+          </span>
         </p>
       </CardHeader>
 
-      <CardContent>
-        <form onSubmit={handleLogin} className="space-y-5" noValidate>
-
-          {/* ── General error banner ─────────────────────────── */}
-          {fieldError.general && (
-            <div className="flex items-start gap-2.5 p-3 rounded-lg border border-red-200 bg-red-50/60 dark:border-red-900 dark:bg-red-950/20">
-              <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700 dark:text-red-400">{fieldError.general}</p>
+      <CardContent className="p-6 pt-0 sm:p-7 sm:pt-0">
+        <form className="space-y-4" noValidate onSubmit={handleLogin}>
+          {fieldError.general ? (
+            <div
+              className="flex items-start gap-2.5 rounded-[var(--radius-control)] border border-[color:var(--color-danger)] bg-destructive/10 p-3"
+              role="alert"
+            >
+              <AlertCircle
+                className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-danger)]"
+                aria-hidden="true"
+              />
+              <p className="text-sm text-[var(--color-danger)]">
+                {fieldError.general}
+              </p>
             </div>
-          )}
+          ) : null}
 
-          {/* ── Employee ID ──────────────────────────────────── */}
           <div className="space-y-1.5 text-left">
-            <Label htmlFor="empId">Employee ID</Label>
+            <Label
+              htmlFor="empId"
+              className="text-sm font-medium text-[var(--color-ink-2)]"
+            >
+              Employee ID
+            </Label>
             <Input
               id="empId"
-              placeholder="e.g. EMP001"
               value={empId}
-              onChange={e => { setEmpId(e.target.value); clearErrors() }}
-              className={`h-11 border-white/10 bg-slate-900/40 text-slate-100 placeholder:text-slate-500 ${
-                fieldError.empId ? 'border-red-400 focus-visible:ring-red-400' : ''
-              }`}
+              onChange={(event) => {
+                setEmpId(event.target.value);
+                setFieldError({});
+              }}
+              className="h-11 border-[color:var(--color-rule-strong)] bg-[var(--color-paper-2)] text-[var(--color-ink)] placeholder:text-[var(--color-muted)] hover:border-[color:var(--color-muted)] focus-visible:border-[color:var(--color-focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-focus)] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-55"
+              placeholder="EMP001"
               autoComplete="username"
+              aria-invalid={Boolean(fieldError.empId)}
+              aria-describedby={fieldError.empId ? "empId-error" : undefined}
               disabled={isLoading}
               autoFocus
             />
-            {fieldError.empId && (
-              <p className="text-[11px] text-red-500 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                {fieldError.empId}
-              </p>
-            )}
+            <p
+              id="empId-error"
+              className="min-h-[1lh] text-[11px] text-[var(--color-danger)]"
+            >
+              {fieldError.empId ?? ""}
+            </p>
           </div>
 
-          {/* ── Password ─────────────────────────────────────── */}
           <div className="space-y-1.5 text-left">
-            <Label htmlFor="password">Password</Label>
+            <Label
+              htmlFor="password"
+              className="text-sm font-medium text-[var(--color-ink-2)]"
+            >
+              Password
+            </Label>
             <div className="relative">
               <Input
                 id="password"
-                type={showPass ? 'text' : 'password'}
-                placeholder="Min 6 characters"
+                type={showPassword ? "text" : "password"}
                 value={password}
-                onChange={e => { setPassword(e.target.value); clearErrors() }}
-              className={`h-11 border-white/10 bg-slate-900/40 pr-10 text-slate-100 placeholder:text-slate-500 ${
-                fieldError.password || passShort
-                  ? 'border-red-400 focus-visible:ring-red-400'
-                  : ''
-                }`}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setFieldError({});
+                }}
+                className="h-11 border-[color:var(--color-rule-strong)] bg-[var(--color-paper-2)] pr-11 text-[var(--color-ink)] placeholder:text-[var(--color-muted)] hover:border-[color:var(--color-muted)] focus-visible:border-[color:var(--color-focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-focus)] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-55"
+                placeholder="6–72 characters"
                 autoComplete="current-password"
+                aria-invalid={Boolean(fieldError.password)}
+                aria-describedby={
+                  fieldError.password ? "password-error" : undefined
+                }
                 disabled={isLoading}
               />
               <button
                 type="button"
-                onClick={() => setShowPass(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                tabIndex={-1}
+                onClick={() => setShowPassword((current) => !current)}
+                className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-[var(--radius-control)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--color-focus)] active:text-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-55"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                disabled={isLoading}
               >
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="h-4 w-4" aria-hidden="true" />
+                )}
               </button>
             </div>
-
-            {fieldError.password && (
-              <p className="text-[11px] text-red-500 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />
-                {fieldError.password}
-              </p>
-            )}
-
-            {passShort && !fieldError.password && (
-              <p className="text-[11px] text-amber-500">
-                {6 - password.length} more character{6 - password.length !== 1 ? 's' : ''} needed
-              </p>
-            )}
+            <p
+              id="password-error"
+              className="min-h-[1lh] text-[11px] text-[var(--color-danger)]"
+            >
+              {fieldError.password ?? ""}
+            </p>
           </div>
 
-          {/* ── Submit ───────────────────────────────────────── */}
           <Button
             type="submit"
-            className="h-11 w-full bg-gradient-to-r from-indigo-500 to-sky-500 text-base font-medium text-white shadow-md hover:from-indigo-400 hover:to-sky-400"
-            disabled={isLoading || passShort}
+            className="h-11 w-full rounded-[var(--radius-control)] bg-[var(--color-accent)] text-sm font-semibold text-[var(--color-accent-ink)] hover:bg-[var(--color-accent-hover)] focus-visible:ring-[var(--color-focus)] active:translate-y-px disabled:cursor-not-allowed disabled:bg-[var(--color-rule-strong)] disabled:text-[var(--color-muted)] disabled:opacity-55"
+            disabled={isLoading}
+            aria-busy={isLoading}
           >
             {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
             ) : (
-              <>
-                <Lock className="w-4 h-4 mr-2" />
-                Sign in securely
-              </>
+              <Lock className="mr-2 h-4 w-4" aria-hidden="true" />
             )}
+            {isLoading ? "Signing in…" : "Sign in securely"}
           </Button>
 
-          <p className="pt-2 text-center text-xs text-slate-400">
-            Access is authenticated and scoped to assigned tenant projects.
+          <p className="pt-2 text-center text-xs leading-5 text-[var(--color-muted)]">
+            Beta access is invite-only. Contact your workspace administrator if
+            you need access.
           </p>
         </form>
       </CardContent>
     </Card>
-  )
+  );
 }
