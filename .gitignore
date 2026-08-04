@@ -50,3 +50,5 @@ llm-context.txt
 .graphify/.graphify_runtime.json
 .graphify/.graphify_*
 .graphify/manifest.json
+.graphify/description-instructions/
+.graphify/label-instructions/

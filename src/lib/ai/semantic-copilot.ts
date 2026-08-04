@@ -59,6 +59,15 @@ const NUMERIC_TYPES = /int|numeric|decimal|real|double|float|money/
 const DATE_TYPES = /date|time/
 const BOOLEAN_TYPES = /bool/
 const SENSITIVE_NAMES = /password|secret|token|credential|api[_-]?key|email|phone|mobile|address|ssn|aadhaar|pan[_-]?number/i
+const SEMANTIC_CONTEXT_LIMIT = 80
+const ROLE_PRIORITY: Record<BusinessFieldRole, number> = {
+  identifier: 0,
+  date: 1,
+  metric_source: 2,
+  dimension: 3,
+  attribute: 4,
+  hidden: 5,
+}
 
 function words(value: string) {
   return value
@@ -131,12 +140,45 @@ function metricNameForColumn(column: DataSourceColumnMetadata, aggregation: Busi
   return `${prefix} ${baseName}`
 }
 
+export function selectSemanticContextColumns(
+  columns: DataSourceColumnMetadata[],
+  limit = SEMANTIC_CONTEXT_LIMIT,
+) {
+  const eligible = columns.filter(column => roleForColumn(column) !== 'hidden')
+  if (eligible.length <= limit) return eligible
+
+  const byTable = new Map<string, DataSourceColumnMetadata[]>()
+  for (const column of eligible) {
+    const key = `${column.dataSourceId}:${column.schemaName}.${column.tableName}`
+    byTable.set(key, [...(byTable.get(key) ?? []), column])
+  }
+  const groups = [...byTable.values()].map(group => [...group].sort((left, right) => {
+    const priority = ROLE_PRIORITY[roleForColumn(left)] - ROLE_PRIORITY[roleForColumn(right)]
+    return priority || left.ordinalPosition - right.ordinalPosition
+  }))
+
+  const selected: DataSourceColumnMetadata[] = []
+  for (let depth = 0; selected.length < limit; depth += 1) {
+    let found = false
+    for (const group of groups) {
+      const column = group[depth]
+      if (!column) continue
+      found = true
+      selected.push(column)
+      if (selected.length === limit) break
+    }
+    if (!found) break
+  }
+  return selected
+}
+
 export function buildDeterministicSemanticProposal(
   columns: DataSourceColumnMetadata[],
   objective = 'Create a reusable business model from the selected schema.',
 ): SemanticCopilotProposal {
+  const contextColumns = selectSemanticContextColumns(columns)
   const byTable = new Map<string, DataSourceColumnMetadata[]>()
-  for (const column of columns) {
+  for (const column of contextColumns) {
     const key = `${column.dataSourceId}:${column.schemaName}.${column.tableName}`
     byTable.set(key, [...(byTable.get(key) ?? []), column])
   }
@@ -170,7 +212,7 @@ export function buildDeterministicSemanticProposal(
   }
 
   const relationships: SemanticCopilotProposal['relationships'] = []
-  const identifierColumns = columns.filter(column => roleForColumn(column) === 'identifier')
+  const identifierColumns = contextColumns.filter(column => roleForColumn(column) === 'identifier')
   for (let leftIndex = 0; leftIndex < identifierColumns.length; leftIndex += 1) {
     const left = identifierColumns[leftIndex]
     for (let rightIndex = leftIndex + 1; rightIndex < identifierColumns.length; rightIndex += 1) {
@@ -196,9 +238,12 @@ export function buildDeterministicSemanticProposal(
     if (relationships.length >= 24) break
   }
 
+  const selectedTableCount = new Set(columns.map(column => (
+    `${column.dataSourceId}:${column.schemaName}.${column.tableName}`
+  ))).size
   return SemanticCopilotProposalSchema.parse({
-    summary: `${objective.trim()} Proposed ${mappings.length} governed mappings across ${byTable.size} selected table${byTable.size === 1 ? '' : 's'}.`,
-    mappings: mappings.slice(0, 80),
+    summary: `${objective.trim()} Proposed ${mappings.length} governed mappings across ${byTable.size} of ${selectedTableCount} selected table${selectedTableCount === 1 ? '' : 's'} using ${contextColumns.length} of ${columns.length} columns.`,
+    mappings,
     relationships,
   })
 }

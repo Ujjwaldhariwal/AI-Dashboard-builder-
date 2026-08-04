@@ -248,6 +248,11 @@ export interface GuidedDashboardDraftPlan {
 export interface GuidedPublishReadinessInput {
   evaluatedAt?: string
   profileState?: GuidedReviewState | null
+  semanticAuthority?: {
+    modelId: string
+    modelName?: string | null
+    reviewOpenCount?: number
+  } | null
   schemaIntrospection?: {
     dataSourceId?: string | null
     status?: string | null
@@ -255,7 +260,7 @@ export interface GuidedPublishReadinessInput {
     schemaHash?: string | null
     scopeStatus?: string | null
   } | null
-  models?: Array<{ id: string; status?: string | null; version?: number | null }> | null
+  models?: Array<{ id: string; name?: string | null; status?: string | null; version?: number | null }> | null
   activeSemanticModelId?: string | null
   datasets?: Array<Pick<SemanticDataset, 'id' | 'modelId' | 'status' | 'selection'> & { description?: string | null }> | null
   datasetSemanticValidation?: {
@@ -389,15 +394,17 @@ function hasSupportedChartRuntime(chart: Pick<DashboardChartConfig, 'encoding' |
 export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput): GuidedPublishReadinessResult {
   const evaluatedAt = input.evaluatedAt ?? new Date().toISOString()
   const semanticAsset = input.profileState?.semanticAsset ?? null
-  const activeModel = semanticAsset ? firstById(input.models ?? [], semanticAsset.modelId) : null
+  const semanticModelId = input.semanticAuthority?.modelId ?? semanticAsset?.modelId ?? null
+  const semanticModelName = input.semanticAuthority?.modelName ?? semanticAsset?.modelName ?? null
+  const activeModel = semanticModelId ? firstById(input.models ?? [], semanticModelId) : null
   const hasActiveSemanticAsset = Boolean(
-    semanticAsset
+    semanticModelId
     && activeModel?.status === 'approved'
-    && input.activeSemanticModelId === semanticAsset.modelId,
+    && input.activeSemanticModelId === semanticModelId,
   )
   const datasets = input.datasets ?? []
-  const linkedDatasets = semanticAsset
-    ? datasets.filter(dataset => dataset.modelId === semanticAsset.modelId)
+  const linkedDatasets = semanticModelId
+    ? datasets.filter(dataset => dataset.modelId === semanticModelId)
     : []
   const dataset = linkedDatasets.find(item => item.status === 'published')
     ?? linkedDatasets.find(item => item.status === 'draft')
@@ -438,7 +445,9 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
     || chart.status !== 'published'
     || chart.validationState !== 'valid'
   ))
-  const reviewOpenCount = input.profileState?.semanticDraft.needsReview.length ?? 0
+  const reviewOpenCount = input.semanticAuthority?.reviewOpenCount
+    ?? input.profileState?.semanticDraft.needsReview.length
+    ?? 0
   const checks: GuidedPublishReadinessCheck[] = []
 
   const expectedSchemaHash = input.profileState?.lineage?.schemaProfile.schemaHash ?? null
@@ -462,7 +471,7 @@ export function buildGuidedPublishReadiness(input: GuidedPublishReadinessInput):
     ))
 
   checks.push(hasActiveSemanticAsset
-    ? readinessCheck('semantic_asset', 'Semantic asset', 'ready', `${semanticAsset?.modelName ?? 'Semantic model'} is approved and active.`)
+    ? readinessCheck('semantic_asset', 'Semantic asset', 'ready', `${semanticModelName ?? activeModel?.name ?? 'Semantic model'} is approved and active.`)
     : readinessCheck('semantic_asset', 'Semantic asset', 'blocker', 'Approve and activate the guided semantic model before publishing.', DEFAULT_GUIDED_ACTIONS.approve_model))
 
   checks.push(reviewOpenCount === 0

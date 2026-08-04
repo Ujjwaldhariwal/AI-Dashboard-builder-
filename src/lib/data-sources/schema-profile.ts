@@ -100,7 +100,7 @@ const PERSONAL_NAME = /(^|_)(email|phone|mobile|address|first_?name|last_?name|f
 const IDENTIFIER_NAME = /(^id$|_id$|^uuid$|_uuid$|account_?number|customer_?number)/i
 const EMAIL_VALUE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_VALUE = /^\+?[\d\s().-]{7,20}$/
-const NUMERIC_TYPE = /^(smallint|integer|bigint|decimal|numeric|real|double precision|money|int2|int4|int8|float4|float8)/i
+const NUMERIC_TYPE = /^(smallint|integer|bigint|decimal|numeric|number|binary_float|binary_double|real|double precision|money|int2|int4|int8|float4|float8)/i
 const DATE_TYPE = /^(date|timestamp|timestamp with time zone|timestamp without time zone|time|timestamptz|timetz)/i
 
 function stableValue(value: unknown) {

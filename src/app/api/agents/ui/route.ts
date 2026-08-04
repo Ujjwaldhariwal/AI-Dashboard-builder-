@@ -1,51 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { ENTERPRISE_COLORS } from '@/lib/echarts/theme'
 import { WidgetStyleSchema } from '@/lib/ai/agent-schemas'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
-import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
+import { guardAiRoute } from '@/lib/security/ai-route-guard'
 
 const UiAgentRequestSchema = z.object({
-  prompt: z.string().min(1, 'prompt is required'),
+  prompt: z.string().trim().min(1, 'prompt is required').max(2_000),
   currentStyle: z.unknown(),
 }).strict()
 
-async function hasValidSession() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    SUPABASE_URL,
-    getSupabaseAnonKey(),
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll().map((cookie) => ({
-            name: cookie.name,
-            value: cookie.value,
-          }))
-        },
-        setAll() {
-          // Read-only auth check in route handler; no cookie writes needed.
-        },
-      },
-    },
-  )
-
-  const { data: { session } } = await supabase.auth.getSession()
-  return Boolean(session)
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const authenticated = await hasValidSession()
-    if (!authenticated) {
-      return NextResponse.json(
-        { style: null, error: 'Unauthorized' },
-        { status: 401 },
-      )
-    }
+    const auth = await guardAiRoute(req, 'ui')
+    if (auth instanceof Response) return auth
 
     const body = await req.json().catch(() => null)
     if (body === null) {
@@ -63,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { prompt, currentStyle } = parsed.data
-    const currentStylePreview = JSON.stringify(currentStyle ?? {}, null, 2)
+    const currentStylePreview = JSON.stringify(currentStyle ?? {}, null, 2).slice(0, 12_000)
 
     const model = getAiWorkflowModel({ workflowType: 'chart_refinement' })
     const result = await generateObject({

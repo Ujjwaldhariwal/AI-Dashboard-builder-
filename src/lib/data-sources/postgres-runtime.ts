@@ -19,7 +19,7 @@ const MAX_SCHEMA_COLUMNS = 5_000
 const MAX_SELECTED_SCHEMAS = 10
 const MAX_PROFILE_COLUMNS_PER_TABLE = 50
 const MAX_PROFILE_ROWS_PER_TABLE = 200
-interface PostgresRuntimeOptions {
+export interface PostgresRuntimeOptions {
   connectTimeoutMs?: number
   queryTimeoutMs?: number
   parameters?: unknown[]
@@ -350,9 +350,14 @@ function quotePostgresIdentifier(value: string) {
   return `"${value.replace(/"/g, '""')}"`
 }
 
-export async function introspectPostgresSchema(ciphertext: string): Promise<PostgresSchemaIntrospectionResult> {
+export async function introspectPostgresSchema(
+  ciphertext: string,
+  schemaOverride?: string[],
+): Promise<PostgresSchemaIntrospectionResult> {
   const credential = decryptPostgresCredential(ciphertext)
-  const selectedSchemas = resolvePostgresSchemaScope(credential)
+  const selectedSchemas = resolvePostgresSchemaScope({
+    schemas: schemaOverride?.length ? schemaOverride : credential.schemas,
+  })
 
   return withPostgresClient(credential, { queryTimeoutMs: 15_000, usePool: false }, async client => {
     const [result, foreignKeyResult] = await Promise.all([

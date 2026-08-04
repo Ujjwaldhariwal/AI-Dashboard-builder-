@@ -38,6 +38,13 @@ const isRateLimit = (message: string) =>
   message.toLowerCase().includes("rate limit") ||
   message.toLowerCase().includes("too many requests");
 
+const isNetworkFailure = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /failed to fetch|networkerror|network request failed|load failed|fetch failed|aborted/i.test(
+    message,
+  );
+};
+
 type FieldError = {
   empId?: string;
   password?: string;
@@ -110,8 +117,9 @@ export default function LoginPage() {
     } catch (error) {
       console.error("[Auth]", error);
       setFieldError({
-        general:
-          error instanceof Error
+        general: isNetworkFailure(error)
+          ? "The secure sign-in service could not be reached. Check your connection and try again."
+          : error instanceof Error
             ? error.message
             : "Authentication failed. Please try again.",
       });
@@ -179,7 +187,7 @@ export default function LoginPage() {
                 setEmpId(event.target.value);
                 setFieldError({});
               }}
-              className="h-11 border-[color:var(--color-rule-strong)] bg-[var(--color-paper-2)] text-[var(--color-ink)] placeholder:text-[var(--color-muted)] hover:border-[color:var(--color-muted)] focus-visible:border-[color:var(--color-focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-focus)] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-55"
+              className="h-11 border-[color:var(--color-rule-strong)] bg-[var(--color-surface)] text-[var(--color-ink)] placeholder:text-[var(--color-muted)] hover:border-[color:var(--color-muted)] focus-visible:border-[color:var(--color-focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-focus)] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-55"
               placeholder="EMP001"
               autoComplete="username"
               aria-invalid={Boolean(fieldError.empId)}
@@ -211,8 +219,8 @@ export default function LoginPage() {
                   setPassword(event.target.value);
                   setFieldError({});
                 }}
-                className="h-11 border-[color:var(--color-rule-strong)] bg-[var(--color-paper-2)] pr-11 text-[var(--color-ink)] placeholder:text-[var(--color-muted)] hover:border-[color:var(--color-muted)] focus-visible:border-[color:var(--color-focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-focus)] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-55"
-                placeholder="6–72 characters"
+                className="h-11 border-[color:var(--color-rule-strong)] bg-[var(--color-surface)] pr-11 text-[var(--color-ink)] placeholder:text-[var(--color-muted)] hover:border-[color:var(--color-muted)] focus-visible:border-[color:var(--color-focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-focus)] focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-55"
+                placeholder="6-72 characters"
                 autoComplete="current-password"
                 aria-invalid={Boolean(fieldError.password)}
                 aria-describedby={
@@ -253,7 +261,7 @@ export default function LoginPage() {
             ) : (
               <Lock className="mr-2 h-4 w-4" aria-hidden="true" />
             )}
-            {isLoading ? "Signing in…" : "Sign in securely"}
+            {isLoading ? "Signing in..." : "Sign in securely"}
           </Button>
 
           <p className="pt-2 text-center text-xs leading-5 text-[var(--color-muted)]">

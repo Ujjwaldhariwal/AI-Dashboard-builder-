@@ -51,6 +51,8 @@ export interface GuidedPublishPreflightResult {
   metadata: GuidedPublishPreflightMetadata
 }
 
+export type GuidedPublishSemanticAuthority = 'guided_profile' | 'active_project_model'
+
 function stringArray(value: unknown) {
   return Array.isArray(value) ? value.filter(item => typeof item === 'string') as string[] : []
 }
@@ -102,12 +104,14 @@ export async function evaluateGuidedPublishReadinessForProject({
   projectId,
   selectedDashboardId,
   selectedVersionId,
+  semanticAuthority = 'guided_profile',
   evaluatedAt = new Date().toISOString(),
 }: {
   supabase: SupabaseClient
   projectId: string
   selectedDashboardId?: string | null
   selectedVersionId?: string | null
+  semanticAuthority?: GuidedPublishSemanticAuthority
   evaluatedAt?: string
 }): Promise<GuidedPublishPreflightResult> {
   const { data: projectRow, error: projectError } = await supabase
@@ -144,7 +148,7 @@ export async function evaluateGuidedPublishReadinessForProject({
       .limit(1),
     supabase
       .from('business_models')
-      .select('id, status, version')
+      .select('id, name, status, version')
       .eq('tenant_id', tenantId)
       .eq('project_id', projectId),
     supabase
@@ -195,10 +199,12 @@ export async function evaluateGuidedPublishReadinessForProject({
   const activeSemanticModelId = typeof project.active_business_model_id === 'string'
     ? project.active_business_model_id
     : null
-  const guidedSemanticModelId = profileState?.semanticAsset?.modelId ?? null
-  const selectedDataset = guidedSemanticModelId
-    ? datasets.find(dataset => dataset.modelId === guidedSemanticModelId && dataset.status === 'published')
-      ?? datasets.find(dataset => dataset.modelId === guidedSemanticModelId)
+  const authoritySemanticModelId = semanticAuthority === 'active_project_model'
+    ? activeSemanticModelId
+    : profileState?.semanticAsset?.modelId ?? null
+  const selectedDataset = authoritySemanticModelId
+    ? datasets.find(dataset => dataset.modelId === authoritySemanticModelId && dataset.status === 'published')
+      ?? datasets.find(dataset => dataset.modelId === authoritySemanticModelId)
       ?? null
     : null
   const datasetSemanticValidation = selectedDataset && activeSemanticModelId === selectedDataset.modelId
@@ -211,9 +217,21 @@ export async function evaluateGuidedPublishReadinessForProject({
       })
     : null
   const profileDataSourceId = profileState?.lineage?.schemaProfile.dataSourceId ?? null
-  const schemaSource = ((dataSourcesResult.data ?? []) as Record<string, unknown>[])
-    .find(source => String(source.id) === profileDataSourceId)
-    ?? null
+  const dataSources = (dataSourcesResult.data ?? []) as Record<string, unknown>[]
+  const schemaSource = profileDataSourceId
+    ? dataSources.find(source => String(source.id) === profileDataSourceId) ?? null
+    : semanticAuthority === 'active_project_model'
+      ? dataSources[0] ?? null
+      : null
+  const models = (modelsResult.data ?? []).map(row => ({
+    id: String(row.id),
+    name: typeof row.name === 'string' ? row.name : null,
+    status: typeof row.status === 'string' ? row.status : null,
+    version: typeof row.version === 'number' ? row.version : Number(row.version ?? 0),
+  }))
+  const authorityModel = authoritySemanticModelId
+    ? models.find(model => model.id === authoritySemanticModelId) ?? null
+    : null
   const dashboards = ((dashboardsResult.data ?? []) as Record<string, unknown>[]).map(mapPublishedDashboard)
   const selectedDashboard = selectedDashboardId
     ? dashboards.find(dashboard => dashboard.id === selectedDashboardId) ?? null
@@ -247,7 +265,14 @@ export async function evaluateGuidedPublishReadinessForProject({
   const readiness = buildGuidedPublishReadiness({
     evaluatedAt,
     profileState,
-    schemaIntrospection: guidedReviewSchemaMissing ? {
+    semanticAuthority: semanticAuthority === 'active_project_model' && activeSemanticModelId
+      ? {
+          modelId: activeSemanticModelId,
+          modelName: authorityModel?.name ?? 'Autopilot semantic model',
+          reviewOpenCount: 0,
+        }
+      : null,
+    schemaIntrospection: guidedReviewSchemaMissing && semanticAuthority === 'guided_profile' ? {
       status: 'error',
       error: GUIDED_REVIEW_SETUP_MESSAGE,
     } : schemaSource ? {
@@ -257,11 +282,7 @@ export async function evaluateGuidedPublishReadinessForProject({
       schemaHash: typeof schemaSource.schema_hash === 'string' ? schemaSource.schema_hash : null,
       scopeStatus: typeof schemaSource.schema_scope_status === 'string' ? schemaSource.schema_scope_status : null,
     } : null,
-    models: (modelsResult.data ?? []).map(row => ({
-      id: String(row.id),
-      status: typeof row.status === 'string' ? row.status : null,
-      version: typeof row.version === 'number' ? row.version : Number(row.version ?? 0),
-    })),
+    models,
     activeSemanticModelId,
     datasets,
     datasetSemanticValidation: selectedDataset && datasetSemanticValidation
@@ -294,7 +315,7 @@ export async function evaluateGuidedPublishReadinessForProject({
       tenantSlug,
       selectedDashboardId: selectedDashboard?.id ?? null,
       selectedVersionId: selectedVersion?.id ?? null,
-      semanticModelId: profileState?.semanticAsset?.modelId ?? null,
+      semanticModelId: authoritySemanticModelId,
       semanticDraftVersion: profileState?.semanticDraftVersion ?? null,
       datasetCount: ((datasetsResult.data ?? []) as unknown[]).length,
       chartCount: ((chartsResult.data ?? []) as unknown[]).length,

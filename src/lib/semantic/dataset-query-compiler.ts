@@ -1,5 +1,9 @@
 import type { BusinessMetricAggregation } from '@/types/semantic-model'
-import type { DashboardChartFilter, DashboardChartFilterOperator } from '@/types/dashboard-chart'
+import type {
+  DashboardChartEncoding,
+  DashboardChartFilter,
+  DashboardChartFilterOperator,
+} from '@/types/dashboard-chart'
 import type { CompiledDatasetQueryPlan } from '@/types/semantic-dataset'
 
 const MAX_ROW_LIMIT = 500
@@ -35,6 +39,41 @@ export interface DatasetQueryCompileResult {
   warnings: string[]
   dataSourceId?: string
   parameters: unknown[]
+}
+
+export function projectChartQueryInputs({
+  encoding,
+  fields,
+  metrics,
+  relationships,
+  metricSourceFields,
+}: {
+  encoding: DashboardChartEncoding
+  fields: FieldRow[]
+  metrics: MetricRow[]
+  relationships: RelationshipRow[]
+  metricSourceFields: FieldRow[]
+}) {
+  const fieldIds = new Set([
+    encoding.xAxisFieldId,
+    encoding.seriesFieldId,
+    encoding.sort?.byId,
+    ...encoding.tooltipFieldIds,
+    ...(encoding.filters ?? []).map(filter => filter.fieldId),
+  ].filter((id): id is string => Boolean(id)))
+  const metricIds = new Set([
+    ...encoding.yMetricIds,
+    ...(encoding.stackMetricIds ?? []),
+    encoding.sort?.byId,
+    ...encoding.tooltipFieldIds,
+  ].filter((id): id is string => Boolean(id)))
+  return {
+    fields: fields.filter(field => fieldIds.has(String(field.id))),
+    metrics: metrics.filter(metric => metricIds.has(String(metric.id))),
+    relationships,
+    metricSourceFields,
+    filters: encoding.filters ?? [],
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -104,9 +143,13 @@ function isFilterOperator(value: unknown): value is DashboardChartFilterOperator
     || value === 'lte'
 }
 
-function addParameter(parameters: unknown[], value: unknown) {
+function addParameter(
+  parameters: unknown[],
+  value: unknown,
+  dialect: CompiledDatasetQueryPlan['dialect'],
+) {
   parameters.push(value)
-  return `$${parameters.length}`
+  return dialect === 'oracle' ? `:${parameters.length}` : `$${parameters.length}`
 }
 
 function compileFilterCondition({
@@ -116,6 +159,7 @@ function compileFilterCondition({
   referencedTables,
   parameters,
   warnings,
+  dialect,
 }: {
   filter: DashboardChartFilter
   fieldById: Map<string, FieldRow>
@@ -123,6 +167,7 @@ function compileFilterCondition({
   referencedTables: Map<string, SelectTable>
   parameters: unknown[]
   warnings: string[]
+  dialect: CompiledDatasetQueryPlan['dialect']
 }) {
   if (!isFilterOperator(filter.operator)) {
     warnings.push(`Filter on field "${filter.fieldId}" uses an unsupported operator.`)
@@ -147,7 +192,7 @@ function compileFilterCondition({
       warnings.push(`Filter field "${filter.fieldId}" requires at least one scalar value.`)
       return null
     }
-    const placeholders = values.map(value => addParameter(parameters, value))
+    const placeholders = values.map(value => addParameter(parameters, value, dialect))
     return {
       sql: `${column} in (${placeholders.join(', ')})`,
       descriptor: {
@@ -169,9 +214,11 @@ function compileFilterCondition({
   }
 
   if (filter.operator === 'contains') {
-    const placeholder = addParameter(parameters, String(filter.value))
+    const placeholder = addParameter(parameters, String(filter.value), dialect)
     return {
-      sql: `${column}::text ilike '%' || ${placeholder}::text || '%'`,
+      sql: dialect === 'oracle'
+        ? `lower(cast(${column} as varchar2(4000))) like '%' || lower(${placeholder}) || '%'`
+        : `${column}::text ilike '%' || ${placeholder}::text || '%'`,
       descriptor: {
         fieldId: filter.fieldId,
         operator: filter.operator,
@@ -180,7 +227,7 @@ function compileFilterCondition({
     }
   }
 
-  const placeholder = addParameter(parameters, filter.value)
+  const placeholder = addParameter(parameters, filter.value, dialect)
   const operatorSql = filter.operator === 'eq'
     ? '='
     : filter.operator === 'not_eq'
@@ -278,12 +325,14 @@ export function compileDatasetQueryPlan({
   relationships,
   metricSourceFields,
   filters = [],
+  dialect = 'postgres',
 }: {
   fields: FieldRow[]
   metrics: MetricRow[]
   relationships: RelationshipRow[]
   metricSourceFields?: FieldRow[]
   filters?: DashboardChartFilter[]
+  dialect?: CompiledDatasetQueryPlan['dialect']
 }): DatasetQueryCompileResult {
   const warnings: string[] = []
   const allFields = [...fields, ...(metricSourceFields ?? [])]
@@ -362,6 +411,7 @@ export function compileDatasetQueryPlan({
       referencedTables,
       parameters,
       warnings,
+      dialect,
     })
     if (!compiled) {
       filtersExecutable = false
@@ -408,7 +458,7 @@ export function compileDatasetQueryPlan({
         joins.join('\n'),
         where,
         groupBy,
-        `limit ${MAX_ROW_LIMIT}`,
+        dialect === 'oracle' ? `fetch first ${MAX_ROW_LIMIT} rows only` : `limit ${MAX_ROW_LIMIT}`,
       ].filter(Boolean).join('\n')
     }
   }
@@ -417,7 +467,7 @@ export function compileDatasetQueryPlan({
     dataSourceId: dataSourceIds.size === 1 ? Array.from(dataSourceIds)[0] : undefined,
     warnings,
     queryPlan: {
-      dialect: 'postgres',
+      dialect,
       select: [...selectedFields, ...selectedMetrics],
       joins: relationships.map(row => {
         const joinConfig = asRecord(row.join_config)

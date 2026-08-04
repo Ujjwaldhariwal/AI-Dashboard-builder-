@@ -380,6 +380,7 @@ export async function reviewAiWorkflowProposal({
   status,
   reviewedBy,
   proposal,
+  expectedStatuses,
 }: {
   supabase: SupabaseClient
   proposalId: string
@@ -388,9 +389,10 @@ export async function reviewAiWorkflowProposal({
   status: Extract<AiProposalStatus, 'approved' | 'rejected' | 'applied'>
   reviewedBy: string
   proposal?: Record<string, unknown>
+  expectedStatuses?: AiProposalStatus[]
 }) {
   const nowIso = new Date().toISOString()
-  const { data, error } = await supabase
+  let query = supabase
     .from('ai_workflow_proposals')
     .update({
       status,
@@ -402,7 +404,8 @@ export async function reviewAiWorkflowProposal({
     .eq('id', proposalId)
     .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
-    .select('*')
+  if (expectedStatuses?.length) query = query.in('status', expectedStatuses)
+  const { data, error } = await query.select('*')
     .single()
 
   if (error || !data) throw new Error(error?.message ?? 'Unable to review AI workflow proposal')

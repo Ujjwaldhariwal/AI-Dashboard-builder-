@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import {
+  executeDataSourceReadOnlyQuery,
+  resolveDataSourceType,
+} from '@/lib/data-sources/data-source-runtime'
 import {
   DashboardChartPresentationPatchSchema,
   mergeDashboardChartPresentation,
@@ -15,7 +18,10 @@ import {
   sanitizedMetricDescriptor,
 } from '@/lib/ai/field-classification'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
-import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
+import {
+  validateDashboardChartConfig,
+  validateDashboardChartPresentationPatch,
+} from '@/lib/semantic/chart-config-validator'
 import { selectionFromRecord, validateSemanticReferencesForModel } from '@/lib/semantic/semantic-hardening'
 import type { DashboardChartConfig, DashboardChartEncoding } from '@/types/dashboard-chart'
 
@@ -53,7 +59,13 @@ export const ChartAiPatchSchema = z.object({
   presentation: DashboardChartPresentationPatchSchema.optional(),
 }).strict()
 
+export const ChartAiPresentationPatchSchema = z.object({
+  schemaVersion: z.literal(AI_CHART_PATCH_SCHEMA_VERSION).optional(),
+  presentation: DashboardChartPresentationPatchSchema,
+}).strict()
+
 export type ChartAiPatch = z.infer<typeof ChartAiPatchSchema>
+export type ChartRefinementMode = 'general' | 'presentation_only'
 
 export type ChartAiPatchParseResult =
   | { ok: true; patch: ChartAiPatch }
@@ -63,7 +75,10 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-export function parseChartAiPatchPayload(value: unknown): ChartAiPatchParseResult {
+export function parseChartAiPatchPayload(
+  value: unknown,
+  mode: ChartRefinementMode = 'general',
+): ChartAiPatchParseResult {
   const record = asRecord(value)
   const schemaVersion = record.schemaVersion
   if (typeof schemaVersion === 'string' && schemaVersion !== AI_CHART_PATCH_SCHEMA_VERSION) {
@@ -74,7 +89,11 @@ export function parseChartAiPatchPayload(value: unknown): ChartAiPatchParseResul
     }
   }
 
-  const parsed = ChartAiPatchSchema.safeParse(value)
+  const parsed = (
+    mode === 'presentation_only'
+      ? ChartAiPresentationPatchSchema
+      : ChartAiPatchSchema
+  ).safeParse(value)
   if (!parsed.success) {
     return {
       ok: false,
@@ -244,9 +263,20 @@ export function buildDeterministicPresentationPatch(instruction: string): ChartA
   if (/\bcompact\b/.test(normalized)) presentation.size = 'compact'
   if (/\bwide\b/.test(normalized)) presentation.size = 'wide'
   if (/\bfull\b/.test(normalized)) presentation.size = 'full'
-  if (/\bshow\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bshow\b/.test(normalized)) presentation.showLabels = true
-  if (/\bhide\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bhide\b/.test(normalized)) presentation.showLabels = false
-  if (/\bbold\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bbold\b/.test(normalized)) {
+  const xAxisLabels = /\b(bottom|x axis|horizontal axis|axis)\b.*\blabels?\b|\blabels?\b.*\b(bottom|x axis|horizontal axis|axis)\b/.test(normalized)
+  const dateOnly = /\b(date only|only date|without (the )?time|no time|not time|remove (the )?time|hide (the )?time)\b/.test(normalized)
+  if (!xAxisLabels && (/\bshow\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bshow\b/.test(normalized))) presentation.showLabels = true
+  if (!xAxisLabels && (/\bhide\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bhide\b/.test(normalized))) presentation.showLabels = false
+  const xAxisLabelWeight = dateOnly && xAxisLabels && /\bbold\b/.test(normalized)
+    ? /\b(slightly bold|medium|semi bold|semibold)\b/.test(normalized) ? 'medium' as const : 'bold' as const
+    : undefined
+  if (dateOnly || xAxisLabelWeight) {
+    presentation.xAxis = {
+      ...(dateOnly ? { labelFormat: 'date-only' as const } : {}),
+      ...(xAxisLabelWeight ? { labelFontWeight: xAxisLabelWeight } : {}),
+    }
+  }
+  if (!xAxisLabels && (/\bbold\b.*\b(labels?|values?)\b|\b(labels?|values?)\b.*\bbold\b/.test(normalized))) {
     presentation.showLabels = true
     presentation.labels = { fontWeight: 'bold' }
   }
@@ -338,19 +368,44 @@ export function validateChartAiPatchAgainstAllowlist({
     ...(nextChart.encoding.yMetricIds ?? []),
     ...(nextChart.encoding.stackMetricIds ?? []),
   ]
+  const presentationTargetIds = [
+    ...(patch.presentation?.legend?.labelOverrides ?? []).map(override => override.targetId),
+    ...(patch.presentation?.tooltip?.labelOverrides ?? []).map(override => override.targetId),
+  ]
 
   const blockedFields = idsToCheck.filter(id => !allowedFieldIds.has(id) && !allowedMetricIds.has(id))
   const blockedFilterFields = filterFieldIdsToCheck.filter(id => !allowedFieldIds.has(id))
   const blockedMetrics = metricIdsToCheck.filter(id => !allowedMetricIds.has(id))
-  if (blockedFields.length > 0 || blockedFilterFields.length > 0 || blockedMetrics.length > 0) {
+  const blockedPresentationTargets = presentationTargetIds
+    .filter(id => !allowedFieldIds.has(id) && !allowedMetricIds.has(id))
+  if (
+    blockedFields.length > 0
+    || blockedFilterFields.length > 0
+    || blockedMetrics.length > 0
+    || blockedPresentationTargets.length > 0
+  ) {
     return {
       ok: false as const,
       nextChart,
       error: 'AI patch referenced fields or metrics outside the AI allowlist',
-      blockedIds: [...blockedFields, ...blockedFilterFields, ...blockedMetrics],
+      blockedIds: [
+        ...blockedFields,
+        ...blockedFilterFields,
+        ...blockedMetrics,
+        ...blockedPresentationTargets,
+      ],
     }
   }
 
+  const presentationIssues = patch.presentation
+    ? validateDashboardChartPresentationPatch({
+      templateId: nextChart.templateId,
+      presentation: patch.presentation,
+      encoding: nextChart.encoding,
+      fields,
+      metrics,
+    })
+    : []
   const validation = validateDashboardChartConfig({
     templateId: nextChart.templateId,
     encoding: nextChart.encoding,
@@ -358,6 +413,13 @@ export function validateChartAiPatchAgainstAllowlist({
     fields,
     metrics,
   })
+  if (presentationIssues.length > 0) {
+    const additionalIssues = presentationIssues.filter(issue => !validation.issues.some(existing => (
+      existing.code === issue.code && existing.message === issue.message
+    )))
+    validation.issues = [...additionalIssues, ...validation.issues]
+    validation.state = 'invalid'
+  }
   if (validation.state === 'invalid') {
     return {
       ok: false as const,
@@ -448,24 +510,31 @@ export async function buildGovernedAiChartContext({
   if (includePreview && (allowedFields.length > 0 || allowedMetrics.length > 0)) {
     const previewFields = allowedFields.slice(0, AI_PREVIEW_MAX_COLUMNS)
     const previewMetrics = allowedMetrics.slice(0, Math.max(0, AI_PREVIEW_MAX_COLUMNS - previewFields.length))
-    const compileResult = compileDatasetQueryPlan({
+    const queryInputs = {
       fields: previewFields,
       metrics: previewMetrics,
       relationships,
       metricSourceFields,
-    })
+    }
+    let compileResult = compileDatasetQueryPlan(queryInputs)
     previewWarnings.push(...compileResult.warnings)
     if (compileResult.queryPlan.executableSql && compileResult.dataSourceId) {
       const { data: sourceRow, error: sourceError } = await supabase
         .from('data_sources')
-        .select('id, credential_ciphertext, status')
+        .select('id, type, credential_ciphertext, status')
         .eq('id', compileResult.dataSourceId)
         .eq('tenant_id', tenantId)
         .eq('project_id', projectId)
         .single()
       if (sourceError) throw new Error(sourceError.message)
       if (sourceRow.status === 'active') {
-        const result = await executePostgresReadOnlyQuery(
+        const sourceType = resolveDataSourceType(sourceRow.type)
+        if (sourceType === 'oracle') compileResult = compileDatasetQueryPlan({ ...queryInputs, dialect: 'oracle' })
+        if (!compileResult.queryPlan.executableSql) {
+          throw new Error('AI preview is not executable for this data source')
+        }
+        const result = await executeDataSourceReadOnlyQuery(
+          sourceType,
           String(sourceRow.credential_ciphertext),
           compileResult.queryPlan.executableSql,
           {

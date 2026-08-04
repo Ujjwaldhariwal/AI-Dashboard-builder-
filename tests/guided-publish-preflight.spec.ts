@@ -87,6 +87,7 @@ function seededTables(overrides: {
     }],
     business_models: [{
       id: modelId,
+      name: 'Seeded Revenue Semantic Model',
       tenant_id: tenantId,
       project_id: projectId,
       status: 'approved',
@@ -304,6 +305,26 @@ test.describe('guided publish preflight', () => {
     expect(result.metadata.tenantSlug).toBe('seeded-client')
     expect(result.metadata.datasetCount).toBe(1)
     expect(result.metadata.slotCount).toBe(1)
+  })
+
+  test('accepts the approved active project model as Autopilot release authority without a guided profile', async () => {
+    const tables = seededTables()
+    tables.guided_schema_profiles = []
+
+    const result = await evaluateGuidedPublishReadinessForProject({
+      supabase: createSupabase(tables) as never,
+      projectId,
+      selectedDashboardId: dashboardId,
+      selectedVersionId: versionId,
+      semanticAuthority: 'active_project_model',
+      evaluatedAt: '2026-07-13T02:00:00.000Z',
+    })
+
+    expect(result.readiness.status).toBe('ready_to_publish')
+    expect(result.readiness.publishEligible).toBe(true)
+    expect(result.readiness.checks.find(check => check.id === 'semantic_asset')?.message)
+      .toContain('Seeded Revenue Semantic Model')
+    expect(result.metadata.semanticModelId).toBe(modelId)
   })
 
   test('blocks warning charts because the client runtime only serves valid charts', async () => {

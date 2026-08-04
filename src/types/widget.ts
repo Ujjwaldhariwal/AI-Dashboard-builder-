@@ -1,5 +1,14 @@
 // src/types/widget.ts
 
+import type {
+  DashboardChartDateFormat,
+  DashboardChartDensity,
+  DashboardChartLocale,
+  DashboardChartNumberFormat,
+  DashboardChartTextOverflow,
+  DashboardChartTimeZone,
+} from '@/types/dashboard-chart'
+
 export type ChartType =
   | 'bar' | 'line' | 'area' | 'pie'
   | 'donut' | 'horizontal-bar' | 'horizontal-stacked-bar'
@@ -21,12 +30,20 @@ export interface WidgetStyle {
   barRadius?:    number
   showLegend?:   boolean
   legendPosition?: 'top' | 'right' | 'bottom' | 'left'
+  legendLabelFontSize?: number
+  legendLabelFontWeight?: 'normal' | 'medium' | 'bold'
+  legendLabelOverflow?: DashboardChartTextOverflow
+  legendLabelMaxLength?: number
+  legendLabelOverrides?: Record<string, string>
   showGrid?:     boolean
+  density?: DashboardChartDensity
   showLabels?:   boolean
   labelColor?:   string
   labelFontSize?: number
   labelFontWeight?: 'normal' | 'medium' | 'bold'
   labelPosition?: 'auto' | 'top' | 'right' | 'inside' | 'outside'
+  valueLabelNumberFormat?: DashboardChartNumberFormat
+  labelCollision?: 'allow' | 'hide-overlap'
   showXAxis?: boolean
   showYAxis?: boolean
   xAxisTitle?: string
@@ -38,6 +55,19 @@ export interface WidgetStyle {
   xAxisLabelFontWeight?: 'normal' | 'medium' | 'bold'
   yAxisLabelFontWeight?: 'normal' | 'medium' | 'bold'
   xAxisLabelRotation?: number
+  xAxisLabelFormat?: DashboardChartDateFormat
+  xAxisLabelLocale?: DashboardChartLocale
+  xAxisLabelTimeZone?: DashboardChartTimeZone
+  xAxisNumberFormat?: DashboardChartNumberFormat
+  yAxisNumberFormat?: DashboardChartNumberFormat
+  xAxisLabelOverflow?: DashboardChartTextOverflow
+  xAxisLabelMaxLength?: number
+  yAxisLabelOverflow?: DashboardChartTextOverflow
+  yAxisLabelMaxLength?: number
+  tooltipLabelOverflow?: DashboardChartTextOverflow
+  tooltipLabelMaxLength?: number
+  tooltipLabelOverrides?: Record<string, string>
+  tooltipNumberFormat?: DashboardChartNumberFormat
   chartMargin?: {
     top?: number
     right?: number

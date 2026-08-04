@@ -7,11 +7,15 @@ import type { WidgetStyle, YAxisConfig } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { escapeTooltipHtml, formatAuxiliaryTooltipRows, formatTooltipHtmlLabel } from '@/lib/echarts/safe-tooltip'
 import { withAlpha } from '@/lib/echarts/utils'
 import { sortLabels } from '@/lib/charts/domain-order'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
   chartFontWeight,
+  formatChartLabel,
+  formatChartText,
+  getChartDensityLayout,
   getChartMargin,
   getLegendLayout,
   getLegendVisibility,
@@ -28,11 +32,19 @@ interface SeriesMeta {
   color: string
 }
 
+interface TooltipParam {
+  name: string
+  seriesName: string
+  value: number
+  dataIndex: number
+}
+
 interface ModernHorizontalStackedBarChartProps {
   data: Record<string, unknown>[]
   xField: string
   yField?: string
   yFields?: string[]
+  tooltipFields?: string[]
   yAxisConfig?: YAxisConfig[]
   style?: WidgetStyle
   sizePreset?: WidgetSizePreset
@@ -65,6 +77,7 @@ export function ModernHorizontalStackedBarChart({
   xField,
   yField,
   yFields,
+  tooltipFields,
   yAxisConfig,
   style,
   sizePreset = 'medium',
@@ -75,6 +88,7 @@ export function ModernHorizontalStackedBarChart({
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
   const margin = getChartMargin(sizePreset, s.chartMargin)
+  const density = useMemo(() => getChartDensityLayout(s.density), [s.density])
   const metrics = useMemo(
     () => getNumericFields(data, xField, yField, yFields),
     [data, xField, yField, yFields],
@@ -105,6 +119,7 @@ export function ModernHorizontalStackedBarChart({
     return data.slice(0, 20).map((row, i) => ({
       name: String(row[xField] ?? `#${i + 1}`).slice(0, 28),
       values: seriesMeta.map(meta => Number(row[meta.key]) || 0),
+      raw: row,
     }))
   }, [data, seriesMeta, xField])
   const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
@@ -128,7 +143,24 @@ export function ModernHorizontalStackedBarChart({
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
-      valueFormatter: (v: number) => fmtValue(v, s.labelFormat),
+      formatter: (params: TooltipParam[]) => {
+        const header = formatTooltipHtmlLabel(
+          params[0]?.name,
+          undefined,
+          s.tooltipLabelOverflow,
+          s.tooltipLabelMaxLength,
+        )
+        const values = params.map(param => (
+          `${formatTooltipHtmlLabel(param.seriesName, s.tooltipLabelOverrides, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}: <strong>${escapeTooltipHtml(fmtValue(Number(param.value), s.labelFormat, s.tooltipNumberFormat))}</strong>`
+        ))
+        const auxiliary = formatAuxiliaryTooltipRows({
+          row: rows[params[0]?.dataIndex]?.raw,
+          fields: tooltipFields,
+          style: s,
+          excludedFields: [xField, ...seriesMeta.map(meta => meta.key)],
+        })
+        return `<b>${header}</b><br/>${values.join('<br/>')}${auxiliary ? `<br/>${auxiliary}` : ''}`
+      },
     },
     legend: displayLegend
       ? {
@@ -137,7 +169,18 @@ export function ModernHorizontalStackedBarChart({
           icon: 'roundRect',
           itemWidth: 10,
           itemHeight: 6,
-          textStyle: { fontSize: 10, color: axis.label },
+          itemGap: density.legendItemGap,
+          textStyle: {
+            fontSize: s.legendLabelFontSize ?? 10,
+            fontWeight: chartFontWeight(s.legendLabelFontWeight),
+            color: axis.label,
+          },
+          formatter: (name: string) => formatChartLabel(
+            name,
+            s.legendLabelOverrides,
+            s.legendLabelOverflow,
+            s.legendLabelMaxLength,
+          ),
         }
       : { show: false },
     xAxis: {
@@ -152,8 +195,8 @@ export function ModernHorizontalStackedBarChart({
         color: s.xAxisLabelColor ?? axis.label,
         fontSize: s.xAxisLabelFontSize ?? 10,
         fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
-        rotate: s.xAxisLabelRotation ?? 0,
-        formatter: (v: number) => fmtValue(v, s.labelFormat),
+        margin: density.axisLabelMargin,
+        formatter: (v: number) => fmtValue(v, s.labelFormat, s.xAxisNumberFormat),
       },
       splitLine: {
         show: s.showGrid,
@@ -173,6 +216,12 @@ export function ModernHorizontalStackedBarChart({
         color: s.yAxisLabelColor ?? axis.label,
         fontSize: s.yAxisLabelFontSize ?? 11,
         fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
+        margin: density.axisLabelMargin,
+        formatter: (value: string) => formatChartText(
+          value,
+          s.yAxisLabelOverflow,
+          s.yAxisLabelMaxLength,
+        ),
       },
     },
     series: seriesMeta.map((meta, idx) => ({
@@ -181,6 +230,7 @@ export function ModernHorizontalStackedBarChart({
       stack: 'total',
       emphasis: { focus: 'series' as const },
       barMaxWidth: 26,
+      barCategoryGap: density.barCategoryGap,
       data: rows.map(r => r.values[idx]),
       label: displayLabels
         ? {
@@ -189,7 +239,12 @@ export function ModernHorizontalStackedBarChart({
             fontSize: s.labelFontSize ?? 9,
             fontWeight: chartFontWeight(s.labelFontWeight),
             color: s.labelColor ?? '#f8fafc',
-            formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
+            hideOverlap: s.labelCollision === 'hide-overlap',
+            formatter: (p: { value: number }) => fmtValue(
+              Number(p.value),
+              s.labelFormat,
+              s.valueLabelNumberFormat,
+            ),
           }
         : { show: false },
       itemStyle: {
@@ -210,12 +265,15 @@ export function ModernHorizontalStackedBarChart({
     axis.splitLine,
     displayLabels,
     displayLegend,
+    density,
     margin,
     rows,
     s,
     seriesMeta,
     sizePreset,
     tt,
+    tooltipFields,
+    xField,
   ])
 
   if (!seriesMeta.length) {

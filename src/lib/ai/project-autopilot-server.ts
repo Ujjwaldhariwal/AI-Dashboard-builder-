@@ -7,15 +7,28 @@ import { buildDeterministicDatasetProposal } from '@/lib/ai/dataset-copilot'
 import {
   buildProjectAutopilotDashboardSlots,
   buildProjectAutopilotPlan,
+  ProjectAutopilotBriefSchema,
   projectAutopilotDashboardName,
   projectAutopilotInstruction,
   type ProjectAutopilotSnapshot,
 } from '@/lib/ai/project-autopilot'
-import { buildDeterministicSemanticProposal } from '@/lib/ai/semantic-copilot'
+import {
+  GovernedDashboardPublishError,
+  publishDashboardVersionGoverned,
+} from '@/lib/publishing/publish-dashboard-version-server'
+import {
+  buildDeterministicSemanticProposal,
+  selectSemanticContextColumns,
+} from '@/lib/ai/semantic-copilot'
 import { validateSemanticReferencesForModel } from '@/lib/semantic/semantic-hardening'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
+import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { analyzeDatasetChartOptions } from '@/lib/semantic/dataset-shape-analyzer'
-import type { DashboardChartConfig } from '@/types/dashboard-chart'
+import type {
+  DashboardChartConfig,
+  DashboardChartValidationIssue,
+  DashboardChartValidationState,
+} from '@/types/dashboard-chart'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
 import type {
   ProjectAutopilotArtifacts,
@@ -26,6 +39,7 @@ import type {
 } from '@/types/project-autopilot'
 import type { BusinessModelStatus } from '@/types/semantic-model'
 import type { SemanticDatasetStatus } from '@/types/semantic-dataset'
+import type { AuthedSupabaseContext } from '@/lib/supabase/server'
 
 interface ProjectScope {
   tenantId: string
@@ -40,6 +54,7 @@ interface RunContext extends ProjectScope {
 }
 
 const AUTOPILOT_SEMANTIC_MODEL_NAME = 'Autopilot Business Model'
+const AUTOPILOT_CHART_AUTO_APPROVAL_CONFIDENCE = 0.8
 
 interface SemanticModelSummary {
   id: string
@@ -54,12 +69,38 @@ export interface AutopilotSemanticApprovalDecision {
   reason: string
 }
 
+export interface AutopilotChartApprovalDecision {
+  approved: boolean
+  validationState: DashboardChartValidationState
+  reason: string
+}
+
 export function canAutopilotUseSemanticModel(model: SemanticModelSummary) {
   if (model.status === 'approved') {
     return model.fieldCount > 0 && model.metricCount > 0
   }
   return model.name === AUTOPILOT_SEMANTIC_MODEL_NAME
     && (model.status === 'draft' || model.status === 'review')
+}
+
+interface SemanticContextSourceColumn {
+  dataSourceId: string
+  schemaName: string
+  tableName: string
+  columnName: string
+}
+
+function semanticContextKey(column: SemanticContextSourceColumn) {
+  return `${column.dataSourceId}:${column.schemaName}.${column.tableName}.${column.columnName}`
+}
+
+export function autopilotSemanticContextMatches(
+  selected: DataSourceColumnMetadata[],
+  materialized: SemanticContextSourceColumn[],
+) {
+  const expected = new Set(selectSemanticContextColumns(selected).map(semanticContextKey))
+  const actual = new Set(materialized.map(semanticContextKey))
+  return expected.size === actual.size && [...expected].every(key => actual.has(key))
 }
 
 export function rebindProjectAutopilotArtifacts(
@@ -128,6 +169,52 @@ export function evaluateAutopilotSemanticApproval({
   return { approved: true, reason: 'All generated fields, metrics, joins, and source columns passed governed validation.' }
 }
 
+export function evaluateAutopilotChartApproval({
+  confidence,
+  validation,
+}: {
+  confidence: number
+  validation: {
+    state: DashboardChartValidationState
+    issues: DashboardChartValidationIssue[]
+  }
+}): AutopilotChartApprovalDecision {
+  const blockingIssue = validation.issues.find(issue => issue.severity === 'error')
+  if (validation.state === 'invalid' || blockingIssue) {
+    return {
+      approved: false,
+      validationState: 'invalid',
+      reason: blockingIssue?.message ?? 'The generated chart failed governed validation.',
+    }
+  }
+  if (validation.state === 'unknown') {
+    return {
+      approved: false,
+      validationState: 'unknown',
+      reason: 'The generated chart has not completed governed validation.',
+    }
+  }
+  if (confidence < AUTOPILOT_CHART_AUTO_APPROVAL_CONFIDENCE) {
+    return {
+      approved: false,
+      validationState: validation.state,
+      reason: `Chart confidence ${confidence.toFixed(2)} is below the ${AUTOPILOT_CHART_AUTO_APPROVAL_CONFIDENCE.toFixed(2)} automatic approval threshold.`,
+    }
+  }
+  if (validation.state === 'warning') {
+    return {
+      approved: true,
+      validationState: 'valid',
+      reason: 'High-confidence chart passed all blocking checks; advisory warnings were retained for audit.',
+    }
+  }
+  return {
+    approved: true,
+    validationState: 'valid',
+    reason: 'High-confidence chart passed governed validation.',
+  }
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
@@ -169,7 +256,7 @@ export function mapProjectAutopilotRun(row: Record<string, unknown>): ProjectAut
     actorUserId: typeof row.actor_user_id === 'string' ? row.actor_user_id : null,
     status: String(row.status) as ProjectAutopilotRun['status'],
     currentStep: String(row.current_step) as ProjectAutopilotStepKey,
-    brief: row.brief as ProjectAutopilotBrief,
+    brief: ProjectAutopilotBriefSchema.parse(row.brief),
     plan: row.plan as ProjectAutopilotPlan,
     artifacts: record(row.artifacts) as ProjectAutopilotArtifacts,
     errorCode: typeof row.error_code === 'string' ? row.error_code : null,
@@ -278,21 +365,71 @@ async function loadLatestAutopilotSemanticModel(supabase: SupabaseClient, scope:
   return data ? loadSemanticModelById(supabase, scope, String(data.id)) : null
 }
 
+async function autopilotModelMatchesSelectedContext(
+  supabase: SupabaseClient,
+  modelId: string,
+  columns: DataSourceColumnMetadata[],
+) {
+  const { data: entities, error: entityError } = await supabase
+    .from('business_entities')
+    .select('id')
+    .eq('model_id', modelId)
+  if (entityError) throw new Error(entityError.message)
+  const entityIds = (entities ?? []).map(entity => String(entity.id))
+  if (entityIds.length === 0) return false
+  const { data: fields, error: fieldError } = await supabase
+    .from('business_fields')
+    .select('source_column')
+    .in('entity_id', entityIds)
+  if (fieldError) throw new Error(fieldError.message)
+  const materialized = ((fields ?? []) as Array<{ source_column?: unknown }>).flatMap(field => {
+    const source = record(field.source_column)
+    const dataSourceId = typeof source.dataSourceId === 'string' ? source.dataSourceId : null
+    const schemaName = typeof source.schemaName === 'string' ? source.schemaName : null
+    const tableName = typeof source.tableName === 'string' ? source.tableName : null
+    const columnName = typeof source.columnName === 'string' ? source.columnName : null
+    return dataSourceId && schemaName && tableName && columnName
+      ? [{ dataSourceId, schemaName, tableName, columnName }]
+      : []
+  })
+  return autopilotSemanticContextMatches(columns, materialized)
+}
+
 async function resolveProjectSemanticModel(
   supabase: SupabaseClient,
   scope: ProjectScope,
+  columns: DataSourceColumnMetadata[],
   preferredId?: string,
 ) {
   const active = await loadActiveSemanticModel(supabase, scope)
-  if (active && active.status === 'approved' && canAutopilotUseSemanticModel(active)) return active
+  if (
+    active
+    && active.status === 'approved'
+    && canAutopilotUseSemanticModel(active)
+    && (
+      active.name !== AUTOPILOT_SEMANTIC_MODEL_NAME
+      || await autopilotModelMatchesSelectedContext(supabase, active.id, columns)
+    )
+  ) return active
 
   if (preferredId && preferredId !== active?.id) {
     const preferred = await loadSemanticModelById(supabase, scope, preferredId)
-    if (preferred && canAutopilotUseSemanticModel(preferred)) return preferred
+    if (
+      preferred
+      && canAutopilotUseSemanticModel(preferred)
+      && (
+        preferred.name !== AUTOPILOT_SEMANTIC_MODEL_NAME
+        || await autopilotModelMatchesSelectedContext(supabase, preferred.id, columns)
+      )
+    ) return preferred
   }
 
   const generated = await loadLatestAutopilotSemanticModel(supabase, scope)
-  return generated && canAutopilotUseSemanticModel(generated) ? generated : null
+  return generated
+    && canAutopilotUseSemanticModel(generated)
+    && await autopilotModelMatchesSelectedContext(supabase, generated.id, columns)
+    ? generated
+    : null
 }
 
 async function loadDataset(supabase: SupabaseClient, scope: ProjectScope, modelId?: string, preferredId?: string) {
@@ -325,10 +462,8 @@ export async function loadProjectAutopilotSnapshot({
   artifacts?: ProjectAutopilotArtifacts
 }): Promise<ProjectAutopilotSnapshot> {
   const scope = { tenantId, projectId }
-  const [{ relationIds, columns }, semanticModel] = await Promise.all([
-    selectedColumns(supabase, scope),
-    resolveProjectSemanticModel(supabase, scope, artifacts.semanticModelId),
-  ])
+  const { relationIds, columns } = await selectedColumns(supabase, scope)
+  const semanticModel = await resolveProjectSemanticModel(supabase, scope, columns, artifacts.semanticModelId)
   const artifactsMatchModel = Boolean(semanticModel && artifacts.semanticModelId === semanticModel.id)
   const dataset = semanticModel
     ? await loadDataset(supabase, scope, semanticModel.id, artifactsMatchModel ? artifacts.datasetId : undefined)
@@ -443,16 +578,22 @@ export async function persistProjectAutopilotPlan({
 }
 
 async function ensureDraftSemanticModel(supabase: SupabaseClient, context: RunContext) {
+  const { columns } = await selectedColumns(supabase, context)
   const preferred = context.artifacts.semanticModelId
     ? await loadSemanticModelById(supabase, context, context.artifacts.semanticModelId)
     : null
   if (
     preferred?.name === AUTOPILOT_SEMANTIC_MODEL_NAME
     && (preferred.status === 'draft' || preferred.status === 'review')
+    && await autopilotModelMatchesSelectedContext(supabase, preferred.id, columns)
   ) return preferred.id
 
   const existing = await loadLatestAutopilotSemanticModel(supabase, context)
-  if (existing && (existing.status === 'draft' || existing.status === 'review')) return existing.id
+  if (
+    existing
+    && (existing.status === 'draft' || existing.status === 'review')
+    && await autopilotModelMatchesSelectedContext(supabase, existing.id, columns)
+  ) return existing.id
   const { data: latestVersion, error: versionError } = await supabase
     .from('business_models')
     .select('version')
@@ -777,7 +918,15 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
         relationshipIds: strings(existingSelection.relationshipIds),
       },
     })
-    if (existingValidation.ok) return existing.id
+    if (existingValidation.ok) {
+      const existingCompile = compileDatasetQueryPlan({
+        fields: existingValidation.fields,
+        metrics: existingValidation.metrics,
+        relationships: existingValidation.relationships,
+        metricSourceFields: existingValidation.metricSourceFields,
+      })
+      if (existingCompile.queryPlan.executableSql && existingCompile.dataSourceId) return existing.id
+    }
   }
   const evidence = await semanticEvidence(supabase, modelId)
   const proposal = buildDeterministicDatasetProposal({ instruction: context.brief.objective, ...evidence })
@@ -794,6 +943,15 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
     selection,
   })
   if (!validation.ok) throw new Error(validation.error)
+  const compileResult = compileDatasetQueryPlan({
+    fields: validation.fields,
+    metrics: validation.metrics,
+    relationships: validation.relationships,
+    metricSourceFields: validation.metricSourceFields,
+  })
+  if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
+    throw new Error(`Autopilot dataset selection is not executable: ${compileResult.warnings.join(' ')}`)
+  }
   const { data: namedDatasets, error: nameError } = await supabase
     .from('semantic_datasets')
     .select('name')
@@ -891,8 +1049,18 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
   const existingIds = reusableRows.map(row => String(row.id))
   const remaining = Math.max(0, context.brief.chartCount - existingIds.length)
   if (remaining === 0) return existingIds
-  const fields = rawFields.map(field => ({ id: String(field.id), name: String(field.name), role: String(field.role) }))
-  const metrics = rawMetrics.map(metric => ({ id: String(metric.id), name: String(metric.name), aggregation: String(metric.aggregation) }))
+  const fields = rawFields.map(field => ({
+    id: String(field.id),
+    name: String(field.name),
+    role: String(field.role),
+    entityId: typeof field.entity_id === 'string' ? field.entity_id : null,
+  }))
+  const metrics = rawMetrics.map(metric => ({
+    id: String(metric.id),
+    name: String(metric.name),
+    aggregation: String(metric.aggregation),
+    entityId: typeof metric.entity_id === 'string' ? metric.entity_id : null,
+  }))
   const allowedTemplateIds = analyzeDatasetChartOptions({ fields: rawFields, metrics: rawMetrics }).compatibility
     .filter(item => item.status !== 'blocked')
     .map(item => item.template.id)
@@ -906,8 +1074,18 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
   })
   const charts = proposal.charts.slice(0, remaining).map(chart => {
     const validation = validateDashboardChartConfig({ templateId: chart.templateId, encoding: chart.encoding, fields: rawFields, metrics: rawMetrics })
-    if (validation.state !== 'valid') throw new Error(`Generated chart ${chart.name} requires review before Autopilot can compose it`)
-    return { ...chart, validationState: validation.state, validationIssues: validation.issues }
+    const approval = evaluateAutopilotChartApproval({
+      confidence: chart.confidence,
+      validation,
+    })
+    if (!approval.approved) {
+      throw new Error(`Generated chart ${chart.name} could not be approved automatically: ${approval.reason}`)
+    }
+    return {
+      ...chart,
+      validationState: approval.validationState,
+      validationIssues: validation.issues,
+    }
   })
   const { data, error: rpcError } = await supabase.rpc('create_dashboard_chart_drafts', {
     p_tenant_id: context.tenantId,
@@ -958,7 +1136,11 @@ async function ensureDashboardDraft(supabase: SupabaseClient, context: RunContex
   }
 }
 
-export async function executeProjectAutopilot(supabase: SupabaseClient, context: RunContext) {
+export async function executeProjectAutopilot(
+  auth: AuthedSupabaseContext,
+  context: RunContext,
+) {
+  const supabase = auth.supabase
   let artifacts = { ...context.artifacts }
   let snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
   if (snapshot.semanticModel?.id !== artifacts.semanticModelId) {
@@ -1002,6 +1184,7 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
       }
       return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
     }
+    await persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
   }
 
   const modelId = snapshot.semanticModel?.id
@@ -1013,6 +1196,7 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
   artifacts.datasetId = await ensurePublishedDataset(supabase, { ...context, artifacts }, modelId)
   snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
   plan = buildProjectAutopilotPlan(snapshot, context.brief)
+  await persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
 
   if (plan.currentStep === 'charts' && artifacts.datasetId) {
     artifacts.chartIds = await ensureChartSuite(supabase, { ...context, artifacts }, artifacts.datasetId)
@@ -1026,6 +1210,45 @@ export async function executeProjectAutopilot(supabase: SupabaseClient, context:
     Object.assign(artifacts, await ensureDashboardDraft(supabase, { ...context, artifacts }, artifacts.chartIds))
     snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
     plan = buildProjectAutopilotPlan(snapshot, context.brief)
+  }
+
+  if (
+    plan.currentStep === 'publish_review'
+    && context.brief.publicationPolicy === 'auto_publish_when_healthy'
+    && artifacts.dashboardId
+    && artifacts.dashboardVersionId
+  ) {
+    await persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
+    try {
+      const publication = await publishDashboardVersionGoverned({
+        auth,
+        dashboardId: artifacts.dashboardId,
+        versionId: artifacts.dashboardVersionId,
+        readinessAuthority: 'active_project_model',
+        notes: 'Published automatically by governed Project Autopilot after readiness checks.',
+      })
+      artifacts.releaseVerification = publication.verification
+      snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
+      plan = buildProjectAutopilotPlan(snapshot, context.brief)
+    } catch (error) {
+      if (error instanceof GovernedDashboardPublishError && error.status === 422) {
+        plan = {
+          ...plan,
+          status: 'awaiting_review',
+          currentStep: 'publish_review',
+          steps: plan.steps.map(item => item.key === 'publish_review'
+            ? {
+              ...item,
+              status: 'awaiting_review',
+              automatic: false,
+              detail: `Automatic publication paused: ${error.message}`,
+            }
+            : item),
+        }
+      } else {
+        throw error
+      }
+    }
   }
 
   return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })

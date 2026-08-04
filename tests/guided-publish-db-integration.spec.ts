@@ -53,7 +53,7 @@ test.describe.serial('guided publish Supabase integration', () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
-    expect(body.readiness.status).toBe('ready_to_publish')
+    expect(body.readiness.status, JSON.stringify(body.readiness, null, 2)).toBe('ready_to_publish')
     expect(body.readiness.publishEligible).toBe(true)
     expect(body.metadata.projectId).toBe(fixture!.ids.projectId)
     expect(body.metadata.datasetCount).toBe(1)

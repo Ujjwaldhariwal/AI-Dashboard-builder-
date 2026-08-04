@@ -1,4 +1,4 @@
-export type DataSourceType = 'postgres'
+export type DataSourceType = 'postgres' | 'oracle'
 
 export type DataSourceStatus = 'draft' | 'active' | 'error' | 'disabled'
 
@@ -21,6 +21,19 @@ export interface PostgresConnectionConfig {
   schemas?: string[]
 }
 
+export type OracleConnectType = 'service_name' | 'sid'
+
+export interface OracleConnectionConfig {
+  host: string
+  port: number
+  database: string
+  username: string
+  connectType: OracleConnectType
+  schemas?: string[]
+}
+
+export type DataSourceConnectionConfig = PostgresConnectionConfig | OracleConnectionConfig
+
 export interface DataSourceSchemaProfileSummary {
   dataSourceId: string
   schemaHash: string
@@ -40,6 +53,10 @@ export interface PostgresCredentialInput extends PostgresConnectionConfig {
   password: string
 }
 
+export interface OracleCredentialInput extends OracleConnectionConfig {
+  password: string
+}
+
 export interface DataSource {
   id: string
   tenantId: string
@@ -47,7 +64,7 @@ export interface DataSource {
   name: string
   type: DataSourceType
   status: DataSourceStatus
-  connectionConfig: PostgresConnectionConfig
+  connectionConfig: DataSourceConnectionConfig
   credentialKeyId?: string | null
   lastTestedAt?: string | null
   lastTestStatus?: string | null

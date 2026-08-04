@@ -113,11 +113,15 @@ export function SchemaInventoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] max-w-5xl overflow-hidden p-0">
+      <DialogContent className="h-[min(88dvh,56rem)] max-h-[calc(100dvh-2rem)] max-w-5xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b px-6 py-5">
           <DialogTitle>Review fetched database objects</DialogTitle>
           <DialogDescription>
-            {source ? `${source.name} · ${(source.connectionConfig.schemas?.length ? source.connectionConfig.schemas : ['public']).join(', ')}` : 'Data source'}
+            {source
+              ? `${source.name} · ${(source.connectionConfig.schemas?.length
+                  ? source.connectionConfig.schemas
+                  : [source.type === 'oracle' ? source.connectionConfig.username.toUpperCase() : 'public']).join(', ')}`
+              : 'Data source'}
           </DialogDescription>
         </DialogHeader>
 
@@ -126,7 +130,7 @@ export function SchemaInventoryDialog({
             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading exact schema inventory
           </div>
         ) : inventory && summary ? (
-          <div className="flex min-h-0 flex-col">
+          <div className="flex min-h-0 flex-col overflow-hidden">
             <div className="grid grid-cols-2 gap-px border-b bg-border sm:grid-cols-4 lg:grid-cols-8">
               {[
                 ['Objects', summary.discoveredObjectCount],
@@ -159,7 +163,7 @@ export function SchemaInventoryDialog({
               </div>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-3 [scrollbar-gutter:stable]">
               <div className="space-y-2">
                 {visibleRelations.map(relation => {
                   const status = decisions[relation.id] ?? 'review'

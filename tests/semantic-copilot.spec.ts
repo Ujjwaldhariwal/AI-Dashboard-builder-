@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test'
 
 import {
   buildDeterministicSemanticProposal,
+  selectSemanticContextColumns,
   validateSemanticCopilotProposal,
 } from '../src/lib/ai/semantic-copilot'
 import type { DataSourceColumnMetadata } from '../src/types/data-source'
@@ -64,6 +65,32 @@ test.describe('semantic copilot', () => {
 
     expect(checked.proposal.mappings).toHaveLength(1)
     expect(checked.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'unknown_column' })]))
+  })
+
+  test('balances a bounded context across every selected table', () => {
+    const wideSchema = Array.from({ length: 10 }, (_, tableIndex) => (
+      Array.from({ length: 12 }, (_, columnIndex) => column(
+        `table-${tableIndex}-column-${columnIndex}`,
+        `table_${tableIndex}`,
+        columnIndex === 0 ? 'id' : columnIndex === 1 ? 'created_at' : columnIndex === 2 ? 'record_count' : `value_${columnIndex}`,
+        columnIndex === 0 ? 'uuid' : columnIndex === 1 ? 'timestamp' : columnIndex === 2 ? 'integer' : 'text',
+      ))
+    )).flat()
+
+    const context = selectSemanticContextColumns(wideSchema)
+    const proposal = buildDeterministicSemanticProposal(wideSchema)
+
+    expect(context).toHaveLength(80)
+    expect(proposal.mappings).toHaveLength(80)
+    expect(new Set(context.map(item => item.tableName)).size).toBe(10)
+    for (let tableIndex = 0; tableIndex < 10; tableIndex += 1) {
+      expect(proposal.mappings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ columnId: `table-${tableIndex}-column-0`, role: 'identifier' }),
+        expect.objectContaining({ columnId: `table-${tableIndex}-column-1`, role: 'date' }),
+        expect.objectContaining({ columnId: `table-${tableIndex}-column-2`, role: 'metric_source' }),
+      ]))
+    }
+    expect(proposal.summary).toContain('using 80 of 120 columns')
   })
 
   test('grounds the server and UI in the confirmed schema scope', () => {

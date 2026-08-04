@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
+import { getAuthedSupabase } from '@/lib/supabase/server'
 
 const BOSCH_BASE_FALLBACK = 'https://kadashboard.kaamismartmeters.com/BOSCH/API'
 const REQUEST_TIMEOUT_MS = 20000
@@ -248,6 +250,30 @@ function mergeTokenIntoPayload(payload: unknown, token: string | null): unknown 
 }
 
 async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
+  if (process.env.BOSCH_PROXY_ENABLED !== 'true') {
+    return NextResponse.json({ error: 'Bosch integration is not enabled' }, { status: 404 })
+  }
+
+  const auth = await getAuthedSupabase()
+  if (!auth) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const rateLimit = await checkRuntimeRateLimit({
+    key: `bosch:${auth.userId}`,
+    maxRequests: 60,
+    windowMs: 60_000,
+  })
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: 'Too many Bosch proxy requests' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(rateLimit.retryAfterSeconds) },
+      },
+    )
+  }
+
   const params = await ctx.params
   const endpoint = buildEndpoint(params.path)
   if (!endpoint) {
@@ -256,16 +282,11 @@ async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
 
   const target = resolveTargetFromRequest(req)
   const baseUrl = resolveBaseUrl(target)
-  const { credentials, checkedEnvVars } = resolveCredentials(target)
+  const { credentials } = resolveCredentials(target)
   if (!credentials) {
     return NextResponse.json(
-      {
-        error: 'Missing Bosch proxy credentials.',
-        targetEnv: target ?? 'DEFAULT',
-        checkedEnvVars,
-        hint: 'Set BOSCH_USERID/BOSCH_PASSWORD or target-specific credentials and restart dev server.',
-      },
-      { status: 500 },
+      { error: 'Bosch integration is not configured' },
+      { status: 503 },
     )
   }
 
@@ -302,16 +323,9 @@ async function forwardToBosch(req: NextRequest, ctx: RouteContext) {
 
     return proxiedResponse
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Bosch proxy error'
+    console.error('[Bosch Proxy]', error instanceof Error ? error.message : 'upstream request failed')
     return NextResponse.json(
-      {
-        error: 'Bosch API proxy request failed.',
-        details: message,
-        endpoint,
-        targetEnv: target ?? 'DEFAULT',
-        baseUrl,
-        hint: 'Verify VPN connectivity for the selected environment and confirm endpoint access.',
-      },
+      { error: 'Bosch upstream request failed' },
       { status: 502 },
     )
   }

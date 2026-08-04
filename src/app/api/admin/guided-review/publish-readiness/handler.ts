@@ -31,6 +31,7 @@ export function createGuidedPublishReadinessGetHandler(authProvider: AuthProvide
     const access = await requireProjectAccess({
       ...accessContext(auth),
       projectId: parsed.data.projectId,
+      editor: true,
     })
     if (!access.ok) {
       return NextResponse.json({ readiness: null, metadata: null, error: access.error }, { status: access.status })

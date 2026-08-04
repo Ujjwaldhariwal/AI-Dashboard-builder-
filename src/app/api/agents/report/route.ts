@@ -1,50 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { ReportInsightSchema } from '@/lib/ai/agent-schemas'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
-import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
+import { guardAiRoute } from '@/lib/security/ai-route-guard'
 
 const ReportAgentRequestSchema = z.object({
-  dashboardTitle: z.string().min(1, 'dashboardTitle is required'),
-  widgetsData: z.array(z.unknown()),
+  dashboardTitle: z.string().trim().min(1, 'dashboardTitle is required').max(160),
+  widgetsData: z.array(z.unknown()).max(40),
 }).strict()
-
-async function hasValidSession() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    SUPABASE_URL,
-    getSupabaseAnonKey(),
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll().map((cookie) => ({
-            name: cookie.name,
-            value: cookie.value,
-          }))
-        },
-        setAll() {
-          // Read-only auth check in route handler; no cookie writes needed.
-        },
-      },
-    },
-  )
-
-  const { data: { session } } = await supabase.auth.getSession()
-  return Boolean(session)
-}
 
 export async function POST(req: NextRequest) {
   try {
-    const authenticated = await hasValidSession()
-    if (!authenticated) {
-      return NextResponse.json(
-        { report: null, error: 'Unauthorized' },
-        { status: 401 },
-      )
-    }
+    const auth = await guardAiRoute(req, 'report')
+    if (auth instanceof Response) return auth
 
     const body = await req.json().catch(() => null)
     if (body === null) {
@@ -63,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { dashboardTitle, widgetsData } = parsed.data
-    const widgetsPreview = JSON.stringify(widgetsData.slice(0, 40), null, 2)
+    const widgetsPreview = JSON.stringify(widgetsData, null, 2).slice(0, 32_000)
 
     const model = getAiWorkflowModel({ workflowType: 'report_generation' })
     const result = await generateObject({

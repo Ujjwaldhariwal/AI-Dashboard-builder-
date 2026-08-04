@@ -19,10 +19,26 @@ The model is a planner. DashboardOS remains the executor, validator, policy engi
 
 ## Delivery status
 
-- Sprint 0: completed and verified on 2026-07-16; database migration is prepared but not automatically deployed.
-- Sprint 1: completed and verified on 2026-07-16; schema intelligence migration is prepared but not automatically deployed.
-- Sprint 1A: prepared as the next foundation sprint; see `docs/schema-discovery-trust-sprint.md`.
-- Sprint 2: prepared and follows Sprint 1A.
+- Sprint 0: implementation completed and locally verified on 2026-07-16; database deployment remains environment-specific.
+- Sprint 1: implementation completed and locally verified on 2026-07-16; schema-intelligence deployment remains environment-specific.
+- Sprint 1A: implementation completed and locally verified on 2026-07-24. Relation inventory, governed selection, refresh stability, and semantic-scope enforcement are covered by deterministic tests; live Supabase acceptance remains a release-environment gate. See `docs/schema-discovery-trust-sprint.md`.
+- Sprint 2: implementation completed and locally verified on 2026-07-24. Semantic proposals, governed dataset generation, field/metric validation, and inferred-join hardening are integrated into Project Autopilot.
+- Sprint 3: core implementation completed and locally verified on 2026-07-24. One-brief Project Autopilot composes resumable semantic, dataset, chart-suite, responsive-layout, and immutable-release artifacts. Final publish remains an explicit human review gate by design.
+- Sprint 4: foundation in progress as of 2026-07-24. `ReportSpec.v1`, governed dataset-only outline composition, deterministic fallback, structured proposal persistence, and computed-fact citation enforcement are implemented. Deterministic KPI computation, draft refinement/versioning UI, section/theme editing, and final evidence-bound PDF rendering remain.
+- Sprint 5: partially complete. Release integrity, rollout controls, privacy guardrails, auditability, retry safety, and immutable snapshots exist; production evaluation thresholds, provider benchmarking, and controlled rollout evidence remain.
+
+### Current release evidence
+
+- `npx tsc --noEmit`: passed on 2026-07-24.
+- `npm run build`: passed on 2026-07-24.
+- `npm run lint`: passed with warnings and no errors on 2026-07-24.
+- 137 non-environment Playwright tests passed across 25 spec files on 2026-07-24, including governed natural-language response, Report Composer, migration-drift, and Supabase trigger-hardening coverage.
+- Seven AI chart-refinement visual states passed in the development-only visual harness on 2026-07-24, including mobile, generating, restricted, validation-failure, preview, and applied states.
+- `npm run api-docs:check`: passed with 79 documented route methods on 2026-07-24.
+- The connected `ai-dashboard-builder` Supabase project now has the versioned `data_source_schema_profiles` store with RLS and explicit role grants. Trigger-only functions were removed from the Data API RPC surface and verified through database privilege checks.
+- Five AI-workflow foreign-key access paths are now indexed in the connected project, and the workflow insert policy uses an RLS initialization plan. Supabase reports no warning-level performance findings for `ai_workflow_runs` or `ai_workflow_proposals`.
+- `npm run db:migrations:check` now fails closed on linked migration-history drift. The current 42 local-only and 10 remote-only versions are documented in `docs/supabase-migration-reconciliation.md`; automated `db push` remains blocked until object-level equivalence is proven.
+- DB-backed guided-publish integration and live authenticated browser acceptance still require a disposable test project service-role key; the local environment intentionally does not expose one.
 
 ## Sprint 0 — shared governed AI foundation
 

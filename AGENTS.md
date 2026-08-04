@@ -1,3 +1,12 @@
+## ponytail
+
+Ponytail is mandatory for project work.
+
+Rules:
+- Before reading or analyzing project code, and before creating, changing, fixing, or reviewing functionality, read `.agents/skills/ponytail/SKILL.md` completely
+- Default to Ponytail `ultra` for this project unless the user asks for another intensity or says `stop ponytail` / `normal mode`
+- Apply the skill after tracing the affected flow; minimalism must not remove validation, security, accessibility, error handling, or required tests
+
 ## graphify
 
 This project has a graphify knowledge graph at .graphify/.

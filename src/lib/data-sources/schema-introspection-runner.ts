@@ -2,17 +2,20 @@ import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import {
-  introspectPostgresSchema,
-  profilePostgresSchema,
   testPostgresConnection,
   type PostgresSchemaIntrospectionResult,
   type PostgresTableMetadata,
 } from '@/lib/data-sources/postgres-runtime'
+import {
+  introspectDataSourceSchema,
+  profileDataSourceSchema,
+  testDataSourceConnection,
+} from '@/lib/data-sources/data-source-runtime'
 import { SCHEMA_PROFILE_VERSION, type SchemaIntelligenceProfile } from '@/lib/data-sources/schema-profile'
 import { buildSchemaInventoryRelations, buildSchemaInventorySummary } from '@/lib/data-sources/schema-inventory'
 import { columnsFromIntrospectionRows, persistGuidedProfileForColumns } from '@/lib/dashboardos/guided-review-store'
 import { invalidateSemanticDependentsForDataSource } from '@/lib/semantic/semantic-hardening'
-import type { DataSourceSchemaInventorySummary, DataSourceSchemaScopeStatus } from '@/types/data-source'
+import type { DataSourceSchemaInventorySummary, DataSourceSchemaScopeStatus, DataSourceType } from '@/types/data-source'
 
 const SCHEMA_REFRESH_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -43,6 +46,17 @@ export interface SchemaRefreshPlan {
   replaceSnapshot: boolean
   invalidateDependents: boolean
   persistGuidedProfile: boolean
+}
+
+export function schemasFromConnectionConfig(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const schemas = (value as Record<string, unknown>).schemas
+  if (!Array.isArray(schemas)) return undefined
+  const normalized = schemas
+    .filter((schema): schema is string => typeof schema === 'string')
+    .map(schema => schema.trim())
+    .filter(Boolean)
+  return normalized.length > 0 ? normalized : undefined
 }
 
 export function buildSchemaRefreshPlan({
@@ -234,18 +248,20 @@ async function persistSchemaSnapshotWithoutRpc({
 
 interface SchemaIntrospectionDependencies {
   testConnection: typeof testPostgresConnection
-  introspectSchema: typeof introspectPostgresSchema
-  profileSchema: typeof profilePostgresSchema
+  introspectSchema: (ciphertext: string, schemas?: string[]) => Promise<PostgresSchemaIntrospectionResult>
+  profileSchema: (ciphertext: string, introspection: PostgresSchemaIntrospectionResult) => Promise<SchemaIntelligenceProfile>
   invalidateDependents: typeof invalidateSemanticDependentsForDataSource
   persistGuidedProfile: typeof persistGuidedProfileForColumns
 }
 
-const DEFAULT_DEPENDENCIES: SchemaIntrospectionDependencies = {
-  testConnection: testPostgresConnection,
-  introspectSchema: introspectPostgresSchema,
-  profileSchema: profilePostgresSchema,
-  invalidateDependents: invalidateSemanticDependentsForDataSource,
-  persistGuidedProfile: persistGuidedProfileForColumns,
+function defaultDependencies(type: DataSourceType): SchemaIntrospectionDependencies {
+  return {
+    testConnection: ciphertext => testDataSourceConnection(type, ciphertext),
+    introspectSchema: (ciphertext, schemas) => introspectDataSourceSchema(type, ciphertext, schemas),
+    profileSchema: (ciphertext, introspection) => profileDataSourceSchema(type, ciphertext, introspection),
+    invalidateDependents: invalidateSemanticDependentsForDataSource,
+    persistGuidedProfile: persistGuidedProfileForColumns,
+  }
 }
 
 export function schemaHashForTables(
@@ -425,11 +441,9 @@ export async function runDataSourceSchemaIntrospection({
 }): Promise<SchemaIntrospectionRunResult> {
   const nowIso = new Date().toISOString()
   const startedAt = Date.now()
-  const runtime = { ...DEFAULT_DEPENDENCIES, ...dependencies }
-
   const { data: source, error: sourceError } = await supabase
     .from('data_sources')
-    .select('id, tenant_id, project_id, status, credential_ciphertext, schema_hash, schema_object_count, schema_base_table_count, schema_view_count, schema_column_count, schema_included_object_count, schema_included_column_count, schema_excluded_object_count, schema_review_object_count, schema_scope_status')
+    .select('id, tenant_id, project_id, type, status, connection_config, credential_ciphertext, schema_hash, schema_object_count, schema_base_table_count, schema_view_count, schema_column_count, schema_included_object_count, schema_included_column_count, schema_excluded_object_count, schema_review_object_count, schema_scope_status')
     .eq('id', dataSourceId)
     .single()
 
@@ -440,14 +454,17 @@ export async function runDataSourceSchemaIntrospection({
   const row = source as Record<string, unknown>
   const tenantId = String(row.tenant_id)
   const projectId = String(row.project_id)
+  const type: DataSourceType = row.type === 'oracle' ? 'oracle' : 'postgres'
+  const runtime = { ...defaultDependencies(type), ...dependencies }
   const previousSchemaHash = typeof row.schema_hash === 'string' ? row.schema_hash : null
   const ciphertext = typeof row.credential_ciphertext === 'string' ? row.credential_ciphertext : ''
+  const configuredSchemas = schemasFromConnectionConfig(row.connection_config)
   if (!ciphertext) throw new Error('Missing encrypted credentials')
 
   try {
     const [test, introspection] = await Promise.all([
       runtime.testConnection(ciphertext),
-      runtime.introspectSchema(ciphertext),
+      runtime.introspectSchema(ciphertext, configuredSchemas),
     ])
 
     if (!introspection.completeness.complete) {

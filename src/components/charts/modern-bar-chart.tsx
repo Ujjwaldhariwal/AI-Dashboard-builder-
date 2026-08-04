@@ -7,10 +7,15 @@ import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { escapeTooltipHtml, formatAuxiliaryTooltipRows, formatTooltipHtmlLabel } from '@/lib/echarts/safe-tooltip'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
   chartFontWeight,
+  formatCategoryAxisLabel,
+  formatChartLabel,
+  formatChartText,
   getCategoryTickInterval,
+  getChartDensityLayout,
   getChartMargin,
   getLegendLayout,
   getLegendVisibility,
@@ -41,6 +46,7 @@ interface TooltipParam {
   name: string
   seriesName: string
   value: number
+  dataIndex: number
   data?: {
     rawValue?: number
   }
@@ -50,6 +56,7 @@ interface ModernBarChartProps {
   data: Record<string, unknown>[]
   xField: string
   yField: string
+  tooltipFields?: string[]
   title?: string
   style?: WidgetStyle
   sizePreset?: WidgetSizePreset
@@ -64,25 +71,10 @@ type XAxisLayout = {
   maxLines: number
 }
 
-const ISO_DATE_PATTERN = /^\d{4}[-/]\d{2}[-/]\d{2}(?:[T\s].*)?$/
-
-function toCompactDateLabel(raw: string): string {
-  if (!ISO_DATE_PATTERN.test(raw)) return raw
-
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) return raw
-
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'Asia/Kolkata',
-  }).format(parsed)
-}
-
 function normalizeLabel(value: unknown, fallback: string): string {
   const text = String(value ?? fallback).trim().replace(/\s+/g, ' ')
   if (!text) return fallback
-  return toCompactDateLabel(text)
+  return text
 }
 
 function parseNumber(value: unknown): number {
@@ -206,15 +198,21 @@ function getXAxisLayout(labels: string[]): XAxisLayout {
   }
 }
 
-function fmtAxisTick(v: number, format: WidgetStyle['labelFormat'], logarithmic: boolean): string {
+function fmtAxisTick(
+  v: number,
+  format: WidgetStyle['labelFormat'],
+  logarithmic: boolean,
+  numberFormat?: WidgetStyle['yAxisNumberFormat'],
+): string {
   if (logarithmic && v < 1) return v.toFixed(2)
-  return fmtValue(v, format)
+  return fmtValue(v, format, numberFormat)
 }
 
 export function ModernBarChart({
   data,
   xField,
   yField,
+  tooltipFields,
   style,
   sizePreset = 'medium',
   logarithmic = false,
@@ -224,11 +222,13 @@ export function ModernBarChart({
   const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const colors = s.colors
   const r = s.barRadius ?? 5
+  const hasNumericData = useMemo(
+    () => data.some(row => !isNaN(Number(row?.[yField]))),
+    [data, yField],
+  )
 
   const chartData = useMemo(() => {
-    const isNumeric = data.some(row => !isNaN(Number(row?.[yField])))
-
-    if (isNumeric) {
+    if (hasNumericData) {
       return data.slice(0, 30).map((item, i) => ({
         name: normalizeLabel(item[xField], `#${i + 1}`).slice(0, 72),
         value: parseNumber(item[yField]),
@@ -245,7 +245,7 @@ export function ModernBarChart({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([name, value]) => ({ name, value }))
-  }, [data, xField, yField])
+  }, [data, hasNumericData, xField, yField])
 
   const labelLayout = useMemo(
     () => getXAxisLayout(chartData.map(point => point.name)),
@@ -262,6 +262,7 @@ export function ModernBarChart({
   )
 
   const margin = getChartMargin(sizePreset, s.chartMargin)
+  const density = useMemo(() => getChartDensityLayout(s.density), [s.density])
   const tickInterval = getCategoryTickInterval(sizePreset, chartData.length)
   const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
   const displayLabels = s.showLabels ?? showValueLabels(sizePreset, chartData.length)
@@ -290,7 +291,15 @@ export function ModernBarChart({
       formatter: (params: TooltipParam[]) => {
         const first = params[0]
         const rawValue = first?.data?.rawValue ?? first?.value ?? 0
-        return `<b style="font-size:12px">${first?.name ?? ''}</b><br/>${first?.seriesName ?? ''}: <strong>${fmtValue(Number(rawValue), s.labelFormat)}</strong>`
+        const auxiliary = hasNumericData
+          ? formatAuxiliaryTooltipRows({
+              row: data[first?.dataIndex],
+              fields: tooltipFields,
+              style: s,
+              excludedFields: [xField, yField],
+            })
+          : ''
+        return `<b style="font-size:12px">${formatTooltipHtmlLabel(first?.name, undefined, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}</b><br/>${formatTooltipHtmlLabel(first?.seriesName, s.tooltipLabelOverrides, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}: <strong>${escapeTooltipHtml(fmtValue(Number(rawValue), s.labelFormat, s.tooltipNumberFormat))}</strong>${auxiliary ? `<br/>${auxiliary}` : ''}`
       },
     },
     xAxis: {
@@ -308,9 +317,24 @@ export function ModernBarChart({
         interval: tickInterval,
         hideOverlap: !labelLayout.shouldRotate,
         lineHeight: labelLayout.shouldRotate ? 12 : 14,
-        margin: labelLayout.shouldRotate ? 18 : 10,
-        formatter: (value: string) =>
-          breakLabelIntoLines(value, labelLayout.maxCharsPerLine, labelLayout.maxLines),
+        margin: s.xAxisLabelRotation !== undefined
+          ? density.axisLabelMargin
+          : labelLayout.shouldRotate ? 18 : density.axisLabelMargin,
+        formatter: (value: string) => {
+          const formatted = formatCategoryAxisLabel(
+            value,
+            s.xAxisLabelFormat,
+            s.xAxisLabelLocale,
+            s.xAxisLabelTimeZone,
+          )
+          return s.xAxisLabelOverflow
+            ? formatChartText(formatted, s.xAxisLabelOverflow, s.xAxisLabelMaxLength)
+            : breakLabelIntoLines(
+              formatted,
+              labelLayout.maxCharsPerLine,
+              labelLayout.maxLines,
+            )
+        },
       },
       axisLine: { show: false },
       axisTick: { show: false },
@@ -328,7 +352,12 @@ export function ModernBarChart({
         color: s.yAxisLabelColor ?? axis.label,
         fontSize: s.yAxisLabelFontSize ?? 11,
         fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
-        formatter: (v: number) => fmtAxisTick(v, s.labelFormat, logarithmic),
+        formatter: (v: number) => fmtAxisTick(
+          v,
+          s.labelFormat,
+          logarithmic,
+          s.yAxisNumberFormat,
+        ),
       },
       axisLine: { show: false },
       axisTick: { show: false },
@@ -341,13 +370,25 @@ export function ModernBarChart({
       ? {
           show: true,
           ...getLegendLayout(s.legendPosition, margin),
-          textStyle: { fontSize: 10, color: axis.label },
+          itemGap: density.legendItemGap,
+          textStyle: {
+            fontSize: s.legendLabelFontSize ?? 10,
+            fontWeight: chartFontWeight(s.legendLabelFontWeight),
+            color: axis.label,
+          },
+          formatter: (name: string) => formatChartLabel(
+            name,
+            s.legendLabelOverrides,
+            s.legendLabelOverflow,
+            s.legendLabelMaxLength,
+          ),
         }
       : { show: false },
     series: [{
       type: 'bar',
       name: yField,
       barMaxWidth,
+      barCategoryGap: density.barCategoryGap,
       label: displayLabels
         ? {
             show: true,
@@ -359,9 +400,10 @@ export function ModernBarChart({
             fontSize: s.labelFontSize ?? 10,
             fontWeight: chartFontWeight(s.labelFontWeight),
             color: s.labelColor ?? axis.label,
+            hideOverlap: s.labelCollision === 'hide-overlap',
             formatter: (p: { data?: { rawValue?: number }; value: number }) => {
               const rawValue = p?.data?.rawValue ?? p.value
-              return fmtValue(Number(rawValue), s.labelFormat)
+              return fmtValue(Number(rawValue), s.labelFormat, s.valueLabelNumberFormat)
             },
           }
         : { show: false },
@@ -385,17 +427,22 @@ export function ModernBarChart({
     barMaxWidth,
     chartData,
     colors,
+    density,
     displayLabels,
     displayLegend,
     labelLayout,
     logarithmic,
+    hasNumericData,
     margin,
     processedSeriesData,
     r,
     s,
     sizePreset,
     tickInterval,
+    tooltipFields,
     tt,
+    data,
+    xField,
     yField,
   ])
 

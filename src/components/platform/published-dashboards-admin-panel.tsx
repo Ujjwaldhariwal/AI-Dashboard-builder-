@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { GuidedPublishReadinessPanel } from '@/components/platform/guided-publish-readiness-panel'
+import { ReportComposerPanel } from '@/components/platform/report-composer-panel'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -620,6 +621,11 @@ export function PublishedDashboardsAdminPanel() {
       </section>
 
       <GuidedPublishReadinessPanel readiness={publishReadiness} source={demoMode ? 'prepared-reference' : serverPreflight ? 'server-preflight' : 'local'} />
+      <ReportComposerPanel
+        projectId={projectId}
+        projectName={selectedProject?.name ?? ''}
+        disabled={demoMode}
+      />
       {serverPreflight ? (
         <p className="text-xs text-slate-500" data-testid="guided-preflight-metadata">
           {demoMode ? 'Prepared readiness covers' : 'Server preflight evaluated'} {serverPreflight.metadata.datasetCount} datasets, {serverPreflight.metadata.chartCount} charts, and {serverPreflight.metadata.slotCount} dashboard slots for this project.

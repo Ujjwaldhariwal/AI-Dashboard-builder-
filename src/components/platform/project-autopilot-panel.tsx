@@ -16,7 +16,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import type { ChartTemplateId } from '@/types/chart-template'
-import type { ProjectAutopilotRun, ProjectAutopilotStepPlan } from '@/types/project-autopilot'
+import type {
+  ProjectAutopilotPublicationPolicy,
+  ProjectAutopilotRun,
+  ProjectAutopilotStepPlan,
+} from '@/types/project-autopilot'
 
 interface ProjectOption {
   id: string
@@ -63,6 +67,9 @@ export function ProjectAutopilotPanel() {
   const [audience, setAudience] = useState('Leadership')
   const [chartCount, setChartCount] = useState(6)
   const [chartTypes, setChartTypes] = useState<ChartTemplateId[]>(['kpi-card', 'line', 'bar'])
+  const [publicationPolicy, setPublicationPolicy] = useState<ProjectAutopilotPublicationPolicy>(
+    'auto_publish_when_healthy',
+  )
   const [run, setRun] = useState<ProjectAutopilotRun | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
@@ -151,6 +158,7 @@ export function ProjectAutopilotPanel() {
           chartCount,
           chartTypes,
           autoApply: true,
+          publicationPolicy,
         },
       }),
     })
@@ -233,7 +241,7 @@ export function ProjectAutopilotPanel() {
     <div className="mx-auto max-w-6xl space-y-5">
       <section className="border-b border-[color:var(--dos-border-soft)] pb-5">
         <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--dos-text-primary)]">Build the governed dashboard from one brief</h1>
-        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot maps and validates source fields, approves safe semantics, and creates an editable dashboard draft. You only review exceptions and the final publish.</p>
+        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot maps and validates source fields, approves safe semantics, composes the dashboard, and can publish a verified immutable release. You review only blocked checks or policy-required releases.</p>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
@@ -263,6 +271,29 @@ export function ProjectAutopilotPanel() {
                 <Label htmlFor="autopilot-count">Charts</Label>
                 <Input id="autopilot-count" className="h-11" type="number" min={1} max={12} value={chartCount} onChange={event => setChartCount(Math.min(12, Math.max(1, Number(event.target.value) || 1)))} />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="autopilot-publication-policy">Release mode</Label>
+              <Select
+                value={publicationPolicy}
+                onValueChange={value => setPublicationPolicy(value as ProjectAutopilotPublicationPolicy)}
+              >
+                <SelectTrigger id="autopilot-publication-policy" className="h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto_publish_when_healthy">
+                    Auto-publish when healthy
+                  </SelectItem>
+                  <SelectItem value="review_required">
+                    Require final review
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs leading-5 text-[var(--dos-text-muted)]">
+                Automatic mode still runs readiness, immutable snapshot, entitlement, and client-loadability checks.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -336,9 +367,18 @@ export function ProjectAutopilotPanel() {
                 ))}
               </div>
 
-              {run.currentStep !== 'publish_review' ? (
+              {run.currentStep !== 'publish_review' || (
+                run.status !== 'succeeded'
+                && run.brief.publicationPolicy === 'auto_publish_when_healthy'
+              ) ? (
                 <Button variant="outline" className="mt-4 min-h-11 w-full" onClick={() => void resume()} isLoading={running}>
-                  <RefreshCw className="h-4 w-4" /> {run.status === 'failed' ? 'Retry Autopilot' : 'Resume Autopilot'}
+                  <RefreshCw className="h-4 w-4" /> {
+                    run.status === 'failed'
+                      ? 'Retry Autopilot'
+                      : run.currentStep === 'publish_review'
+                        ? 'Run release finalization'
+                        : 'Resume Autopilot'
+                  }
                 </Button>
               ) : (
                 <Button asChild className="mt-4 min-h-11 w-full">

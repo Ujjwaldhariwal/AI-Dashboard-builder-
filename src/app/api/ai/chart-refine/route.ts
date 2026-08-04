@@ -5,6 +5,7 @@ import { z } from 'zod'
 import {
   AI_CHART_PATCH_SCHEMA_VERSION,
   ChartAiPatch,
+  ChartAiPresentationPatchSchema,
   ChartAiPatchSchema,
   buildDeterministicPresentationPatch,
   buildGovernedAiChartContext,
@@ -19,6 +20,11 @@ import {
   buildAiChartRefinementEventMetadata,
   logAiChartRefinementMetric,
 } from '@/lib/ai/chart-refinement-observability'
+import {
+  createDurableChartRefinementProposal,
+  finalizeChartRefinementProposalAtomic,
+  loadDurableChartRefinementProposal,
+} from '@/lib/ai/chart-refinement-proposals'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
 import {
   resolveDeterministicChartIntent,
@@ -27,8 +33,12 @@ import {
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
+import type {
+  DashboardChartConfig,
+  DashboardChartValidationResult,
+} from '@/types/dashboard-chart'
 
-const ChartRefineBodySchema = z.object({
+export const ChartRefineBodySchema = z.object({
   tenantId: z.string().uuid(),
   projectId: z.string().uuid(),
   chartId: z.string().uuid(),
@@ -36,7 +46,25 @@ const ChartRefineBodySchema = z.object({
   includePreview: z.boolean().default(false),
   apply: z.boolean().default(false),
   patch: z.unknown().optional(),
-}).strict()
+  proposalId: z.string().uuid().optional(),
+  mode: z.enum(['general', 'presentation_only']).default('general'),
+  baseUpdatedAt: z.string().datetime({ offset: true }).optional(),
+}).strict().superRefine((value, context) => {
+  if (value.apply && !value.proposalId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['proposalId'],
+      message: 'Applying a refinement requires its durable proposal.',
+    })
+  }
+  if (value.apply && !value.baseUpdatedAt) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['baseUpdatedAt'],
+      message: 'Applying a refinement requires its source chart revision.',
+    })
+  }
+})
 
 async function auditChartRefine({
   auth,
@@ -63,6 +91,25 @@ async function auditChartRefine({
     metadata,
     created_at: new Date().toISOString(),
   })
+}
+
+export function staleChartRevisionResponse({
+  patch,
+  chart,
+  validation,
+}: {
+  patch: ChartAiPatch
+  chart: DashboardChartConfig
+  validation: DashboardChartValidationResult
+}) {
+  return NextResponse.json({
+    patch,
+    chart,
+    validation,
+    proposalStatus: 'rejected',
+    errorCode: 'stale_chart_revision',
+    error: 'This chart changed after the proposal was generated. Review the latest chart and generate a new proposal.',
+  }, { status: 409 })
 }
 
 export async function POST(req: NextRequest) {
@@ -138,6 +185,42 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ patch: null, chart: null, validation: null, error: 'Chart not found' }, { status: 404 })
     }
 
+    let durableProposal: Awaited<ReturnType<typeof loadDurableChartRefinementProposal>> | null = null
+    let reviewedPatch: unknown = parsed.data.patch
+    let reviewedBaseUpdatedAt = parsed.data.baseUpdatedAt
+    if (parsed.data.apply) {
+      durableProposal = await loadDurableChartRefinementProposal({
+        supabase: auth.supabase,
+        proposalId: parsed.data.proposalId!,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+      })
+      if (!durableProposal.ok) {
+        return NextResponse.json({
+          patch: null,
+          chart: context.chart,
+          validation: null,
+          errorCode: durableProposal.errorCode,
+          error: durableProposal.error,
+        }, { status: 409 })
+      }
+      if (
+        durableProposal.stored.chartId !== context.chart.id
+        || durableProposal.stored.mode !== parsed.data.mode
+        || durableProposal.stored.baseUpdatedAt !== parsed.data.baseUpdatedAt
+      ) {
+        return NextResponse.json({
+          patch: null,
+          chart: context.chart,
+          validation: null,
+          errorCode: 'invalid_chart_proposal',
+          error: 'The durable proposal does not match this chart, mode, or source revision.',
+        }, { status: 409 })
+      }
+      reviewedPatch = durableProposal.stored.patch
+      reviewedBaseUpdatedAt = durableProposal.stored.baseUpdatedAt
+    }
+
     await auditChartRefine({
       auth,
       tenantId: access.tenantId,
@@ -147,7 +230,7 @@ export async function POST(req: NextRequest) {
       metadata: buildAiChartRefinementEventMetadata({
         eventType: 'prompt_submitted',
         instruction: parsed.data.instruction,
-        patchProvided: Boolean(parsed.data.patch),
+        patchProvided: Boolean(reviewedPatch),
         includePreview: parsed.data.includePreview,
         gateSource: gate.source,
       }),
@@ -162,13 +245,13 @@ export async function POST(req: NextRequest) {
       metadata: buildAiChartRefinementEventMetadata({
         eventType: 'prompt_submitted',
         instruction: parsed.data.instruction,
-        patchProvided: Boolean(parsed.data.patch),
+        patchProvided: Boolean(reviewedPatch),
         includePreview: parsed.data.includePreview,
         gateSource: gate.source,
       }),
     })
 
-    if (!parsed.data.patch && doesPromptReferenceBlockedAiDescriptors({
+    if (!reviewedPatch && doesPromptReferenceBlockedAiDescriptors({
       instruction: parsed.data.instruction,
       blockedFields: context.blockedFields,
       blockedMetrics: context.blockedMetrics,
@@ -211,10 +294,10 @@ export async function POST(req: NextRequest) {
 
     const publicContext = serializeGovernedAiChartContext(context)
     let patch: ChartAiPatch
-    let resolution: 'reviewed' | 'deterministic' | 'model' = parsed.data.patch ? 'reviewed' : 'model'
+    let resolution: 'reviewed' | 'deterministic' | 'model' = reviewedPatch ? 'reviewed' : 'model'
 
-    if (parsed.data.patch) {
-      const providedPatch = parseChartAiPatchPayload(parsed.data.patch)
+    if (reviewedPatch) {
+      const providedPatch = parseChartAiPatchPayload(reviewedPatch, parsed.data.mode)
       if (!providedPatch.ok) {
         const eventType = providedPatch.errorCode === 'schema_version_mismatch'
           ? 'unsupported_schema_version'
@@ -255,15 +338,18 @@ export async function POST(req: NextRequest) {
         }, { status: 422 })
       }
       patch = providedPatch.patch
+      if (durableProposal?.ok) resolution = durableProposal.stored.resolution
     } else {
-      const deterministicIntent = resolveDeterministicChartIntent({
-        instruction: parsed.data.instruction,
-        context: {
-          chart: context.chart,
-          allowedFields: context.allowedFields,
-          allowedMetrics: context.allowedMetrics,
-        },
-      })
+      const deterministicIntent = parsed.data.mode === 'presentation_only'
+        ? null
+        : resolveDeterministicChartIntent({
+          instruction: parsed.data.instruction,
+          context: {
+            chart: context.chart,
+            allowedFields: context.allowedFields,
+            allowedMetrics: context.allowedMetrics,
+          },
+        })
       const deterministicPatch = deterministicIntent?.patch ?? buildDeterministicPresentationPatch(parsed.data.instruction)
       if (deterministicPatch) {
         patch = deterministicPatch
@@ -294,7 +380,10 @@ Privacy and safety rules:
 - Prefer small, valid changes.
 - Convert common color names to six-digit hex values.
 - Keep typography, margins, line widths, and bar radii within the supplied schema bounds.
-- Axis field and metric changes must use semantic UUIDs from the governed context.`
+- Axis field and metric changes must use semantic UUIDs from the governed context.
+${parsed.data.mode === 'presentation_only'
+    ? '- Presentation-only mode is active. Return only schemaVersion and presentation; do not change title, description, template, encoding, filters, sorting, or metrics.'
+    : ''}`
 
       const prompt = `chartPatch shape:
 {
@@ -328,7 +417,8 @@ Privacy and safety rules:
       "labelColor": "#475569 or null",
       "labelFontSize": 8,
       "labelFontWeight": "normal|medium|bold",
-      "labelRotation": 0
+      "labelRotation": 0,
+      "labelFormat": "auto|date-only"
     },
     "yAxis": {
       "show": true,
@@ -373,9 +463,12 @@ ${JSON.stringify(publicContext, null, 2)}`
 
       let parsedJson: unknown
       try {
+        const patchSchema = parsed.data.mode === 'presentation_only'
+          ? ChartAiPresentationPatchSchema
+          : ChartAiPatchSchema
         const result = await generateObject({
           model: ai.model,
-          schema: ChartAiPatchSchema,
+          schema: patchSchema,
           system,
           prompt,
           maxOutputTokens: 900,
@@ -412,7 +505,7 @@ ${JSON.stringify(publicContext, null, 2)}`
         })
         return NextResponse.json({ patch: null, chart: context.chart, validation: null, errorCode: 'model_parse_failure', error: 'AI response could not be parsed as a chart patch. The current chart was left unchanged.' }, { status: 422 })
       }
-      const patchParse = parseChartAiPatchPayload(parsedJson)
+      const patchParse = parseChartAiPatchPayload(parsedJson, parsed.data.mode)
       if (!patchParse.ok) {
         const eventType = patchParse.errorCode === 'schema_version_mismatch'
           ? 'unsupported_schema_version'
@@ -502,6 +595,21 @@ ${JSON.stringify(publicContext, null, 2)}`
     }
 
     if (!parsed.data.apply) {
+      const storedProposal = await createDurableChartRefinementProposal({
+        supabase: auth.supabase,
+        tenantId: access.tenantId,
+        projectId: access.projectId,
+        actorUserId: auth.userId,
+        chartId: context.chart.id,
+        datasetId: context.dataset.id,
+        instruction: parsed.data.instruction,
+        mode: parsed.data.mode,
+        patch,
+        baseUpdatedAt: context.chart.updatedAt,
+        resolution: resolution === 'model' ? 'model' : 'deterministic',
+        validation: allowed.validation,
+        nextChart: allowed.nextChart,
+      })
       await auditChartRefine({
         auth,
         tenantId: access.tenantId,
@@ -533,84 +641,101 @@ ${JSON.stringify(publicContext, null, 2)}`
           resolution,
         }),
       })
-      return NextResponse.json({ patch, chart: allowed.nextChart, validation: allowed.validation, resolution })
-    }
-
-    const nowIso = new Date().toISOString()
-    const { data: chartRow, error: updateError } = await auth.supabase
-      .from('dashboard_chart_configs')
-      .update({
-        name: allowed.nextChart.name,
-        description: allowed.nextChart.description ?? null,
-        template_id: allowed.nextChart.templateId,
-        encoding: allowed.nextChart.encoding,
-        presentation: allowed.nextChart.presentation,
-        validation_state: allowed.validation.state,
-        last_validated_at: nowIso,
-        updated_at: nowIso,
+      return NextResponse.json({
+        patch,
+        chart: allowed.nextChart,
+        validation: allowed.validation,
+        resolution,
+        baseUpdatedAt: context.chart.updatedAt,
+        proposalId: storedProposal.proposalId,
+        proposalStatus: storedProposal.proposalStatus,
       })
-      .eq('id', context.chart.id)
-      .eq('tenant_id', access.tenantId)
-      .eq('project_id', access.projectId)
-      .select('*')
-      .single()
-
-    if (updateError) {
-      return NextResponse.json({ patch, chart: context.chart, validation: allowed.validation, error: updateError.message }, { status: 400 })
     }
 
-    await Promise.all([
-      auth.supabase.from('dashboard_chart_validation_results').insert({
-        chart_id: context.chart.id,
-        tenant_id: access.tenantId,
-        project_id: access.projectId,
-        state: allowed.validation.state,
-        issues: allowed.validation.issues,
-        checked_by: auth.userId,
-        checked_at: nowIso,
-      }),
-      auditChartRefine({
-        auth,
-        tenantId: access.tenantId,
-        projectId: access.projectId,
-        chartId: context.chart.id,
-        action: 'ai.chart_refine.patch_accepted',
-        metadata: buildAiChartRefinementEventMetadata({
-          eventType: 'apply_success',
-          instruction: parsed.data.instruction,
-          validationState: allowed.validation.state,
-          schemaVersion: patch.schemaVersion,
-          gateSource: gate.source,
-          resolution,
-        }),
-      }),
-      logAiChartRefinementMetric({
-        supabase: auth.supabase,
-        tenantId: access.tenantId,
-        projectId: access.projectId,
-        actorUserId: auth.userId,
-        chartId: context.chart.id,
+    if (!durableProposal?.ok) {
+      return NextResponse.json({
+        patch: null,
+        chart: context.chart,
+        validation: null,
+        errorCode: 'invalid_chart_proposal',
+        error: 'A durable chart refinement proposal is required before apply.',
+      }, { status: 409 })
+    }
+    const transaction = await finalizeChartRefinementProposalAtomic({
+      supabase: auth.supabase,
+      tenantId: access.tenantId,
+      projectId: access.projectId,
+      chartId: context.chart.id,
+      proposalId: durableProposal.proposalId,
+      baseUpdatedAt: reviewedBaseUpdatedAt,
+      action: 'apply',
+    })
+
+    if (!transaction.ok && transaction.errorCode === 'stale_chart_revision') {
+      const latestChart = transaction.chart
+        ? mapDashboardChartConfig(transaction.chart)
+        : context.chart
+      return staleChartRevisionResponse({
+        patch,
+        chart: latestChart,
+        validation: allowed.validation,
+      })
+    }
+
+    if (!transaction.ok) {
+      return NextResponse.json({
+        patch,
+        chart: context.chart,
+        validation: allowed.validation,
+        errorCode: transaction.errorCode ?? 'invalid_chart_proposal',
+        proposalStatus: transaction.proposalStatus,
+        error: transaction.error ?? 'This proposal was already applied, rejected, or is not claimable.',
+      }, {
+        status: transaction.errorCode === 'chart_not_found'
+          ? 404
+          : transaction.errorCode === 'chart_refinement_apply_failed'
+            ? 500
+            : 409,
+      })
+    }
+
+    await logAiChartRefinementMetric({
+      supabase: auth.supabase,
+      tenantId: access.tenantId,
+      projectId: access.projectId,
+      actorUserId: auth.userId,
+      chartId: context.chart.id,
+      eventType: 'apply_success',
+      metadata: buildAiChartRefinementEventMetadata({
         eventType: 'apply_success',
-        metadata: buildAiChartRefinementEventMetadata({
-          eventType: 'apply_success',
-          instruction: parsed.data.instruction,
-          validationState: allowed.validation.state,
-          schemaVersion: patch.schemaVersion,
-          gateSource: gate.source,
-          resolution,
-        }),
+        instruction: parsed.data.instruction,
+        validationState: allowed.validation.state,
+        schemaVersion: patch.schemaVersion,
+        gateSource: gate.source,
+        resolution,
       }),
-    ])
+    })
 
     return NextResponse.json({
       patch,
-      chart: mapDashboardChartConfig(chartRow as Record<string, unknown>),
+      chart: transaction.chart ? mapDashboardChartConfig(transaction.chart) : allowed.nextChart,
       validation: allowed.validation,
       resolution,
+      proposalId: parsed.data.proposalId,
+      proposalStatus: transaction.proposalStatus,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI chart refinement failed'
     console.error('[AI Chart Refine]', message)
+    if (message === 'chart_refinement_rpc_unavailable') {
+      return NextResponse.json({
+        patch: null,
+        chart: null,
+        validation: null,
+        errorCode: 'chart_refinement_migration_required',
+        error: 'Chart refinement apply is unavailable until the transactional RPC migration is deployed.',
+      }, { status: 503 })
+    }
     return NextResponse.json({ patch: null, chart: null, validation: null, error: message }, { status: 500 })
   }
 }

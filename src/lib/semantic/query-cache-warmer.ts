@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import {
+  executeDataSourceReadOnlyQuery,
+  resolveDataSourceType,
+} from '@/lib/data-sources/data-source-runtime'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
 import { checkQueryBudget } from '@/lib/semantic/query-budget-policy'
@@ -128,7 +131,8 @@ async function warmDataset({
   const projectId = String(dataset.project_id)
   const cachePolicy = asRecord(dataset.cache_policy)
   const inputs = await loadDatasetInputs(supabase, dataset)
-  const compileResult = compileDatasetQueryPlan({ ...inputs, filters })
+  const queryInputs = { ...inputs, filters }
+  let compileResult = compileDatasetQueryPlan(queryInputs)
 
   if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
     return {
@@ -139,16 +143,28 @@ async function warmDataset({
       warnings: compileResult.warnings,
     }
   }
+  const dataSourceId = compileResult.dataSourceId
 
   const { data: sourceRow, error: sourceError } = await supabase
     .from('data_sources')
-    .select('id, credential_ciphertext, status, schema_hash')
-    .eq('id', compileResult.dataSourceId)
+    .select('id, type, credential_ciphertext, status, schema_hash')
+    .eq('id', dataSourceId)
     .eq('tenant_id', tenantId)
     .eq('project_id', projectId)
     .single()
 
   if (sourceError) throw new Error(sourceError.message)
+  const sourceType = resolveDataSourceType(sourceRow.type)
+  if (sourceType === 'oracle') compileResult = compileDatasetQueryPlan({ ...queryInputs, dialect: 'oracle' })
+  if (!compileResult.queryPlan.executableSql) {
+    return {
+      target: chartId ? 'chart' : 'dataset',
+      id: chartId ?? datasetId,
+      status: 'skipped',
+      reason: 'Dataset is not executable for this data source',
+      warnings: compileResult.warnings,
+    }
+  }
   if (sourceRow.status !== 'active') {
     return {
       target: chartId ? 'chart' : 'dataset',
@@ -163,7 +179,7 @@ async function warmDataset({
     supabase,
     tenantId,
     projectId,
-    dataSourceId: compileResult.dataSourceId,
+    dataSourceId,
   })
   if (!budget.ok) {
     await recordSemanticQueryRun({
@@ -172,7 +188,7 @@ async function warmDataset({
       projectId,
       datasetId,
       chartId,
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
       surface: 'cache_warm',
       status: 'error',
       sql: compileResult.queryPlan.executableSql,
@@ -189,7 +205,8 @@ async function warmDataset({
     }
   }
 
-  const result = await executePostgresReadOnlyQuery(
+  const result = await executeDataSourceReadOnlyQuery(
+    sourceType,
     String(sourceRow.credential_ciphertext),
     compileResult.queryPlan.executableSql,
     {
@@ -203,7 +220,7 @@ async function warmDataset({
     supabase,
     tenantId,
     projectId,
-    dataSourceId: compileResult.dataSourceId,
+    dataSourceId,
     projection: {
       queries: 1,
       rows: result.rowCount,
@@ -217,7 +234,7 @@ async function warmDataset({
       projectId,
       datasetId,
       chartId,
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
       surface: 'cache_warm',
       status: 'error',
       sql: compileResult.queryPlan.executableSql,
@@ -243,7 +260,7 @@ async function warmDataset({
     projectId,
     datasetId,
     chartId,
-    dataSourceId: compileResult.dataSourceId,
+    dataSourceId,
     sql: compileResult.queryPlan.executableSql,
     parameters: compileResult.parameters,
     datasetUpdatedAt: typeof dataset.updated_at === 'string' ? dataset.updated_at : null,
@@ -258,7 +275,7 @@ async function warmDataset({
     projectId,
     datasetId,
     chartId,
-    dataSourceId: compileResult.dataSourceId,
+    dataSourceId,
     surface: 'cache_warm',
     status: 'success',
     sql: compileResult.queryPlan.executableSql,

@@ -6,6 +6,7 @@ import {
   buildAiChartRefinementEventMetadata,
   logAiChartRefinementMetric,
 } from '@/lib/ai/chart-refinement-observability'
+import { finalizeChartRefinementProposalAtomic } from '@/lib/ai/chart-refinement-proposals'
 import { requireAiProjectAccess } from '@/lib/security/ai-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { getAuthedSupabase } from '@/lib/supabase/server'
@@ -14,6 +15,7 @@ const RejectBodySchema = z.object({
   tenantId: z.string().uuid(),
   projectId: z.string().uuid(),
   chartId: z.string().uuid(),
+  proposalId: z.string().uuid(),
   reason: z.string().max(500).optional().default('Reviewer rejected AI patch preview'),
 }).strict()
 
@@ -66,47 +68,47 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { data: chartRow, error: chartError } = await auth.supabase
-      .from('dashboard_chart_configs')
-      .select('id')
-      .eq('id', parsed.data.chartId)
-      .eq('tenant_id', access.tenantId)
-      .eq('project_id', access.projectId)
-      .single()
-
-    if (chartError || !chartRow) {
-      return NextResponse.json({ ok: false, error: chartError?.message ?? 'Chart not found' }, { status: 404 })
+    const transaction = await finalizeChartRefinementProposalAtomic({
+      supabase: auth.supabase,
+      tenantId: access.tenantId,
+      projectId: access.projectId,
+      chartId: parsed.data.chartId,
+      proposalId: parsed.data.proposalId,
+      action: 'reject',
+      rejectionReason: parsed.data.reason,
+    })
+    if (!transaction.ok) {
+      return NextResponse.json({
+        ok: false,
+        errorCode: transaction.errorCode ?? 'invalid_chart_proposal',
+        error: transaction.error ?? 'This proposal was already applied, rejected, or is not claimable.',
+      }, { status: transaction.errorCode === 'chart_not_found' ? 404 : 409 })
     }
 
-    await Promise.all([
-      auth.supabase.from('audit_logs').insert({
-        tenant_id: access.tenantId,
-        project_id: access.projectId,
-        actor_user_id: auth.userId,
-        action: 'ai.chart_refine.patch_rejected',
-        target_type: 'dashboard_chart_config',
-        target_id: parsed.data.chartId,
-        metadata: { reason: 'reviewer_rejected_preview' },
-        created_at: new Date().toISOString(),
-      }),
-      logAiChartRefinementMetric({
-        supabase: auth.supabase,
-        tenantId: access.tenantId,
-        projectId: access.projectId,
-        actorUserId: auth.userId,
-        chartId: parsed.data.chartId,
+    await logAiChartRefinementMetric({
+      supabase: auth.supabase,
+      tenantId: access.tenantId,
+      projectId: access.projectId,
+      actorUserId: auth.userId,
+      chartId: parsed.data.chartId,
+      eventType: 'proposal_rejected',
+      metadata: buildAiChartRefinementEventMetadata({
         eventType: 'proposal_rejected',
-        metadata: buildAiChartRefinementEventMetadata({
-          eventType: 'proposal_rejected',
-          gateSource: gate.source,
-        }),
+        gateSource: gate.source,
       }),
-    ])
+    })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, proposalStatus: transaction.proposalStatus })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI chart refinement rejection failed'
     console.error('[AI Chart Refine Reject]', message)
+    if (message === 'chart_refinement_rpc_unavailable') {
+      return NextResponse.json({
+        ok: false,
+        errorCode: 'chart_refinement_migration_required',
+        error: 'Chart refinement review is unavailable until the transactional RPC migration is deployed.',
+      }, { status: 503 })
+    }
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

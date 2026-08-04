@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 import { approveGuidedSemanticDraft, buildGuidedReviewState } from '../../src/lib/dashboardos/guided-review'
-import { SUPABASE_URL } from '../../src/lib/supabase/config'
 import type { AuthedSupabaseContext } from '../../src/lib/supabase/server'
 import type { DataSourceColumnMetadata } from '../../src/types/data-source'
 
@@ -42,6 +41,14 @@ function loadLocalEnv() {
 
 loadLocalEnv()
 
+function requireIntegrationSupabaseUrl() {
+  const value = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  if (!value) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is required for Supabase integration tests.')
+  }
+  return value
+}
+
 export const shouldRunGuidedPublishSupabaseIntegration =
   process.env.DASHBOARDOS_INTEGRATION_SUPABASE === '1'
   && Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
@@ -52,7 +59,7 @@ export const shouldRunGuidedPublishLiveHttpIntegration =
   && process.env.DASHBOARDOS_LIVE_HTTP_GUIDED_PUBLISH === '1'
 
 function createSupabase(key: string) {
-  return createClient(SUPABASE_URL, key, {
+  return createClient(requireIntegrationSupabaseUrl(), key, {
     auth: {
       autoRefreshToken: false,
       detectSessionInUrl: false,
@@ -67,6 +74,7 @@ export function createGuidedPublishSeedIds() {
     projectId: randomUUID(),
     blockedProjectId: randomUUID(),
     dataSourceId: randomUUID(),
+    relationId: randomUUID(),
     profileId: randomUUID(),
     modelId: randomUUID(),
     entityId: randomUUID(),
@@ -185,7 +193,77 @@ async function seedGuidedProject(service: SupabaseClient, ids: GuidedPublishSeed
     schema_hash: 'integration-guided-schema-v1',
     schema_table_count: 1,
     schema_column_count: 3,
+    schema_object_count: 1,
+    schema_base_table_count: 1,
+    schema_included_object_count: 1,
+    schema_included_column_count: 3,
+    schema_scope_status: 'confirmed',
   }))
+  await assertNoSupabaseError('seed discovered relation', await service.from('data_source_relations').insert({
+    id: ids.relationId,
+    tenant_id: ids.tenantId,
+    project_id: ids.projectId,
+    data_source_id: ids.dataSourceId,
+    schema_name: 'public',
+    relation_name: 'monthly_revenue',
+    relation_type: 'table',
+    column_count: 3,
+    fingerprint: 'integration-monthly-revenue-v1',
+    classification: 'business_candidate',
+    reason_code: 'integration_fixture',
+    reason: 'Production-like discovered schema fixture.',
+  }))
+  await assertNoSupabaseError('seed relation selection', await service.from('data_source_relation_selections').insert({
+    tenant_id: ids.tenantId,
+    project_id: ids.projectId,
+    data_source_id: ids.dataSourceId,
+    relation_id: ids.relationId,
+    status: 'included',
+    decision_source: 'user',
+    reason_code: 'integration_fixture',
+    reason_note: 'Explicitly included for guided publish acceptance.',
+    decided_by: userId,
+    decided_at: '2026-07-13T00:00:00.000Z',
+    inventory_fingerprint: 'integration-monthly-revenue-v1',
+  }))
+  await assertNoSupabaseError('seed discovered columns', await service.from('data_source_columns').insert([
+    {
+      tenant_id: ids.tenantId,
+      project_id: ids.projectId,
+      data_source_id: ids.dataSourceId,
+      relation_id: ids.relationId,
+      schema_name: 'public',
+      table_name: 'monthly_revenue',
+      column_name: 'month',
+      ordinal_position: 1,
+      data_type: 'date',
+      udt_name: 'date',
+    },
+    {
+      tenant_id: ids.tenantId,
+      project_id: ids.projectId,
+      data_source_id: ids.dataSourceId,
+      relation_id: ids.relationId,
+      schema_name: 'public',
+      table_name: 'monthly_revenue',
+      column_name: 'region',
+      ordinal_position: 2,
+      data_type: 'text',
+      udt_name: 'text',
+    },
+    {
+      tenant_id: ids.tenantId,
+      project_id: ids.projectId,
+      data_source_id: ids.dataSourceId,
+      relation_id: ids.relationId,
+      schema_name: 'public',
+      table_name: 'monthly_revenue',
+      column_name: 'revenue_amount',
+      ordinal_position: 3,
+      data_type: 'numeric',
+      udt_name: 'numeric',
+    },
+  ]))
   await assertNoSupabaseError('seed model', await service.from('business_models').insert({
     id: ids.modelId,
     tenant_id: ids.tenantId,
@@ -254,7 +332,7 @@ async function seedGuidedProject(service: SupabaseClient, ids: GuidedPublishSeed
       entity_id: ids.entityId,
       name: 'Revenue amount',
       semantic_key: 'revenue_amount',
-      role: 'measure',
+      role: 'metric_source',
       source_column: {
         dataSourceId: ids.dataSourceId,
         schemaName: 'public',
@@ -401,7 +479,10 @@ export async function createGuidedPublishSupabaseFixture(): Promise<GuidedPublis
     email,
     password,
     email_confirm: true,
-    user_metadata: { emp_id: employeeId.toUpperCase() },
+    user_metadata: {
+      emp_id: employeeId.toUpperCase(),
+      name: 'Guided Publish Integration User',
+    },
   })
   if (userResult.error) throw new Error(`create auth user: ${userResult.error.message}`)
   const userId = userResult.data.user?.id

@@ -18,6 +18,8 @@ const ADMIN_ONLY = ['/settings']
 const BUILDER_CANVAS_ROUTE = '/builder'
 const DASHBOARDOS_HOME_ROUTE = '/admin'
 const CLIENT_ROUTE = '/client'
+const DEVELOPMENT_VISUAL_QA_ROUTE = '/admin/visual-qa'
+const DEVELOPMENT_CHART_DEMO_ROUTE = '/admin/charts'
 
 interface TenantDomainResolution {
   tenantId: string
@@ -156,6 +158,20 @@ export async function proxy(request: NextRequest) {
     const response = NextResponse.redirect(new URL(DASHBOARDOS_HOME_ROUTE, request.url))
     response.headers.set('x-dashboardos-legacy-route', 'disabled')
     return response
+  }
+
+  // Visual QA harnesses contain mocked, non-production data and are intentionally
+  // unavailable in production. Keep them reachable to local browser tests without
+  // weakening authentication for any deployable admin route.
+  if (process.env.NODE_ENV !== 'production' && pathname.startsWith(DEVELOPMENT_VISUAL_QA_ROUTE)) {
+    return NextResponse.next()
+  }
+  if (
+    process.env.NODE_ENV !== 'production'
+    && pathname === DEVELOPMENT_CHART_DEMO_ROUTE
+    && request.nextUrl.searchParams.get('demo') === '1'
+  ) {
+    return NextResponse.next()
   }
 
   const response = NextResponse.next({

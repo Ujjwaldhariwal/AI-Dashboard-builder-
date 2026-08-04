@@ -1,71 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { mapDataSource } from '@/lib/data-sources/data-source-mapper'
 import { encryptJsonSecret, hasDataSourceEncryptionKey } from '@/lib/security/credential-vault'
 import { accessContext, requireProjectAccess, requireTenantAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
-import type { DataSource, DataSourceSslMode, DataSourceStatus } from '@/types/data-source'
 
 const SslModeSchema = z.enum(['disable', 'prefer', 'require', 'verify-ca', 'verify-full'])
-
-const DataSourceCreateSchema = z.object({
+const SchemaListSchema = z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_$]*$/)).min(1).max(10)
+const CommonDataSourceFields = {
   tenantId: z.string().uuid(),
   projectId: z.string().uuid(),
   name: z.string().min(2, 'Data source name is required').max(120),
+  username: z.string().min(1, 'Username is required').max(120),
+  password: z.string().min(1, 'Password is required').max(500),
+}
+
+const PostgresDataSourceCreateSchema = z.object({
+  ...CommonDataSourceFields,
+  type: z.literal('postgres'),
   host: z.string().min(1, 'Host is required').max(255),
   port: z.coerce.number().int().min(1).max(65535).default(5432),
   database: z.string().min(1, 'Database is required').max(120),
-  username: z.string().min(1, 'Username is required').max(120),
-  password: z.string().min(1, 'Password is required').max(500),
   sslMode: SslModeSchema.default('require'),
-  schemas: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_$]*$/)).min(1).max(10).default(['public']),
+  schemas: SchemaListSchema.default(['public']),
 }).strict()
 
-function mapDataSource(row: Record<string, unknown>): DataSource {
-  const config = row.connection_config && typeof row.connection_config === 'object' && !Array.isArray(row.connection_config)
-    ? row.connection_config as Record<string, unknown>
-    : {}
+const OracleDataSourceCreateSchema = z.object({
+  ...CommonDataSourceFields,
+  type: z.literal('oracle'),
+  host: z.string().regex(/^[A-Za-z0-9.-]+$/, 'Oracle host must be an IP address or DNS name').max(255),
+  port: z.coerce.number().int().min(1).max(65535).default(1521),
+  database: z.string().regex(/^[A-Za-z0-9._$#-]+$/, 'Oracle SID or service name is invalid').max(128),
+  connectType: z.enum(['service_name', 'sid']).default('service_name'),
+  schemas: SchemaListSchema,
+}).strict()
 
-  return {
-    id: String(row.id),
-    tenantId: String(row.tenant_id),
-    projectId: String(row.project_id),
-    name: String(row.name ?? ''),
-    type: 'postgres',
-    status: String(row.status ?? 'draft') as DataSourceStatus,
-    connectionConfig: {
-      host: String(config.host ?? ''),
-      port: Number(config.port ?? 5432),
-      database: String(config.database ?? ''),
-      username: String(config.username ?? ''),
-      sslMode: String(config.sslMode ?? 'require') as DataSourceSslMode,
-      schemas: Array.isArray(config.schemas) ? config.schemas.map(String) : ['public'],
-    },
-    credentialKeyId: typeof row.credential_key_id === 'string' ? row.credential_key_id : null,
-    lastTestedAt: typeof row.last_tested_at === 'string' ? row.last_tested_at : null,
-    lastTestStatus: typeof row.last_test_status === 'string' ? row.last_test_status : null,
-    lastError: typeof row.last_error === 'string' ? row.last_error : null,
-    schemaLastIntrospectedAt: typeof row.schema_last_introspected_at === 'string' ? row.schema_last_introspected_at : null,
-    schemaLastStatus: typeof row.schema_last_status === 'string' ? row.schema_last_status as DataSource['schemaLastStatus'] : null,
-    schemaLastError: typeof row.schema_last_error === 'string' ? row.schema_last_error : null,
-    schemaHash: typeof row.schema_hash === 'string' ? row.schema_hash : null,
-    schemaTableCount: Number(row.schema_table_count ?? 0),
-    schemaColumnCount: Number(row.schema_column_count ?? 0),
-    schemaObjectCount: Number(row.schema_object_count ?? row.schema_table_count ?? 0),
-    schemaBaseTableCount: Number(row.schema_base_table_count ?? row.schema_table_count ?? 0),
-    schemaViewCount: Number(row.schema_view_count ?? 0),
-    schemaIncludedObjectCount: Number(row.schema_included_object_count ?? 0),
-    schemaIncludedColumnCount: Number(row.schema_included_column_count ?? 0),
-    schemaExcludedObjectCount: Number(row.schema_excluded_object_count ?? 0),
-    schemaReviewObjectCount: Number(row.schema_review_object_count ?? 0),
-    schemaScopeStatus: String(row.schema_scope_status ?? 'unconfirmed') as DataSource['schemaScopeStatus'],
-    schemaRefreshAfter: typeof row.schema_refresh_after === 'string' ? row.schema_refresh_after : null,
-    schemaRefreshRequestedAt: typeof row.schema_refresh_requested_at === 'string' ? row.schema_refresh_requested_at : null,
-    schemaRefreshReason: typeof row.schema_refresh_reason === 'string' ? row.schema_refresh_reason : null,
-    createdAt: String(row.created_at ?? new Date().toISOString()),
-    updatedAt: String(row.updated_at ?? new Date().toISOString()),
-  }
-}
+const DataSourceCreateSchema = z.preprocess(value => {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || 'type' in value) return value
+  return { ...value, type: 'postgres' }
+}, z.discriminatedUnion('type', [PostgresDataSourceCreateSchema, OracleDataSourceCreateSchema]))
 
 function isMissingDataSourceSchema(message: string) {
   return /relation .*data_sources.* does not exist|schema cache|could not find the table/i.test(message)
@@ -152,13 +126,15 @@ export async function POST(req: NextRequest) {
       port: parsed.data.port,
       database: parsed.data.database.trim(),
       username: parsed.data.username.trim(),
-      sslMode: parsed.data.sslMode,
       schemas: parsed.data.schemas,
+      ...(parsed.data.type === 'postgres'
+        ? { sslMode: parsed.data.sslMode }
+        : { connectType: parsed.data.connectType }),
     }
     const encrypted = encryptJsonSecret({
       ...safeConfig,
       password: parsed.data.password,
-      type: 'postgres',
+      type: parsed.data.type,
     })
     const nowIso = new Date().toISOString()
 
@@ -168,7 +144,7 @@ export async function POST(req: NextRequest) {
         tenant_id: parsed.data.tenantId,
         project_id: parsed.data.projectId,
         name: parsed.data.name.trim(),
-        type: 'postgres',
+        type: parsed.data.type,
         status: 'draft',
         connection_config: safeConfig,
         credential_ciphertext: encrypted.ciphertext,

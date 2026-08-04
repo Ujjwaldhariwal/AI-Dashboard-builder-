@@ -7,11 +7,13 @@ import { AlertTriangle, ChartNoAxesCombined, Loader2, PencilLine, RotateCcw, Spa
 import { useEffect, useMemo, useState } from 'react'
 
 import { ModernBarChart } from '@/components/charts/modern-bar-chart'
+import { ModernDrilldownBarChart } from '@/components/charts/modern-drilldown-bar-chart'
 import { ModernGroupedBarChart } from '@/components/charts/modern-grouped-bar-chart'
 import { ModernHorizontalBarChart } from '@/components/charts/modern-horizontal-bar-chart'
 import { ModernHorizontalStackedBarChart } from '@/components/charts/modern-horizontal-stacked-bar-chart'
 import { ModernLineChart } from '@/components/charts/modern-line-chart'
 import { ModernPieChart } from '@/components/charts/modern-pie-chart'
+import { NaturalLanguageQuery } from '@/components/ai/natural-language-query'
 import { DASHBOARDOS_THEME_CHANGE_EVENT } from '@/components/client/client-theme-shell'
 import { AiChartRefinementDialog } from '@/components/platform/ai-chart-refinement-dialog'
 import { resolvePublishedChartFields } from '@/lib/client/published-chart-runtime'
@@ -20,10 +22,13 @@ import { DASHBOARDOS_THEME_STORAGE_KEY } from '@/lib/dashboardos/theme'
 import { getDemoChartElapsedMs, getDemoChartFields, getDemoChartRows } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { getEnterpriseChartColors } from '@/lib/echarts/theme'
+import { fmtValue } from '@/lib/echarts/style-translator'
 import { dashboardChartPresentationToWidgetStyle } from '@/lib/charts/dashboard-chart-presentation'
+import { getChartDensityLayout } from '@/lib/charts/chart-constants'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import type { ChartTemplateId } from '@/types/chart-template'
-import type { DashboardChartConfig } from '@/types/dashboard-chart'
+import type { DashboardChartConfig, DashboardChartDensity } from '@/types/dashboard-chart'
+import type { WidgetStyle } from '@/types/widget'
 
 interface PublishedChartsGridProps {
   tenantSlug: string
@@ -144,6 +149,10 @@ function chartStyle(chart: DashboardChartConfig, dark: boolean) {
   return dashboardChartPresentationToWidgetStyle(
     chart.presentation,
     colors.length > 0 ? colors : getEnterpriseChartColors(dark),
+    {
+      templateId: chart.templateId,
+      labelById: chart.encoding.labelById,
+    },
   )
 }
 
@@ -161,28 +170,35 @@ function isChartTemplate(templateId: ChartTemplateId, supported: ChartTemplateId
 function DataTable({
   rows,
   fieldNames,
+  density = 'comfortable',
 }: {
   rows: Record<string, unknown>[]
   fieldNames: string[]
+  density?: DashboardChartDensity
 }) {
   const columns = fieldNames.length > 0 ? fieldNames : Object.keys(rows[0] ?? {})
+  const cellPadding = density === 'compact'
+    ? 'px-2 py-1.5'
+    : density === 'spacious'
+      ? 'px-4 py-3'
+      : 'px-3 py-2'
   return (
-    <div className="max-h-96 overflow-auto rounded-md border border-[color:var(--dos-border-soft)]">
+    <div className="max-h-96 overflow-auto rounded-md border border-[color:var(--dos-border-soft)]" data-density={density}>
       <table className="w-full min-w-[640px] text-left text-xs">
         <thead className="sticky top-0 z-10 bg-[var(--dos-surface-muted)] text-[11px] uppercase text-[var(--dos-text-muted)]">
           <tr>
-            <th className="w-12 px-3 py-2 font-medium">#</th>
+            <th className={`w-12 font-medium ${cellPadding}`}>#</th>
             {columns.map(column => (
-              <th key={column} className="min-w-40 whitespace-nowrap px-3 py-2 font-medium">{column}</th>
+              <th key={column} className={`min-w-40 whitespace-nowrap font-medium ${cellPadding}`}>{column}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-[color:var(--dos-border-soft)]">
           {rows.slice(0, 50).map((row, index) => (
             <tr key={index}>
-              <td className="px-3 py-2 font-mono text-[var(--dos-text-muted)]">{index + 1}</td>
+              <td className={`${cellPadding} font-mono text-[var(--dos-text-muted)]`}>{index + 1}</td>
               {columns.map(column => (
-                <td key={column} className="max-w-72 truncate px-3 py-2 text-[var(--dos-text-secondary)]" title={String(row[column] ?? '')}>
+                <td key={column} className={`max-w-72 truncate text-[var(--dos-text-secondary)] ${cellPadding}`} title={String(row[column] ?? '')}>
                   {String(row[column] ?? '-')}
                 </td>
               ))}
@@ -198,23 +214,30 @@ function KpiView({
   chart,
   rows,
   labels,
+  style,
 }: {
   chart: DashboardChartConfig
   rows: Record<string, unknown>[]
   labels: string[]
+  style: WidgetStyle
 }) {
   const metrics = chart.encoding.yMetricIds.slice(0, chart.templateId === 'kpi-card' ? 1 : 6)
   const firstRow = rows[0] ?? {}
+  const density = getChartDensityLayout(style.density)
   return (
     <div className="grid border-y border-[color:var(--dos-border-soft)] sm:grid-cols-2">
       {metrics.map((metricId, index) => {
         const label = labels[index] || fieldNameFromId(chart, metricId)
         return (
-          <div key={metricId} className="border-b border-[color:var(--dos-border-soft)] p-4 last:border-b-0 sm:border-r sm:even:border-r-0">
+          <div key={metricId} className={`border-b border-[color:var(--dos-border-soft)] ${density.contentPadding} last:border-b-0 sm:border-r sm:even:border-r-0`}>
             <p className="text-xs font-medium text-[var(--dos-text-muted)]">{label}</p>
             <p className="mt-2 font-mono text-2xl font-semibold tabular-nums text-[var(--dos-text-primary)]">
-              <span style={{ color: chart.presentation.colors?.[index % (chart.presentation.colors?.length || 1)] }}>
-                {toNumber(firstRow[label]).toLocaleString('en')}
+              <span style={{ color: style.colors[index % style.colors.length] }}>
+                {fmtValue(
+                  toNumber(firstRow[label]),
+                  style.labelFormat,
+                  style.valueLabelNumberFormat,
+                )}
               </span>
             </p>
           </div>
@@ -286,38 +309,42 @@ function ChartBody({
   }
 
   if (viewMode === 'table') {
-    return <DataTable rows={state.rows} fieldNames={state.fieldNames} />
+    return <DataTable rows={state.rows} fieldNames={state.fieldNames} density={chart.presentation.density} />
   }
 
   if (isChartTemplate(chart.templateId, ['kpi-card', 'kpi-grid'])) {
-    return <KpiView chart={chart} rows={chartRows} labels={yFields} />
+    return <KpiView chart={chart} rows={chartRows} labels={yFields} style={style} />
   }
 
   if (chart.templateId === 'bar') {
-    return <div className={height}><ModernBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} sizePreset={sizePreset} /></div>
+    return <div className={height}><ModernBarChart data={chartRows} xField={xField} yField={primaryMetric} tooltipFields={state.resolved.tooltipFields} style={style} sizePreset={sizePreset} /></div>
+  }
+
+  if (chart.templateId === 'drilldown-bar') {
+    return <div className={height}><ModernDrilldownBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'horizontal-bar') {
-    return <div className={height}><ModernHorizontalBarChart data={chartRows} xField={xField} yField={primaryMetric} style={style} sizePreset={sizePreset} /></div>
+    return <div className={height}><ModernHorizontalBarChart data={chartRows} xField={xField} yField={primaryMetric} tooltipFields={state.resolved.tooltipFields} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'grouped-bar') {
-    return <div className={height}><ModernGroupedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} sizePreset={sizePreset} /></div>
+    return <div className={height}><ModernGroupedBarChart data={chartRows} xField={xField} yFields={yFields} tooltipFields={state.resolved.tooltipFields} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'horizontal-stacked-bar') {
-    return <div className={height}><ModernHorizontalStackedBarChart data={chartRows} xField={xField} yFields={yFields} style={style} sizePreset={sizePreset} /></div>
+    return <div className={height}><ModernHorizontalStackedBarChart data={chartRows} xField={xField} yFields={yFields} tooltipFields={state.resolved.tooltipFields} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'line' || chart.templateId === 'trend-composed') {
-    return <div className={height}><ModernLineChart data={chartRows} xField={xField} yField={primaryMetric} style={style} sizePreset={sizePreset} /></div>
+    return <div className={height}><ModernLineChart data={chartRows} xField={xField} yField={primaryMetric} tooltipFields={state.resolved.tooltipFields} style={style} sizePreset={sizePreset} /></div>
   }
 
   if (chart.templateId === 'pie' || chart.templateId === 'gauge' || chart.templateId === 'ring-gauge') {
     return <div className={height}><ModernPieChart data={chartRows} nameField={xField} valueField={primaryMetric} donut={chart.templateId !== 'pie'} style={style} sizePreset={sizePreset} /></div>
   }
 
-  return <DataTable rows={chartRows} fieldNames={state.fieldNames} />
+  return <DataTable rows={chartRows} fieldNames={state.fieldNames} density={chart.presentation.density} />
 }
 
 export function PublishedChartsGrid({
@@ -345,6 +372,67 @@ export function PublishedChartsGrid({
     ? charts
     : charts.filter(chart => chart.id === selectedChartId)
   const editingChart = editingReleaseChartId ? sourceCharts[editingReleaseChartId] : null
+  const naturalLanguageRows = useMemo(() => (
+    Object.values(chartRuns)
+      .filter(state => state.status === 'ready')
+      .flatMap(state => state.rows.slice(0, 20))
+      .slice(0, 50)
+      .map(row => Object.fromEntries(
+        Object.entries(row)
+          .slice(0, 30)
+          .map(([key, value]) => [
+            key,
+            typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null
+              ? value
+              : String(value),
+          ]),
+      ))
+  ), [chartRuns])
+  const naturalLanguageSemanticAssets = useMemo(() => {
+    const assets = new Map<string, { id: string; name: string; role: 'metric' | 'dimension' }>()
+    const selected = selectedChartId === 'all'
+      ? charts
+      : charts.filter(chart => chart.id === selectedChartId)
+
+    for (const chart of selected) {
+      const dimensionIds = [
+        chart.encoding.xAxisFieldId,
+        chart.encoding.seriesFieldId,
+        ...chart.encoding.tooltipFieldIds,
+      ].filter((id): id is string => Boolean(id))
+      const metricIds = [
+        ...chart.encoding.yMetricIds,
+        ...(chart.encoding.stackMetricIds ?? []),
+      ]
+
+      for (const id of dimensionIds) {
+        assets.set(id, { id, name: fieldNameFromId(chart, id), role: 'dimension' })
+      }
+      for (const id of metricIds) {
+        assets.set(id, { id, name: fieldNameFromId(chart, id), role: 'metric' })
+      }
+    }
+
+    return Array.from(assets.values()).slice(0, 80)
+  }, [charts, selectedChartId])
+
+  async function runNaturalLanguageQuery(query: string) {
+    const response = await fetch('/api/agents/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        rows: naturalLanguageRows,
+        chartNames: visibleCharts.map(chart => chart.name).slice(0, 20),
+        semanticAssets: naturalLanguageSemanticAssets,
+      }),
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(typeof payload?.error === 'string' ? payload.error : 'Governed analysis failed.')
+    }
+    return payload
+  }
 
   useEffect(() => {
     setSourceCharts(editableCharts)
@@ -557,11 +645,27 @@ export function PublishedChartsGrid({
           )
         })}
       </div>
+      <details className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-4 text-sm font-semibold text-[var(--dos-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)]">
+          <Sparkles className="h-4 w-4 text-[var(--dos-accent-primary)]" />
+          Ask this released dashboard
+          <span className="ml-auto text-xs font-normal text-[var(--dos-text-muted)]">
+            {naturalLanguageRows.length} preview rows ready
+          </span>
+        </summary>
+        <div className="border-t border-[color:var(--dos-border-soft)] p-3 sm:p-4">
+          <NaturalLanguageQuery
+            data={naturalLanguageRows}
+            onQuery={runNaturalLanguageQuery}
+          />
+        </div>
+      </details>
       {editingChart ? (
         <AiChartRefinementDialog
           chart={editingChart}
           tenantId={editingChart.tenantId}
           projectId={editingChart.projectId}
+          mode="presentation_only"
           open={Boolean(editingReleaseChartId)}
           onOpenChange={open => {
             if (!open) setEditingReleaseChartId(null)
@@ -569,6 +673,7 @@ export function PublishedChartsGrid({
           onApplied={updatedChart => {
             if (!editingReleaseChartId) return
             setSourceCharts(current => ({ ...current, [editingReleaseChartId]: updatedChart }))
+            if (updatedChart.status !== 'draft') return
             setDraftUpdatedChartIds(current => (
               current.includes(editingReleaseChartId) ? current : [...current, editingReleaseChartId]
             ))

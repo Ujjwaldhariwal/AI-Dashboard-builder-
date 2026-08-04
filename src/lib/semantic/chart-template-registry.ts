@@ -1,7 +1,77 @@
 import type {
+  ChartPresentationCapabilities,
   ChartTemplateDefinition,
   ChartTemplateId,
 } from '@/types/chart-template'
+
+const KPI_PRESENTATION = {
+  axes: { x: false, y: false, fontWeight: [], dateFormat: [], numberFormat: [], rotation: [], overflow: [] },
+  grid: false,
+  legend: { visibility: false, labelOverrides: false, overflow: false },
+  tooltip: { visibility: false, labelOverrides: false, numberFormat: false, overflow: false },
+  valueLabels: { visibility: false, numberFormat: true, collision: false },
+  density: true,
+} as const satisfies ChartPresentationCapabilities
+
+const BAR_PRESENTATION = {
+  axes: {
+    x: true,
+    y: true,
+    fontWeight: ['x', 'y'],
+    dateFormat: ['x'],
+    numberFormat: ['y'],
+    rotation: ['x'],
+    overflow: ['x'],
+  },
+  grid: true,
+  legend: { visibility: true, labelOverrides: true, overflow: true },
+  tooltip: { visibility: true, labelOverrides: true, numberFormat: true, overflow: true },
+  valueLabels: { visibility: true, numberFormat: true, collision: true },
+  density: true,
+} as const satisfies ChartPresentationCapabilities
+
+const HORIZONTAL_BAR_PRESENTATION = {
+  axes: {
+    x: true,
+    y: true,
+    fontWeight: ['x', 'y'],
+    dateFormat: [],
+    numberFormat: ['x'],
+    rotation: [],
+    overflow: ['y'],
+  },
+  grid: true,
+  legend: { visibility: false, labelOverrides: false, overflow: false },
+  tooltip: { visibility: true, labelOverrides: true, numberFormat: true, overflow: true },
+  valueLabels: { visibility: true, numberFormat: true, collision: true },
+  density: true,
+} as const satisfies ChartPresentationCapabilities
+
+const LINE_PRESENTATION = {
+  ...BAR_PRESENTATION,
+  axes: {
+    ...BAR_PRESENTATION.axes,
+    dateFormat: ['x'],
+  },
+} as const satisfies ChartPresentationCapabilities
+
+const PIE_PRESENTATION = {
+  axes: { x: false, y: false, fontWeight: [], dateFormat: [], numberFormat: [], rotation: [], overflow: [] },
+  grid: false,
+  legend: { visibility: true, labelOverrides: false, overflow: true },
+  tooltip: { visibility: true, labelOverrides: false, numberFormat: true, overflow: true },
+  valueLabels: { visibility: true, numberFormat: true, collision: true },
+  density: true,
+} as const satisfies ChartPresentationCapabilities
+
+const TABLE_PRESENTATION = {
+  axes: { x: false, y: false, fontWeight: [], dateFormat: [], numberFormat: [], rotation: [], overflow: [] },
+  grid: false,
+  legend: { visibility: false, labelOverrides: false, overflow: false },
+  tooltip: { visibility: false, labelOverrides: false, numberFormat: false, overflow: false },
+  valueLabels: { visibility: false, numberFormat: false, collision: false },
+  density: true,
+} as const satisfies ChartPresentationCapabilities
 
 export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
   {
@@ -23,6 +93,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: false,
+      presentation: KPI_PRESENTATION,
     },
     defaultSize: 'compact',
     priority: 72,
@@ -46,6 +117,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: true,
+      presentation: KPI_PRESENTATION,
     },
     defaultSize: 'standard',
     priority: 66,
@@ -69,6 +141,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: false,
+      presentation: BAR_PRESENTATION,
     },
     defaultSize: 'standard',
     priority: 82,
@@ -92,6 +165,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: false,
+      presentation: HORIZONTAL_BAR_PRESENTATION,
     },
     defaultSize: 'standard',
     priority: 80,
@@ -115,6 +189,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: true,
+      presentation: BAR_PRESENTATION,
     },
     defaultSize: 'wide',
     priority: 88,
@@ -138,6 +213,10 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: true,
+      presentation: {
+        ...HORIZONTAL_BAR_PRESENTATION,
+        legend: { visibility: true, labelOverrides: true, overflow: true },
+      },
     },
     defaultSize: 'wide',
     priority: 86,
@@ -162,6 +241,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: false,
+      presentation: LINE_PRESENTATION,
     },
     defaultSize: 'wide',
     priority: 84,
@@ -186,6 +266,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: true,
+      presentation: LINE_PRESENTATION,
     },
     defaultSize: 'wide',
     priority: 87,
@@ -209,6 +290,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: false,
+      presentation: PIE_PRESENTATION,
     },
     defaultSize: 'standard',
     priority: 62,
@@ -232,6 +314,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: true,
+      presentation: PIE_PRESENTATION,
     },
     defaultSize: 'standard',
     priority: 58,
@@ -255,6 +338,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: false,
+      presentation: PIE_PRESENTATION,
     },
     defaultSize: 'standard',
     priority: 60,
@@ -278,6 +362,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: true,
+      presentation: BAR_PRESENTATION,
     },
     defaultSize: 'wide',
     priority: 74,
@@ -300,6 +385,7 @@ export const CHART_TEMPLATE_REGISTRY: ChartTemplateDefinition[] = [
       customTooltip: true,
       customLabels: true,
       multipleMetrics: true,
+      presentation: TABLE_PRESENTATION,
     },
     defaultSize: 'full',
     priority: 35,

@@ -20,6 +20,21 @@ interface RuntimeRateLimitBucket {
 
 const buckets = new Map<string, RuntimeRateLimitBucket>()
 
+function distributedProtectionRequired() {
+  return process.env.NODE_ENV === 'production'
+    && process.env.DASHBOARDOS_ALLOW_IN_MEMORY_RATE_LIMIT !== 'true'
+}
+
+function unavailableDecision(windowMs: number): RuntimeRateLimitDecision {
+  const retryAfterSeconds = Math.max(1, Math.ceil(windowMs / 1000))
+  return {
+    ok: false,
+    remaining: 0,
+    retryAfterSeconds,
+    resetAt: Date.now() + windowMs,
+  }
+}
+
 function cleanup(now: number) {
   if (buckets.size < 1_000) return
   for (const [key, bucket] of buckets.entries()) {
@@ -53,7 +68,11 @@ function checkInMemoryRuntimeRateLimit({
 }
 
 export async function checkRuntimeRateLimit(options: RuntimeRateLimitOptions): Promise<RuntimeRateLimitDecision> {
-  if (!hasRedisRuntime()) return checkInMemoryRuntimeRateLimit(options)
+  if (!hasRedisRuntime()) {
+    return distributedProtectionRequired()
+      ? unavailableDecision(options.windowMs)
+      : checkInMemoryRuntimeRateLimit(options)
+  }
 
   const redisKey = `dashboardos:rate:${options.key}`
   const results = await redisPipeline<number>([
@@ -65,7 +84,9 @@ export async function checkRuntimeRateLimit(options: RuntimeRateLimitOptions): P
   const count = Number(results?.[0]?.result ?? 0)
   const ttlMs = Number(results?.[2]?.result ?? options.windowMs)
   if (!results || results.some(result => result.error) || count <= 0 || ttlMs < 0) {
-    return checkInMemoryRuntimeRateLimit(options)
+    return distributedProtectionRequired()
+      ? unavailableDecision(options.windowMs)
+      : checkInMemoryRuntimeRateLimit(options)
   }
 
   const retryAfterSeconds = Math.max(1, Math.ceil(ttlMs / 1000))

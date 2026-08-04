@@ -616,7 +616,7 @@ export function DashboardChartsAdminPanel() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <section className="flex flex-col gap-4 border-b border-[color:var(--dos-border-soft)] pb-5 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="font-mono text-xs text-[var(--dos-accent-primary)]">Chart registry</p>
@@ -681,8 +681,8 @@ export function DashboardChartsAdminPanel() {
         ) : null}
       </section>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className={advancedComposerOpen ? 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]' : 'border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] opacity-90'} data-testid="dashboard-chart-composer">
+      <div className="grid min-w-0 items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(20rem,22rem)]">
+        <Card className={`${advancedComposerOpen ? '' : 'opacity-90'} min-w-0 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]`} data-testid="dashboard-chart-composer">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-[var(--dos-text-primary)]">
               <SlidersHorizontal className="h-4 w-4 text-[color:var(--dos-chart-warning)]" />
@@ -871,7 +871,7 @@ export function DashboardChartsAdminPanel() {
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
+        <aside className="min-w-0 space-y-4" aria-label="Chart governance and saved drafts">
           <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[color:var(--dos-text-primary)]">
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
@@ -882,7 +882,7 @@ export function DashboardChartsAdminPanel() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8 border-white/10 bg-transparent px-2 text-slate-300 hover:bg-white/10"
+                  className="h-8 border-[color:var(--dos-border-soft)] bg-transparent px-2 text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]"
                   onClick={() => void fetchChartAudit(projectId)}
                   disabled={auditLoading || !projectId}
                 >
@@ -890,7 +890,7 @@ export function DashboardChartsAdminPanel() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3 text-xs text-slate-400">
+            <CardContent className="space-y-3 text-xs text-[color:var(--dos-text-muted)]">
               <p>Dataset fields and metrics are validated before save.</p>
               <p>Incompatible chart templates are blocked by the server.</p>
               <p>Validation history is stored for publish checks.</p>
@@ -1099,7 +1099,7 @@ export function DashboardChartsAdminPanel() {
 
           <Card className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)]">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base text-slate-100">
+              <CardTitle className="flex items-center gap-2 text-base text-[color:var(--dos-text-primary)]">
                 <Palette className="h-4 w-4 text-[color:var(--dos-chart-risk)]" />
                 Saved Drafts
               </CardTitle>
@@ -1113,9 +1113,9 @@ export function DashboardChartsAdminPanel() {
                 const auditItem = auditByChartId.get(chart.id)
                 return (
                 <div key={chart.id} className="rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-medium text-slate-100">{chart.name}</p>
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="[overflow-wrap:anywhere] text-sm font-medium text-[color:var(--dos-text-primary)]">{chart.name}</p>
                       <p className="mt-1 text-[11px] text-[color:var(--dos-text-muted)]">{chart.templateId} / {chart.status} / span {chart.layout.gridSpan}</p>
                       {chart.description ? (
                         <p className="mt-1 text-[11px] leading-4 text-[color:var(--dos-text-muted)]">{chart.description}</p>
@@ -1141,7 +1141,7 @@ export function DashboardChartsAdminPanel() {
                       Ready for publish validator
                     </div>
                   ) : null}
-                  <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -1173,7 +1173,7 @@ export function DashboardChartsAdminPanel() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 border-white/10 bg-transparent text-slate-300 hover:bg-white/10"
+                      className="h-8 border-[color:var(--dos-border-soft)] bg-transparent text-[color:var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]"
                       onClick={() => void handleStatus(chart.id, 'archived')}
                       disabled={updatingId === chart.id || chart.status === 'archived'}
                     >
@@ -1194,7 +1194,7 @@ export function DashboardChartsAdminPanel() {
               })}
             </CardContent>
           </Card>
-        </div>
+        </aside>
       </div>
     </div>
   )

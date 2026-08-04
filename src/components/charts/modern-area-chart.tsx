@@ -8,8 +8,11 @@ import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
 import { withAlpha } from '@/lib/echarts/utils'
+import { escapeTooltipHtml } from '@/lib/echarts/safe-tooltip'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
+  chartFontWeight,
+  formatCategoryAxisLabel,
   getCategoryTickInterval,
   getChartMargin,
   getLegendVisibility,
@@ -72,7 +75,7 @@ export function ModernAreaChart({ data, xField, yField, style, sizePreset = 'med
       // ── Fix #5 — typed formatter ──────────────────────────
       formatter: (params: TooltipParam[]) => {
         const p = params[0]
-        return `<b style="font-size:12px">${p.name}</b><br/>${p.seriesName}: <strong>${fmtValue(p.value, s.labelFormat)}</strong>`
+        return `<b style="font-size:12px">${escapeTooltipHtml(p.name)}</b><br/>${escapeTooltipHtml(p.seriesName)}: <strong>${escapeTooltipHtml(fmtValue(p.value, s.labelFormat))}</strong>`
       },
     },
     xAxis: {
@@ -80,11 +83,15 @@ export function ModernAreaChart({ data, xField, yField, style, sizePreset = 'med
       data: chartData.map(d => d.name),
       boundaryGap: false,
       axisLabel: {
-        color:     axis.label,
-        fontSize:  chartData.length > 15 ? 10 : 11,
-        rotate:    rotate ? -35 : 0,
+        color:     s.xAxisLabelColor ?? axis.label,
+        fontSize:  s.xAxisLabelFontSize ?? (chartData.length > 15 ? 10 : 11),
+        fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
+        rotate:    s.xAxisLabelRotation ?? (rotate ? -35 : 0),
         interval:  tickInterval,
-        formatter: (v: string) => v.length > 14 ? v.slice(0, 12) + '…' : v,
+        formatter: (v: string) => {
+          const label = formatCategoryAxisLabel(v, s.xAxisLabelFormat)
+          return label.length > 14 ? label.slice(0, 12) + '…' : label
+        },
       },
       axisLine:  { show: false },
       axisTick:  { show: false },

@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server'
 
-import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import {
+  executeDataSourceReadOnlyQuery,
+  resolveDataSourceType,
+} from '@/lib/data-sources/data-source-runtime'
 import { mapPublishedChartEditableSource } from '@/lib/client/published-chart-runtime'
 import { mapDashboardReleaseChartSnapshot } from '@/lib/publishing/dashboard-release-snapshots'
 import { accessContext, requireProjectAccess, requireTenantAccess } from '@/lib/security/project-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
-import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
+import {
+  compileDatasetQueryPlan,
+  projectChartQueryInputs,
+} from '@/lib/semantic/dataset-query-compiler'
 import { checkQueryBudget } from '@/lib/semantic/query-budget-policy'
 import { getQueryResultCache, queryResultCacheKey, setQueryResultCache } from '@/lib/semantic/query-result-cache'
 import { recordSemanticQueryRun } from '@/lib/semantic/query-runtime-telemetry'
@@ -174,13 +180,14 @@ export async function runDraftChartRequest({
       return NextResponse.json({ result: null, error: 'Saved chart draft is not valid', validation }, { status: 422 })
     }
 
-    const compileResult = compileDatasetQueryPlan({
+    const queryInputs = projectChartQueryInputs({
+      encoding: chart.encoding,
       fields,
       metrics,
       relationships,
       metricSourceFields,
-      filters: chart.encoding.filters ?? [],
     })
+    let compileResult = compileDatasetQueryPlan(queryInputs)
     if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
       return NextResponse.json({
         result: null,
@@ -188,15 +195,21 @@ export async function runDraftChartRequest({
         warnings: compileResult.warnings,
       }, { status: 422 })
     }
+    const dataSourceId = compileResult.dataSourceId
 
     const { data: sourceRow, error: sourceError } = await auth.supabase
       .from('data_sources')
-      .select('id, credential_ciphertext, status, schema_hash')
-      .eq('id', compileResult.dataSourceId)
+      .select('id, type, credential_ciphertext, status, schema_hash')
+      .eq('id', dataSourceId)
       .eq('tenant_id', tenant.id)
       .eq('project_id', chart.projectId)
       .single()
     if (sourceError || !sourceRow) return NextResponse.json({ result: null, error: 'Draft data source not found' }, { status: 404 })
+    const sourceType = resolveDataSourceType(sourceRow.type)
+    if (sourceType === 'oracle') compileResult = compileDatasetQueryPlan({ ...queryInputs, dialect: 'oracle' })
+    if (!compileResult.queryPlan.executableSql) {
+      return NextResponse.json({ result: null, error: 'Saved chart draft is not executable for this data source' }, { status: 422 })
+    }
     if (sourceRow.status !== 'active') return NextResponse.json({ result: null, error: 'Draft data source is not active' }, { status: 409 })
 
     const warnings = [...compileResult.warnings, 'draft_runtime:editor_preview']
@@ -205,14 +218,14 @@ export async function runDraftChartRequest({
       projectId: chart.projectId,
       datasetId: chart.datasetId,
       chartId: chart.id,
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
       sql: compileResult.queryPlan.executableSql,
       parameters: compileResult.parameters,
       datasetUpdatedAt: typeof dataset.updated_at === 'string' ? dataset.updated_at : null,
       chartUpdatedAt: chart.updatedAt,
       schemaHash: typeof sourceRow.schema_hash === 'string' ? sourceRow.schema_hash : null,
     })
-    const cached = await getQueryResultCache<Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>>(cacheKey)
+    const cached = await getQueryResultCache<Awaited<ReturnType<typeof executeDataSourceReadOnlyQuery>>>(cacheKey)
     const chartResult = {
       id: chart.id,
       name: chart.name,
@@ -238,7 +251,7 @@ export async function runDraftChartRequest({
       supabase: auth.supabase,
       tenantId: chart.tenantId,
       projectId: chart.projectId,
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
     })
     if (!budget.ok) {
       return NextResponse.json({ result: null, error: budget.reason ?? 'Query budget exceeded', budget }, {
@@ -247,9 +260,10 @@ export async function runDraftChartRequest({
       })
     }
 
-    let execution: Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>
+    let execution: Awaited<ReturnType<typeof executeDataSourceReadOnlyQuery>>
     try {
-      execution = await executePostgresReadOnlyQuery(
+      execution = await executeDataSourceReadOnlyQuery(
+        sourceType,
         String(sourceRow.credential_ciphertext),
         compileResult.queryPlan.executableSql,
         {
@@ -266,7 +280,7 @@ export async function runDraftChartRequest({
         projectId: chart.projectId,
         datasetId: chart.datasetId,
         chartId: chart.id,
-        dataSourceId: compileResult.dataSourceId,
+        dataSourceId,
         actorUserId: auth.userId,
         surface: 'client_chart',
         status: 'error',
@@ -282,7 +296,7 @@ export async function runDraftChartRequest({
       supabase: auth.supabase,
       tenantId: chart.tenantId,
       projectId: chart.projectId,
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
       projection: { queries: 1, rows: execution.rowCount, elapsedMs: execution.elapsedMs },
     })
     if (!projectedBudget.ok) {
@@ -298,7 +312,7 @@ export async function runDraftChartRequest({
       projectId: chart.projectId,
       datasetId: chart.datasetId,
       chartId: chart.id,
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
       actorUserId: auth.userId,
       surface: 'client_chart',
       status: 'success',

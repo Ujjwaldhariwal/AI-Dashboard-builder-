@@ -6,7 +6,7 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="dark min-h-screen bg-[var(--color-paper)] text-[var(--color-ink)]">
+    <div className="min-h-screen bg-[var(--color-paper)] text-[var(--color-ink)]">
       <div className="mx-auto grid min-h-screen w-full max-w-[1180px] items-stretch lg:grid-cols-[minmax(0,1.1fr)_minmax(23rem,0.72fr)]">
         <section className="hidden min-w-0 flex-col justify-between border-r border-[color:var(--color-rule)] px-10 py-12 lg:flex xl:px-16 xl:py-16">
           <div className="flex items-center gap-3">

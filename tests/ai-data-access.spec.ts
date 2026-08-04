@@ -26,12 +26,16 @@ import {
   classifyAiChartRefinementPrompt,
   summarizeAiChartRefinementMetrics,
 } from '../src/lib/ai/chart-refinement-observability'
-import { compileDatasetQueryPlan } from '../src/lib/semantic/dataset-query-compiler'
+import {
+  compileDatasetQueryPlan,
+  projectChartQueryInputs,
+} from '../src/lib/semantic/dataset-query-compiler'
 import { queryResultCacheKey } from '../src/lib/semantic/query-result-cache'
 import {
   dashboardChartPresentationToWidgetStyle,
   normalizeDashboardChartPresentation,
 } from '../src/lib/charts/dashboard-chart-presentation'
+import { formatCategoryAxisLabel } from '../src/lib/charts/chart-constants'
 import {
   buildAiChartExamplePrompts,
   canRenderAiChartPreview,
@@ -341,6 +345,7 @@ test.describe('AI data access guardrails', () => {
           labelFontSize: 14,
           labelFontWeight: 'bold',
           labelRotation: 30,
+          labelFormat: 'date-only',
         },
         yAxis: {
           title: 'Bill amount',
@@ -371,7 +376,7 @@ test.describe('AI data access guardrails', () => {
       colors: ['#EC4899', '#8B5CF6'],
       showLabels: true,
       showGrid: false,
-      xAxis: { title: 'Billing month', labelFontWeight: 'bold', labelRotation: 30 },
+      xAxis: { title: 'Billing month', labelFontWeight: 'bold', labelRotation: 30, labelFormat: 'date-only' },
       tooltip: { backgroundColor: '#111827', textColor: '#F9FAFB' },
       margins: { top: 24, left: 44 },
       line: { smooth: true, width: 4 },
@@ -404,6 +409,7 @@ test.describe('AI data access guardrails', () => {
       showGrid: false,
       xAxisTitle: 'Billing month',
       xAxisLabelRotation: 0,
+      xAxisLabelFormat: 'date-only',
       tooltipEnabled: false,
       lineWidth: 4,
       barRadius: 10,
@@ -424,6 +430,20 @@ test.describe('AI data access guardrails', () => {
         labels: { fontWeight: 'bold' },
       },
     })
+    expect(buildDeterministicPresentationPatch(
+      'The bottom labels should show only the date, not time, and make those labels slightly bold',
+    )).toEqual({
+      schemaVersion: 'dashboardos.ai.chart_patch.v1',
+      presentation: {
+        xAxis: {
+          labelFormat: 'date-only',
+          labelFontWeight: 'medium',
+        },
+      },
+    })
+    expect(formatCategoryAxisLabel('2026-07-30T12:05:00.000Z', 'date-only')).toBe('2026-07-30')
+    expect(formatCategoryAxisLabel('2026-07-30 12:05:00', 'date-only')).toBe('2026-07-30')
+    expect(formatCategoryAxisLabel('North America', 'date-only')).toBe('North America')
     expect(buildDeterministicPresentationPatch('Group by City and use pink')).toBeNull()
   })
 
@@ -908,5 +928,33 @@ test.describe('AI data access guardrails', () => {
     }
     expect(queryResultCacheKey({ ...baseKey, parameters: ['Pune'] }))
       .not.toBe(queryResultCacheKey({ ...baseKey, parameters: ['Mumbai'] }))
+  })
+
+  test('compiles only the current chart projection from a wider disconnected dataset', () => {
+    const disconnected = compileDatasetQueryPlan({
+      fields: [billMonthField, safeCityField],
+      metrics: [billMetric],
+      relationships: [],
+      metricSourceFields: [billAmountField],
+    })
+    const projected = compileDatasetQueryPlan(projectChartQueryInputs({
+      encoding: {
+        xAxisFieldId: billMonthField.id,
+        yMetricIds: [billMetric.id],
+        stackMetricIds: [],
+        tooltipFieldIds: [billMonthField.id, billMetric.id],
+        labelById: {},
+        colorById: {},
+        filters: [],
+      },
+      fields: [billMonthField, safeCityField],
+      metrics: [billMetric],
+      relationships: [],
+      metricSourceFields: [billAmountField],
+    }))
+
+    expect(disconnected.queryPlan.executableSql).toBeNull()
+    expect(projected.queryPlan.executableSql).toContain('"electricity_readings"')
+    expect(projected.queryPlan.executableSql).not.toContain('"electricity_customers"')
   })
 })

@@ -5,10 +5,17 @@ import ReactECharts from 'echarts-for-react'
 import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
-import { getAxisColors, getTooltipStyle } from '@/lib/echarts/style-translator'
+import { fmtValue, getAxisColors, getTooltipStyle } from '@/lib/echarts/style-translator'
+import { escapeTooltipHtml, formatTooltipHtmlLabel } from '@/lib/echarts/safe-tooltip'
 import { withAlpha } from '@/lib/echarts/utils'
 import { sortNamedValues } from '@/lib/charts/domain-order'
-import { chartFontWeight, getChartMargin, getLegendLayout } from '@/lib/charts/chart-constants'
+import {
+  chartFontWeight,
+  formatChartText,
+  getChartDensityLayout,
+  getChartMargin,
+  getLegendLayout,
+} from '@/lib/charts/chart-constants'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 
 function useEnterpriseTheme() {
@@ -46,6 +53,7 @@ interface TooltipParam {
 interface LabelParam {
   name?: string
   data?: {
+    actualValue?: number
     actualPercent?: number
   }
 }
@@ -268,8 +276,10 @@ export function ModernPieChart({
   const displayLabels = s.showLabels ?? true
   const margin = getChartMargin(sizePreset, s.chartMargin)
   const legendPosition = s.legendPosition ?? 'bottom'
+  const density = useMemo(() => getChartDensityLayout(s.density), [s.density])
 
-  const maxSlices = sizePreset === 'small' ? 6 : sizePreset === 'medium' ? 8 : 10
+  const maxSlices = (sizePreset === 'small' ? 6 : sizePreset === 'medium' ? 8 : 10)
+    + (s.density === 'spacious' ? 2 : s.density === 'compact' ? -1 : 0)
 
   const resolvedFields = useMemo(() => {
     const resolvedValue = resolveValueField(data, valueField)
@@ -360,7 +370,7 @@ export function ModernPieChart({
         const name = String(param.name ?? 'Unknown')
         const actualValue = param.data?.actualValue ?? param.value ?? 0
         const actualPercent = param.data?.actualPercent ?? 0
-        return `<b>${name}</b><br/>Value: <strong>${Number(actualValue).toLocaleString()}</strong><br/>${Number(actualPercent).toFixed(1)}%`
+        return `<b>${formatTooltipHtmlLabel(name, undefined, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}</b><br/>Value: <strong>${escapeTooltipHtml(fmtValue(Number(actualValue), s.labelFormat, s.tooltipNumberFormat))}</strong><br/>${escapeTooltipHtml(Number(actualPercent).toFixed(1))}%`
       },
     },
     legend: showBottomLegend
@@ -371,17 +381,22 @@ export function ModernPieChart({
           width: '94%',
           itemWidth: 10,
           itemHeight: 10,
-          itemGap: sizePreset === 'small' ? 10 : 12,
+          itemGap: density.legendItemGap,
           pageIconColor: axis.label,
           pageTextStyle: { color: axis.label, fontSize: 10 },
           textStyle: {
-            fontSize: sizePreset === 'small' ? 9 : 10,
+            fontSize: s.legendLabelFontSize ?? (sizePreset === 'small' ? 9 : 10),
+            fontWeight: chartFontWeight(s.legendLabelFontWeight),
             color: axis.label,
           },
           formatter: (name: string) => {
             const item = sliceMap[name]
             const percent = item ? ` ${item.actualPercent.toFixed(1)}%` : ''
-            return `${truncate(compactLabel(name), legendLabelMaxChars)}${percent}`
+            return `${formatChartText(
+              compactLabel(name),
+              s.legendLabelOverflow ?? 'truncate',
+              s.legendLabelMaxLength ?? legendLabelMaxChars,
+            )}${percent}`
           },
         }
       : { show: false },
@@ -408,21 +423,24 @@ export function ModernPieChart({
         fontWeight: chartFontWeight(s.labelFontWeight),
         lineHeight: sizePreset === 'small' ? 11 : 13,
         formatter: (param: LabelParam) => {
+          const actualValue = Number(param.data?.actualValue ?? 0)
           const actualPercent = Number(param.data?.actualPercent ?? 0)
           const compact = compactLabel(String(param.name ?? ''))
           const wrapped = wrapLabel(compact, labelMaxChars, 2)
-          const percent = `${actualPercent.toFixed(actualPercent >= 10 ? 0 : 1)}%`
-          return wrapped.includes('\n') ? `${wrapped}\n${percent}` : `${wrapped} ${percent}`
+          const value = s.valueLabelNumberFormat
+            ? fmtValue(actualValue, s.labelFormat, s.valueLabelNumberFormat)
+            : `${actualPercent.toFixed(actualPercent >= 10 ? 0 : 1)}%`
+          return wrapped.includes('\n') ? `${wrapped}\n${value}` : `${wrapped} ${value}`
         },
       },
       labelLayout: {
-        hideOverlap: false,
+        hideOverlap: s.labelCollision === 'hide-overlap',
         moveOverlap: 'shiftY',
       },
       labelLine: {
         show: displayLabels && s.labelPosition !== 'inside',
-        length: 10,
-        length2: 10,
+        length: density.axisLabelMargin,
+        length2: density.axisLabelMargin,
         minTurnAngle: 30,
         lineStyle: {
           color: withAlpha(axis.label, 0.35),
@@ -451,7 +469,7 @@ export function ModernPieChart({
             left: 'center',
             top: showBottomLegend ? '36%' : '40%',
             style: {
-              text: Number(total).toLocaleString(),
+              text: fmtValue(Number(total), s.labelFormat, s.valueLabelNumberFormat),
               fontSize: sizePreset === 'small' ? 14 : 18,
               fontWeight: 700,
               fill: axis.label,
@@ -476,6 +494,7 @@ export function ModernPieChart({
     chartData,
     displayLabels,
     displayLegend,
+    density,
     donut,
     donutRadius,
     labelMaxChars,

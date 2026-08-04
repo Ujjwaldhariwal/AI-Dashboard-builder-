@@ -4,13 +4,16 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 import {
+  autopilotSemanticContextMatches,
   canAutopilotUseSemanticModel,
+  evaluateAutopilotChartApproval,
   evaluateAutopilotSemanticApproval,
   nextProjectArtifactName,
   normalizeAutopilotRelationshipJoin,
   projectAutopilotIdempotencyKey,
   rebindProjectAutopilotArtifacts,
 } from '../src/lib/ai/project-autopilot-server'
+import type { DataSourceColumnMetadata } from '../src/types/data-source'
 
 const brief = {
   objective: 'Build a sales dashboard for executives using governed revenue metrics.',
@@ -18,6 +21,7 @@ const brief = {
   chartCount: 6,
   chartTypes: ['kpi-card', 'line', 'bar'] as const,
   autoApply: true,
+  publicationPolicy: 'auto_publish_when_healthy' as const,
 }
 
 test.describe('project autopilot API', () => {
@@ -58,6 +62,61 @@ test.describe('project autopilot API', () => {
     })).toMatchObject({ approved: false, reason: 'Metric source field is invalid or missing' })
   })
 
+  test('auto-approves high-confidence chart warnings but preserves real review gates', () => {
+    expect(evaluateAutopilotChartApproval({
+      confidence: 0.82,
+      validation: {
+        state: 'warning',
+        issues: [{
+          severity: 'warning',
+          code: 'dataset_shape_warning',
+          message: 'A simpler projection may be easier to read.',
+        }],
+      },
+    })).toMatchObject({
+      approved: true,
+      validationState: 'valid',
+    })
+
+    expect(evaluateAutopilotChartApproval({
+      confidence: 0.95,
+      validation: {
+        state: 'invalid',
+        issues: [{
+          severity: 'error',
+          code: 'invalid_metric',
+          message: 'Metric is outside the governed dataset.',
+        }],
+      },
+    })).toMatchObject({
+      approved: false,
+      validationState: 'invalid',
+      reason: 'Metric is outside the governed dataset.',
+    })
+
+    expect(evaluateAutopilotChartApproval({
+      confidence: 0.62,
+      validation: {
+        state: 'warning',
+        issues: [],
+      },
+    })).toMatchObject({
+      approved: false,
+      validationState: 'warning',
+    })
+
+    expect(evaluateAutopilotChartApproval({
+      confidence: 0.99,
+      validation: {
+        state: 'unknown',
+        issues: [],
+      },
+    })).toMatchObject({
+      approved: false,
+      validationState: 'unknown',
+    })
+  })
+
   test('reuses complete approved models and rejects stale manual review artifacts', () => {
     expect(canAutopilotUseSemanticModel({
       id: 'approved-model',
@@ -80,6 +139,44 @@ test.describe('project autopilot API', () => {
       fieldCount: 14,
       metricCount: 4,
     })).toBeTruthy()
+  })
+
+  test('invalidates generated semantic context when the selected schema changes', () => {
+    const selected = [
+      {
+        id: 'customer-id',
+        dataSourceId: 'source-1',
+        relationId: 'customers',
+        schemaName: 'mdm_demo',
+        tableName: 'customers',
+        columnName: 'id',
+        ordinalPosition: 1,
+        dataType: 'uuid',
+        udtName: 'uuid',
+        isNullable: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'customer-status',
+        dataSourceId: 'source-1',
+        relationId: 'customers',
+        schemaName: 'mdm_demo',
+        tableName: 'customers',
+        columnName: 'status',
+        ordinalPosition: 2,
+        dataType: 'text',
+        udtName: 'text',
+        isNullable: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ] satisfies DataSourceColumnMetadata[]
+
+    expect(autopilotSemanticContextMatches(selected, selected)).toBeTruthy()
+    expect(autopilotSemanticContextMatches(selected, [selected[0]])).toBeFalsy()
+    expect(autopilotSemanticContextMatches(selected, [
+      selected[0],
+      { ...selected[1], columnName: 'lifecycle_status' },
+    ])).toBeFalsy()
   })
 
   test('drops stale downstream artifacts when an approved project model is adopted', () => {
@@ -121,13 +218,14 @@ test.describe('project autopilot API', () => {
     }).action).toBe('drop')
   })
 
-  test('chains governed artifacts without auto-publishing a dashboard release', () => {
+  test('chains governed artifacts and delegates healthy immutable release publication', () => {
     const server = readFileSync(join(process.cwd(), 'src/lib/ai/project-autopilot-server.ts'), 'utf8')
     const runRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/route.ts'), 'utf8')
     const executeRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/execute/route.ts'), 'utf8')
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/project-autopilot-panel.tsx'), 'utf8')
     expect(server).toContain('buildDeterministicSemanticProposal')
     expect(server).toContain('validateAndApproveAutopilotSemanticModel')
+    expect(server).toContain('evaluateAutopilotChartApproval')
     expect(server).toContain('resolveProjectSemanticModel')
     expect(server).toContain('repairAutopilotRelationships')
     expect(server).toContain("action: 'business_model.approved'")
@@ -135,13 +233,17 @@ test.describe('project autopilot API', () => {
     expect(server).toContain('buildDeterministicChartSuiteProposal')
     expect(server).toContain("rpc('create_dashboard_chart_drafts'")
     expect(server).toContain("rpc('compose_project_autopilot_dashboard_draft'")
+    expect(server).toContain('publishDashboardVersionGoverned')
+    expect(server).toContain("readinessAuthority: 'active_project_model'")
+    expect(server).toContain('releaseVerification')
     expect(server).toContain('buildProjectAutopilotDashboardSlots')
     expect(server).toContain('dashboardVersionId')
     expect(server).toContain("if (snapshot.dataset?.status === 'published') artifacts.datasetId = snapshot.dataset.id")
-    expect(server).toContain('if (existingValidation.ok) return existing.id')
+    expect(server.split('await persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })').length - 1).toBeGreaterThanOrEqual(3)
+    expect(server).toContain('existingCompile.queryPlan.executableSql')
+    expect(server).toContain('Autopilot dataset selection is not executable')
     expect(server).toContain("validation_state: 'invalid'")
     expect(server).toContain("if (modelId) query = query.eq('model_id', modelId)")
-    expect(server).not.toContain("rpc('publish_dashboard'")
     expect(executeRoute).toContain('requireProjectAccess')
     expect(executeRoute).toContain('executeProjectAutopilot')
     expect(executeRoute).toContain('const latest = latestRow ? mapProjectAutopilotRun')
@@ -149,6 +251,7 @@ test.describe('project autopilot API', () => {
     expect(runRoute).toContain("error?.code === '23505'")
     expect(runRoute).not.toContain(".upsert({\n      tenant_id: parsed.data.tenantId")
     expect(panel).toContain('idempotencyKey: crypto.randomUUID()')
+    expect(panel).toContain('Run release finalization')
   })
 
   test('counts only currently available schema relations in Autopilot scope', () => {

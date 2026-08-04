@@ -341,5 +341,12 @@ test.describe('immutable dashboard release snapshots', () => {
     expect(integrityMigration).toContain('dashboard_release_dataset_snapshot_integrity')
     expect(integrityMigration).toContain('before insert on dashboard_release_dataset_snapshots')
     expect(integrityMigration).toContain('stale or incomplete semantic references')
+
+    const healthAuditor = readFileSync(
+      join(process.cwd(), 'src/lib/publishing/dashboard-health-auditor.ts'),
+      'utf8',
+    )
+    expect(healthAuditor).toContain('projectChartQueryInputs')
+    expect(healthAuditor).toContain('non_executable_release_chart')
   })
 })

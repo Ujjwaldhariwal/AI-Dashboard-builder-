@@ -83,6 +83,9 @@ export function AiChartRefinementVisualHarness() {
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--dos-text-muted)]">
           Development-only surface for stable screenshot coverage. It renders the governed refinement dialog without enabling rollout for real users.
         </p>
+        <p className="mt-2 text-xs text-[color:var(--dos-text-muted)]" data-testid="ai-refinement-harness-chart-state">
+          Source chart: {chart.status} · revision {chart.updatedAt}
+        </p>
         <Button
           type="button"
           className="mt-5 bg-[var(--dos-accent-primary)] text-[color:var(--dos-background-deep)] hover:bg-[var(--dos-accent-primary-hover)]"

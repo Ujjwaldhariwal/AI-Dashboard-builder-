@@ -8,7 +8,10 @@ on:
       - 'docs/guided-publish-db-integration.md'
       - 'e2e/guided-publish-live-auth.spec.ts'
       - 'tests/guided-publish-db-integration.spec.ts'
+      - 'tests/chart-refinement-db-integration.spec.ts'
       - 'tests/support/guided-publish-supabase-fixture.ts'
+      - 'scripts/check-chart-refinement-rpc.cjs'
+      - 'supabase/migrations/20260803121110_transactional_chart_refinement_apply.sql'
       - 'src/app/api/admin/guided-review/publish-readiness/route.ts'
       - 'src/app/api/admin/published-dashboards/[id]/publish/route.ts'
       - 'src/lib/dashboardos/guided-publish-readiness-server.ts'
@@ -26,58 +29,70 @@ jobs:
 
     env:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
       NEXT_PUBLIC_EMAIL_DOMAIN: ${{ vars.NEXT_PUBLIC_EMAIL_DOMAIN || 'company.com' }}
       DASHBOARDOS_BASE_URL: http://127.0.0.1:3000
       CI: true
 
     steps:
-      - name: Check integration secrets
-        id: integration
+      - name: Require integration secrets
         shell: bash
         run: |
-          if [[ -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" && -n "$SUPABASE_SERVICE_ROLE_KEY" ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Guided publish integration skipped because Supabase secrets are not configured."
+          missing=()
+          for name in \
+            NEXT_PUBLIC_SUPABASE_URL \
+            NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            SUPABASE_SERVICE_ROLE_KEY \
+            SUPABASE_ACCESS_TOKEN \
+            UPSTASH_REDIS_REST_URL \
+            UPSTASH_REDIS_REST_TOKEN
+          do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf '::error::Missing required integration secret: %s\n' "${missing[@]}"
+            exit 1
           fi
 
       - name: Checkout
-        if: steps.integration.outputs.enabled == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node
-        if: steps.integration.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
-        if: steps.integration.outputs.enabled == 'true'
         run: npm ci
 
       - name: Install Playwright browser
-        if: steps.integration.outputs.enabled == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: TypeScript check
-        if: steps.integration.outputs.enabled == 'true'
         run: npx tsc --noEmit
 
+      - name: Migration history reconciliation gate
+        run: npm run db:migrations:check
+
+      - name: Chart refinement RPC compatibility gate
+        run: npm run db:chart-refinement-rpc:check
+
       - name: Route-handler DB integration
-        if: steps.integration.outputs.enabled == 'true'
         env:
           DASHBOARDOS_INTEGRATION_SUPABASE: '1'
-        run: npx playwright test tests/guided-publish-db-integration.spec.ts --workers=1
+        run: npx playwright test tests/guided-publish-db-integration.spec.ts tests/chart-refinement-db-integration.spec.ts --workers=1
 
       - name: Build app for live HTTP integration
-        if: steps.integration.outputs.enabled == 'true'
         run: npm run build
 
       - name: Start app server
-        if: steps.integration.outputs.enabled == 'true'
         env:
           PORT: 3000
         run: |
@@ -86,14 +101,21 @@ jobs:
           node -e "const url='http://127.0.0.1:3000/login'; const started=Date.now(); (async function wait(){ try { const res=await fetch(url); if (res.status < 500) process.exit(0); } catch {} if (Date.now()-started>60000) process.exit(1); setTimeout(wait,1000); })();"
 
       - name: Live HTTP cookie-auth integration
-        if: steps.integration.outputs.enabled == 'true'
         env:
           DASHBOARDOS_INTEGRATION_SUPABASE: '1'
           DASHBOARDOS_LIVE_HTTP_GUIDED_PUBLISH: '1'
         run: npx playwright test e2e/guided-publish-live-auth.spec.ts --workers=1
 
+      - name: Stop app server
+        if: always()
+        shell: bash
+        run: |
+          if [ -f next-guided-publish.pid ]; then
+            kill "$(cat next-guided-publish.pid)" || true
+          fi
+
       - name: Upload server log on failure
-        if: failure() && steps.integration.outputs.enabled == 'true'
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: guided-publish-next-log

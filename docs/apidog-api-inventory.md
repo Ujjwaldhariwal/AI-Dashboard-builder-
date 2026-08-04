@@ -134,7 +134,7 @@ Response: `{ "dataSources": [...] }`
 
 ### `POST /api/admin/data-sources`
 
-Purpose: save encrypted Postgres data-source credentials.
+Purpose: save encrypted PostgreSQL or Oracle data-source credentials.
 
 Auth: authenticated project editor.
 
@@ -144,6 +144,7 @@ Body:
 {
   "tenantId": "uuid",
   "projectId": "uuid",
+  "type": "postgres",
   "name": "Production replica",
   "host": "db.example.com",
   "port": 5432,
@@ -155,11 +156,30 @@ Body:
 }
 ```
 
+For Oracle, set `type` to `oracle`, provide the SID or service name in `database`,
+set `connectType` to `sid` or `service_name`, and provide the allowed Oracle schemas.
+
 Response: `{ "dataSource": { ...safe metadata... } }`
+
+### `PATCH /api/admin/data-sources/{id}`
+
+Purpose: replace the schema allowlist for a saved source and mark its schema inventory for refresh and governed review.
+
+Auth: authenticated project editor.
+
+Body:
+
+```json
+{
+  "schemas": ["DASHUSER"]
+}
+```
+
+Response: the data-source ID, normalized schemas, `pending_refresh` schema status, and `review_required` scope status.
 
 ### `POST /api/admin/data-sources/{id}/test`
 
-Purpose: test a saved Postgres connection and update status.
+Purpose: test a saved PostgreSQL or Oracle connection and update status.
 
 Auth: authenticated project editor.
 
@@ -1188,6 +1208,22 @@ Response:
 
 ## Client / Runtime
 
+### `POST /api/client/chart-draft-run`
+
+Purpose: execute an authenticated, unpublished chart draft through the governed read-only preview runtime.
+
+Auth: authenticated project member with access to the chart tenant and project.
+
+Body: `{ "chartId": "uuid" }`
+
+### `POST /api/client/chart-run`
+
+Purpose: execute an authenticated published chart through the governed read-only runtime when the caller already has the chart identifier.
+
+Auth: authenticated tenant/project member.
+
+Body: `{ "chartId": "uuid" }`
+
 ### `POST /api/client/{tenantSlug}/charts/{id}/run`
 
 Purpose: execute a published, valid chart config through the read-only runtime and return server-resolved chart field names.
@@ -1292,6 +1328,36 @@ Auth: authenticated project editor with matching tenant and project scope.
 Purpose: execute or resume safe Autopilot steps, pausing at semantic approval and final publishing gates.
 
 Auth: authenticated project editor with matching tenant and project scope.
+
+### `POST /api/admin/projects/{id}/autopilot/reset`
+
+Purpose: archive active Autopilot-generated dashboards, charts, datasets, and semantic models while preserving the connected data source and immutable release history, then cancel resumable runs so the project can start cleanly.
+
+Auth: authenticated project editor with matching tenant and project scope.
+
+### `POST /api/admin/projects/{id}/report-proposal`
+
+Purpose: turn a natural-language report requirement into a governed, editable `ReportSpec.v1` proposal containing pages, sections, charts, tables, branding, and appendices.
+
+Auth: authenticated project editor with matching tenant and project scope.
+
+Governance:
+
+- only published datasets backed by approved semantic models are available to the composer
+- AI output is validated against exact dataset, field, and metric IDs before it is persisted
+- narrative claims are rejected unless they cite deterministic fact IDs in the evidence bundle
+- every AI result remains an `awaiting_review` report proposal; it is never applied or published automatically
+- provider failure returns a deterministic governed outline
+
+Body:
+
+```json
+{
+  "instruction": "Create a monthly executive revenue report by region",
+  "title": "Revenue review",
+  "organizationName": "Acme"
+}
+```
 
 ### `DELETE /api/admin/data-sources/{id}`
 

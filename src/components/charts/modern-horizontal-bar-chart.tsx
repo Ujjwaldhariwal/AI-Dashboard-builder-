@@ -7,10 +7,13 @@ import type { WidgetStyle } from '@/types/widget'
 import { DEFAULT_STYLE } from '@/types/widget'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { escapeTooltipHtml, formatAuxiliaryTooltipRows, formatTooltipHtmlLabel } from '@/lib/echarts/safe-tooltip'
 import { withAlpha } from '@/lib/echarts/utils' // ← Fix #6
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
   chartFontWeight,
+  formatChartText,
+  getChartDensityLayout,
   getChartMargin,
   showValueLabels,
 } from '@/lib/charts/chart-constants'
@@ -23,6 +26,7 @@ interface TooltipParam {
   name:       string
   seriesName: string
   value:      number
+  dataIndex:  number
 }
 
 interface LabelParam {
@@ -33,6 +37,7 @@ interface ModernHorizontalBarChartProps {
   data:     Record<string, unknown>[]  // ← Fix #5
   xField:   string
   yField:   string
+  tooltipFields?: string[]
   stacked?: boolean
   style?:   WidgetStyle
   sizePreset?: WidgetSizePreset
@@ -42,6 +47,7 @@ export function ModernHorizontalBarChart({
   data,
   xField,
   yField,
+  tooltipFields,
   style,
   sizePreset = 'medium',
 }: ModernHorizontalBarChartProps) {
@@ -53,10 +59,14 @@ export function ModernHorizontalBarChart({
   const margin = getChartMargin(sizePreset, s.chartMargin)
   const axis   = getAxisColors()
   const tt     = getTooltipStyle(s)
+  const density = useMemo(() => getChartDensityLayout(s.density), [s.density])
+  const hasNumericData = useMemo(
+    () => data.length > 0 && !isNaN(Number(data[0]?.[yField])),
+    [data, yField],
+  )
 
   const chartData = useMemo(() => {
-    const isNumeric = data.length > 0 && !isNaN(Number(data[0]?.[yField]))
-    if (isNumeric) {
+    if (hasNumericData) {
       return data.slice(0, 25).map((item, i) => ({
         name:  String(item[xField] ?? `#${i}`).slice(0, 24),
         value: parseFloat(String(item[yField])) || 0,
@@ -71,7 +81,7 @@ export function ModernHorizontalBarChart({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([name, value]) => ({ name, value }))
-  }, [data, xField, yField])
+  }, [data, hasNumericData, xField, yField])
 
   const displayLabels = s.showLabels ?? showValueLabels(sizePreset, chartData.length)
 
@@ -95,7 +105,15 @@ export function ModernHorizontalBarChart({
       ...tt,
       formatter: (params: TooltipParam[]) => {
         const p = params[0]
-        return `<b style="font-size:12px">${p.name}</b><br/>${p.seriesName}: <strong>${fmtValue(p.value, s.labelFormat)}</strong>`
+        const auxiliary = hasNumericData
+          ? formatAuxiliaryTooltipRows({
+              row: data[p?.dataIndex],
+              fields: tooltipFields,
+              style: s,
+              excludedFields: [xField, yField],
+            })
+          : ''
+        return `<b style="font-size:12px">${formatTooltipHtmlLabel(p.name, undefined, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}</b><br/>${formatTooltipHtmlLabel(p.seriesName, s.tooltipLabelOverrides, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}: <strong>${escapeTooltipHtml(fmtValue(p.value, s.labelFormat, s.tooltipNumberFormat))}</strong>${auxiliary ? `<br/>${auxiliary}` : ''}`
       },
     },
     xAxis: {
@@ -108,8 +126,8 @@ export function ModernHorizontalBarChart({
         color:     s.xAxisLabelColor ?? axis.label,
         fontSize:  s.xAxisLabelFontSize ?? 11,
         fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
-        rotate: s.xAxisLabelRotation ?? 0,
-        formatter: (v: number) => fmtValue(v, s.labelFormat),
+        margin: density.axisLabelMargin,
+        formatter: (v: number) => fmtValue(v, s.labelFormat, s.xAxisNumberFormat),
       },
       axisLine:  { show: false },
       axisTick:  { show: false },
@@ -129,6 +147,12 @@ export function ModernHorizontalBarChart({
         color: s.yAxisLabelColor ?? axis.label,
         fontSize: s.yAxisLabelFontSize ?? 11,
         fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
+        margin: density.axisLabelMargin,
+        formatter: (value: string) => formatChartText(
+          value,
+          s.yAxisLabelOverflow,
+          s.yAxisLabelMaxLength,
+        ),
       },
       axisLine:  { show: false },
       axisTick:  { show: false },
@@ -137,6 +161,7 @@ export function ModernHorizontalBarChart({
       type:        'bar',
       name:        yField,
       barMaxWidth: 28,
+      barCategoryGap: density.barCategoryGap,
       data: chartData.map((d, i) => ({
         value: d.value,
         itemStyle: {
@@ -152,10 +177,15 @@ export function ModernHorizontalBarChart({
         show:      displayLabels,
         position:  s.labelPosition === 'inside' ? 'insideRight' as const : 'right' as const,
         // ── Fix #5 — typed label formatter ───────────────────
-        formatter: (p: LabelParam) => fmtValue(p.value, s.labelFormat),
+        formatter: (p: LabelParam) => fmtValue(
+          p.value,
+          s.labelFormat,
+          s.valueLabelNumberFormat,
+        ),
         fontSize:  s.labelFontSize ?? 10,
         fontWeight: chartFontWeight(s.labelFontWeight),
         color:     s.labelColor ?? axis.label,
+        hideOverlap: s.labelCollision === 'hide-overlap',
       },
       emphasis: {
         itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.2)' },
@@ -167,14 +197,19 @@ export function ModernHorizontalBarChart({
     axis.splitLine,
     chartData,
     colors,
+    density,
     displayLabels,
     margin.bottom,
     margin.left,
     margin.right,
     margin.top,
+    hasNumericData,
     r,
     s,
     tt,
+    tooltipFields,
+    data,
+    xField,
     yField,
   ])
 

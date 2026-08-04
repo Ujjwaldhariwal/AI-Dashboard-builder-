@@ -54,6 +54,29 @@ test.describe('dataset copilot', () => {
     expect(checked.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'unknown_field' })]))
   })
 
+  test('keeps disconnected schemas coherent around the selected metric entity', () => {
+    const snapshotEntity = '50000000-0000-4000-8000-000000000001'
+    const issueEntity = '50000000-0000-4000-8000-000000000002'
+    const snapshotDate = '60000000-0000-4000-8000-000000000001'
+    const detectedAt = '60000000-0000-4000-8000-000000000002'
+    const duplicateMetric = '70000000-0000-4000-8000-000000000001'
+    const proposal = buildDeterministicDatasetProposal({
+      instruction: 'Build an executive MDM quality dashboard',
+      fields: [
+        { id: snapshotDate, entityId: snapshotEntity, entityName: 'Data Quality Snapshot', name: 'Snapshot Date', role: 'date' },
+        { id: detectedAt, entityId: issueEntity, entityName: 'Stewardship Issue', name: 'Detected At', role: 'date' },
+      ],
+      metrics: [
+        { id: duplicateMetric, entityId: snapshotEntity, name: 'Total Duplicate Record Count', aggregation: 'sum' },
+      ],
+      relationships: [],
+    })
+
+    expect(proposal.metricIds).toEqual([duplicateMetric])
+    expect(proposal.fieldIds).toEqual([snapshotDate])
+    expect(proposal.warnings).toEqual([])
+  })
+
   test('uses an approved model proposal API instead of fixed guided recipes', () => {
     const route = readFileSync(join(process.cwd(), 'src/app/api/admin/semantic-models/[id]/dataset-proposal/route.ts'), 'utf8')
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/datasets-admin-panel.tsx'), 'utf8')

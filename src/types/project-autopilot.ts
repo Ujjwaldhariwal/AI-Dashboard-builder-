@@ -26,12 +26,17 @@ export type ProjectAutopilotStepStatus =
   | 'failed'
   | 'skipped'
 
+export type ProjectAutopilotPublicationPolicy =
+  | 'review_required'
+  | 'auto_publish_when_healthy'
+
 export interface ProjectAutopilotBrief {
   objective: string
   audience: string | null
   chartCount: number
   chartTypes: ChartTemplateId[]
   autoApply: boolean
+  publicationPolicy: ProjectAutopilotPublicationPolicy
 }
 
 export interface ProjectAutopilotArtifacts {
@@ -41,6 +46,17 @@ export interface ProjectAutopilotArtifacts {
   dashboardId?: string
   dashboardVersionId?: string
   dashboardPageId?: string
+  releaseVerification?: {
+    activePointerVerified: boolean
+    immutableSnapshotVerified: boolean
+    clientLoadable: boolean
+    pageCount: number
+    slotCount: number
+    chartSnapshotCount: number
+    datasetSnapshotCount: number
+    healthState: 'healthy' | 'stale' | 'blocked'
+    verifiedAt: string
+  }
 }
 
 export interface ProjectAutopilotStepPlan {

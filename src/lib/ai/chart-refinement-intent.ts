@@ -205,6 +205,20 @@ export function selectRelevantChartRefinementExamples({
       },
     },
     {
+      keywords: ['date only', 'without time', 'hide time', 'bottom axis', 'x axis'],
+      example: {
+        instruction: 'Show only the date on the bottom axis and make those labels slightly bold',
+        patch: {
+          presentation: {
+            xAxis: {
+              labelFormat: 'date-only',
+              labelFontWeight: 'medium',
+            },
+          },
+        },
+      },
+    },
+    {
       keywords: ['line', 'bar', 'pie', 'trend', 'chart type'],
       example: { instruction: 'Make this a line chart', patch: { templateId: 'line' } },
     },

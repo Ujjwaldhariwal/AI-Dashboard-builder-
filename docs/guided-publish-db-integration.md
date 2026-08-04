@@ -30,15 +30,21 @@ Publish-time validation remains authoritative. The preflight route is checked fi
 
 ## GitHub Actions
 
-The `Guided Publish Integration` workflow runs on manual dispatch and on PRs that touch guided publish integration files. It exits successfully without running mutating tests when Supabase secrets are not configured.
+The `Guided Publish Integration` and `Release Readiness` workflows fail closed when live acceptance secrets are missing. They do not report a successful skipped job.
 
-Configure these repository secrets to enable it:
+Configure these repository secrets:
 
+- `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_ACCESS_TOKEN`
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
 
 Optional repository variable:
 
 - `NEXT_PUBLIC_EMAIL_DOMAIN`, defaulting to `company.com`
 
-The workflow runs the route-handler DB integration first, then builds the app, starts `next start` on `127.0.0.1:3000`, and runs the live browser-cookie integration. Use a disposable Supabase project for this workflow because the fixture creates and deletes auth users plus tenant-scoped records.
+No permanent live-auth email or password secrets are needed. The service-role fixture creates a short-lived confirmed user, signs in through the normal password flow, and deletes that user during cleanup.
+
+The workflow first requires aligned migration history, then runs route-handler DB integration, builds the app, starts `next start` on `127.0.0.1:3000`, and runs the live browser-cookie integration. Use a dedicated production-like acceptance project because the fixture creates and deletes auth users plus tenant-scoped records.

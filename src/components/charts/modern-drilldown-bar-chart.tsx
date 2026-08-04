@@ -9,11 +9,19 @@ import { DEFAULT_STYLE } from '@/types/widget'
 import { DASHBOARDOS_COLORS } from '@/lib/dashboardos/theme'
 import { registerEnterpriseTheme } from '@/lib/echarts/theme'
 import { getAxisColors, getTooltipStyle, fmtValue } from '@/lib/echarts/style-translator'
+import { escapeTooltipHtml, formatTooltipHtmlLabel } from '@/lib/echarts/safe-tooltip'
 import { withAlpha } from '@/lib/echarts/utils'
 import type { WidgetSizePreset } from '@/lib/builder/widget-size'
 import {
+  chartFontWeight,
+  formatCategoryAxisLabel,
+  formatChartLabel,
+  formatChartText,
   getCategoryTickInterval,
+  getChartDensityLayout,
   getChartMargin,
+  getLegendLayout,
+  getLegendVisibility,
   showValueLabels,
 } from '@/lib/charts/chart-constants'
 
@@ -28,6 +36,12 @@ interface ModernDrilldownBarChartProps {
   drillField?: string
   style?: WidgetStyle
   sizePreset?: WidgetSizePreset
+}
+
+interface TooltipParam {
+  name: string
+  seriesName: string
+  value: number
 }
 
 function sumByField(
@@ -105,7 +119,8 @@ export function ModernDrilldownBarChart({
   const s = useMemo(() => ({ ...DEFAULT_STYLE, ...style }), [style])
   const axis = getAxisColors()
   const tt = getTooltipStyle(s)
-  const margin = getChartMargin(sizePreset)
+  const margin = getChartMargin(sizePreset, s.chartMargin)
+  const density = useMemo(() => getChartDensityLayout(s.density), [s.density])
 
   const [selectedPrimary, setSelectedPrimary] = useState<string | null>(null)
 
@@ -127,7 +142,8 @@ export function ModernDrilldownBarChart({
 
   const rows = selectedPrimary && drillLevel.length > 0 ? drillLevel : topLevel
   const tickInterval = getCategoryTickInterval(sizePreset, rows.length)
-  const displayLabels = showValueLabels(sizePreset, rows.length)
+  const displayLabels = s.showLabels ?? showValueLabels(sizePreset, rows.length)
+  const displayLegend = getLegendVisibility(sizePreset, s.showLegend)
   const subtitle = selectedPrimary && drillField
     ? `${selectedPrimary} -> ${drillField}`
     : xField
@@ -139,57 +155,109 @@ export function ModernDrilldownBarChart({
     backgroundColor: 'transparent',
     color: s.colors,
     grid: {
-      top: margin.top,
+      top: margin.top + (displayLegend ? 18 : 0),
       right: margin.right,
       bottom: margin.bottom + (rows.length > 8 ? 24 : 12),
       left: margin.left,
       containLabel: true,
     },
     tooltip: {
+      show: s.tooltipEnabled !== false,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
       ...tt,
-      valueFormatter: (v: number) => fmtValue(v, s.labelFormat),
+      formatter: (params: TooltipParam[]) => {
+        const item = params[0]
+        return `<b>${formatTooltipHtmlLabel(item?.name, undefined, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}</b><br/>${formatTooltipHtmlLabel(item?.seriesName, s.tooltipLabelOverrides, s.tooltipLabelOverflow, s.tooltipLabelMaxLength)}: <strong>${escapeTooltipHtml(fmtValue(Number(item?.value ?? 0), s.labelFormat, s.tooltipNumberFormat))}</strong>`
+      },
     },
     xAxis: {
+      show: s.showXAxis !== false,
       type: 'category',
+      name: s.xAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 36,
       data: rows.map(row => row.name),
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: axis.label,
-        fontSize: 10,
-        rotate: rows.length > 8 ? -28 : 0,
+        color: s.xAxisLabelColor ?? axis.label,
+        fontSize: s.xAxisLabelFontSize ?? 10,
+        fontWeight: chartFontWeight(s.xAxisLabelFontWeight),
+        rotate: s.xAxisLabelRotation ?? (rows.length > 8 ? -28 : 0),
         interval: tickInterval,
-        formatter: (v: string) => v.length > 18 ? `${v.slice(0, 16)}..` : v,
+        margin: density.axisLabelMargin,
+        formatter: (v: string) => {
+          const label = formatCategoryAxisLabel(
+            v,
+            s.xAxisLabelFormat,
+            s.xAxisLabelLocale,
+            s.xAxisLabelTimeZone,
+          )
+          if (s.xAxisLabelOverflow) {
+            return formatChartText(label, s.xAxisLabelOverflow, s.xAxisLabelMaxLength)
+          }
+          return label.length > 18 ? `${label.slice(0, 16)}..` : label
+        },
       },
     },
     yAxis: {
+      show: s.showYAxis !== false,
       type: 'value',
+      name: s.yAxisTitle,
+      nameLocation: 'middle' as const,
+      nameGap: 46,
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: axis.label,
-        fontSize: 10,
-        formatter: (v: number) => fmtValue(v, s.labelFormat),
+        color: s.yAxisLabelColor ?? axis.label,
+        fontSize: s.yAxisLabelFontSize ?? 10,
+        fontWeight: chartFontWeight(s.yAxisLabelFontWeight),
+        formatter: (v: number) => fmtValue(v, s.labelFormat, s.yAxisNumberFormat),
       },
       splitLine: {
         show: s.showGrid,
         lineStyle: { type: 'dashed' as const, color: axis.splitLine },
       },
     },
+    legend: displayLegend
+      ? {
+          show: true,
+          ...getLegendLayout(s.legendPosition, margin),
+          itemGap: density.legendItemGap,
+          textStyle: {
+            fontSize: s.legendLabelFontSize ?? 10,
+            fontWeight: chartFontWeight(s.legendLabelFontWeight),
+            color: axis.label,
+          },
+          formatter: (name: string) => formatChartLabel(
+            name,
+            s.legendLabelOverrides,
+            s.legendLabelOverflow,
+            s.legendLabelMaxLength,
+          ),
+        }
+      : { show: false },
     series: [
       {
         type: 'bar',
+        name: yField,
         data: rows.map(row => row.value),
         barMaxWidth: 42,
+        barCategoryGap: density.barCategoryGap,
         label: displayLabels
           ? {
               show: true,
               position: 'top',
-              fontSize: 9,
-              color: axis.label,
-              formatter: (p: { value: number }) => fmtValue(Number(p.value), s.labelFormat),
+              fontSize: s.labelFontSize ?? 9,
+              fontWeight: chartFontWeight(s.labelFontWeight),
+              color: s.labelColor ?? axis.label,
+              hideOverlap: s.labelCollision === 'hide-overlap',
+              formatter: (p: { value: number }) => fmtValue(
+                Number(p.value),
+                s.labelFormat,
+                s.valueLabelNumberFormat,
+              ),
             }
           : { show: false },
         itemStyle: {
@@ -206,15 +274,15 @@ export function ModernDrilldownBarChart({
   }), [
     axis.label,
     axis.splitLine,
+    density,
     displayLabels,
-    margin.bottom,
-    margin.left,
-    margin.right,
-    margin.top,
+    displayLegend,
+    margin,
     rows,
     s,
     tickInterval,
     tt,
+    yField,
   ])
 
   return (

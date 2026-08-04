@@ -3,6 +3,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { auditDashboardCharts, type ChartHealthState, type DashboardChartAuditItem } from '@/lib/semantic/chart-health-auditor'
 import { validateDashboardChartConfig } from '@/lib/semantic/chart-config-validator'
 import {
+  compileDatasetQueryPlan,
+  projectChartQueryInputs,
+} from '@/lib/semantic/dataset-query-compiler'
+import {
   mapDashboardChartSlot,
   mapDashboardPage,
   mapDashboardVersion,
@@ -262,11 +266,25 @@ function buildReleasedDashboardHealthItem({
       fields: semantics.fields,
       metrics: semantics.metrics,
     })
+    const compileResult = compileDatasetQueryPlan(projectChartQueryInputs({
+      encoding: chart.encoding,
+      fields: semantics.fields,
+      metrics: semantics.metrics,
+      relationships: semantics.relationships,
+      metricSourceFields: semantics.metricSourceFields,
+    }))
     const sourceIssues = releasedSourceContractIssues(datasetSnapshot, sourceStatesById)
     const legacy = chartSnapshot.snapshotOrigin === 'legacy_backfill'
       || datasetSnapshot.snapshotOrigin === 'legacy_backfill'
       || version.releaseSnapshotStatus === 'legacy_backfill'
-    const issues = [...validation.issues, ...sourceIssues]
+    const executionIssues = compileResult.queryPlan.executableSql && compileResult.dataSourceId
+      ? []
+      : [{
+          severity: 'error' as const,
+          code: 'non_executable_release_chart',
+          message: compileResult.warnings[0] ?? 'The released chart cannot compile a governed source query.',
+        }]
+    const issues = [...validation.issues, ...sourceIssues, ...executionIssues]
     if (legacy) {
       issues.push({
         severity: 'warning',
@@ -290,7 +308,9 @@ function buildReleasedDashboardHealthItem({
         templateId: chart.templateId,
         validationState: validation.state,
       },
-      healthState: validation.state === 'valid' && sourceIssues.length === 0 ? (legacy ? 'stale' : 'healthy') : 'blocked',
+      healthState: validation.state === 'valid' && sourceIssues.length === 0 && executionIssues.length === 0
+        ? (legacy ? 'stale' : 'healthy')
+        : 'blocked',
       issues,
     }
   })

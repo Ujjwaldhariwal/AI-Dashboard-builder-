@@ -1,0 +1,5 @@
+interface:
+  display_name: "Ponytail"
+  short_description: "Smallest correct implementation, YAGNI first"
+  brand_color: "#111111"
+  default_prompt: "Use $ponytail in ultra mode to find the smallest correct implementation."

@@ -19,7 +19,13 @@ import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import { demoColumns, demoDataSource, demoProjects, DEMO_DATA_SOURCE_ID, DEMO_PROJECT_ID, DEMO_TENANT_ID } from '@/lib/dashboardos/demo-data'
 import { isDashboardOsDemoMode } from '@/lib/dashboardos/demo-mode'
 import { buildGuidedSchemaProfile } from '@/lib/dashboardos/guided-review'
-import type { DataSource, DataSourceSchemaProfileSummary, DataSourceSslMode } from '@/types/data-source'
+import type {
+  DataSource,
+  DataSourceSchemaProfileSummary,
+  DataSourceSslMode,
+  DataSourceType,
+  OracleConnectType,
+} from '@/types/data-source'
 
 interface ProjectOption {
   id: string
@@ -30,7 +36,7 @@ interface ProjectOption {
 }
 
 const REQUIREMENTS = [
-  'Postgres-only for v1',
+  'Postgres and Oracle read-only sources',
   'Read-only database users',
   'Encrypted credentials at rest',
   'Server-side connection testing',
@@ -41,7 +47,7 @@ const REQUIREMENTS = [
 const SCAN_TO_CHART_FLOW = [
   {
     title: '1. Connect',
-    body: 'Save one read-only Postgres connection under a tenant project.',
+    body: 'Save one read-only database connection under a tenant project.',
   },
   {
     title: '2. Scan',
@@ -71,6 +77,11 @@ function errorToText(value: unknown) {
   return 'Request failed'
 }
 
+function sourceSchemas(source: DataSource) {
+  if (source.connectionConfig.schemas?.length) return source.connectionConfig.schemas
+  return [source.type === 'oracle' ? source.connectionConfig.username.toUpperCase() : 'public']
+}
+
 export function DataSourcesAdminPanel() {
   const builderScope = useScopedBuilderStore(state => state.scope)
   const setBuilderScope = useScopedBuilderStore(state => state.setScope)
@@ -83,12 +94,15 @@ export function DataSourcesAdminPanel() {
   const [projectsLoading, setProjectsLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busySourceId, setBusySourceId] = useState<string | null>(null)
-  const [busyAction, setBusyAction] = useState<'test' | 'introspect' | 'refresh' | 'remove' | null>(null)
+  const [busyAction, setBusyAction] = useState<'test' | 'introspect' | 'refresh' | 'scope' | 'remove' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [inventorySource, setInventorySource] = useState<DataSource | null>(null)
+  const [editingSchemaSourceId, setEditingSchemaSourceId] = useState<string | null>(null)
+  const [schemaScopeDraft, setSchemaScopeDraft] = useState('')
 
   const [projectId, setProjectId] = useState('')
+  const [sourceType, setSourceType] = useState<DataSourceType>('postgres')
   const [name, setName] = useState('')
   const [host, setHost] = useState('')
   const [port, setPort] = useState('5432')
@@ -96,6 +110,7 @@ export function DataSourcesAdminPanel() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [sslMode, setSslMode] = useState<DataSourceSslMode>('require')
+  const [oracleConnectType, setOracleConnectType] = useState<OracleConnectType>('service_name')
   const [schemas, setSchemas] = useState('public')
   const [clientReady, setClientReady] = useState(false)
   const demoMode = isDashboardOsDemoMode()
@@ -174,6 +189,7 @@ export function DataSourcesAdminPanel() {
 
   const resetForm = () => {
     setProjectId('')
+    setSourceType('postgres')
     setName('')
     setHost('')
     setPort('5432')
@@ -181,13 +197,14 @@ export function DataSourcesAdminPanel() {
     setUsername('')
     setPassword('')
     setSslMode('require')
+    setOracleConnectType('service_name')
     setSchemas('public')
   }
 
   const handleCreate = async () => {
     const selectedProject = projects.find(project => project.id === projectId)
     if (!selectedProject || !name.trim() || !host.trim() || !database.trim() || !username.trim() || !password) {
-      toast.error('Fill all required Postgres connection fields')
+      toast.error(`Fill all required ${sourceType === 'oracle' ? 'Oracle' : 'Postgres'} connection fields`)
       return
     }
 
@@ -208,14 +225,17 @@ export function DataSourcesAdminPanel() {
         body: JSON.stringify({
           tenantId: selectedProject.tenantId,
           projectId: selectedProject.id,
+          type: sourceType,
           name,
           host,
           port,
           database,
           username,
           password,
-          sslMode,
-          schemas: schemas.split(',').map(value => value.trim()).filter(Boolean),
+          ...(sourceType === 'postgres' ? { sslMode } : { connectType: oracleConnectType }),
+          schemas: schemas.split(',').map(value => value.trim()).filter(Boolean).length
+            ? schemas.split(',').map(value => value.trim()).filter(Boolean)
+            : [sourceType === 'oracle' ? username.trim().toUpperCase() : 'public'],
         }),
       })
       const payload = await response.json().catch(() => null)
@@ -302,6 +322,44 @@ export function DataSourcesAdminPanel() {
       if (source) setInventorySource(source)
     } catch (introspectError) {
       toast.error(introspectError instanceof Error ? introspectError.message : String(introspectError))
+    } finally {
+      setBusySourceId(null)
+      setBusyAction(null)
+    }
+  }
+
+  const handleEditSchemaScope = (source: DataSource) => {
+    setEditingSchemaSourceId(source.id)
+    setSchemaScopeDraft(
+      sourceSchemas(source).join(', '),
+    )
+  }
+
+  const handleSaveSchemaScope = async (source: DataSource) => {
+    const nextSchemas = Array.from(new Set(
+      schemaScopeDraft.split(',').map(value => value.trim()).filter(Boolean),
+    ))
+    if (nextSchemas.length === 0) {
+      toast.error('Add at least one schema to introspect')
+      return
+    }
+
+    setBusySourceId(source.id)
+    setBusyAction('scope')
+    try {
+      const response = await fetch(`/api/admin/data-sources/${source.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schemas: nextSchemas }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(errorToText(payload) || `Schema scope update failed (${response.status})`)
+      setEditingSchemaSourceId(null)
+      setSchemaScopeDraft('')
+      await fetchDataSources(source.projectId)
+      toast.success(`Schema scope updated to ${nextSchemas.join(', ')}. Run introspection to import it.`)
+    } catch (scopeError) {
+      toast.error(scopeError instanceof Error ? scopeError.message : String(scopeError))
     } finally {
       setBusySourceId(null)
       setBusyAction(null)
@@ -433,10 +491,21 @@ export function DataSourcesAdminPanel() {
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
                         {source.connectionConfig.username}@{source.connectionConfig.host}:{source.connectionConfig.port}/{source.connectionConfig.database}
+                        <span className="ml-2 uppercase text-[var(--dos-text-muted)]">{source.type}</span>
                       </p>
-                      <p className="mt-1 text-[11px] text-cyan-300/70">
-                        schemas: {(source.connectionConfig.schemas?.length ? source.connectionConfig.schemas : ['public']).join(', ')}
-                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-cyan-300/70">
+                        <span>
+                          schemas: {sourceSchemas(source).join(', ')}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-[var(--dos-text-secondary)] underline decoration-dotted underline-offset-2 hover:text-[var(--dos-text-primary)]"
+                          onClick={() => handleEditSchemaScope(source)}
+                          disabled={demoMode || busySourceId === source.id}
+                        >
+                          Change
+                        </button>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
@@ -494,6 +563,47 @@ export function DataSourcesAdminPanel() {
                       </Button>
                     </div>
                   </div>
+                  {editingSchemaSourceId === source.id ? (
+                    <div className="mt-3 flex flex-col gap-2 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)] p-3 sm:flex-row sm:items-end">
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <Label htmlFor={`schema-scope-${source.id}`}>Schemas to scan</Label>
+                        <Input
+                          id={`schema-scope-${source.id}`}
+                          value={schemaScopeDraft}
+                          onChange={event => setSchemaScopeDraft(event.target.value)}
+                          placeholder="public, analytics"
+                        />
+                        <p className="text-[11px] text-[var(--dos-text-muted)]">
+                          Comma-separated allowlist. Saving marks the source for a fresh introspection.
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void handleSaveSchemaScope(source)}
+                          disabled={busySourceId === source.id}
+                        >
+                          {busySourceId === source.id && busyAction === 'scope'
+                            ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            : null}
+                          Save scope
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingSchemaSourceId(null)
+                            setSchemaScopeDraft('')
+                          }}
+                          disabled={busySourceId === source.id}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
                     <span>last test: {source.lastTestStatus ?? 'not run'}</span>
                     {source.lastTestedAt ? <span>{new Date(source.lastTestedAt).toLocaleString()}</span> : null}
@@ -639,7 +749,7 @@ export function DataSourcesAdminPanel() {
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Postgres source</DialogTitle>
+            <DialogTitle>Add database source</DialogTitle>
             <DialogDescription>
               Credentials are encrypted server-side. Use the demo SQL read-only user or a least-privilege database user.
             </DialogDescription>
@@ -674,12 +784,30 @@ export function DataSourcesAdminPanel() {
               ) : null}
             </div>
             <div className="space-y-2 sm:col-span-2">
+              <Label>Database engine</Label>
+              <Select
+                value={sourceType}
+                onValueChange={value => {
+                  const nextType = value as DataSourceType
+                  setSourceType(nextType)
+                  setPort(nextType === 'oracle' ? '1521' : '5432')
+                  setSchemas(nextType === 'oracle' ? '' : 'public')
+                }}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="postgres">PostgreSQL</SelectItem>
+                  <SelectItem value="oracle">Oracle</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
               <Label>Name</Label>
               <Input value={name} onChange={event => setName(event.target.value)} placeholder="Client reporting database" />
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label>Schemas</Label>
-              <Input value={schemas} onChange={event => setSchemas(event.target.value)} placeholder="public" />
+              <Input value={schemas} onChange={event => setSchemas(event.target.value)} placeholder={sourceType === 'oracle' ? 'DASHUSER' : 'public'} />
               <p className="text-[11px] text-muted-foreground">Comma-separated allowlist. Only these schemas are scanned and profiled.</p>
             </div>
             <div className="space-y-2">
@@ -688,11 +816,11 @@ export function DataSourcesAdminPanel() {
             </div>
             <div className="space-y-2">
               <Label>Port</Label>
-              <Input value={port} onChange={event => setPort(event.target.value)} placeholder="5432" />
+              <Input value={port} onChange={event => setPort(event.target.value)} placeholder={sourceType === 'oracle' ? '1521' : '5432'} />
             </div>
             <div className="space-y-2">
-              <Label>Database</Label>
-              <Input value={database} onChange={event => setDatabase(event.target.value)} placeholder="analytics" />
+              <Label>{sourceType === 'oracle' ? 'SID / service name' : 'Database'}</Label>
+              <Input value={database} onChange={event => setDatabase(event.target.value)} placeholder={sourceType === 'oracle' ? 'ORCLPDB1' : 'analytics'} />
             </div>
             <div className="space-y-2">
               <Label>Username</Label>
@@ -702,21 +830,32 @@ export function DataSourcesAdminPanel() {
               <Label>Password</Label>
               <Input value={password} onChange={event => setPassword(event.target.value)} type="password" />
             </div>
-            <div className="space-y-2">
-              <Label>SSL Mode</Label>
-              <Select value={sslMode} onValueChange={value => setSslMode(value as DataSourceSslMode)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="require">Require</SelectItem>
-                  <SelectItem value="prefer">Prefer</SelectItem>
-                  <SelectItem value="verify-full">Verify full</SelectItem>
-                  <SelectItem value="verify-ca">Verify CA</SelectItem>
-                  <SelectItem value="disable">Disable</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {sourceType === 'postgres' ? (
+              <div className="space-y-2">
+                <Label>SSL Mode</Label>
+                <Select value={sslMode} onValueChange={value => setSslMode(value as DataSourceSslMode)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="require">Require</SelectItem>
+                    <SelectItem value="prefer">Prefer</SelectItem>
+                    <SelectItem value="verify-full">Verify full</SelectItem>
+                    <SelectItem value="verify-ca">Verify CA</SelectItem>
+                    <SelectItem value="disable">Disable</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Oracle identifier</Label>
+                <Select value={oracleConnectType} onValueChange={value => setOracleConnectType(value as OracleConnectType)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="service_name">Service name</SelectItem>
+                    <SelectItem value="sid">SID</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>

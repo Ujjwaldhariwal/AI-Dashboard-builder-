@@ -23,6 +23,10 @@ export const ProjectAutopilotBriefSchema = z.object({
   chartCount: z.number().int().min(1).max(12).default(6),
   chartTypes: z.array(ChartTypeSchema).max(12).default([]),
   autoApply: z.boolean().default(true),
+  publicationPolicy: z.enum([
+    'review_required',
+    'auto_publish_when_healthy',
+  ]).default('auto_publish_when_healthy'),
 }).strict()
 
 export interface ProjectAutopilotSnapshot {
@@ -71,9 +75,9 @@ const META: Record<ProjectAutopilotStepKey, Pick<ProjectAutopilotStepPlan, 'labe
   schema_scope: { label: 'Schema scope', href: '/admin/data-sources' },
   semantic_model: { label: 'Semantic model', href: '/admin/semantic-model' },
   dataset: { label: 'Governed dataset', href: '/admin/datasets' },
-  charts: { label: 'Editable charts', href: '/admin/charts' },
+  charts: { label: 'Chart configs', href: '/admin/charts' },
   dashboard: { label: 'Dashboard layout', href: '/admin/publishing' },
-  publish_review: { label: 'Publish review', href: '/admin/publishing' },
+  publish_review: { label: 'Release finalization', href: '/admin/publishing' },
 }
 
 function slotKey(value: string, index: number) {
@@ -176,9 +180,9 @@ export function buildProjectAutopilotPlan(
   if (!datasetReady) {
     steps.push(step('charts', 'blocked', 'Waiting for a published governed dataset.', true))
   } else if (snapshot.chartCount < brief.chartCount) {
-    steps.push(step('charts', 'ready', `Autopilot can create ${brief.chartCount - snapshot.chartCount} more editable chart drafts.`, true))
+    steps.push(step('charts', 'ready', `Autopilot can create ${brief.chartCount - snapshot.chartCount} more validated chart configs.`, true))
   } else {
-    steps.push(step('charts', 'succeeded', `${snapshot.chartCount} editable chart drafts are ready.`, true))
+    steps.push(step('charts', 'succeeded', `${snapshot.chartCount} validated chart configs are ready.`, true))
   }
 
   const chartsReady = snapshot.chartCount >= brief.chartCount
@@ -193,10 +197,28 @@ export function buildProjectAutopilotPlan(
 
   const dashboardReady = Boolean(dashboard && dashboard.slotCount >= brief.chartCount)
   const dashboardPublished = dashboardReady && dashboard?.status === 'published'
+  const automaticPublication = brief.publicationPolicy === 'auto_publish_when_healthy'
   steps.push(dashboardPublished
-    ? step('publish_review', 'succeeded', 'The immutable dashboard release was explicitly published.', false)
+    ? step(
+      'publish_review',
+      'succeeded',
+      'The immutable dashboard release is published and ready for client verification.',
+      automaticPublication,
+    )
     : dashboardReady
-      ? step('publish_review', 'awaiting_review', 'Review layout and readiness before explicitly publishing an immutable release.', false)
+      ? automaticPublication
+        ? step(
+          'publish_review',
+          'ready',
+          'Autopilot can run release readiness, publish the immutable version, and verify the client runtime.',
+          true,
+        )
+        : step(
+          'publish_review',
+          'awaiting_review',
+          'Review layout and readiness before explicitly publishing an immutable release.',
+          false,
+        )
       : step('publish_review', 'blocked', 'Waiting for the composed dashboard draft.', false))
 
   const firstIncomplete = steps.find(item => item.status !== 'succeeded') ?? steps[steps.length - 1]

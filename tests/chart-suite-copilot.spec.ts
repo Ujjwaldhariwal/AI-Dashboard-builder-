@@ -109,6 +109,69 @@ test.describe('chart suite copilot', () => {
     }).state).toBe('valid')
   })
 
+  test('projects every generated template with the dimensions it requires', () => {
+    const richFields = [
+      ...fields,
+      { id: '10000000-0000-4000-8000-000000000003', name: 'Status', role: 'dimension' },
+      { id: '10000000-0000-4000-8000-000000000004', name: 'Domain', role: 'dimension' },
+    ]
+    const richMetrics = [
+      ...metrics,
+      { id: '20000000-0000-4000-8000-000000000003', name: 'Open Issues', aggregation: 'sum' },
+    ]
+    const allowedTemplateIds = analyzeDatasetChartOptions({ fields: richFields, metrics: richMetrics })
+      .compatibility.filter(item => item.status !== 'blocked').map(item => item.template.id)
+    const proposal = buildDeterministicChartSuiteProposal({
+      instruction: 'Create 6 charts with KPIs, a trend, and bar comparisons',
+      datasetName: 'MDM quality',
+      fields: richFields,
+      metrics: richMetrics,
+      allowedTemplateIds,
+    })
+
+    expect(proposal.charts).toHaveLength(6)
+    for (const chart of proposal.charts) {
+      expect(validateDashboardChartConfig({
+        templateId: chart.templateId,
+        encoding: chart.encoding,
+        fields: richFields,
+        metrics: richMetrics,
+      }).state).not.toBe('invalid')
+    }
+    expect(proposal.charts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        templateId: 'drilldown-bar',
+        encoding: expect.objectContaining({ seriesFieldId: expect.any(String) }),
+      }),
+    ]))
+  })
+
+  test('pairs chart dimensions and metrics from the same semantic entity', () => {
+    const snapshotEntity = '30000000-0000-4000-8000-000000000001'
+    const issueEntity = '30000000-0000-4000-8000-000000000002'
+    const entityFields = [
+      { id: '40000000-0000-4000-8000-000000000001', name: 'Snapshot Date', role: 'date', entityId: snapshotEntity },
+      { id: '40000000-0000-4000-8000-000000000002', name: 'Domain', role: 'dimension', entityId: snapshotEntity },
+      { id: '40000000-0000-4000-8000-000000000003', name: 'Detected At', role: 'date', entityId: issueEntity },
+    ]
+    const entityMetrics = [
+      { id: '50000000-0000-4000-8000-000000000001', name: 'Duplicate Records', aggregation: 'sum', entityId: snapshotEntity },
+    ]
+    const proposal = buildDeterministicChartSuiteProposal({
+      instruction: 'Create 3 charts with a KPI, trend, and bar comparison',
+      datasetName: 'MDM quality',
+      fields: entityFields,
+      metrics: entityMetrics,
+      allowedTemplateIds: ['kpi-card', 'line', 'bar'],
+    })
+
+    expect(proposal.charts).toHaveLength(3)
+    expect(proposal.charts.find(chart => chart.templateId === 'kpi-card')?.encoding.xAxisFieldId).toBeUndefined()
+    for (const chart of proposal.charts.filter(chart => chart.encoding.xAxisFieldId)) {
+      expect(chart.encoding.xAxisFieldId).not.toBe(entityFields[2].id)
+    }
+  })
+
   test('validates proposals before one atomic RPC applies the whole suite', () => {
     const proposalRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/datasets/[id]/chart-suite-proposal/route.ts'), 'utf8')
     const batchRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/dashboard-charts/batch/route.ts'), 'utf8')

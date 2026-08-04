@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 
-import { executePostgresReadOnlyQuery } from '@/lib/data-sources/postgres-runtime'
+import {
+  executeDataSourceReadOnlyQuery,
+  resolveDataSourceType,
+} from '@/lib/data-sources/data-source-runtime'
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { checkRuntimeRateLimit } from '@/lib/security/runtime-rate-limit'
 import { compileDatasetQueryPlan } from '@/lib/semantic/dataset-query-compiler'
@@ -66,12 +69,13 @@ export async function POST(
     const metrics = semanticValidation.metrics
     const relationships = semanticValidation.relationships
 
-    const compileResult = compileDatasetQueryPlan({
+    const queryInputs = {
       fields,
       metrics,
       relationships,
       metricSourceFields: semanticValidation.metricSourceFields,
-    })
+    }
+    let compileResult = compileDatasetQueryPlan(queryInputs)
 
     if (!compileResult.queryPlan.executableSql || !compileResult.dataSourceId) {
       await recordSemanticQueryRun({
@@ -93,23 +97,29 @@ export async function POST(
         queryPlan: compileResult.queryPlan,
       }, { status: 422 })
     }
+    const dataSourceId = compileResult.dataSourceId
 
     const { data: sourceRow, error: sourceError } = await auth.supabase
       .from('data_sources')
-      .select('id, credential_ciphertext, status')
-      .eq('id', compileResult.dataSourceId)
+      .select('id, type, credential_ciphertext, status')
+      .eq('id', dataSourceId)
       .eq('tenant_id', dataset.tenant_id)
       .eq('project_id', dataset.project_id)
       .single()
 
-    if (sourceError) return NextResponse.json({ result: null, error: sourceError.message }, { status: 404 })
+    if (sourceError || !sourceRow) return NextResponse.json({ result: null, error: sourceError?.message ?? 'Data source not found' }, { status: 404 })
+    const sourceType = resolveDataSourceType(sourceRow.type)
+    if (sourceType === 'oracle') compileResult = compileDatasetQueryPlan({ ...queryInputs, dialect: 'oracle' })
+    if (!compileResult.queryPlan.executableSql) {
+      return NextResponse.json({ result: null, error: 'Dataset is not executable for this data source' }, { status: 422 })
+    }
     if (sourceRow.status !== 'active') {
       await recordSemanticQueryRun({
         supabase: auth.supabase,
         tenantId: String(dataset.tenant_id),
         projectId: String(dataset.project_id),
         datasetId: String(dataset.id),
-        dataSourceId: compileResult.dataSourceId,
+        dataSourceId,
         actorUserId: auth.userId,
         surface: 'admin_preview',
         status: 'error',
@@ -125,7 +135,7 @@ export async function POST(
       supabase: auth.supabase,
       tenantId: String(dataset.tenant_id),
       projectId: String(dataset.project_id),
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
     })
     if (!budget.ok) {
       await recordSemanticQueryRun({
@@ -133,7 +143,7 @@ export async function POST(
         tenantId: String(dataset.tenant_id),
         projectId: String(dataset.project_id),
         datasetId: String(dataset.id),
-        dataSourceId: compileResult.dataSourceId,
+        dataSourceId,
         actorUserId: auth.userId,
         surface: 'admin_preview',
         status: 'error',
@@ -149,9 +159,10 @@ export async function POST(
       }, { status: 429, headers: { 'Retry-After': String(budget.retryAfterSeconds) } })
     }
 
-    let result: Awaited<ReturnType<typeof executePostgresReadOnlyQuery>>
+    let result: Awaited<ReturnType<typeof executeDataSourceReadOnlyQuery>>
     try {
-      result = await executePostgresReadOnlyQuery(
+      result = await executeDataSourceReadOnlyQuery(
+        sourceType,
         String(sourceRow.credential_ciphertext),
         compileResult.queryPlan.executableSql,
         {
@@ -167,7 +178,7 @@ export async function POST(
         tenantId: String(dataset.tenant_id),
         projectId: String(dataset.project_id),
         datasetId: String(dataset.id),
-        dataSourceId: compileResult.dataSourceId,
+        dataSourceId,
         actorUserId: auth.userId,
         surface: 'admin_preview',
         status: 'error',
@@ -183,7 +194,7 @@ export async function POST(
       supabase: auth.supabase,
       tenantId: String(dataset.tenant_id),
       projectId: String(dataset.project_id),
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
       projection: {
         queries: 1,
         rows: result.rowCount,
@@ -196,7 +207,7 @@ export async function POST(
         tenantId: String(dataset.tenant_id),
         projectId: String(dataset.project_id),
         datasetId: String(dataset.id),
-        dataSourceId: compileResult.dataSourceId,
+        dataSourceId,
         actorUserId: auth.userId,
         surface: 'admin_preview',
         status: 'error',
@@ -219,7 +230,7 @@ export async function POST(
       tenantId: String(dataset.tenant_id),
       projectId: String(dataset.project_id),
       datasetId: String(dataset.id),
-      dataSourceId: compileResult.dataSourceId,
+      dataSourceId,
       actorUserId: auth.userId,
       surface: 'admin_preview',
       status: 'success',

@@ -148,6 +148,7 @@ function schemaRunnerFake(schemaHash: string) {
       tenant_id: tenantId,
       project_id: projectId,
       status: 'active',
+      connection_config: { schemas: ['mdm_demo'] },
       credential_ciphertext: 'encrypted-test-credential',
       schema_hash: schemaHash,
     }],
@@ -207,6 +208,27 @@ test.describe('release integrity hardening', () => {
     expect(fake.rpcCalls).toEqual([])
     expect(fake.mutations.filter(mutation => mutation.table === 'data_source_columns')).toEqual([])
     expect(fake.mutations.filter(mutation => mutation.table === 'guided_schema_profiles')).toEqual([])
+  })
+
+  test('uses the editable connection schema allowlist instead of the encrypted credential default', async () => {
+    const tables = schemaTables()
+    const schemaHash = schemaHashForTables(tables)
+    const fake = schemaRunnerFake(schemaHash)
+    let receivedSchemas: string[] | undefined
+
+    await runDataSourceSchemaIntrospection({
+      supabase: fake as never,
+      dataSourceId,
+      dependencies: {
+        ...runnerDependencies(completeIntrospection(tables), { invalidations: 0, profiles: 0 }),
+        introspectSchema: async (_ciphertext, schemas) => {
+          receivedSchemas = schemas
+          return completeIntrospection(tables)
+        },
+      },
+    })
+
+    expect(receivedSchemas).toEqual(['mdm_demo'])
   })
 
   test('truncated introspection is explicit and preserves the previous active snapshot', async () => {

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { getChartTemplate } from '@/lib/semantic/chart-template-registry'
 import type { ChartTemplateId } from '@/types/chart-template'
 import type { DashboardChartEncoding } from '@/types/dashboard-chart'
 
@@ -57,12 +58,14 @@ export interface ChartSuiteFieldEvidence {
   id: string
   name: string
   role: string
+  entityId?: string | null
 }
 
 export interface ChartSuiteMetricEvidence {
   id: string
   name: string
   aggregation: string
+  entityId?: string | null
 }
 
 function title(value: string) {
@@ -158,16 +161,45 @@ export function buildDeterministicChartSuiteProposal({
     const occurrence = templateOccurrences.get(templateId) ?? 0
     templateOccurrences.set(templateId, occurrence + 1)
     const metric = metrics[occurrence % metrics.length]
+    const compatibleFields = metric.entityId
+      ? fields.filter(field => field.entityId === metric.entityId)
+      : fields
+    const compatibleMetrics = metric.entityId
+      ? metrics.filter(item => item.entityId === metric.entityId)
+      : metrics
     const prefersDate = templateId === 'line' || templateId === 'trend-composed'
-    const axisPool = prefersDate && dateFields.length > 0 ? dateFields : categoryFields.length > 0 ? categoryFields : fallbackFields
-    const axis = axisPool[Math.floor(occurrence / metrics.length) % Math.max(axisPool.length, 1)]
+    const compatibleDates = compatibleFields.filter(field => field.role === 'date')
+    const compatibleCategories = compatibleFields.filter(field => ['dimension', 'attribute'].includes(field.role))
+    const compatibleIdentifiers = compatibleFields.filter(field => field.role === 'identifier')
+    const compatibleFallbacks = compatibleFields.filter(field => field.role !== 'identifier')
+    const template = getChartTemplate(templateId)
+    const requiredDimensions = template?.requirement.minDimensions ?? 0
+    const axisPool = prefersDate && compatibleDates.length > 0
+      ? compatibleDates
+      : compatibleCategories.length > 0
+        ? compatibleCategories
+        : compatibleFallbacks.length > 0
+          ? compatibleFallbacks
+          : compatibleIdentifiers
+    const axis = requiredDimensions > 0
+      ? axisPool[Math.floor(occurrence / metrics.length) % Math.max(axisPool.length, 1)]
+      : undefined
+    const compatibleDimensions = [...compatibleCategories, ...compatibleDates, ...compatibleIdentifiers]
+    const seriesField = requiredDimensions > 1
+      ? compatibleDimensions.find(field => field.id !== axis?.id)
+      : undefined
+    if (requiredDimensions > Number(Boolean(axis)) + Number(Boolean(seriesField))) continue
     const supportsMany = ['grouped-bar', 'horizontal-stacked-bar', 'trend-composed', 'kpi-grid', 'drilldown-bar', 'table-grid'].includes(templateId)
-    const yMetricIds = supportsMany ? metrics.slice(0, Math.min(4, metrics.length)).map(item => item.id) : [metric.id]
+    const yMetricIds = supportsMany
+      ? compatibleMetrics.slice(0, Math.min(template?.requirement.maxMetrics ?? 4, compatibleMetrics.length)).map(item => item.id)
+      : [metric.id]
+    if (yMetricIds.length < (template?.requirement.minMetrics ?? 0)) continue
     const encoding = {
       ...(axis ? { xAxisFieldId: axis.id } : {}),
+      ...(seriesField ? { seriesFieldId: seriesField.id } : {}),
       yMetricIds,
       stackMetricIds: templateId === 'horizontal-stacked-bar' ? yMetricIds : [],
-      tooltipFieldIds: [...(axis ? [axis.id] : []), ...yMetricIds],
+      tooltipFieldIds: [...(axis ? [axis.id] : []), ...(seriesField ? [seriesField.id] : []), ...yMetricIds],
       labelById: Object.fromEntries([...fields, ...metrics].map(item => [item.id, item.name])),
       colorById: {},
       sort: null,
@@ -177,6 +209,7 @@ export function buildDeterministicChartSuiteProposal({
     const signature = JSON.stringify({
       templateId,
       xAxisFieldId: encoding.xAxisFieldId ?? null,
+      seriesFieldId: encoding.seriesFieldId ?? null,
       yMetricIds: [...encoding.yMetricIds].sort(),
       stackMetricIds: [...(encoding.stackMetricIds ?? [])].sort(),
     })
@@ -185,7 +218,7 @@ export function buildDeterministicChartSuiteProposal({
     const chartName = templateId === 'kpi-card'
       ? metric.name
       : axis
-        ? `${metric.name} by ${axis.name}`
+        ? `${metric.name} by ${axis.name}${seriesField ? ` and ${seriesField.name}` : ''}`
         : `${metric.name} ${title(templateId)}`
     const size = defaultSize(templateId)
     charts.push({

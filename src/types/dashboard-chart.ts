@@ -8,6 +8,42 @@ export type DashboardChartSize = 'compact' | 'standard' | 'wide' | 'full'
 export type DashboardChartFontWeight = 'normal' | 'medium' | 'bold'
 export type DashboardChartLegendPosition = 'top' | 'right' | 'bottom' | 'left'
 export type DashboardChartLabelPosition = 'auto' | 'top' | 'right' | 'inside' | 'outside'
+export type DashboardChartDensity = 'compact' | 'comfortable' | 'spacious'
+export type DashboardChartTextOverflow = 'none' | 'truncate' | 'wrap'
+export type DashboardChartDateFormat = 'auto' | 'date-only' | 'month-short' | 'month-year' | 'year'
+export type DashboardChartLocale = 'en-US' | 'en-GB' | 'en-IN'
+export type DashboardChartTimeZone = 'preserve' | 'UTC'
+export type DashboardChartNumberFormatStyle = 'decimal' | 'percent' | 'currency' | 'compact'
+export type DashboardChartCurrency = 'USD' | 'EUR' | 'GBP' | 'INR' | 'JPY'
+
+export interface DashboardChartNumberFormat {
+  style: DashboardChartNumberFormatStyle
+  currency?: DashboardChartCurrency
+  percentScale?: 'fraction' | 'whole'
+  minimumFractionDigits?: number
+  maximumFractionDigits?: number
+  useGrouping?: boolean
+}
+
+export interface DashboardChartLabelOverride {
+  targetId: string
+  label: string
+}
+
+export type DashboardChartAxisPresentation = {
+  show?: boolean
+  title?: string | null
+  labelColor?: string | null
+  labelFontSize?: number
+  labelFontWeight?: DashboardChartFontWeight
+  labelRotation?: number
+  labelFormat?: DashboardChartDateFormat
+  labelLocale?: DashboardChartLocale
+  labelTimeZone?: DashboardChartTimeZone
+  numberFormat?: DashboardChartNumberFormat
+  labelOverflow?: DashboardChartTextOverflow
+  labelMaxLength?: number
+}
 
 export type DashboardChartFilterOperator =
   | 'eq'
@@ -47,32 +83,33 @@ export interface DashboardChartPresentation {
   colors?: string[]
   showGrid?: boolean
   legendPosition?: DashboardChartLegendPosition
-  xAxis?: {
-    show?: boolean
-    title?: string | null
-    labelColor?: string | null
+  density?: DashboardChartDensity
+  xAxis?: DashboardChartAxisPresentation
+  yAxis?: Omit<DashboardChartAxisPresentation, 'labelRotation'>
+  legend?: {
     labelFontSize?: number
     labelFontWeight?: DashboardChartFontWeight
-    labelRotation?: number
-  }
-  yAxis?: {
-    show?: boolean
-    title?: string | null
-    labelColor?: string | null
-    labelFontSize?: number
-    labelFontWeight?: DashboardChartFontWeight
+    labelOverflow?: DashboardChartTextOverflow
+    labelMaxLength?: number
+    labelOverrides?: DashboardChartLabelOverride[]
   }
   labels?: {
     color?: string | null
     fontSize?: number
     fontWeight?: DashboardChartFontWeight
     position?: DashboardChartLabelPosition
+    numberFormat?: DashboardChartNumberFormat
+    collision?: 'allow' | 'hide-overlap'
   }
   tooltip?: {
     enabled?: boolean
     backgroundColor?: string | null
     borderColor?: string | null
     textColor?: string | null
+    labelOverflow?: DashboardChartTextOverflow
+    labelMaxLength?: number
+    labelOverrides?: DashboardChartLabelOverride[]
+    numberFormat?: DashboardChartNumberFormat
   }
   margins?: {
     top?: number

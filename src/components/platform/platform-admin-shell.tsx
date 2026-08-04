@@ -140,16 +140,16 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
 
         <div className="mt-4 shrink-0 border-t border-[color:var(--dos-border-soft)] pt-4">
           <div className="mb-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-card-overlay)] p-3">
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
+            <div className="flex items-center gap-2 text-xs font-medium text-[var(--dos-text-primary)]">
               <UserRound className="h-3.5 w-3.5 shrink-0 text-[var(--dos-accent-primary)]" />
               <span className="truncate">{user?.name ?? 'Signed in'}</span>
             </div>
-            <p className="mt-1 truncate text-[11px] text-slate-500">{user?.email ?? 'Active admin session'}</p>
+            <p className="mt-1 truncate text-[11px] text-[var(--dos-text-muted)]">{user?.email ?? 'Active admin session'}</p>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="mt-3 h-8 w-full justify-start px-2 text-slate-400 hover:bg-[var(--dos-surface-muted)] hover:text-slate-100"
+              className="mt-3 h-8 w-full justify-start px-2 text-[var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)] hover:text-[var(--dos-text-primary)]"
               onClick={() => void logout('/login')}
             >
               <LogOut className="mr-2 h-3.5 w-3.5" />
@@ -167,7 +167,7 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-9 w-9 border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+                className="h-9 w-9 border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] text-[var(--dos-text-primary)] hover:bg-[var(--dos-surface-muted)]"
                 onClick={() => setMobileNavOpen(true)}
                 aria-label="Open admin navigation"
               >
@@ -200,31 +200,31 @@ export function PlatformAdminShell({ children }: { children: React.ReactNode }) 
       </div>
 
       <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <DialogContent className="border-white/10 bg-slate-950 text-slate-100 sm:max-w-sm">
+        <DialogContent className="border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)] text-[var(--dos-text-primary)] sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>DashboardOS</DialogTitle>
-            <DialogDescription className="text-slate-500">
+            <DialogDescription className="text-[var(--dos-text-muted)]">
               Navigate admin sections or end the current session.
             </DialogDescription>
           </DialogHeader>
           <nav className="space-y-1">
             {renderNavItems(() => setMobileNavOpen(false))}
           </nav>
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
-            <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-slate-300 sm:hidden">
+          <div className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-3">
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-background-deep)] px-3 py-2 text-xs text-[var(--dos-text-secondary)] sm:hidden">
               <span>Theme</span>
               <DashboardOsThemeToggle mode={themeMode} onToggle={toggleThemeMode} label />
             </div>
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
+            <div className="flex items-center gap-2 text-xs font-medium text-[var(--dos-text-primary)]">
               <UserRound className="h-3.5 w-3.5 text-[var(--dos-accent-primary)]" />
               <span className="truncate">{user?.name ?? 'Signed in'}</span>
             </div>
-            <p className="mt-1 truncate text-[11px] text-slate-500">{user?.email ?? 'Active admin session'}</p>
+            <p className="mt-1 truncate text-[11px] text-[var(--dos-text-muted)]">{user?.email ?? 'Active admin session'}</p>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="mt-3 w-full border-white/10 bg-transparent text-slate-100 hover:bg-white/[0.08]"
+              className="mt-3 w-full border-[color:var(--dos-border-soft)] bg-transparent text-[var(--dos-text-primary)] hover:bg-[var(--dos-surface-muted)]"
               onClick={() => void logout('/login')}
             >
               <LogOut className="mr-2 h-3.5 w-3.5" />

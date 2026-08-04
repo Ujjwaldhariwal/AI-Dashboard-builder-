@@ -23,7 +23,7 @@ export interface SemanticDataset {
 }
 
 export interface CompiledDatasetQueryPlan {
-  dialect: 'postgres'
+  dialect: 'postgres' | 'oracle'
   select: Array<{
     id: string
     label: string

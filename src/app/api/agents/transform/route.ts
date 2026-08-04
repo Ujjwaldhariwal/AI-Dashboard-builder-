@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { TransformOpSchema } from '@/lib/ai/agent-schemas'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
-import { getSupabaseAnonKey, SUPABASE_URL } from '@/lib/supabase/config'
+import { guardAiRoute } from '@/lib/security/ai-route-guard'
 
 const MAX_BLUEPRINT_FETCH_ROWS = 12
 const MAX_BLUEPRINT_CONTEXT_CHARS = 9_000
@@ -15,11 +13,11 @@ const MAX_SAMPLE_PREVIEW_CHARS = 12_000
 const MAX_BLUEPRINT_TRANSFORMS_PER_ITEM = 24
 
 const TransformAgentRequestSchema = z.object({
-  prompt: z.string().min(1, 'prompt is required'),
-  sampleData: z.array(z.unknown()),
-  dashboardId: z.string().optional(),
-  endpointId: z.string().optional(),
-  endpointName: z.string().optional(),
+  prompt: z.string().trim().min(1, 'prompt is required').max(2_000),
+  sampleData: z.array(z.unknown()).max(100),
+  dashboardId: z.string().max(160).optional(),
+  endpointId: z.string().max(160).optional(),
+  endpointName: z.string().max(240).optional(),
 }).strict()
 
 const TransformAgentResponseSchema = z.object({
@@ -72,36 +70,6 @@ function parseStoredBlueprint(row: unknown): StoredTransformBlueprint | null {
     transforms: parsedTransforms.data,
     createdAt: asTrimmedString(record.created_at) ?? asTrimmedString(record.createdAt),
   }
-}
-
-async function getAuthedSupabase(): Promise<{
-  supabase: SupabaseClient
-  userId: string
-} | null> {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    SUPABASE_URL,
-    getSupabaseAnonKey(),
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll().map((cookie) => ({
-            name: cookie.name,
-            value: cookie.value,
-          }))
-        },
-        setAll() {
-          // Read-only auth check in route handler; no cookie writes needed.
-        },
-      },
-    },
-  )
-
-  const { data: { session } } = await supabase.auth.getSession()
-  const userId = session?.user?.id
-  if (!userId) return null
-
-  return { supabase, userId }
 }
 
 async function fetchBlueprintMemoryContext(
@@ -185,13 +153,8 @@ async function fetchBlueprintMemoryContext(
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await getAuthedSupabase()
-    if (!auth) {
-      return NextResponse.json(
-        { operations: [], error: 'Unauthorized' },
-        { status: 401 },
-      )
-    }
+    const auth = await guardAiRoute(req, 'transform')
+    if (auth instanceof Response) return auth
 
     const body = await req.json().catch(() => null)
     if (body === null) {

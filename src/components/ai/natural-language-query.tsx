@@ -1,202 +1,190 @@
 'use client'
 
-// Component: NaturalLanguageQuery
+import { useEffect, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Database, Loader2, MessageSquare, Send, Sparkles, TrendingUp } from 'lucide-react'
 
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Send, Loader2, MessageSquare, TrendingUp, Database } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import {
+  normalizeNaturalLanguageQueryResult,
+  type NaturalLanguageMetric,
+  type NaturalLanguageQueryResult,
+} from '@/lib/ai/natural-language-query-result'
 
-interface Message {
+type Message = {
+  id: string
   role: 'user' | 'assistant'
   content: string
-  data?: any
-  visualizationType?: 'table' | 'chart' | 'metric'
+  result?: NaturalLanguageQueryResult
 }
 
-interface NaturalLanguageQueryProps {
-  data: any[]
-  onQuery: (query: string) => Promise<any>
+type NaturalLanguageQueryProps = {
+  data: ReadonlyArray<Record<string, unknown>>
+  onQuery: (query: string) => Promise<unknown>
+}
+
+const suggestedQueries = [
+  'Which metrics changed the most?',
+  'Explain the strongest trend',
+  'Compare performance by category',
+  'Find unusual patterns and likely causes',
+]
+
+function messageId(role: Message['role']) {
+  return `${role}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isMetric(value: NaturalLanguageQueryResult['data']): value is NaturalLanguageMetric {
+  return Boolean(value && !Array.isArray(value) && 'metric' in value)
 }
 
 export function NaturalLanguageQuery({ data, onQuery }: NaturalLanguageQueryProps) {
+  const fieldCount = data[0] ? Object.keys(data[0]).length : 0
   const [messages, setMessages] = useState<Message[]>([
     {
+      id: 'assistant-welcome',
       role: 'assistant',
-      content: "Hi! I'm your AI data assistant. Ask me anything about your data. Try questions like:\n\n• What's the average value?\n• Show me trends over time\n• Find anomalies in the data\n• Which category has the highest count?"
-    }
+      content: data.length
+        ? `I can analyze ${data.length.toLocaleString()} preview rows across ${fieldCount} fields using the governed AI query service. Ask for comparisons, trends, anomalies, or an executive explanation.`
+        : 'Connect or preview a governed dataset, then ask for comparisons, trends, anomalies, or an executive explanation.',
+    },
   ])
   const [input, setInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
 
-  const suggestedQueries = [
-    "What are the top 5 records?",
-    "Calculate the average",
-    "Show distribution by category",
-    "Find unusual patterns"
-  ]
+  useEffect(() => {
+    setMessages(previous => {
+      if (previous.length !== 1 || previous[0]?.id !== 'assistant-welcome') return previous
+      return [{
+        ...previous[0],
+        content: data.length
+          ? `I can analyze ${data.length.toLocaleString()} released preview rows across ${fieldCount} fields. Ask for comparisons, trends, anomalies, or an executive explanation.`
+          : 'Load a released chart, then ask for comparisons, trends, anomalies, or an executive explanation.',
+      }]
+    })
+  }, [data.length, fieldCount])
 
   const processNaturalLanguageQuery = async (query: string) => {
+    const normalizedQuery = query.trim()
+    if (!normalizedQuery || isProcessing) return
+
     setIsProcessing(true)
-    
-    // Add user message
-    setMessages(prev => [...prev, { role: 'user', content: query }])
-    
+    setMessages(previous => [
+      ...previous,
+      { id: messageId('user'), role: 'user', content: normalizedQuery },
+    ])
+
     try {
-      // Simulate AI processing (in production, this would call OpenAI API)
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      
-      let response = ''
-      let resultData: any = null
-      let vizType: 'table' | 'chart' | 'metric' = 'table'
-      
-      // Smart query interpretation
-      const lowerQuery = query.toLowerCase()
-      
-      if (lowerQuery.includes('average') || lowerQuery.includes('mean')) {
-        const numericFields = Object.keys(data[0]).filter(key => 
-          typeof data[0][key] === 'number'
-        )
-        
-        if (numericFields.length > 0) {
-          const field = numericFields[0]
-          const avg = data.reduce((sum, item) => sum + item[field], 0) / data.length
-          response = `The average ${field} is **${avg.toFixed(2)}**. This is calculated from ${data.length} records.`
-          resultData = { metric: avg.toFixed(2), field, count: data.length }
-          vizType = 'metric'
-        }
-      } else if (lowerQuery.includes('top') || lowerQuery.includes('highest')) {
-        const numericFields = Object.keys(data[0]).filter(key => 
-          typeof data[0][key] === 'number'
-        )
-        
-        if (numericFields.length > 0) {
-          const field = numericFields[0]
-          const sorted = [...data].sort((a, b) => b[field] - a[field]).slice(0, 5)
-          response = `Here are the top 5 records by ${field}:`
-          resultData = sorted
-          vizType = 'table'
-        }
-      } else if (lowerQuery.includes('trend') || lowerQuery.includes('over time')) {
-        response = `I've identified a trend in your data. The values show a ${Math.random() > 0.5 ? 'positive' : 'negative'} correlation over the dataset timeline.`
-        resultData = data.slice(0, 10)
-        vizType = 'chart'
-      } else if (lowerQuery.includes('distribution') || lowerQuery.includes('category')) {
-        const categoricalFields = Object.keys(data[0]).filter(key => 
-          typeof data[0][key] === 'string'
-        )
-        
-        if (categoricalFields.length > 0) {
-          const field = categoricalFields[0]
-          const distribution = data.reduce((acc, item) => {
-            acc[item[field]] = (acc[item[field]] || 0) + 1
-            return acc
-          }, {} as Record<string, number>)
-          
-          response = `Distribution by ${field}:`
-          resultData = Object.entries(distribution).map(([name, count]) => ({ name, count }))
-          vizType = 'table'
-        }
-      } else if (lowerQuery.includes('anomal') || lowerQuery.includes('unusual')) {
-        response = `I've analyzed ${data.length} records and found 2-3 potential anomalies that deviate from normal patterns. These could indicate data quality issues or significant events.`
-        vizType = 'table'
-      } else if (lowerQuery.includes('total') || lowerQuery.includes('sum')) {
-        const numericFields = Object.keys(data[0]).filter(key => 
-          typeof data[0][key] === 'number'
-        )
-        
-        if (numericFields.length > 0) {
-          const field = numericFields[0]
-          const total = data.reduce((sum, item) => sum + item[field], 0)
-          response = `The total sum of ${field} is **${total.toFixed(2)}** across ${data.length} records.`
-          resultData = { metric: total.toFixed(2), field, count: data.length }
-          vizType = 'metric'
-        }
-      } else {
-        response = `I understand you're asking about: "${query}". Based on your data, I can see ${data.length} records with ${Object.keys(data[0]).length} fields. Would you like me to show you:\n\n• Statistical summary\n• Top records\n• Distribution analysis\n• Trend analysis`
-      }
-      
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: response,
-        data: resultData,
-        visualizationType: vizType
-      }])
+      const result = normalizeNaturalLanguageQueryResult(await onQuery(normalizedQuery))
+      setMessages(previous => [
+        ...previous,
+        {
+          id: messageId('assistant'),
+          role: 'assistant',
+          content: result.content,
+          result,
+        },
+      ])
     } catch (error) {
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: "I encountered an error processing your query. Please try rephrasing your question."
-      }])
+      const detail = error instanceof Error ? error.message : 'The governed AI query could not be completed.'
+      setMessages(previous => [
+        ...previous,
+        {
+          id: messageId('assistant'),
+          role: 'assistant',
+          content: `${detail} No result was fabricated. Check the approved dataset and AI provider, then try again.`,
+        },
+      ])
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isProcessing) return
-    
-    processNaturalLanguageQuery(input)
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    const query = input.trim()
+    if (!query || isProcessing) return
     setInput('')
-  }
-
-  const handleSuggestedQuery = (query: string) => {
-    processNaturalLanguageQuery(query)
+    void processNaturalLanguageQuery(query)
   }
 
   return (
-    <Card className="h-[600px] flex flex-col">
+    <Card className="flex min-h-[32rem] flex-col border-[color:var(--dos-border-soft)] bg-[var(--dos-surface)]">
       <CardHeader className="border-b">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-purple-600" />
-          <CardTitle>AI Data Assistant</CardTitle>
-          <Badge variant="secondary" className="ml-auto">Beta</Badge>
+          <Sparkles className="h-5 w-5 text-[var(--dos-accent-primary)]" />
+          <CardTitle className="text-[var(--dos-text-primary)]">AI Data Assistant</CardTitle>
+          <Badge variant="secondary" className="ml-auto gap-1">
+            <Database className="h-3 w-3" />
+            Governed AI
+          </Badge>
         </div>
       </CardHeader>
-      
-      <CardContent className="flex-1 flex flex-col p-0">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <AnimatePresence>
-            {messages.map((message, i) => (
+
+      <CardContent className="flex flex-1 flex-col p-0">
+        <div className="flex-1 space-y-4 overflow-y-auto p-4" aria-live="polite">
+          <AnimatePresence initial={false}>
+            {messages.map(message => (
               <motion.div
-                key={i}
+                key={message.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
                 className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {message.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-4 h-4 text-purple-600" />
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--dos-accent-primary-soft)]">
+                    <Sparkles className="h-4 w-4 text-[var(--dos-accent-primary)]" />
                   </div>
                 )}
-                
-                <div className={`max-w-[80%] rounded-lg p-3 ${
-                  message.role === 'user' 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-muted'
-                }`}>
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  
-                  {message.data && message.visualizationType === 'table' && (
-                    <div className="mt-3 overflow-x-auto">
+
+                <div
+                  className={`max-w-[85%] rounded-lg p-3 ${
+                    message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+
+                  {message.result?.intent && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Governed intent: {message.result.intent.summary}
+                    </p>
+                  )}
+
+                  {message.result?.confidence !== undefined && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <TrendingUp className="h-3.5 w-3.5" />
+                      Confidence {Math.round(message.result.confidence * 100)}%
+                    </div>
+                  )}
+
+                  {message.result?.warnings.map(warning => (
+                    <p key={warning} className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                      {warning}
+                    </p>
+                  ))}
+
+                  {Array.isArray(message.result?.data) && message.result.data.length > 0 && (
+                    <div className="mt-3 overflow-x-auto rounded-md border bg-card">
                       <table className="w-full text-xs">
                         <thead>
                           <tr>
-                            {Object.keys(message.data[0]).map(key => (
-                              <th key={key} className="text-left p-2 border-b">{key}</th>
+                            {Object.keys(message.result.data[0]).map(key => (
+                              <th key={key} className="border-b p-2 text-left font-medium">
+                                {key}
+                              </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {message.data.slice(0, 5).map((row: any, idx: number) => (
-                            <tr key={idx}>
-                              {Object.values(row).map((val: any, j) => (
-                                <td key={j} className="p-2 border-b">{String(val)}</td>
+                          {message.result.data.slice(0, 5).map((row, rowIndex) => (
+                            <tr key={rowIndex}>
+                              {Object.keys(row).map(key => (
+                                <td key={key} className="border-b p-2 last:border-b-0">
+                                  {String(row[key] ?? '—')}
+                                </td>
                               ))}
                             </tr>
                           ))}
@@ -204,55 +192,54 @@ export function NaturalLanguageQuery({ data, onQuery }: NaturalLanguageQueryProp
                       </table>
                     </div>
                   )}
-                  
-                  {message.data && message.visualizationType === 'metric' && (
-                    <div className="mt-3 p-4 bg-card rounded-lg border">
-                      <div className="text-3xl font-bold text-primary">
-                        {message.data.metric}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        from {message.data.count} records
-                      </div>
+
+                  {isMetric(message.result?.data) && (
+                    <div className="mt-3 rounded-lg border bg-card p-4">
+                      {message.result.data.label && (
+                        <div className="mb-1 text-xs text-muted-foreground">{message.result.data.label}</div>
+                      )}
+                      <div className="text-3xl font-bold text-primary">{message.result.data.metric}</div>
+                      {message.result.data.count !== undefined && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          Grounded in {message.result.data.count.toLocaleString()} records
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-                
+
                 {message.role === 'user' && (
-                  <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                    <MessageSquare className="w-4 h-4 text-primary-foreground" />
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary">
+                    <MessageSquare className="h-4 w-4 text-primary-foreground" />
                   </div>
                 )}
               </motion.div>
             ))}
           </AnimatePresence>
-          
+
           {isProcessing && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex gap-3"
-            >
-              <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-                <Loader2 className="w-4 h-4 text-purple-600 animate-spin" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--dos-accent-primary-soft)]">
+                <Loader2 className="h-4 w-4 animate-spin text-[var(--dos-accent-primary)]" />
               </div>
-              <div className="bg-muted rounded-lg p-3">
-                <p className="text-sm text-muted-foreground">Analyzing your data...</p>
+              <div className="rounded-lg bg-muted p-3">
+                <p className="text-sm text-muted-foreground">Running governed analysis…</p>
               </div>
             </motion.div>
           )}
         </div>
-        
-        {/* Suggested Queries */}
-        {messages.length === 1 && (
+
+        {messages.length === 1 && data.length > 0 && (
           <div className="px-4 pb-2">
-            <p className="text-xs text-muted-foreground mb-2">Try asking:</p>
-            <div className="flex gap-2 flex-wrap">
-              {suggestedQueries.map((query, i) => (
+            <p className="mb-2 text-xs text-muted-foreground">Try asking:</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedQueries.map(query => (
                 <Button
-                  key={i}
+                  key={query}
                   variant="outline"
                   size="sm"
-                  onClick={() => handleSuggestedQuery(query)}
+                  onClick={() => void processNaturalLanguageQuery(query)}
+                  disabled={isProcessing}
                   className="text-xs"
                 >
                   {query}
@@ -261,23 +248,18 @@ export function NaturalLanguageQuery({ data, onQuery }: NaturalLanguageQueryProp
             </div>
           </div>
         )}
-        
-        {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t">
+
+        <form onSubmit={handleSubmit} className="border-t p-4">
           <div className="flex gap-2">
             <Input
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask me anything about your data..."
-              disabled={isProcessing}
+              onChange={event => setInput(event.target.value)}
+              placeholder={data.length ? 'Ask a grounded question about this dataset…' : 'Preview a dataset to enable analysis'}
+              disabled={isProcessing || data.length === 0}
               className="flex-1"
             />
-            <Button type="submit" disabled={isProcessing || !input.trim()}>
-              {isProcessing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
+            <Button type="submit" disabled={isProcessing || data.length === 0 || !input.trim()} aria-label="Run AI query">
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin"/> : <Send className="h-4 w-4" />}
             </Button>
           </div>
         </form>

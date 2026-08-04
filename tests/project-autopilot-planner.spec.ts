@@ -11,6 +11,7 @@ const brief = {
   chartCount: 6,
   chartTypes: ['kpi-card', 'line', 'bar'] as const,
   autoApply: true,
+  publicationPolicy: 'auto_publish_when_healthy' as const,
 }
 
 test.describe('project autopilot planner', () => {
@@ -28,7 +29,7 @@ test.describe('project autopilot planner', () => {
     expect(plan.steps[1].status).toBe('blocked')
   })
 
-  test('automates safe semantic approval but preserves the final publish review gate', () => {
+  test('automates safe semantic approval and healthy release finalization', () => {
     const semanticReview = buildProjectAutopilotPlan({
       selectedRelationCount: 2,
       selectedColumnCount: 18,
@@ -49,12 +50,12 @@ test.describe('project autopilot planner', () => {
       dashboard: { id: 'dashboard', versionId: 'version', slotCount: 6, status: 'draft' },
     }, { ...brief, chartTypes: [...brief.chartTypes] })
     expect(publishReview.currentStep).toBe('publish_review')
-    expect(publishReview.status).toBe('awaiting_review')
+    expect(publishReview.status).toBe('queued')
     expect(publishReview.steps[4]).toMatchObject({ status: 'succeeded', automatic: true })
-    expect(publishReview.steps[5].automatic).toBe(false)
+    expect(publishReview.steps[5]).toMatchObject({ status: 'ready', automatic: true })
   })
 
-  test('keeps dashboard composition automatic but blocks publication until review', () => {
+  test('keeps dashboard composition automatic until the release can be finalized', () => {
     const composition = buildProjectAutopilotPlan({
       selectedRelationCount: 2,
       selectedColumnCount: 18,
@@ -68,7 +69,28 @@ test.describe('project autopilot planner', () => {
     expect(composition.steps[5]).toMatchObject({ status: 'blocked', automatic: false })
   })
 
-  test('finishes only after the explicit immutable release publish', () => {
+  test('preserves an explicit final review policy when requested', () => {
+    const review = buildProjectAutopilotPlan({
+      selectedRelationCount: 2,
+      selectedColumnCount: 18,
+      semanticModel: { id: 'model', status: 'approved', fieldCount: 14, metricCount: 4 },
+      dataset: { id: 'dataset', status: 'published' },
+      chartCount: 6,
+      dashboard: { id: 'dashboard', versionId: 'version', slotCount: 6, status: 'draft' },
+    }, {
+      ...brief,
+      chartTypes: [...brief.chartTypes],
+      publicationPolicy: 'review_required',
+    })
+
+    expect(review.status).toBe('awaiting_review')
+    expect(review.steps[5]).toMatchObject({
+      status: 'awaiting_review',
+      automatic: false,
+    })
+  })
+
+  test('finishes only after the immutable release publish', () => {
     const completed = buildProjectAutopilotPlan({
       selectedRelationCount: 2,
       selectedColumnCount: 18,
@@ -79,7 +101,7 @@ test.describe('project autopilot planner', () => {
     }, { ...brief, chartTypes: [...brief.chartTypes] })
     expect(completed.status).toBe('succeeded')
     expect(completed.progress).toBe(100)
-    expect(completed.steps[5]).toMatchObject({ status: 'succeeded', automatic: false })
+    expect(completed.steps[5]).toMatchObject({ status: 'succeeded', automatic: true })
   })
 
   test('builds a deterministic responsive grid without overlapping a row', () => {

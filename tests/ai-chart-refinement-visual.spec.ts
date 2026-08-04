@@ -4,14 +4,26 @@ import { demoChart } from '../src/lib/dashboardos/demo-data'
 import type { DashboardChartConfig } from '../src/types/dashboard-chart'
 
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000'
+const monthFieldId = '10000000-0000-4000-8000-000000000001'
+const regionFieldId = '10000000-0000-4000-8000-000000000002'
+const revenueMetricId = '20000000-0000-4000-8000-000000000001'
+const proposalId = '30000000-0000-4000-8000-000000000001'
 
 const previewChart: DashboardChartConfig = {
   ...demoChart,
   name: 'Monthly Revenue Trend',
-  templateId: 'line',
+  templateId: 'bar',
   encoding: {
     ...demoChart.encoding,
-    yMetricIds: ['demo-metric-revenue'],
+    xAxisFieldId: monthFieldId,
+    yMetricIds: [revenueMetricId],
+    tooltipFieldIds: [regionFieldId],
+    labelById: {
+      ...demoChart.encoding.labelById,
+      [monthFieldId]: 'Month',
+      [revenueMetricId]: 'Revenue',
+      [regionFieldId]: 'Region',
+    },
     limit: 4,
   },
   presentation: {
@@ -21,29 +33,53 @@ const previewChart: DashboardChartConfig = {
     showLabels: true,
     showGrid: false,
     legendPosition: 'bottom',
+    density: 'compact',
     xAxis: {
       show: true,
       title: 'Month',
       labelFontSize: 14,
       labelFontWeight: 'bold',
       labelRotation: 20,
+      labelFormat: 'date-only',
+      labelLocale: 'en-US',
+      labelTimeZone: 'preserve',
+      labelOverflow: 'truncate',
+      labelMaxLength: 20,
     },
     yAxis: {
       show: true,
       title: 'Revenue',
       labelFontWeight: 'medium',
+      numberFormat: {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 0,
+      },
+    },
+    legend: {
+      labelOverflow: 'truncate',
+      labelMaxLength: 14,
+      labelOverrides: [{ targetId: revenueMetricId, label: 'Governed Revenue Total' }],
     },
     labels: {
       color: '#BE185D',
       fontSize: 12,
       fontWeight: 'bold',
       position: 'top',
+      numberFormat: { style: 'compact', maximumFractionDigits: 1 },
     },
     tooltip: {
       enabled: true,
       backgroundColor: '#111827',
       borderColor: '#EC4899',
       textColor: '#F9FAFB',
+      labelOverflow: 'truncate',
+      labelMaxLength: 24,
+      labelOverrides: [
+        { targetId: revenueMetricId, label: 'Net revenue billed' },
+        { targetId: regionFieldId, label: 'Market' },
+      ],
+      numberFormat: { style: 'currency', currency: 'USD', maximumFractionDigits: 0 },
     },
     margins: {
       top: 20,
@@ -78,12 +114,12 @@ const chartContext = {
   },
   chart: demoChart,
   allowedFields: [
-    { id: 'demo-field-month', label: 'Month', semanticKey: 'month', role: 'date', classification: 'allowed' },
-    { id: 'demo-field-region', label: 'Region', semanticKey: 'region', role: 'dimension', classification: 'allowed' },
+    { id: monthFieldId, label: 'Month', semanticKey: 'month', role: 'date', classification: 'allowed' },
+    { id: regionFieldId, label: 'Region', semanticKey: 'region', role: 'dimension', classification: 'allowed' },
     { id: 'demo-field-segment', label: 'Segment', semanticKey: 'segment', role: 'dimension', classification: 'allowed' },
   ],
   allowedMetrics: [
-    { id: 'demo-metric-revenue', label: 'Revenue', semanticKey: 'revenue', aggregation: 'sum', classification: 'aggregated_only' },
+    { id: revenueMetricId, label: 'Revenue', semanticKey: 'revenue', aggregation: 'sum', classification: 'aggregated_only' },
     { id: 'demo-metric-orders', label: 'Orders', semanticKey: 'orders', aggregation: 'sum', classification: 'aggregated_only' },
     { id: 'demo-metric-customers', label: 'Customers', semanticKey: 'customers', aggregation: 'sum', classification: 'aggregated_only' },
   ],
@@ -91,12 +127,12 @@ const chartContext = {
   blockedMetricCount: 0,
   preview: {
     rows: [
-      { Month: 'Jan', Revenue: 120000, Orders: 900, Customers: 220 },
-      { Month: 'Feb', Revenue: 150000, Orders: 1020, Customers: 260 },
-      { Month: 'Mar', Revenue: 175000, Orders: 1180, Customers: 310 },
-      { Month: 'Apr', Revenue: 210000, Orders: 1300, Customers: 355 },
+      { Month: '2026-01-01T08:30:00Z', Revenue: 120000, Region: 'APAC', Orders: 900, Customers: 220 },
+      { Month: '2026-02-01T08:30:00Z', Revenue: 150000, Region: 'EMEA', Orders: 1020, Customers: 260 },
+      { Month: '2026-03-01T08:30:00Z', Revenue: 175000, Region: 'AMER', Orders: 1180, Customers: 310 },
+      { Month: '2026-04-01T08:30:00Z', Revenue: 210000, Region: 'APAC', Orders: 1300, Customers: 355 },
     ],
-    fields: ['Month', 'Revenue', 'Orders', 'Customers'],
+    fields: ['Month', 'Revenue', 'Region', 'Orders', 'Customers'],
     rowCount: 4,
     elapsedMs: 18,
     warnings: [],
@@ -124,7 +160,7 @@ async function hideFrameworkChrome(page: Page) {
   })
 }
 
-async function mockAiRoutes(page: Page, outcome: 'success' | 'restricted' | 'validation' = 'success') {
+async function mockAiRoutes(page: Page, outcome: 'success' | 'restricted' | 'validation' | 'stale' | 'legacy' = 'success') {
   await page.route('**/api/ai/chart-context', route => fulfillJson(route, { context: chartContext }))
   await page.route('**/api/ai/chart-refine/preview-observed', route => fulfillJson(route, { ok: true }))
   await page.route('**/api/ai/chart-refine/reject', route => fulfillJson(route, { ok: true }))
@@ -156,10 +192,41 @@ async function mockAiRoutes(page: Page, outcome: 'success' | 'restricted' | 'val
       return
     }
 
+    if (outcome === 'stale' && body.apply) {
+      await fulfillJson(route, {
+        patch: body.patch,
+        chart: {
+          ...demoChart,
+          updatedAt: '2026-07-08T10:00:00.000Z',
+        },
+        validation: { state: 'valid', issues: [] },
+        errorCode: 'stale_chart_revision',
+        error: 'stale_chart_revision',
+        proposalStatus: 'rejected',
+      }, 409)
+      return
+    }
+
+    if (outcome === 'legacy' && body.apply) {
+      await fulfillJson(route, {
+        patch: null,
+        chart: null,
+        validation: null,
+        errorCode: 'proposal_regeneration_required',
+        error: 'This proposal predates transactional chart apply and must be regenerated.',
+      }, 409)
+      return
+    }
+
     await fulfillJson(route, {
       patch: body.apply ? body.patch : previewPatch,
-      chart: previewChart,
+      chart: body.apply
+        ? { ...previewChart, status: 'draft', publishedAt: null, updatedAt: '2026-07-08T09:05:00.000Z' }
+        : previewChart,
       validation: { state: 'valid', issues: [] },
+      proposalId,
+      proposalStatus: body.apply ? 'applied' : 'needs_review',
+      ...(!body.apply ? { baseUpdatedAt: demoChart.updatedAt } : {}),
     })
   })
 }
@@ -185,6 +252,8 @@ async function mockPendingAiRoutes(page: Page) {
       patch: body.apply ? body.patch : previewPatch,
       chart: previewChart,
       validation: { state: 'valid', issues: [] },
+      proposalId,
+      ...(!body.apply ? { baseUpdatedAt: demoChart.updatedAt } : {}),
     })
   })
 
@@ -296,12 +365,22 @@ test.describe('AI chart refinement visual states', () => {
     await expect(page.getByTestId('ai-refinement-preview-diff')).toBeVisible()
     await expect(page.getByTestId('ai-refinement-mini-preview')).toBeVisible()
     await expect(page.getByTestId('ai-refinement-status')).toContainText('preview ready')
+    await expect(page.getByTestId('ai-refinement-proposal-lifecycle')).toContainText('needs review')
     await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('Structured patch preview')
     await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('Palette')
     await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('#EC4899')
     await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('X axis style')
     await expect(page.getByTestId('ai-refinement-preview-diff')).toContainText('Tooltip style')
     await expect(page.getByTestId('ai-refinement-mini-preview')).toContainText('Monthly Revenue Trend')
+    await expect(page.getByTestId('ai-refinement-mini-preview')).toContainText('01/01/2026')
+    await expect(page.getByTestId('ai-refinement-mini-preview')).toContainText('Governed Reve…')
+    await expect(page.getByTestId('ai-refinement-mini-preview')).not.toContainText('Governed Revenue Total')
+    const dateLabel = page.getByTestId('ai-refinement-mini-preview').locator('svg text').filter({ hasText: '01/01/2026' }).first()
+    await expect(dateLabel).toBeVisible()
+    const dateLabelTransform = await dateLabel.getAttribute('transform')
+    expect(dateLabelTransform).toMatch(/^matrix\(/)
+    expect(dateLabelTransform).not.toBe('matrix(1,0,0,1,0,0)')
+    await expect(page.getByTestId('ai-refinement-mini-preview').locator('svg [stroke-dasharray]')).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Accept patch' }).click()
     await expect(page.getByTestId('ai-refinement-applied')).toBeVisible()
@@ -309,7 +388,39 @@ test.describe('AI chart refinement visual states', () => {
     await expect(page.getByTestId('ai-refinement-preview-diff')).toHaveCount(0)
     await expect(page.getByText('AI refinement applied')).toBeHidden({ timeout: 10_000 })
     await expect(page.getByTestId('ai-refinement-status')).toContainText('applied')
+    await expect(page.getByTestId('ai-refinement-proposal-lifecycle')).toContainText('applied')
     await expect(page.getByTestId('ai-refinement-applied')).toContainText('Reviewed patch applied')
+    await expect(page.getByTestId('ai-refinement-harness-chart-state')).toContainText('Source chart: draft')
+  })
+
+  test('rejects a stale proposal and refreshes the harness with the latest source revision', async ({ page }) => {
+    await mockAiRoutes(page, 'stale')
+    await openHarness(page)
+    await page.getByLabel('Natural-language refinement').fill('Show date-only labels')
+    await page.getByRole('button', { name: 'Generate preview' }).click()
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Accept patch' }).click()
+
+    await expect(page.getByTestId('ai-refinement-error')).toContainText('changed after the preview was generated')
+    await expect(page.getByTestId('ai-refinement-applied')).toHaveCount(0)
+    await expect(page.getByTestId('ai-refinement-preview-diff')).toHaveCount(0)
+    await expect(page.getByTestId('ai-refinement-harness-chart-state')).toContainText('2026-07-08T10:00:00.000Z')
+    await expect(page.getByTestId('ai-refinement-harness-chart-state')).toContainText('Source chart: published')
+    await expect(page.getByTestId('ai-refinement-proposal-lifecycle')).toContainText('rejected')
+  })
+
+  test('requires regeneration for proposals created before transactional nextChart storage', async ({ page }) => {
+    await mockAiRoutes(page, 'legacy')
+    await openHarness(page)
+    await page.getByLabel('Natural-language refinement').fill('Show date-only labels')
+    await page.getByRole('button', { name: 'Generate preview' }).click()
+    await page.getByRole('button', { name: 'Accept patch' }).click()
+
+    await expect(page.getByTestId('ai-refinement-error')).toContainText('created before transactional apply support')
+    await expect(page.getByTestId('ai-refinement-proposal-lifecycle')).toContainText('regeneration required')
+    await expect(page.getByRole('button', { name: 'Generate replacement' })).toBeVisible()
+    await expect(page.getByTestId('ai-refinement-harness-chart-state')).toContainText('Source chart: published')
   })
 
   test('generating state communicates review-safe progress', async ({ page }) => {

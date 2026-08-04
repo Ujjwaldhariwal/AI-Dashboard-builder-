@@ -29,7 +29,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const current = mapProjectAutopilotRun(data as Record<string, unknown>)
   if (current.status === 'cancelled' || current.status === 'succeeded') return NextResponse.json({ run: current })
   try {
-    const run = await executeProjectAutopilot(auth.supabase, {
+    const run = await executeProjectAutopilot(auth, {
       runId: current.id,
       tenantId: current.tenantId,
       projectId: current.projectId,

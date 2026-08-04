@@ -77,14 +77,27 @@ export function buildDeterministicDatasetProposal({
     score(`${right.name} ${right.description ?? ''}`, objectiveTokens)
     - score(`${left.name} ${left.description ?? ''}`, objectiveTokens)
   ))
-  const metricIds = rankedMetrics.slice(0, Math.min(4, rankedMetrics.length)).map(metric => metric.id)
+  const anchorEntityId = rankedMetrics.find(metric => metric.entityId)?.entityId ?? null
+  const coherentMetrics = anchorEntityId
+    ? rankedMetrics.filter(metric => metric.entityId === anchorEntityId)
+    : rankedMetrics
+  const metricIds = coherentMetrics.slice(0, Math.min(4, coherentMetrics.length)).map(metric => metric.id)
+  const directlyRelatedEntityIds = new Set(anchorEntityId ? [anchorEntityId] : [])
+  if (anchorEntityId) {
+    for (const relationship of relationships) {
+      if (relationship.fromEntityId === anchorEntityId) directlyRelatedEntityIds.add(relationship.toEntityId)
+      if (relationship.toEntityId === anchorEntityId) directlyRelatedEntityIds.add(relationship.fromEntityId)
+    }
+  }
 
   const rankedFields = [...fields]
     .filter(field => !['hidden', 'metric_source'].includes(field.role))
+    .filter(field => !anchorEntityId || directlyRelatedEntityIds.has(field.entityId))
     .sort((left, right) => {
       const rolePriority = (role: BusinessFieldRole) => role === 'date' ? 4 : role === 'dimension' ? 3 : role === 'identifier' ? 0 : 1
-      return (score(`${right.entityName} ${right.name}`, objectiveTokens) + rolePriority(right.role))
-        - (score(`${left.entityName} ${left.name}`, objectiveTokens) + rolePriority(left.role))
+      const entityPriority = (entityId: string) => entityId === anchorEntityId ? 100 : 0
+      return (entityPriority(right.entityId) + score(`${right.entityName} ${right.name}`, objectiveTokens) + rolePriority(right.role))
+        - (entityPriority(left.entityId) + score(`${left.entityName} ${left.name}`, objectiveTokens) + rolePriority(left.role))
     })
   const fieldLimit = metricIds.length > 0 ? 6 : 10
   const fieldIds = rankedFields.slice(0, Math.min(fieldLimit, rankedFields.length)).map(field => field.id)

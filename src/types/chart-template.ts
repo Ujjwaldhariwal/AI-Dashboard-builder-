@@ -70,6 +70,38 @@ export interface ChartTemplateRequirement {
   blockedShapeKinds?: DatasetShapeKind[]
 }
 
+export type ChartPresentationAxis = 'x' | 'y'
+
+export interface ChartPresentationCapabilities {
+  axes: {
+    x: boolean
+    y: boolean
+    fontWeight: readonly ChartPresentationAxis[]
+    dateFormat: readonly ChartPresentationAxis[]
+    numberFormat: readonly ChartPresentationAxis[]
+    rotation: readonly ChartPresentationAxis[]
+    overflow: readonly ChartPresentationAxis[]
+  }
+  grid: boolean
+  legend: {
+    visibility: boolean
+    labelOverrides: boolean
+    overflow: boolean
+  }
+  tooltip: {
+    visibility: boolean
+    labelOverrides: boolean
+    numberFormat: boolean
+    overflow: boolean
+  }
+  valueLabels: {
+    visibility: boolean
+    numberFormat: boolean
+    collision: boolean
+  }
+  density: boolean
+}
+
 export interface ChartTemplateDefinition {
   id: ChartTemplateId
   name: string
@@ -83,6 +115,7 @@ export interface ChartTemplateDefinition {
     customTooltip: boolean
     customLabels: boolean
     multipleMetrics: boolean
+    presentation: ChartPresentationCapabilities
   }
   defaultSize: 'compact' | 'standard' | 'wide' | 'full'
   priority: number
