@@ -25,23 +25,66 @@ export interface RequirementMetricEvidence {
   description?: string | null
 }
 
+export interface RequirementRelationshipEvidence {
+  fromEntityId: string
+  toEntityId: string
+}
+
+export interface RequirementMetricSourceEvidence {
+  columnId: string
+  entityName: string
+  fieldName: string
+  role: string
+  dataType: string
+}
+
+export interface RequirementMetricMaterialization {
+  requirementIds: string[]
+  columnId: string
+  name: string
+  aggregation: 'sum' | 'avg' | 'min' | 'max' | 'count' | 'count_distinct'
+}
+
 const STOP_WORDS = new Set([
   'a', 'an', 'and', 'as', 'at', 'by', 'chart', 'dashboard', 'for', 'from', 'in', 'of', 'on', 'show', 'the', 'to', 'with',
 ])
 
+const AGGREGATION_WORDS = new Set(['average', 'avg', 'count', 'distinct', 'maximum', 'max', 'minimum', 'min', 'sum', 'total'])
+const TOKEN_ALIASES: Record<string, string> = {
+  amt: 'amount',
+  cnt: 'count',
+  recognised: 'recognized',
+  qty: 'quantity',
+}
+
+function canonicalToken(value: string) {
+  const aliased = TOKEN_ALIASES[value] ?? value
+  if (aliased.endsWith('ies') && aliased.length > 4) return `${aliased.slice(0, -3)}y`
+  if (aliased.endsWith('s') && !aliased.endsWith('ss') && aliased.length > 3) return aliased.slice(0, -1)
+  return aliased
+}
+
 function normalize(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 }
 
 function tokens(value: string) {
-  return normalize(value).split(/\s+/).filter(token => token.length > 1 && !STOP_WORDS.has(token))
+  return normalize(value).split(/\s+/)
+    .filter(token => token.length > 1 && !STOP_WORDS.has(token))
+    .map(canonicalToken)
 }
 
 function scoreCandidate(query: string, candidate: string) {
-  const normalizedQuery = normalize(query)
-  const normalizedCandidate = normalize(candidate)
-  const queryTokens = new Set(tokens(query))
-  const candidateTokens = new Set(tokens(candidate))
+  const queryValues = tokens(query)
+  const candidateValues = tokens(candidate)
+  const normalizedQuery = queryValues.join(' ')
+  const normalizedCandidate = candidateValues.join(' ')
+  const queryTokens = new Set(queryValues)
+  const candidateTokens = new Set(candidateValues)
   let score = [...queryTokens].reduce((total, token) => total + (candidateTokens.has(token) ? 6 : 0), 0)
   if (normalizedQuery && normalizedCandidate === normalizedQuery) score += 30
   else if (normalizedQuery && (normalizedCandidate.includes(normalizedQuery) || normalizedQuery.includes(normalizedCandidate))) score += 16
@@ -64,18 +107,89 @@ function bestCandidate<T extends { id: string }>(items: T[], score: (item: T) =>
     .sort((left, right) => right.score - left.score || left.item.id.localeCompare(right.item.id))
   return {
     best: ranked[0] ?? null,
-    ambiguous: Boolean(ranked[0] && ranked[1] && ranked[0].score === ranked[1].score),
+    ambiguous: Boolean(ranked[0] && ranked[1] && ranked[0].score - ranked[1].score < 6),
   }
+}
+
+function entitiesAreConnected(fromEntityId: string, toEntityId: string, relationships: RequirementRelationshipEvidence[]) {
+  if (fromEntityId === toEntityId) return true
+  const adjacent = new Map<string, string[]>()
+  for (const relationship of relationships) {
+    adjacent.set(relationship.fromEntityId, [...(adjacent.get(relationship.fromEntityId) ?? []), relationship.toEntityId])
+    adjacent.set(relationship.toEntityId, [...(adjacent.get(relationship.toEntityId) ?? []), relationship.fromEntityId])
+  }
+  const visited = new Set([fromEntityId])
+  const queue = [fromEntityId]
+  while (queue.length > 0) {
+    const current = queue.shift() as string
+    for (const next of adjacent.get(current) ?? []) {
+      if (next === toEntityId) return true
+      if (visited.has(next)) continue
+      visited.add(next)
+      queue.push(next)
+    }
+  }
+  return false
+}
+
+function sourceSupportsAggregation(source: RequirementMetricSourceEvidence, aggregation: RequirementMetricMaterialization['aggregation']) {
+  if (source.role === 'hidden') return false
+  if (aggregation === 'count' || aggregation === 'count_distinct') return true
+  return ['metric_source', 'attribute'].includes(source.role)
+    && /int|numeric|decimal|real|double|float|money|number/.test(source.dataType.toLowerCase())
+}
+
+export function buildRequirementMetricMaterializations({
+  spec,
+  sources,
+}: {
+  spec: DashboardBrief
+  sources: RequirementMetricSourceEvidence[]
+}): RequirementMetricMaterialization[] {
+  const requirements = spec.requirements.filter(requirement => requirement.metric)
+  const aggregationsByConcept = new Map<string, Set<string>>()
+  for (const requirement of requirements) {
+    const concept = tokens(requirement.metric?.concept ?? '').filter(token => !AGGREGATION_WORDS.has(token)).join(' ')
+    aggregationsByConcept.set(concept, new Set([
+      ...(aggregationsByConcept.get(concept) ?? []),
+      requirement.metric?.aggregation ?? '',
+    ]))
+  }
+
+  const materializations = new Map<string, RequirementMetricMaterialization>()
+  for (const requirement of requirements) {
+    const metric = requirement.metric
+    if (!metric) continue
+    const conceptKey = tokens(metric.concept).filter(token => !AGGREGATION_WORDS.has(token)).join(' ')
+    if (!conceptKey || (aggregationsByConcept.get(conceptKey)?.size ?? 0) > 1) continue
+    const compatible = sources.filter(source => sourceSupportsAggregation(source, metric.aggregation))
+    const match = bestCandidate(compatible.map(source => ({ ...source, id: source.columnId })), source => scoreCandidate(
+      metric.concept,
+      `${source.entityName} ${source.fieldName} ${metric.aggregation.replace('_', ' ')}`,
+    ))
+    if (!match.best || match.best.score < 12 || match.ambiguous) continue
+    const key = `${conceptKey}:${metric.aggregation}`
+    const existing = materializations.get(key)
+    materializations.set(key, {
+      requirementIds: [...(existing?.requirementIds ?? []), requirement.id],
+      columnId: match.best.item.columnId,
+      name: metric.concept,
+      aggregation: metric.aggregation,
+    })
+  }
+  return [...materializations.values()]
 }
 
 function resolveRequirement({
   requirement,
   fields,
   metrics,
+  relationships,
 }: {
   requirement: DashboardChartRequirement
   fields: RequirementFieldEvidence[]
   metrics: RequirementMetricEvidence[]
+  relationships: RequirementRelationshipEvidence[]
 }): ProjectAutopilotRequirementCoverageItem {
   const templateId = dashboardRequirementTemplateId(requirement)
   const query = requirementQuery(requirement)
@@ -90,14 +204,14 @@ function resolveRequirement({
   if (!metric) {
     status = 'blocked'
     reasons.push('No approved metric is available for this requirement.')
-  } else if ((metricMatch.best?.score ?? 0) === 0) {
+  } else if ((metricMatch.best?.score ?? 0) < 12) {
     status = requirement.metric ? 'blocked' : 'needs_review'
     reasons.push(requirement.metric
       ? `No approved metric matches “${requirement.metric.concept}”.`
       : `Confirm whether “${metric.name}” is the intended metric.`)
   } else if (metricMatch.ambiguous) {
     status = 'needs_review'
-    reasons.push('Multiple approved metrics match with equal confidence.')
+    reasons.push('Multiple approved metrics have similarly strong matches.')
   }
   if (metric && requirement.metric && metric.aggregation !== requirement.metric.aggregation) {
     status = status === 'blocked' ? status : 'needs_review'
@@ -107,8 +221,11 @@ function resolveRequirement({
   const selectedFields: RequirementFieldEvidence[] = []
   const selectableFields = fields.filter(field => !['hidden', 'metric_source', 'identifier'].includes(field.role))
   for (const dimension of requirement.dimensions) {
-    const match = bestCandidate(selectableFields, field => scoreCandidate(dimension, `${field.entityName} ${field.name}`))
-    if (!match.best || match.best.score === 0) {
+    const match = bestCandidate(
+      selectableFields.filter(field => !selectedFields.some(selected => selected.id === field.id)),
+      field => scoreCandidate(dimension, `${field.entityName} ${field.name}`),
+    )
+    if (!match.best || match.best.score < 12) {
       status = 'blocked'
       reasons.push(`No approved dimension matches “${dimension}”.`)
       continue
@@ -132,7 +249,7 @@ function resolveRequirement({
     if (!match.best) {
       status = 'blocked'
       reasons.push('No approved date field can support the requested trend.')
-    } else if (match.ambiguous && match.best.score <= 10) {
+    } else if (match.ambiguous) {
       status = status === 'blocked' ? status : 'needs_review'
       reasons.push('Confirm which approved date field defines the trend.')
     } else {
@@ -158,7 +275,7 @@ function resolveRequirement({
     if (!match.best) {
       status = 'blocked'
       reasons.push(wantsDate ? 'No approved date field can support the requested trend.' : 'No approved dimension can support this chart.')
-    } else if (match.ambiguous && match.best.score <= 10) {
+    } else if (match.ambiguous) {
       status = status === 'blocked' ? status : 'needs_review'
       reasons.push(wantsDate ? 'Confirm which approved date field defines the trend.' : 'Confirm which approved dimension defines the breakdown.')
     } else {
@@ -175,6 +292,17 @@ function resolveRequirement({
       status = status === 'blocked' ? status : 'needs_review'
       reasons.push(`Confirm that “${dateField.name}” is already bucketed at ${requirement.timeGrain} grain.`)
     }
+  }
+
+  if (metric?.entityId) {
+    const disconnected = selectedFields.find(field => !entitiesAreConnected(metric.entityId as string, field.entityId, relationships))
+    if (disconnected) {
+      status = 'blocked'
+      reasons.push(`No approved relationship path connects metric "${metric.name}" to dimension "${disconnected.name}".`)
+    }
+  } else if (new Set(selectedFields.map(field => field.entityId)).size > 1) {
+    status = status === 'blocked' ? status : 'needs_review'
+    reasons.push('Confirm the metric entity before joining dimensions across multiple entities.')
   }
 
   const score = metricMatch.best?.score ?? 0
@@ -199,15 +327,17 @@ export function resolveDashboardRequirementCoverage({
   specHash,
   fields,
   metrics,
+  relationships = [],
   evaluatedAt = new Date().toISOString(),
 }: {
   spec: DashboardBrief
   specHash: string
   fields: RequirementFieldEvidence[]
   metrics: RequirementMetricEvidence[]
+  relationships?: RequirementRelationshipEvidence[]
   evaluatedAt?: string
 }): ProjectAutopilotRequirementCoverage {
-  const items = spec.requirements.map(requirement => resolveRequirement({ requirement, fields, metrics }))
+  const items = spec.requirements.map(requirement => resolveRequirement({ requirement, fields, metrics, relationships }))
   return {
     specId: spec.id,
     specVersion: spec.version,

@@ -4,7 +4,10 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 import { buildRequirementChartSuiteProposal } from '../src/lib/ai/chart-suite-copilot'
-import { resolveDashboardRequirementCoverage } from '../src/lib/ai/dashboard-requirement-resolver'
+import {
+  buildRequirementMetricMaterializations,
+  resolveDashboardRequirementCoverage,
+} from '../src/lib/ai/dashboard-requirement-resolver'
 import { buildDeterministicDatasetProposal } from '../src/lib/ai/dataset-copilot'
 import { buildProjectAutopilotPlan } from '../src/lib/ai/project-autopilot'
 import { DashboardBriefSchema } from '../src/types/dashboard-brief'
@@ -125,6 +128,64 @@ test.describe('KPI requirement Autopilot', () => {
     expect(coverage.items[0].reason).toContain('Product Category')
   })
 
+  test('materializes an explicit KPI only from a unique compatible source column', () => {
+    const customerSpec = DashboardBriefSchema.parse({
+      ...spec,
+      requirements: [{
+        ...spec.requirements[0],
+        title: 'Unique Customers',
+        metric: { concept: 'Customers', aggregation: 'count_distinct' },
+      }],
+    })
+    expect(buildRequirementMetricMaterializations({
+      spec: customerSpec,
+      sources: [
+        { columnId: 'customer-id', entityName: 'Customer', fieldName: 'Customer ID', role: 'identifier', dataType: 'uuid' },
+        { columnId: 'revenue', entityName: 'Order', fieldName: 'Revenue Amount', role: 'metric_source', dataType: 'numeric' },
+      ],
+    })).toEqual([expect.objectContaining({
+      columnId: 'customer-id',
+      name: 'Customers',
+      aggregation: 'count_distinct',
+    })])
+
+    expect(buildRequirementMetricMaterializations({
+      spec: customerSpec,
+      sources: [
+        { columnId: 'customer-id', entityName: 'Customer', fieldName: 'Customer ID', role: 'identifier', dataType: 'uuid' },
+        { columnId: 'customer-number', entityName: 'Customer', fieldName: 'Customer Number', role: 'identifier', dataType: 'text' },
+      ],
+    })).toEqual([])
+  })
+
+  test('blocks disconnected semantic entities and accepts an approved multi-hop path', () => {
+    const regionSpec = DashboardBriefSchema.parse({
+      ...spec,
+      requirements: [{ ...spec.requirements[0], chartType: 'bar', dimensions: ['Region'] }],
+    })
+    const disconnected = resolveDashboardRequirementCoverage({
+      spec: regionSpec,
+      specHash: 'disconnected',
+      fields: [{ ...fields[1], entityId: 'customer' }],
+      metrics,
+      relationships: [],
+    })
+    expect(disconnected.items[0]).toMatchObject({ status: 'blocked' })
+    expect(disconnected.items[0].reason).toContain('relationship path')
+
+    const connected = resolveDashboardRequirementCoverage({
+      spec: regionSpec,
+      specHash: 'connected',
+      fields: [{ ...fields[1], entityId: 'customer' }],
+      metrics,
+      relationships: [
+        { fromEntityId: 'sales', toEntityId: 'account' },
+        { fromEntityId: 'account', toEntityId: 'customer' },
+      ],
+    })
+    expect(connected.items[0]).toMatchObject({ status: 'ready', fieldIds: [ids.region] })
+  })
+
   test('compiles exact requirement IDs into governed dataset and chart lineage', () => {
     const dataset = buildDeterministicDatasetProposal({
       instruction: 'Use the approved KPI requirements.',
@@ -144,13 +205,54 @@ test.describe('KPI requirement Autopilot', () => {
       metrics,
       allowedTemplateIds: ['kpi-card', 'line'],
       requirements: [
-        { requirementId: ids.kpi, title: 'Recognised Revenue', instruction: '', templateId: 'kpi-card', metricId: ids.revenue, fieldIds: [], confidence: 0.9 },
-        { requirementId: ids.trend, title: 'Monthly Recognised Revenue', instruction: '', templateId: 'line', metricId: ids.revenue, fieldIds: [ids.month], confidence: 0.9 },
+        { requirementId: ids.kpi, title: 'Recognised Revenue', instruction: '', templateId: 'kpi-card', metricId: ids.revenue, fieldIds: [], confidence: 0.9, required: true, allowTemplateFallback: false },
+        { requirementId: ids.trend, title: 'Monthly Recognised Revenue', instruction: '', templateId: 'line', metricId: ids.revenue, fieldIds: [ids.month], confidence: 0.9, required: true, allowTemplateFallback: false },
       ],
     })
     expect(proposal.charts.map(chart => chart.name)).toEqual(['Recognised Revenue', 'Monthly Recognised Revenue'])
     expect(proposal.charts.map(chart => chart.layout.requirementId)).toEqual([ids.kpi, ids.trend])
     expect(proposal.charts[1].encoding).toMatchObject({ xAxisFieldId: ids.month, yMetricIds: [ids.revenue] })
+  })
+
+  test('does not substitute a locked chart template', () => {
+    expect(() => buildRequirementChartSuiteProposal({
+      instruction: 'Compile the locked requirement.',
+      datasetName: 'Revenue Dataset',
+      fields,
+      metrics,
+      allowedTemplateIds: ['bar'],
+      requirements: [{
+        requirementId: ids.kpi,
+        title: 'Revenue share',
+        instruction: '',
+        templateId: 'pie',
+        metricId: ids.revenue,
+        fieldIds: [ids.region],
+        confidence: 0.9,
+        required: true,
+        allowTemplateFallback: false,
+      }],
+    })).toThrow('Required KPI requirement')
+
+    const unlocked = buildRequirementChartSuiteProposal({
+      instruction: 'Compile the flexible requirement.',
+      datasetName: 'Revenue Dataset',
+      fields,
+      metrics,
+      allowedTemplateIds: ['bar'],
+      requirements: [{
+        requirementId: ids.kpi,
+        title: 'Revenue share',
+        instruction: '',
+        templateId: 'pie',
+        metricId: ids.revenue,
+        fieldIds: [ids.region],
+        confidence: 0.9,
+        required: true,
+        allowTemplateFallback: true,
+      }],
+    })
+    expect(unlocked.charts[0].templateId).toBe('bar')
   })
 
   test('makes unresolved required coverage a durable review gate', () => {

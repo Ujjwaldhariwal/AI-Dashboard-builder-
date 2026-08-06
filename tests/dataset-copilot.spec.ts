@@ -77,6 +77,29 @@ test.describe('dataset copilot', () => {
     expect(proposal.warnings).toEqual([])
   })
 
+  test('selects the complete approved relationship path for preferred KPI fields', () => {
+    const accountEntity = '10000000-0000-4000-8000-000000000003'
+    const segmentField = '20000000-0000-4000-8000-000000000003'
+    const accountRelationship = '40000000-0000-4000-8000-000000000002'
+    const proposal = buildDeterministicDatasetProposal({
+      instruction: 'Revenue by customer segment',
+      fields: [
+        ...fields,
+        { id: segmentField, entityId: accountEntity, entityName: 'Account', name: 'Segment', role: 'dimension' },
+      ],
+      metrics,
+      relationships: [
+        ...relationships,
+        { id: accountRelationship, fromEntityId: ids.customerEntity, toEntityId: accountEntity, type: 'one_to_many' },
+      ],
+      preferredFieldIds: [segmentField],
+      preferredMetricIds: [ids.metric],
+    })
+
+    expect(proposal.relationshipIds).toEqual([ids.relationship, accountRelationship])
+    expect(proposal.warnings).toEqual([])
+  })
+
   test('uses an approved model proposal API instead of fixed guided recipes', () => {
     const route = readFileSync(join(process.cwd(), 'src/app/api/admin/semantic-models/[id]/dataset-proposal/route.ts'), 'utf8')
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/datasets-admin-panel.tsx'), 'utf8')

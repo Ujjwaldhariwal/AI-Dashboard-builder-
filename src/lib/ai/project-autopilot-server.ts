@@ -6,7 +6,10 @@ import {
   buildDeterministicChartSuiteProposal,
   buildRequirementChartSuiteProposal,
 } from '@/lib/ai/chart-suite-copilot'
-import { resolveDashboardRequirementCoverage } from '@/lib/ai/dashboard-requirement-resolver'
+import {
+  buildRequirementMetricMaterializations,
+  resolveDashboardRequirementCoverage,
+} from '@/lib/ai/dashboard-requirement-resolver'
 import { buildDeterministicDatasetProposal } from '@/lib/ai/dataset-copilot'
 import {
   buildProjectAutopilotDashboardSlots,
@@ -649,7 +652,7 @@ async function ensureDraftSemanticModel(supabase: SupabaseClient, context: RunCo
 async function materializeSemanticModel(supabase: SupabaseClient, context: RunContext, modelId: string) {
   const { columns } = await selectedColumns(supabase, context)
   if (columns.length === 0) throw new Error('No selected schema columns are available')
-  const proposal = buildDeterministicSemanticProposal(columns, context.brief.objective)
+  const proposal = buildDeterministicSemanticProposal(columns, projectAutopilotInstruction(context.brief))
   const columnById = new Map(columns.map(column => [column.id, column]))
   const materialized = new Map<string, { entityId: string; fieldId: string }>()
   const nowIso = new Date().toISOString()
@@ -708,6 +711,34 @@ async function materializeSemanticModel(supabase: SupabaseClient, context: RunCo
       }, { onConflict: 'model_id,semantic_key' })
       if (metricError) throw new Error(metricError.message)
     }
+  }
+
+  const requestedMetrics = context.brief.requirementSpec
+    ? buildRequirementMetricMaterializations({
+      spec: context.brief.requirementSpec,
+      sources: proposal.mappings.map(mapping => ({
+        columnId: mapping.columnId,
+        entityName: mapping.entityName,
+        fieldName: mapping.fieldName,
+        role: mapping.role,
+        dataType: columnById.get(mapping.columnId)?.dataType ?? '',
+      })),
+    })
+    : []
+  for (const metric of requestedMetrics) {
+    const source = materialized.get(metric.columnId)
+    if (!source) continue
+    const { error } = await supabase.from('business_metrics').upsert({
+      model_id: modelId,
+      entity_id: source.entityId,
+      name: metric.name,
+      semantic_key: semanticKey(metric.name),
+      aggregation: metric.aggregation,
+      expression: { type: 'field_aggregation', fieldId: source.fieldId },
+      description: `Materialized from KPI requirement${metric.requirementIds.length === 1 ? '' : 's'} ${metric.requirementIds.join(', ')}.`,
+      updated_at: nowIso,
+    }, { onConflict: 'model_id,semantic_key' })
+    if (error) throw new Error(error.message)
   }
 
   const { data: existingRelationships, error: existingError } = await supabase
@@ -798,6 +829,7 @@ async function resolveAutopilotRequirementCoverage(
     specHash: projectAutopilotRequirementSpecHash(spec),
     fields: evidence.fields,
     metrics: evidence.metrics,
+    relationships: evidence.relationships,
   })
 }
 
@@ -1147,6 +1179,8 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
       metricId: item.metricId as string,
       fieldIds: item.fieldIds,
       confidence: item.confidence,
+      required: item.required,
+      allowTemplateFallback: !(requirementById.get(item.requirementId)?.lockChartType ?? true),
     }))
   const proposal = context.brief.requirementSpec
     ? buildRequirementChartSuiteProposal({

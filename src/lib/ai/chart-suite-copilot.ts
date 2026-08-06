@@ -80,6 +80,8 @@ export interface ResolvedChartRequirement {
   metricId: string
   fieldIds: string[]
   confidence: number
+  required: boolean
+  allowTemplateFallback: boolean
 }
 
 function title(value: string) {
@@ -282,9 +284,12 @@ export function buildRequirementChartSuiteProposal({
   const charts: ChartSuiteCopilotProposal['charts'] = []
   const warnings: string[] = []
   for (const requirement of requirements) {
-    const templateId = resolveCompatibleTemplate(requirement.templateId, allowedTemplateIds)
+    const templateId = allowedTemplateIds.includes(requirement.templateId)
+      ? requirement.templateId
+      : requirement.allowTemplateFallback ? resolveCompatibleTemplate(requirement.templateId, allowedTemplateIds) : null
     const metric = metrics.find(item => item.id === requirement.metricId)
     if (!templateId || !metric) {
+      if (requirement.required) throw new Error(`Required KPI requirement "${requirement.title}" is not compatible with the governed dataset.`)
       warnings.push(`${requirement.title} is not compatible with the governed dataset.`)
       continue
     }
@@ -298,6 +303,7 @@ export function buildRequirementChartSuiteProposal({
     })
     const chart = proposal.charts[0]
     if (!chart) {
+      if (requirement.required) throw new Error(`Required KPI requirement "${requirement.title}" could not satisfy the ${title(templateId)} template contract.`)
       warnings.push(`${requirement.title} could not satisfy the ${title(templateId)} template contract.`)
       continue
     }

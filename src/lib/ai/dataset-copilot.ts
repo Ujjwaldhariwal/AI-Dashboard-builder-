@@ -61,6 +61,30 @@ function proposalName(objective: string) {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)} Dataset` : 'Business Analysis Dataset'
 }
 
+function shortestRelationshipPath(
+  fromEntityId: string,
+  toEntityId: string,
+  relationships: DatasetRelationshipEvidence[],
+) {
+  if (fromEntityId === toEntityId) return []
+  const visited = new Set([fromEntityId])
+  const queue: Array<{ entityId: string; path: string[] }> = [{ entityId: fromEntityId, path: [] }]
+  while (queue.length > 0) {
+    const current = queue.shift() as { entityId: string; path: string[] }
+    for (const relationship of relationships) {
+      const next = relationship.fromEntityId === current.entityId
+        ? relationship.toEntityId
+        : relationship.toEntityId === current.entityId ? relationship.fromEntityId : null
+      if (!next || visited.has(next)) continue
+      const path = [...current.path, relationship.id]
+      if (next === toEntityId) return path
+      visited.add(next)
+      queue.push({ entityId: next, path })
+    }
+  }
+  return null
+}
+
 export function buildDeterministicDatasetProposal({
   instruction,
   fields,
@@ -118,13 +142,29 @@ export function buildDeterministicDatasetProposal({
     ...fields.filter(field => fieldIds.includes(field.id)).map(field => field.entityId),
     ...metrics.filter(metric => metricIds.includes(metric.id) && metric.entityId).map(metric => metric.entityId as string),
   ])
-  const relationshipIds = relationships
-    .filter(relationship => selectedEntityIds.has(relationship.fromEntityId) && selectedEntityIds.has(relationship.toEntityId))
-    .slice(0, 16)
-    .map(relationship => relationship.id)
-  const warnings = selectedEntityIds.size > 1 && relationshipIds.length === 0
-    ? ['The selected business concepts span multiple entities but no approved join connects them. Review the field selection.']
-    : []
+  const relationshipIds: string[] = []
+  const disconnectedEntityIds: string[] = []
+  let relationshipLimitExceeded = false
+  const pathAnchorId = anchorEntityId ?? selectedEntityIds.values().next().value as string | undefined
+  if (pathAnchorId) {
+    for (const entityId of selectedEntityIds) {
+      const path = shortestRelationshipPath(pathAnchorId, entityId, relationships)
+      if (path === null) disconnectedEntityIds.push(entityId)
+      else for (const relationshipId of path) {
+        if (relationshipIds.includes(relationshipId)) continue
+        if (relationshipIds.length < 16) relationshipIds.push(relationshipId)
+        else relationshipLimitExceeded = true
+      }
+    }
+  }
+  const warnings = [
+    ...(disconnectedEntityIds.length > 0
+      ? ['The selected business concepts span entities without a complete approved relationship path. Review the field selection.']
+      : []),
+    ...(relationshipLimitExceeded
+      ? ['The approved relationship path exceeds the 16-join dataset safety limit. Narrow the field selection.']
+      : []),
+  ]
 
   return DatasetCopilotProposalSchema.parse({
     name: proposalName(instruction),
