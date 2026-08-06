@@ -275,12 +275,14 @@ export async function publishDashboardVersionGoverned({
   versionId,
   readinessAuthority = 'guided_profile',
   notes = '',
+  metadata = {},
 }: {
   auth: AuthedSupabaseContext
   dashboardId: string
   versionId: string
   readinessAuthority?: GuidedPublishSemanticAuthority
   notes?: string
+  metadata?: Record<string, unknown>
 }): Promise<GovernedDashboardPublishResult> {
   const dashboard = await loadOwnedDashboard(auth, dashboardId)
   const version = await loadDashboardVersion({
@@ -407,6 +409,7 @@ export async function publishDashboardVersionGoverned({
   }
 
   const transitionMetadata = {
+    ...metadata,
     readinessStatus: readiness.status,
     blockers: readiness.blockers.map(check => check.message),
     warnings: readiness.warnings.map(check => check.message),

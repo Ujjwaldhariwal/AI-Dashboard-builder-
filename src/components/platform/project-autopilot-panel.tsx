@@ -3,7 +3,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight, Check, Circle, Loader2, Play, RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react'
+import { ArrowRight, Check, Circle, Loader2, Plus, Play, RefreshCw, RotateCcw, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -12,10 +12,17 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
 import { useScopedBuilderStore } from '@/store/scoped-builder-store'
-import type { ChartTemplateId } from '@/types/chart-template'
+import {
+  DASHBOARD_BRIEF_VERSION,
+  DashboardBriefSchema,
+  dashboardRequirementTemplateId,
+  type BriefChartType,
+  type DashboardChartRequirement,
+} from '@/types/dashboard-brief'
 import type {
   ProjectAutopilotPublicationPolicy,
   ProjectAutopilotRun,
@@ -29,13 +36,31 @@ interface ProjectOption {
   tenantName?: string | null
 }
 
-const CHART_TYPES: Array<{ id: ChartTemplateId; label: string }> = [
-  { id: 'kpi-card', label: 'KPI' },
+const REQUIREMENT_CHART_TYPES: Array<{ id: BriefChartType; label: string }> = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'status-card', label: 'KPI' },
   { id: 'line', label: 'Trend' },
   { id: 'bar', label: 'Bar' },
   { id: 'pie', label: 'Pie' },
-  { id: 'table-grid', label: 'Table' },
+  { id: 'table', label: 'Table' },
 ]
+
+const AGGREGATIONS = ['sum', 'avg', 'min', 'max', 'count', 'count_distinct'] as const
+const TIME_GRAINS = ['day', 'week', 'month', 'quarter', 'year'] as const
+
+function newRequirement(index: number): DashboardChartRequirement {
+  return {
+    id: crypto.randomUUID(),
+    title: index === 0 ? 'Primary KPI' : `Required chart ${index + 1}`,
+    instruction: '',
+    chartType: index === 0 ? 'status-card' : 'auto',
+    lockChartType: index === 0,
+    metric: null,
+    dimensions: [],
+    timeGrain: null,
+    required: true,
+  }
+}
 
 function errorText(payload: unknown) {
   if (!payload || typeof payload !== 'object') return 'Request failed'
@@ -65,8 +90,7 @@ export function ProjectAutopilotPanel() {
   const [projectId, setProjectId] = useState('')
   const [objective, setObjective] = useState('Build an executive dashboard that highlights the most important KPIs, trends, comparisons, and operational details.')
   const [audience, setAudience] = useState('Leadership')
-  const [chartCount, setChartCount] = useState(6)
-  const [chartTypes, setChartTypes] = useState<ChartTemplateId[]>(['kpi-card', 'line', 'bar'])
+  const [requirements, setRequirements] = useState<DashboardChartRequirement[]>([])
   const [publicationPolicy, setPublicationPolicy] = useState<ProjectAutopilotPublicationPolicy>(
     'auto_publish_when_healthy',
   )
@@ -75,6 +99,10 @@ export function ProjectAutopilotPanel() {
   const [running, setRunning] = useState(false)
 
   const selectedProject = useMemo(() => projects.find(project => project.id === projectId) ?? null, [projectId, projects])
+
+  useEffect(() => {
+    setRequirements(current => current.length > 0 ? current : [newRequirement(0)])
+  }, [])
 
   useEffect(() => {
     const intent = readPlatformAssistantIntent('autopilot')
@@ -146,6 +174,18 @@ export function ProjectAutopilotPanel() {
   const createAndExecute = async () => {
     if (!selectedProject) return toast.error('Select a project first')
     if (objective.trim().length < 10) return toast.error('Describe the dashboard objective')
+    if (requirements.length === 0 || requirements.some(requirement => requirement.title.trim().length < 2)) {
+      return toast.error('Add at least one named KPI or chart requirement')
+    }
+    const requirementSpec = DashboardBriefSchema.parse({
+      version: DASHBOARD_BRIEF_VERSION,
+      id: crypto.randomUUID(),
+      title: `${audience.trim() || selectedProject.name} dashboard requirements`,
+      objective: objective.trim(),
+      requirements,
+      updatedAt: new Date().toISOString(),
+    })
+    const chartTypes = [...new Set(requirementSpec.requirements.map(dashboardRequirementTemplateId))]
     const response = await fetch(`/api/admin/projects/${selectedProject.id}/autopilot`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -155,8 +195,9 @@ export function ProjectAutopilotPanel() {
         brief: {
           objective,
           audience: audience.trim() || null,
-          chartCount,
+          chartCount: requirementSpec.requirements.length,
           chartTypes,
+          requirementSpec,
           autoApply: true,
           publicationPolicy,
         },
@@ -231,17 +272,15 @@ export function ProjectAutopilotPanel() {
     }
   }
 
-  const toggleChartType = (templateId: ChartTemplateId) => {
-    setChartTypes(current => current.includes(templateId)
-      ? current.filter(item => item !== templateId)
-      : [...current, templateId])
+  const updateRequirement = (id: string, patch: Partial<DashboardChartRequirement>) => {
+    setRequirements(current => current.map(requirement => requirement.id === id ? { ...requirement, ...patch } : requirement))
   }
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <section className="border-b border-[color:var(--dos-border-soft)] pb-5">
-        <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--dos-text-primary)]">Build the governed dashboard from one brief</h1>
-        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot maps and validates source fields, approves safe semantics, composes the dashboard, and can publish a verified immutable release. You review only blocked checks or policy-required releases.</p>
+        <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--dos-text-primary)]">Build the governed dashboard from client requirements</h1>
+        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot resolves every KPI against the attached database, pauses on ambiguous semantics, composes requirement-linked charts, and publishes only after immutable release checks pass.</p>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
@@ -262,15 +301,9 @@ export function ProjectAutopilotPanel() {
               <Textarea id="autopilot-objective" value={objective} onChange={event => setObjective(event.target.value)} className="min-h-32 resize-y" maxLength={4000} />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-[1fr_130px]">
-              <div className="space-y-2">
-                <Label htmlFor="autopilot-audience">Audience</Label>
-                <Input id="autopilot-audience" className="h-11" value={audience} onChange={event => setAudience(event.target.value)} maxLength={200} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="autopilot-count">Charts</Label>
-                <Input id="autopilot-count" className="h-11" type="number" min={1} max={12} value={chartCount} onChange={event => setChartCount(Math.min(12, Math.max(1, Number(event.target.value) || 1)))} />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="autopilot-audience">Audience</Label>
+              <Input id="autopilot-audience" className="h-11" value={audience} onChange={event => setAudience(event.target.value)} maxLength={200} />
             </div>
 
             <div className="space-y-2">
@@ -296,23 +329,108 @@ export function ProjectAutopilotPanel() {
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Preferred visuals</Label>
-              <div className="flex flex-wrap gap-2">
-                {CHART_TYPES.map(type => (
-                  <button
-                    key={type.id}
-                    type="button"
-                    onClick={() => toggleChartType(type.id)}
-                    className={[
-                      'min-h-11 whitespace-nowrap rounded-md border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)] focus-visible:ring-offset-2 active:bg-[var(--dos-surface-muted)] disabled:cursor-not-allowed disabled:opacity-55',
-                      chartTypes.includes(type.id)
-                        ? 'border-[color:var(--dos-accent-primary)] bg-[var(--dos-accent-primary-soft)] text-[var(--dos-accent-primary)]'
-                        : 'border-[color:var(--dos-border-soft)] text-[var(--dos-text-secondary)] hover:bg-[var(--dos-surface-muted)]',
-                    ].join(' ')}
-                  >
-                    {type.label}
-                  </button>
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label>KPI and chart requirements</Label>
+                  <p className="mt-1 text-xs leading-5 text-[var(--dos-text-muted)]">Each requirement is resolved against approved semantic IDs before any dataset or chart is created.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={requirements.length >= 12}
+                  onClick={() => setRequirements(current => [...current, newRequirement(current.length)])}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {requirements.map((requirement, index) => (
+                  <div key={requirement.id} className="space-y-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]/35 p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-[var(--dos-text-muted)]">{String(index + 1).padStart(2, '0')}</span>
+                      <Input
+                        aria-label={`Requirement ${index + 1} title`}
+                        value={requirement.title}
+                        onChange={event => updateRequirement(requirement.id, { title: event.target.value })}
+                        placeholder="Monthly recognised revenue"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={requirements.length === 1}
+                        aria-label={`Remove ${requirement.title}`}
+                        onClick={() => setRequirements(current => current.filter(item => item.id !== requirement.id))}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
+                      <Input
+                        aria-label={`${requirement.title} metric concept`}
+                        value={requirement.metric?.concept ?? ''}
+                        onChange={event => updateRequirement(requirement.id, {
+                          metric: event.target.value
+                            ? { concept: event.target.value, aggregation: requirement.metric?.aggregation ?? 'sum' }
+                            : null,
+                        })}
+                        placeholder="Metric concept, for example Recognised Revenue"
+                      />
+                      <Select
+                        value={requirement.metric?.aggregation ?? 'sum'}
+                        onValueChange={aggregation => updateRequirement(requirement.id, {
+                          metric: { concept: requirement.metric?.concept || requirement.title, aggregation: aggregation as typeof AGGREGATIONS[number] },
+                        })}
+                      >
+                        <SelectTrigger aria-label={`${requirement.title} aggregation`}><SelectValue /></SelectTrigger>
+                        <SelectContent>{AGGREGATIONS.map(item => <SelectItem key={item} value={item}>{item.replace('_', ' ')}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <Input
+                        aria-label={`${requirement.title} dimensions`}
+                        value={requirement.dimensions.join(', ')}
+                        onChange={event => updateRequirement(requirement.id, {
+                          dimensions: event.target.value.split(',').map(value => value.trim()).filter(Boolean).slice(0, 6),
+                        })}
+                        placeholder="Dimensions: region, product"
+                      />
+                      <Select
+                        value={requirement.timeGrain ?? 'none'}
+                        onValueChange={value => updateRequirement(requirement.id, { timeGrain: value === 'none' ? null : value as typeof TIME_GRAINS[number] })}
+                      >
+                        <SelectTrigger aria-label={`${requirement.title} time grain`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No time grain</SelectItem>
+                          {TIME_GRAINS.map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={requirement.chartType}
+                        onValueChange={value => updateRequirement(requirement.id, {
+                          chartType: value as BriefChartType,
+                          lockChartType: value !== 'auto',
+                        })}
+                      >
+                        <SelectTrigger aria-label={`${requirement.title} visual`}><SelectValue /></SelectTrigger>
+                        <SelectContent>{REQUIREMENT_CHART_TYPES.map(type => <SelectItem key={type.id} value={type.id}>{type.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <Textarea
+                      aria-label={`${requirement.title} calculation and filters`}
+                      value={requirement.instruction}
+                      onChange={event => updateRequirement(requirement.id, { instruction: event.target.value })}
+                      className="min-h-20 resize-y"
+                      maxLength={500}
+                      placeholder="Business definition, filters, comparison, or calculation notes"
+                    />
+                    <label className="flex items-center justify-between gap-3 text-xs text-[var(--dos-text-muted)]">
+                      <span>Required for release</span>
+                      <Switch checked={requirement.required} onCheckedChange={required => updateRequirement(requirement.id, { required })} />
+                    </label>
+                  </div>
                 ))}
               </div>
             </div>
@@ -347,6 +465,32 @@ export function ProjectAutopilotPanel() {
               <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-[var(--dos-surface-muted)]">
                 <div className="h-full origin-left bg-[var(--dos-accent-primary)] transition-transform duration-300 ease-out" style={{ transform: `scaleX(${run.plan.progress / 100})` }} />
               </div>
+              {run.artifacts.requirementCoverage ? (
+                <div className="mt-4 space-y-2 rounded-md border border-[color:var(--dos-border-soft)] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-[var(--dos-text-primary)]">Requirement coverage</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge variant="success">{run.artifacts.requirementCoverage.ready} ready</Badge>
+                      {run.artifacts.requirementCoverage.needsReview > 0 ? <Badge variant="warning">{run.artifacts.requirementCoverage.needsReview} review</Badge> : null}
+                      {run.artifacts.requirementCoverage.blocked > 0 ? <Badge variant="destructive">{run.artifacts.requirementCoverage.blocked} blocked</Badge> : null}
+                    </div>
+                  </div>
+                  {run.artifacts.requirementCoverage.items.map(item => (
+                    <div key={item.requirementId} className="border-t border-[color:var(--dos-border-soft)] pt-2 first:border-t-0 first:pt-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-medium text-[var(--dos-text-secondary)]">{item.title}</p>
+                        <Badge variant={item.status === 'ready' ? 'success' : item.status === 'blocked' ? 'destructive' : 'warning'} className="text-[10px]">{item.status.replace('_', ' ')}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-[var(--dos-text-muted)]">{item.reason}</p>
+                    </div>
+                  ))}
+                  {run.artifacts.requirementCoverage.items.some(item => item.required && item.status !== 'ready') ? (
+                    <Link href="/admin/semantic-model" className="inline-flex items-center gap-1 text-xs font-medium text-[var(--dos-accent-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)]">
+                      Review semantic mappings <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="mt-4">
                 {run.plan.steps.map(step => (
                   <div key={step.key} className="flex items-start gap-3 border-b border-[color:var(--dos-border-soft)] py-3 last:border-b-0">

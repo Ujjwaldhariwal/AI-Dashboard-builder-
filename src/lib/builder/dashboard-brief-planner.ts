@@ -66,7 +66,13 @@ function isDate(field: BriefFieldProfile) {
 }
 
 function requirementWords(brief: DashboardBrief, requirement: DashboardChartRequirement) {
-  const specific = words(`${requirement.title} ${requirement.instruction}`)
+  const specific = words([
+    requirement.title,
+    requirement.instruction,
+    requirement.metric?.concept,
+    requirement.dimensions.join(' '),
+    requirement.timeGrain,
+  ].filter(Boolean).join(' '))
   return [...specific, ...specific, ...words(brief.objective)]
 }
 

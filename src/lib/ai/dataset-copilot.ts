@@ -66,22 +66,30 @@ export function buildDeterministicDatasetProposal({
   fields,
   metrics,
   relationships,
+  preferredFieldIds = [],
+  preferredMetricIds = [],
 }: {
   instruction: string
   fields: DatasetFieldEvidence[]
   metrics: DatasetMetricEvidence[]
   relationships: DatasetRelationshipEvidence[]
+  preferredFieldIds?: string[]
+  preferredMetricIds?: string[]
 }): DatasetCopilotProposal {
   const objectiveTokens = tokens(instruction)
   const rankedMetrics = [...metrics].sort((left, right) => (
     score(`${right.name} ${right.description ?? ''}`, objectiveTokens)
     - score(`${left.name} ${left.description ?? ''}`, objectiveTokens)
   ))
-  const anchorEntityId = rankedMetrics.find(metric => metric.entityId)?.entityId ?? null
+  const preferredMetricSet = new Set(preferredMetricIds)
+  const matchedPreferredMetrics = metrics.filter(metric => preferredMetricSet.has(metric.id))
+  const anchorEntityId = matchedPreferredMetrics[0]?.entityId ?? rankedMetrics.find(metric => metric.entityId)?.entityId ?? null
   const coherentMetrics = anchorEntityId
     ? rankedMetrics.filter(metric => metric.entityId === anchorEntityId)
     : rankedMetrics
-  const metricIds = coherentMetrics.slice(0, Math.min(4, coherentMetrics.length)).map(metric => metric.id)
+  const metricIds = (matchedPreferredMetrics.length > 0 ? matchedPreferredMetrics : coherentMetrics)
+    .slice(0, 16)
+    .map(metric => metric.id)
   const directlyRelatedEntityIds = new Set(anchorEntityId ? [anchorEntityId] : [])
   if (anchorEntityId) {
     for (const relationship of relationships) {
@@ -99,8 +107,12 @@ export function buildDeterministicDatasetProposal({
       return (entityPriority(right.entityId) + score(`${right.entityName} ${right.name}`, objectiveTokens) + rolePriority(right.role))
         - (entityPriority(left.entityId) + score(`${left.entityName} ${left.name}`, objectiveTokens) + rolePriority(left.role))
     })
-  const fieldLimit = metricIds.length > 0 ? 6 : 10
-  const fieldIds = rankedFields.slice(0, Math.min(fieldLimit, rankedFields.length)).map(field => field.id)
+  const preferredFieldSet = new Set(preferredFieldIds)
+  const matchedPreferredFields = fields.filter(field => preferredFieldSet.has(field.id) && field.role !== 'hidden')
+  const fieldLimit = matchedPreferredFields.length > 0 ? 30 : metricIds.length > 0 ? 6 : 10
+  const fieldIds = (matchedPreferredFields.length > 0 ? matchedPreferredFields : rankedFields)
+    .slice(0, Math.min(fieldLimit, fields.length))
+    .map(field => field.id)
 
   const selectedEntityIds = new Set([
     ...fields.filter(field => fieldIds.includes(field.id)).map(field => field.entityId),

@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto'
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { buildDeterministicChartSuiteProposal } from '@/lib/ai/chart-suite-copilot'
+import {
+  buildDeterministicChartSuiteProposal,
+  buildRequirementChartSuiteProposal,
+} from '@/lib/ai/chart-suite-copilot'
+import { resolveDashboardRequirementCoverage } from '@/lib/ai/dashboard-requirement-resolver'
 import { buildDeterministicDatasetProposal } from '@/lib/ai/dataset-copilot'
 import {
   buildProjectAutopilotDashboardSlots,
@@ -30,6 +34,7 @@ import type {
   DashboardChartValidationState,
 } from '@/types/dashboard-chart'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
+import type { DashboardBrief } from '@/types/dashboard-brief'
 import type {
   ProjectAutopilotArtifacts,
   ProjectAutopilotBrief,
@@ -246,6 +251,10 @@ function mapColumn(row: Record<string, unknown>): DataSourceColumnMetadata {
 
 export function projectAutopilotIdempotencyKey(projectId: string, brief: ProjectAutopilotBrief) {
   return createHash('sha256').update(JSON.stringify({ projectId, brief })).digest('hex')
+}
+
+export function projectAutopilotRequirementSpecHash(spec: DashboardBrief) {
+  return createHash('sha256').update(JSON.stringify(spec)).digest('hex')
 }
 
 export function mapProjectAutopilotRun(row: Record<string, unknown>): ProjectAutopilotRun {
@@ -468,8 +477,21 @@ export async function loadProjectAutopilotSnapshot({
   const dataset = semanticModel
     ? await loadDataset(supabase, scope, semanticModel.id, artifactsMatchModel ? artifacts.datasetId : undefined)
     : null
+  const trackedChartIds = artifacts.requirementCoverage ? artifacts.chartIds ?? [] : []
   const { count, error } = dataset
-    ? await supabase
+    ? trackedChartIds.length > 0
+      ? await supabase
+        .from('dashboard_chart_configs')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .eq('project_id', projectId)
+        .eq('dataset_id', dataset.id)
+        .eq('validation_state', 'valid')
+        .neq('status', 'archived')
+        .in('id', trackedChartIds)
+      : artifacts.requirementCoverage
+        ? { count: 0, error: null }
+        : await supabase
         .from('dashboard_chart_configs')
         .select('id', { count: 'exact', head: true })
         .eq('tenant_id', tenantId)
@@ -514,6 +536,7 @@ export async function loadProjectAutopilotSnapshot({
     semanticModel,
     dataset,
     chartCount: count ?? 0,
+    requirementCoverage: artifactsMatchModel ? artifacts.requirementCoverage ?? null : null,
     dashboard,
   }
 }
@@ -762,6 +785,22 @@ async function semanticEvidence(supabase: SupabaseClient, modelId: string) {
   return { fields, metrics, relationships, rawFields, rawMetrics }
 }
 
+async function resolveAutopilotRequirementCoverage(
+  supabase: SupabaseClient,
+  context: RunContext,
+  modelId: string,
+) {
+  const spec = context.brief.requirementSpec
+  if (!spec) return null
+  const evidence = await semanticEvidence(supabase, modelId)
+  return resolveDashboardRequirementCoverage({
+    spec,
+    specHash: projectAutopilotRequirementSpecHash(spec),
+    fields: evidence.fields,
+    metrics: evidence.metrics,
+  })
+}
+
 async function repairAutopilotRelationships(supabase: SupabaseClient, modelId: string) {
   const { data: entities, error: entityError } = await supabase
     .from('business_entities')
@@ -904,17 +943,34 @@ async function validateAndApproveAutopilotSemanticModel(
 }
 
 async function ensurePublishedDataset(supabase: SupabaseClient, context: RunContext, modelId: string) {
+  const coverage = context.artifacts.requirementCoverage
+  const spec = context.brief.requirementSpec
+  if (spec && (!coverage || coverage.specId !== spec.id)) {
+    throw new Error('KPI requirement coverage must be evaluated before dataset publication.')
+  }
+  const unresolvedRequired = coverage?.items.filter(item => item.required && item.status !== 'ready') ?? []
+  if (unresolvedRequired.length > 0) {
+    throw new Error(`${unresolvedRequired.length} required KPI requirement${unresolvedRequired.length === 1 ? '' : 's'} need review before dataset publication.`)
+  }
+  const readyRequirements = coverage?.items.filter(item => item.status === 'ready' && item.metricId) ?? []
+  if (spec && readyRequirements.length === 0) throw new Error('No KPI requirement is ready for dataset publication.')
+  const preferredFieldIds = [...new Set(readyRequirements.flatMap(item => item.fieldIds))]
+  const preferredMetricIds = [...new Set(readyRequirements.flatMap(item => item.metricId ? [item.metricId] : []))]
   const existing = await loadDataset(supabase, context, modelId, context.artifacts.datasetId)
   if (existing?.status === 'published') {
     const existingSelection = record(existing.selection)
+    const selectedFieldIds = strings(existingSelection.fieldIds)
+    const selectedMetricIds = strings(existingSelection.metricIds)
+    const coversRequirements = preferredFieldIds.every(id => selectedFieldIds.includes(id))
+      && preferredMetricIds.every(id => selectedMetricIds.includes(id))
     const existingValidation = await validateSemanticReferencesForModel({
       supabase,
       tenantId: context.tenantId,
       projectId: context.projectId,
       modelId,
       selection: {
-        fieldIds: strings(existingSelection.fieldIds),
-        metricIds: strings(existingSelection.metricIds),
+        fieldIds: selectedFieldIds,
+        metricIds: selectedMetricIds,
         relationshipIds: strings(existingSelection.relationshipIds),
       },
     })
@@ -925,11 +981,16 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
         relationships: existingValidation.relationships,
         metricSourceFields: existingValidation.metricSourceFields,
       })
-      if (existingCompile.queryPlan.executableSql && existingCompile.dataSourceId) return existing.id
+      if (coversRequirements && existingCompile.queryPlan.executableSql && existingCompile.dataSourceId) return existing.id
     }
   }
   const evidence = await semanticEvidence(supabase, modelId)
-  const proposal = buildDeterministicDatasetProposal({ instruction: context.brief.objective, ...evidence })
+  const proposal = buildDeterministicDatasetProposal({
+    instruction: projectAutopilotInstruction(context.brief),
+    ...evidence,
+    preferredFieldIds,
+    preferredMetricIds,
+  })
   const selection = {
     fieldIds: proposal.fieldIds,
     metricIds: proposal.metricIds,
@@ -997,6 +1058,11 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
 }
 
 async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, datasetId: string) {
+  const readyCoverage = context.brief.requirementSpec
+    ? context.artifacts.requirementCoverage?.items.filter(item => item.status === 'ready' && item.metricId) ?? []
+    : []
+  const targetChartCount = context.brief.requirementSpec ? readyCoverage.length : context.brief.chartCount
+  if (targetChartCount === 0) throw new Error('No KPI requirement is ready for chart compilation.')
   const { data: dataset, error: datasetError } = await supabase
     .from('semantic_datasets')
     .select('id, name, selection')
@@ -1013,28 +1079,32 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
     metricIds.length ? supabase.from('business_metrics').select('*').in('id', metricIds) : Promise.resolve({ data: [], error: null }),
     supabase
       .from('dashboard_chart_configs')
-      .select('id, template_id, encoding')
+      .select('id, template_id, encoding, layout')
       .eq('dataset_id', datasetId)
       .eq('tenant_id', context.tenantId)
       .eq('project_id', context.projectId)
       .eq('validation_state', 'valid')
       .neq('status', 'archived')
       .order('created_at', { ascending: false })
-      .limit(context.brief.chartCount),
+      .limit(12),
   ])
   const error = fieldResult.error ?? metricResult.error ?? chartResult.error
   if (error) throw new Error(error.message)
   const rawFields = (fieldResult.data ?? []) as Record<string, unknown>[]
   const rawMetrics = (metricResult.data ?? []) as Record<string, unknown>[]
   const existingRows = (chartResult.data ?? []) as Record<string, unknown>[]
-  const reusableRows = existingRows.filter(chart => validateDashboardChartConfig({
+  const validRows = existingRows.filter(chart => validateDashboardChartConfig({
     templateId: String(chart.template_id),
     encoding: record(chart.encoding) as unknown as DashboardChartConfig['encoding'],
     fields: rawFields,
     metrics: rawMetrics,
   }).state === 'valid')
+  const readyRequirementIds = new Set(readyCoverage.map(item => item.requirementId))
+  const reusableRows = context.brief.requirementSpec
+    ? validRows.filter(chart => readyRequirementIds.has(String(record(chart.layout).requirementId ?? '')))
+    : validRows
   const rejectedIds = existingRows
-    .filter(chart => !reusableRows.includes(chart))
+    .filter(chart => !validRows.includes(chart))
     .map(chart => String(chart.id))
   if (rejectedIds.length > 0) {
     const nowIso = new Date().toISOString()
@@ -1047,7 +1117,8 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
     if (invalidationError) throw new Error(invalidationError.message)
   }
   const existingIds = reusableRows.map(row => String(row.id))
-  const remaining = Math.max(0, context.brief.chartCount - existingIds.length)
+  const existingRequirementIds = new Set(reusableRows.map(row => String(record(row.layout).requirementId ?? '')).filter(Boolean))
+  const remaining = Math.max(0, targetChartCount - existingIds.length)
   if (remaining === 0) return existingIds
   const fields = rawFields.map(field => ({
     id: String(field.id),
@@ -1065,13 +1136,34 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
     .filter(item => item.status !== 'blocked')
     .map(item => item.template.id)
   const instruction = `${projectAutopilotInstruction(context.brief)} Create exactly ${remaining} additional charts.`
-  const proposal = buildDeterministicChartSuiteProposal({
-    instruction,
-    datasetName: String(dataset.name),
-    fields,
-    metrics,
-    allowedTemplateIds,
-  })
+  const requirementById = new Map(context.brief.requirementSpec?.requirements.map(requirement => [requirement.id, requirement]) ?? [])
+  const missingRequirements = readyCoverage
+    .filter(item => !existingRequirementIds.has(item.requirementId) && item.metricId)
+    .map(item => ({
+      requirementId: item.requirementId,
+      title: item.title,
+      instruction: requirementById.get(item.requirementId)?.instruction ?? '',
+      templateId: item.templateId,
+      metricId: item.metricId as string,
+      fieldIds: item.fieldIds,
+      confidence: item.confidence,
+    }))
+  const proposal = context.brief.requirementSpec
+    ? buildRequirementChartSuiteProposal({
+      instruction,
+      datasetName: String(dataset.name),
+      fields,
+      metrics,
+      allowedTemplateIds,
+      requirements: missingRequirements,
+    })
+    : buildDeterministicChartSuiteProposal({
+      instruction,
+      datasetName: String(dataset.name),
+      fields,
+      metrics,
+      allowedTemplateIds,
+    })
   const charts = proposal.charts.slice(0, remaining).map(chart => {
     const validation = validateDashboardChartConfig({ templateId: chart.templateId, encoding: chart.encoding, fields: rawFields, metrics: rawMetrics })
     const approval = evaluateAutopilotChartApproval({
@@ -1098,8 +1190,11 @@ async function ensureChartSuite(supabase: SupabaseClient, context: RunContext, d
 }
 
 async function ensureDashboardDraft(supabase: SupabaseClient, context: RunContext, chartIds: string[]) {
-  const selectedIds = [...new Set(chartIds)].slice(0, context.brief.chartCount)
-  if (selectedIds.length < context.brief.chartCount) throw new Error('Autopilot does not have enough valid charts to compose the requested dashboard')
+  const targetChartCount = context.brief.requirementSpec
+    ? context.artifacts.requirementCoverage?.ready ?? 0
+    : context.brief.chartCount
+  const selectedIds = [...new Set(chartIds)].slice(0, targetChartCount)
+  if (selectedIds.length < targetChartCount) throw new Error('Autopilot does not have enough valid charts to compose the requested dashboard')
   const { data, error } = await supabase
     .from('dashboard_chart_configs')
     .select('id, name, template_id, presentation, layout, validation_state, status')
@@ -1116,7 +1211,7 @@ async function ensureDashboardDraft(supabase: SupabaseClient, context: RunContex
     name: String(chart.name),
     templateId: String(chart.template_id) as ProjectAutopilotBrief['chartTypes'][number],
     presentation: record(chart.presentation) as { size?: 'compact' | 'standard' | 'wide' | 'full' },
-    layout: record(chart.layout) as { order?: number; gridSpan?: number },
+    layout: record(chart.layout) as { order?: number; gridSpan?: number; requirementId?: string },
   })))
   const { data: composed, error: composeError } = await supabase.rpc('compose_project_autopilot_dashboard_draft', {
     p_run_id: context.runId,
@@ -1192,6 +1287,21 @@ export async function executeProjectAutopilot(
     return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
   }
   artifacts.semanticModelId = modelId
+  const requirementCoverage = await resolveAutopilotRequirementCoverage(
+    supabase,
+    { ...context, artifacts },
+    modelId,
+  )
+  if (requirementCoverage) {
+    artifacts.requirementCoverage = requirementCoverage
+    snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
+    plan = buildProjectAutopilotPlan(snapshot, context.brief)
+    await persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
+    const unresolvedRequired = requirementCoverage.items.filter(item => item.required && item.status !== 'ready')
+    if (unresolvedRequired.length > 0 || requirementCoverage.ready === 0) {
+      return persistProjectAutopilotPlan({ supabase, ...context, plan, artifacts })
+    }
+  }
   if (snapshot.dataset?.status === 'published') artifacts.datasetId = snapshot.dataset.id
   artifacts.datasetId = await ensurePublishedDataset(supabase, { ...context, artifacts }, modelId)
   snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })
@@ -1226,6 +1336,19 @@ export async function executeProjectAutopilot(
         versionId: artifacts.dashboardVersionId,
         readinessAuthority: 'active_project_model',
         notes: 'Published automatically by governed Project Autopilot after readiness checks.',
+        metadata: artifacts.requirementCoverage ? {
+          autopilotRunId: context.runId,
+          requirementSpecId: artifacts.requirementCoverage.specId,
+          requirementSpecVersion: artifacts.requirementCoverage.specVersion,
+          requirementSpecHash: artifacts.requirementCoverage.specHash,
+          requirementCoverage: {
+            total: artifacts.requirementCoverage.total,
+            ready: artifacts.requirementCoverage.ready,
+            needsReview: artifacts.requirementCoverage.needsReview,
+            blocked: artifacts.requirementCoverage.blocked,
+            evaluatedAt: artifacts.requirementCoverage.evaluatedAt,
+          },
+        } : undefined,
       })
       artifacts.releaseVerification = publication.verification
       snapshot = await loadProjectAutopilotSnapshot({ supabase, ...context, artifacts })

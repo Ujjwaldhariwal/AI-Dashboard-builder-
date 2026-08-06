@@ -1,4 +1,5 @@
 import type { ChartTemplateId } from '@/types/chart-template'
+import type { DashboardBrief } from '@/types/dashboard-brief'
 
 export type ProjectAutopilotRunStatus =
   | 'queued'
@@ -35,14 +36,42 @@ export interface ProjectAutopilotBrief {
   audience: string | null
   chartCount: number
   chartTypes: ChartTemplateId[]
+  requirementSpec?: DashboardBrief | null
   autoApply: boolean
   publicationPolicy: ProjectAutopilotPublicationPolicy
+}
+
+export type ProjectAutopilotRequirementStatus = 'ready' | 'needs_review' | 'blocked'
+
+export interface ProjectAutopilotRequirementCoverageItem {
+  requirementId: string
+  title: string
+  required: boolean
+  status: ProjectAutopilotRequirementStatus
+  metricId: string | null
+  fieldIds: string[]
+  templateId: ChartTemplateId
+  confidence: number
+  reason: string
+}
+
+export interface ProjectAutopilotRequirementCoverage {
+  specId: string
+  specVersion: number
+  specHash: string
+  total: number
+  ready: number
+  needsReview: number
+  blocked: number
+  evaluatedAt: string
+  items: ProjectAutopilotRequirementCoverageItem[]
 }
 
 export interface ProjectAutopilotArtifacts {
   semanticModelId?: string
   datasetId?: string
   chartIds?: string[]
+  requirementCoverage?: ProjectAutopilotRequirementCoverage
   dashboardId?: string
   dashboardVersionId?: string
   dashboardPageId?: string

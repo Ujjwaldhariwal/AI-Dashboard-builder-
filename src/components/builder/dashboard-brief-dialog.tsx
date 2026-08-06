@@ -73,6 +73,10 @@ function newRequirement(index: number): DashboardChartRequirement {
     instruction: '',
     chartType: index === 0 ? 'status-card' : 'auto',
     lockChartType: index === 0,
+    metric: null,
+    dimensions: [],
+    timeGrain: null,
+    required: true,
   }
 }
 
@@ -345,4 +349,3 @@ export function DashboardBriefDialog({ open, onOpenChange }: DashboardBriefDialo
     </Dialog>
   )
 }
-

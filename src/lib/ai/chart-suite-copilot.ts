@@ -39,7 +39,11 @@ export const ChartSuiteDraftSchema = z.object({
     showLabels: z.boolean(),
     valueFormat: z.string().max(80).nullable(),
   }).strict(),
-  layout: z.object({ order: z.number().int().min(0), gridSpan: z.number().int().min(1).max(4) }).strict(),
+  layout: z.object({
+    order: z.number().int().min(0),
+    gridSpan: z.number().int().min(1).max(4),
+    requirementId: z.string().uuid().optional(),
+  }).strict(),
   confidence: z.number().min(0).max(1),
   rationale: z.string().trim().min(2).max(500),
 }).strict()
@@ -66,6 +70,16 @@ export interface ChartSuiteMetricEvidence {
   name: string
   aggregation: string
   entityId?: string | null
+}
+
+export interface ResolvedChartRequirement {
+  requirementId: string
+  title: string
+  instruction: string
+  templateId: ChartTemplateId
+  metricId: string
+  fieldIds: string[]
+  confidence: number
 }
 
 function title(value: string) {
@@ -247,5 +261,61 @@ export function buildDeterministicChartSuiteProposal({
     summary: `${instruction.trim()} Proposed ${charts.length} distinct editable chart drafts from compatible templates.`.slice(0, 500),
     charts,
     warnings,
+  })
+}
+
+export function buildRequirementChartSuiteProposal({
+  instruction,
+  datasetName,
+  fields,
+  metrics,
+  allowedTemplateIds,
+  requirements,
+}: {
+  instruction: string
+  datasetName: string
+  fields: ChartSuiteFieldEvidence[]
+  metrics: ChartSuiteMetricEvidence[]
+  allowedTemplateIds: ChartTemplateId[]
+  requirements: ResolvedChartRequirement[]
+}): ChartSuiteCopilotProposal {
+  const charts: ChartSuiteCopilotProposal['charts'] = []
+  const warnings: string[] = []
+  for (const requirement of requirements) {
+    const templateId = resolveCompatibleTemplate(requirement.templateId, allowedTemplateIds)
+    const metric = metrics.find(item => item.id === requirement.metricId)
+    if (!templateId || !metric) {
+      warnings.push(`${requirement.title} is not compatible with the governed dataset.`)
+      continue
+    }
+    const fieldSet = new Set(requirement.fieldIds)
+    const proposal = buildDeterministicChartSuiteProposal({
+      instruction: `${requirement.title}. ${requirement.instruction} Create exactly 1 chart.`,
+      datasetName,
+      fields: fields.filter(field => fieldSet.has(field.id)),
+      metrics: [metric],
+      allowedTemplateIds: [templateId],
+    })
+    const chart = proposal.charts[0]
+    if (!chart) {
+      warnings.push(`${requirement.title} could not satisfy the ${title(templateId)} template contract.`)
+      continue
+    }
+    charts.push({
+      ...chart,
+      name: requirement.title,
+      description: requirement.instruction || chart.description,
+      confidence: requirement.confidence,
+      rationale: `Compiled from approved KPI requirement ${requirement.requirementId}.`,
+      layout: { ...chart.layout, order: charts.length, requirementId: requirement.requirementId },
+    })
+    warnings.push(...proposal.warnings)
+  }
+  if (charts.length === 0) throw new Error('No KPI requirement could be compiled into a valid chart.')
+  return ChartSuiteCopilotProposalSchema.parse({
+    title: `${datasetName} dashboard`.slice(0, 120),
+    summary: `${instruction.trim()} Compiled ${charts.length} requirement-linked chart drafts.`.slice(0, 500),
+    charts,
+    warnings: [...new Set(warnings)].slice(0, 20),
   })
 }

@@ -150,6 +150,7 @@ export interface DashboardChartConfig {
   layout: {
     order: number
     gridSpan: number
+    requirementId?: string
   }
   validationState: DashboardChartValidationState
   createdAt: string

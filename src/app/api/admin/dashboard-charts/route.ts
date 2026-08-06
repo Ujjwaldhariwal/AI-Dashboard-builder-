@@ -60,6 +60,7 @@ const ChartSchema = z.object({
   layout: z.object({
     order: z.number().int().min(0).default(0),
     gridSpan: z.number().int().min(1).max(4).default(1),
+    requirementId: z.string().uuid().optional(),
   }).strict().default({ order: 0, gridSpan: 1 }),
 }).strict()
 
