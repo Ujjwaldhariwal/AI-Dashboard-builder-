@@ -4,13 +4,13 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 test.describe('project autopilot workspace', () => {
-  test('provides one brief and resumes the governed run without guided clutter', () => {
+  test('provides client requirements and resumes the governed run without guided clutter', () => {
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/project-autopilot-panel.tsx'), 'utf8')
     const shell = readFileSync(join(process.cwd(), 'src/components/platform/platform-admin-shell.tsx'), 'utf8')
     const publishing = readFileSync(join(process.cwd(), 'src/components/platform/published-dashboards-admin-panel.tsx'), 'utf8')
-    expect(panel).toContain('Build the governed dashboard from one brief')
+    expect(panel).toContain('Build the governed dashboard from client requirements')
     expect(panel).toContain('Start Autopilot')
-    expect(panel).toContain('approves safe semantics')
+    expect(panel).toContain('pauses on ambiguous semantics')
     expect(panel).toContain('Resume Autopilot')
     expect(panel).toContain('/autopilot/execute')
     expect(panel).toContain("readPlatformAssistantIntent('autopilot')")

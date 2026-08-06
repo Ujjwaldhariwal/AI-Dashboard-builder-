@@ -101,17 +101,6 @@
     return null
   }
 
-  function pickBySource(fields, table, column) {
-    return fields.find(field => {
-      const source = field.sourceColumn || {}
-      return normalized(source.tableName) === normalized(table) && normalized(source.columnName) === normalized(column)
-    })
-  }
-
-  function pickMetric(metrics, name) {
-    return metrics.find(metric => normalized(metric.name) === normalized(name))
-  }
-
   function sourceForMetric(metric, allFields) {
     const fieldId = metric?.expression?.fieldId
     return allFields.find(field => field.id === fieldId)?.sourceColumn || {}
@@ -248,9 +237,8 @@
     normalized(field.sourceColumn?.tableName).includes('customer') &&
     normalized(field.sourceColumn?.columnName) === 'customer_id'
   ))
-  let relationship = null
   if (readingCustomer && customerId && readingCustomer.entity.id !== customerId.entity.id) {
-    relationship = (await api(`/api/admin/semantic-models/${model.id}/relationships`, {
+    await api(`/api/admin/semantic-models/${model.id}/relationships`, {
       method: 'POST',
       body: JSON.stringify({
         fromEntityId: readingCustomer.entity.id,
@@ -260,9 +248,8 @@
         type: 'many_to_one',
         description: 'Each monthly reading belongs to one electricity customer.',
       }),
-    })).relationship
+    })
   }
-  const relationships = relationship ? [relationship] : []
 
   const approved = (await api(`/api/admin/semantic-models/${model.id}`, {
     method: 'PATCH',

@@ -48,7 +48,7 @@ const INITIAL_STATE = {
   showSessionExpiredModal: false,
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   ...INITIAL_STATE,
   isLoading: true,
 

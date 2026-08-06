@@ -222,7 +222,7 @@ export default function WorkspacesPage() {
       map.set(d.id, used.size)
     })
     return map
-  }, [dashboards, widgets, endpoints])
+  }, [dashboards, widgets])
 
   // ── Derived helpers ───────────────────────────────────────────
   const getWidgetCount   = (id: string) => widgets.filter(w => w.dashboardId === id).length

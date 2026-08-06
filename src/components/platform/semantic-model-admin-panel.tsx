@@ -116,12 +116,6 @@ function inferEntityType(columns: DataSourceColumnMetadata[]): MappingSuggestion
   return 'dimension'
 }
 
-function inferMetricName(columnName: string) {
-  return titleFromColumn(columnName)
-    .replace(/\bCount\b/g, 'Count')
-    .replace(/\bAmount\b/g, 'Amount')
-}
-
 export function SemanticModelAdminPanel() {
   const builderScope = useScopedBuilderStore(state => state.scope)
   const builderDataSourceId = useScopedBuilderStore(state => state.dataSourceIds[0] ?? null)

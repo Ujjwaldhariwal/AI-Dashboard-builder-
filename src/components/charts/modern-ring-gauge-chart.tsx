@@ -86,7 +86,7 @@ export function ModernRingGaugeChart({
         data: [{ value: percent, name: label }],
       },
     ],
-  }), [label, percent, s.colors, sizePreset])
+  }), [label, percent, s.colors, semantic.axis, semantic.grid, sizePreset])
 
   return (
     <ReactECharts

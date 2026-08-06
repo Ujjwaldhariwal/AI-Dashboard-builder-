@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   XCircle,
   Clock,
-  WifiOff,
   RefreshCw,
   Trash2,
   ArrowLeft,
