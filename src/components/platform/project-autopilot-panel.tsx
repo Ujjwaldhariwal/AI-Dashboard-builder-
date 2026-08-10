@@ -1,65 +1,32 @@
-/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
-/* Hallmark · genre: modern-minimal · macrostructure: Workbench · design-system: DashboardOS tokens · designed-as-app */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 */
+/* Hallmark · genre: modern-minimal · macrostructure: Intent-first Workbench · design-system: DashboardOS tokens · designed-as-app */
 'use client'
 
 import Link from 'next/link'
-import { ArrowRight, Check, Circle, Loader2, Plus, Play, RefreshCw, RotateCcw, Trash2, TriangleAlert } from 'lucide-react'
+import { ArrowRight, Check, Circle, Database, Loader2, Play, RefreshCw, RotateCcw, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { readPlatformAssistantIntent } from '@/lib/ai/platform-assistant-contract'
-import { useScopedBuilderStore } from '@/store/scoped-builder-store'
 import {
-  DASHBOARD_BRIEF_VERSION,
-  DashboardBriefSchema,
-  dashboardRequirementTemplateId,
-  type BriefChartType,
-  type DashboardChartRequirement,
-} from '@/types/dashboard-brief'
-import type {
-  ProjectAutopilotPublicationPolicy,
-  ProjectAutopilotRun,
-  ProjectAutopilotStepPlan,
-} from '@/types/project-autopilot'
+  compileRawDashboardBrief,
+  inferDashboardAudience,
+  interpretRawDashboardRequirements,
+} from '@/lib/ai/raw-dashboard-brief'
+import { useScopedBuilderStore } from '@/store/scoped-builder-store'
+import { dashboardRequirementTemplateId } from '@/types/dashboard-brief'
+import type { ProjectAutopilotRun, ProjectAutopilotStepPlan } from '@/types/project-autopilot'
 
 interface ProjectOption {
   id: string
   tenantId: string
   name: string
   tenantName?: string | null
-}
-
-const REQUIREMENT_CHART_TYPES: Array<{ id: BriefChartType; label: string }> = [
-  { id: 'auto', label: 'Auto' },
-  { id: 'status-card', label: 'KPI' },
-  { id: 'line', label: 'Trend' },
-  { id: 'bar', label: 'Bar' },
-  { id: 'pie', label: 'Pie' },
-  { id: 'table', label: 'Table' },
-]
-
-const AGGREGATIONS = ['sum', 'avg', 'min', 'max', 'count', 'count_distinct'] as const
-const TIME_GRAINS = ['day', 'week', 'month', 'quarter', 'year'] as const
-
-function newRequirement(index: number): DashboardChartRequirement {
-  return {
-    id: crypto.randomUUID(),
-    title: index === 0 ? 'Primary KPI' : `Required chart ${index + 1}`,
-    instruction: '',
-    chartType: index === 0 ? 'status-card' : 'auto',
-    lockChartType: index === 0,
-    metric: null,
-    dimensions: [],
-    timeGrain: null,
-    required: true,
-  }
 }
 
 function errorText(payload: unknown) {
@@ -88,27 +55,27 @@ export function ProjectAutopilotPanel() {
   const setBuilderDashboardId = useScopedBuilderStore(state => state.setDashboardId)
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [projectId, setProjectId] = useState('')
-  const [objective, setObjective] = useState('Build an executive dashboard that highlights the most important KPIs, trends, comparisons, and operational details.')
-  const [audience, setAudience] = useState('Leadership')
-  const [requirements, setRequirements] = useState<DashboardChartRequirement[]>([])
-  const [publicationPolicy, setPublicationPolicy] = useState<ProjectAutopilotPublicationPolicy>(
-    'auto_publish_when_healthy',
-  )
+  const [rawBrief, setRawBrief] = useState('')
+  const [briefTouched, setBriefTouched] = useState(false)
   const [run, setRun] = useState<ProjectAutopilotRun | null>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
 
   const selectedProject = useMemo(() => projects.find(project => project.id === projectId) ?? null, [projectId, projects])
-
-  useEffect(() => {
-    setRequirements(current => current.length > 0 ? current : [newRequirement(0)])
-  }, [])
+  const interpretation = useMemo(() => interpretRawDashboardRequirements(rawBrief), [rawBrief])
+  const briefError = briefTouched
+    ? rawBrief.trim().length < 10
+      ? 'Describe at least one KPI, comparison, trend, or report requirement.'
+      : interpretation.requirements.length === 0
+        ? 'Add at least one requirement the dashboard should answer.'
+        : null
+    : null
 
   useEffect(() => {
     const intent = readPlatformAssistantIntent('autopilot')
     if (!intent) return
     setProjectId(intent.projectId)
-    if (intent.instruction) setObjective(intent.instruction)
+    if (intent.instruction) setRawBrief(intent.instruction)
   }, [])
 
   const loadLatest = async (project: ProjectOption) => {
@@ -116,12 +83,11 @@ export function ProjectAutopilotPanel() {
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
       if (response.status === 503) {
-        setRun(null)
-        return
+        return null
       }
       throw new Error(errorText(payload))
     }
-    setRun(payload?.run ?? null)
+    return payload?.run as ProjectAutopilotRun | null
   }
 
   useEffect(() => {
@@ -146,11 +112,21 @@ export function ProjectAutopilotPanel() {
   }, [])
 
   useEffect(() => {
+    let active = true
     if (!selectedProject) {
       setRun(null)
-      return
+      return () => { active = false }
     }
-    void loadLatest(selectedProject).catch(error => toast.error(error instanceof Error ? error.message : String(error)))
+    void loadLatest(selectedProject)
+      .then(latestRun => {
+        if (!active) return
+        setRun(latestRun)
+        if (latestRun?.brief.objective) setRawBrief(current => current.trim() ? current : latestRun.brief.objective)
+      })
+      .catch(error => {
+        if (active) toast.error(error instanceof Error ? error.message : String(error))
+      })
+    return () => { active = false }
   }, [selectedProject])
 
   useEffect(() => {
@@ -173,17 +149,9 @@ export function ProjectAutopilotPanel() {
 
   const createAndExecute = async () => {
     if (!selectedProject) return toast.error('Select a project first')
-    if (objective.trim().length < 10) return toast.error('Describe the dashboard objective')
-    if (requirements.length === 0 || requirements.some(requirement => requirement.title.trim().length < 2)) {
-      return toast.error('Add at least one named KPI or chart requirement')
-    }
-    const requirementSpec = DashboardBriefSchema.parse({
-      version: DASHBOARD_BRIEF_VERSION,
-      id: crypto.randomUUID(),
-      title: `${audience.trim() || selectedProject.name} dashboard requirements`,
-      objective: objective.trim(),
-      requirements,
-      updatedAt: new Date().toISOString(),
+    const requirementSpec = compileRawDashboardBrief({
+      rawBrief,
+      projectName: selectedProject.name,
     })
     const chartTypes = [...new Set(requirementSpec.requirements.map(dashboardRequirementTemplateId))]
     const response = await fetch(`/api/admin/projects/${selectedProject.id}/autopilot`, {
@@ -193,13 +161,13 @@ export function ProjectAutopilotPanel() {
         tenantId: selectedProject.tenantId,
         idempotencyKey: crypto.randomUUID(),
         brief: {
-          objective,
-          audience: audience.trim() || null,
+          objective: rawBrief.trim(),
+          audience: inferDashboardAudience(rawBrief),
           chartCount: requirementSpec.requirements.length,
           chartTypes,
           requirementSpec,
           autoApply: true,
-          publicationPolicy,
+          publicationPolicy: 'auto_publish_when_healthy',
         },
       }),
     })
@@ -223,7 +191,8 @@ export function ProjectAutopilotPanel() {
 
   const start = async () => {
     if (!selectedProject) return toast.error('Select a project first')
-    if (objective.trim().length < 10) return toast.error('Describe the dashboard objective')
+    setBriefTouched(true)
+    if (rawBrief.trim().length < 10 || interpretation.requirements.length === 0) return
     setRunning(true)
     try {
       await createAndExecute()
@@ -236,7 +205,8 @@ export function ProjectAutopilotPanel() {
 
   const resetAndStart = async () => {
     if (!selectedProject) return toast.error('Select a project first')
-    if (objective.trim().length < 10) return toast.error('Describe the dashboard objective')
+    setBriefTouched(true)
+    if (rawBrief.trim().length < 10 || interpretation.requirements.length === 0) return
     const confirmed = window.confirm(
       'Reset generated semantic mappings, datasets, charts, and dashboard drafts for this project? The attached data source and selected schema stay connected.',
     )
@@ -272,182 +242,96 @@ export function ProjectAutopilotPanel() {
     }
   }
 
-  const updateRequirement = (id: string, patch: Partial<DashboardChartRequirement>) => {
-    setRequirements(current => current.map(requirement => requirement.id === id ? { ...requirement, ...patch } : requirement))
+  const selectProject = (nextProjectId: string) => {
+    setProjectId(nextProjectId)
+    setRawBrief('')
+    setBriefTouched(false)
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-6">
       <section className="border-b border-[color:var(--dos-border-soft)] pb-5">
-        <h1 className="min-w-0 [overflow-wrap:anywhere] text-xl font-semibold text-[var(--dos-text-primary)]">Build the governed dashboard from client requirements</h1>
-        <p className="mt-1 text-sm text-[var(--dos-text-muted)]">Autopilot resolves every KPI against the attached database, pauses on ambiguous semantics, composes requirement-linked charts, and publishes only after immutable release checks pass.</p>
+        <h1 className="min-w-0 [overflow-wrap:anywhere] text-2xl font-semibold tracking-tight text-[var(--dos-text-primary)]">Describe the dashboard. Autopilot handles the rest.</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--dos-text-muted)]">Paste the client’s raw KPI and reporting brief. Autopilot reads the attached schema, resolves governed business meaning, chooses the right charts, and assembles a release-ready dashboard.</p>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-        <section className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5">
-          <div className="grid gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="autopilot-project">Project</Label>
-              <Select value={projectId} onValueChange={setProjectId} disabled={loading || projects.length === 0}>
-                <SelectTrigger id="autopilot-project" className="h-11"><SelectValue placeholder={loading ? 'Loading projects…' : 'Select project'} /></SelectTrigger>
-                <SelectContent>
-                  {projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}{project.tenantName ? ` · ${project.tenantName}` : ''}</SelectItem>)}
-                </SelectContent>
-              </Select>
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
+        <section className="min-w-0 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-4 sm:p-6">
+          <div className="grid gap-5">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="autopilot-project">Build for</Label>
+                <Select value={projectId} onValueChange={selectProject} disabled={loading || projects.length === 0}>
+                  <SelectTrigger id="autopilot-project" className="h-11 min-w-0 sm:w-72"><SelectValue placeholder={loading ? 'Loading projects…' : 'Select project'} /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}{project.tenantName ? ` · ${project.tenantName}` : ''}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2 pb-1 text-xs text-[var(--dos-text-muted)]">
+                <Database className="h-4 w-4 text-[var(--dos-accent-primary)]" aria-hidden="true" />
+                Attached schema is the source of truth
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="autopilot-objective">Dashboard brief</Label>
-              <Textarea id="autopilot-objective" value={objective} onChange={event => setObjective(event.target.value)} className="min-h-32 resize-y" maxLength={4000} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="autopilot-audience">Audience</Label>
-              <Input id="autopilot-audience" className="h-11" value={audience} onChange={event => setAudience(event.target.value)} maxLength={200} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="autopilot-publication-policy">Release mode</Label>
-              <Select
-                value={publicationPolicy}
-                onValueChange={value => setPublicationPolicy(value as ProjectAutopilotPublicationPolicy)}
-              >
-                <SelectTrigger id="autopilot-publication-policy" className="h-11">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto_publish_when_healthy">
-                    Auto-publish when healthy
-                  </SelectItem>
-                  <SelectItem value="review_required">
-                    Require final review
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs leading-5 text-[var(--dos-text-muted)]">
-                Automatic mode still runs readiness, immutable snapshot, entitlement, and client-loadability checks.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
                 <div>
-                  <Label>KPI and chart requirements</Label>
-                  <p className="mt-1 text-xs leading-5 text-[var(--dos-text-muted)]">Each requirement is resolved against approved semantic IDs before any dataset or chart is created.</p>
+                  <Label htmlFor="autopilot-brief" className="text-base font-semibold text-[var(--dos-text-primary)]">What should this dashboard answer?</Label>
+                  <p className="mt-1 text-xs leading-5 text-[var(--dos-text-muted)]">Paste the requirement as received. Use a new line for each KPI or business question when convenient.</p>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={requirements.length >= 12}
-                  onClick={() => setRequirements(current => [...current, newRequirement(current.length)])}
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add
-                </Button>
+                <span className="font-mono text-[11px] tabular-nums text-[var(--dos-text-muted)]">{rawBrief.length} / 2000</span>
               </div>
-              <div className="space-y-3">
-                {requirements.map((requirement, index) => (
-                  <div key={requirement.id} className="space-y-3 rounded-md border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-muted)]/35 p-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-[var(--dos-text-muted)]">{String(index + 1).padStart(2, '0')}</span>
-                      <Input
-                        aria-label={`Requirement ${index + 1} title`}
-                        value={requirement.title}
-                        onChange={event => updateRequirement(requirement.id, { title: event.target.value })}
-                        placeholder="Monthly recognised revenue"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        disabled={requirements.length === 1}
-                        aria-label={`Remove ${requirement.title}`}
-                        onClick={() => setRequirements(current => current.filter(item => item.id !== requirement.id))}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px]">
-                      <Input
-                        aria-label={`${requirement.title} metric concept`}
-                        value={requirement.metric?.concept ?? ''}
-                        onChange={event => updateRequirement(requirement.id, {
-                          metric: event.target.value
-                            ? { concept: event.target.value, aggregation: requirement.metric?.aggregation ?? 'sum' }
-                            : null,
-                        })}
-                        placeholder="Metric concept, for example Recognised Revenue"
-                      />
-                      <Select
-                        value={requirement.metric?.aggregation ?? 'sum'}
-                        onValueChange={aggregation => updateRequirement(requirement.id, {
-                          metric: { concept: requirement.metric?.concept || requirement.title, aggregation: aggregation as typeof AGGREGATIONS[number] },
-                        })}
-                      >
-                        <SelectTrigger aria-label={`${requirement.title} aggregation`}><SelectValue /></SelectTrigger>
-                        <SelectContent>{AGGREGATIONS.map(item => <SelectItem key={item} value={item}>{item.replace('_', ' ')}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <Input
-                        aria-label={`${requirement.title} dimensions`}
-                        value={requirement.dimensions.join(', ')}
-                        onChange={event => updateRequirement(requirement.id, {
-                          dimensions: event.target.value.split(',').map(value => value.trim()).filter(Boolean).slice(0, 6),
-                        })}
-                        placeholder="Dimensions: region, product"
-                      />
-                      <Select
-                        value={requirement.timeGrain ?? 'none'}
-                        onValueChange={value => updateRequirement(requirement.id, { timeGrain: value === 'none' ? null : value as typeof TIME_GRAINS[number] })}
-                      >
-                        <SelectTrigger aria-label={`${requirement.title} time grain`}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No time grain</SelectItem>
-                          {TIME_GRAINS.map(item => <SelectItem key={item} value={item}>{item}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={requirement.chartType}
-                        onValueChange={value => updateRequirement(requirement.id, {
-                          chartType: value as BriefChartType,
-                          lockChartType: value !== 'auto',
-                        })}
-                      >
-                        <SelectTrigger aria-label={`${requirement.title} visual`}><SelectValue /></SelectTrigger>
-                        <SelectContent>{REQUIREMENT_CHART_TYPES.map(type => <SelectItem key={type.id} value={type.id}>{type.label}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <Textarea
-                      aria-label={`${requirement.title} calculation and filters`}
-                      value={requirement.instruction}
-                      onChange={event => updateRequirement(requirement.id, { instruction: event.target.value })}
-                      className="min-h-20 resize-y"
-                      maxLength={500}
-                      placeholder="Business definition, filters, comparison, or calculation notes"
-                    />
-                    <label className="flex items-center justify-between gap-3 text-xs text-[var(--dos-text-muted)]">
-                      <span>Required for release</span>
-                      <Switch checked={requirement.required} onCheckedChange={required => updateRequirement(requirement.id, { required })} />
-                    </label>
-                  </div>
-                ))}
+              <Textarea
+                id="autopilot-brief"
+                value={rawBrief}
+                onChange={event => setRawBrief(event.target.value)}
+                onBlur={() => setBriefTouched(true)}
+                className="min-h-64 resize-y border-[color:var(--dos-border-strong)] bg-[var(--dos-background-deep)] p-4 text-base leading-7 outline-2 outline-transparent focus-visible:outline-[var(--dos-accent-primary)]"
+                maxLength={2000}
+                aria-required="true"
+                aria-invalid={Boolean(briefError)}
+                aria-describedby="autopilot-brief-help"
+                placeholder={'Total recognised revenue and month-over-month growth\nMonthly revenue trend for the last 12 months\nCompare revenue and margin by region\nTop 10 products by revenue'}
+              />
+              <div id="autopilot-brief-help" className="min-h-5 text-xs leading-5">
+                {briefError ? <span className="text-[var(--dos-danger-text)]">{briefError}</span> : <span className="text-[var(--dos-text-muted)]">Metric names stay in client language; Autopilot matches them to approved semantic IDs before building.</span>}
               </div>
             </div>
 
-            <div className="mt-1 flex flex-col gap-2 sm:flex-row">
-              <Button onClick={() => void start()} isLoading={running} disabled={!selectedProject} className="min-h-11 w-full sm:w-auto">
-                <Play className="h-4 w-4" /> Start Autopilot
-              </Button>
-              <Button variant="outline" onClick={() => void resetAndStart()} disabled={!selectedProject || running} className="min-h-11 w-full sm:w-auto">
-                <RotateCcw className="h-4 w-4" /> Reset &amp; run fresh
+            {interpretation.requirements.length > 0 ? (
+              <details className="group border-y border-[color:var(--dos-border-soft)] py-3">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-[var(--dos-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--dos-accent-primary)]">
+                  <span>{interpretation.requirements.length} requirement{interpretation.requirements.length === 1 ? '' : 's'}</span>
+                  <span className="text-xs font-normal text-[var(--dos-text-muted)] group-open:hidden">Review</span>
+                  <span className="hidden text-xs font-normal text-[var(--dos-text-muted)] group-open:inline">Hide</span>
+                </summary>
+                <div className="divide-y divide-[color:var(--dos-border-soft)] pt-1">
+                  {interpretation.requirements.map((requirement, index) => (
+                    <div key={requirement.id} className="flex min-w-0 items-center gap-3 py-2.5">
+                      <span className="font-mono text-[11px] tabular-nums text-[var(--dos-text-muted)]">{String(index + 1).padStart(2, '0')}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-[var(--dos-text-secondary)]">{requirement.title}</span>
+                      <Badge variant="outline" className="shrink-0 text-[10px]">{dashboardRequirementTemplateId(requirement).replace(/-/g, ' ')}</Badge>
+                    </div>
+                  ))}
+                </div>
+                {interpretation.omittedCount > 0 ? <p className="pt-2 text-xs text-[var(--dos-danger-text)]">Only the first 12 requirements will run. Move {interpretation.omittedCount} requirement{interpretation.omittedCount === 1 ? '' : 's'} to a second brief.</p> : null}
+              </details>
+            ) : null}
+
+            <div className="flex flex-col gap-3 border-t border-[color:var(--dos-border-soft)] pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-2 text-xs leading-5 text-[var(--dos-text-muted)]">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[var(--dos-accent-primary)]" aria-hidden="true" />
+                Ambiguous meaning pauses for review. Healthy releases publish automatically.
+              </div>
+              <Button onClick={() => void start()} isLoading={running} disabled={!selectedProject || rawBrief.trim().length < 10} className="min-h-11 w-full whitespace-nowrap sm:w-auto">
+                <Play className="h-4 w-4" /> Build dashboard
               </Button>
             </div>
-            <p className="text-xs text-[var(--dos-text-muted)]">Fresh reset preserves the connected data source, introspected schema, and selected tables.</p>
           </div>
         </section>
 
-        <section aria-live="polite" className="rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-5">
+        <section aria-live="polite" className="min-w-0 rounded-lg border border-[color:var(--dos-border-soft)] bg-[var(--dos-surface-raised)] p-4 sm:p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold text-[var(--dos-text-primary)]">Build status</h2>
@@ -457,8 +341,9 @@ export function ProjectAutopilotPanel() {
           </div>
 
           {!run ? (
-            <div className="mt-8 px-4 py-10 text-center">
-              <p className="text-sm text-[var(--dos-text-secondary)]">Start with a brief to generate the project plan.</p>
+            <div className="mt-8 flex min-h-48 flex-col justify-center border-y border-[color:var(--dos-border-soft)] py-8">
+              <p className="text-sm font-medium text-[var(--dos-text-secondary)]">Waiting for the brief</p>
+              <p className="mt-2 max-w-sm text-xs leading-5 text-[var(--dos-text-muted)]">Schema scope, semantic model, dataset, charts, layout, and release verification will appear here as one continuous run.</p>
             </div>
           ) : (
             <>
@@ -466,7 +351,7 @@ export function ProjectAutopilotPanel() {
                 <div className="h-full origin-left bg-[var(--dos-accent-primary)] transition-transform duration-300 ease-out" style={{ transform: `scaleX(${run.plan.progress / 100})` }} />
               </div>
               {run.artifacts.requirementCoverage ? (
-                <div className="mt-4 space-y-2 rounded-md border border-[color:var(--dos-border-soft)] p-3">
+                <div className="mt-4 space-y-2 border-y border-[color:var(--dos-border-soft)] py-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-medium text-[var(--dos-text-primary)]">Requirement coverage</p>
                     <div className="flex flex-wrap gap-1.5">
@@ -515,7 +400,7 @@ export function ProjectAutopilotPanel() {
                 run.status !== 'succeeded'
                 && run.brief.publicationPolicy === 'auto_publish_when_healthy'
               ) ? (
-                <Button variant="outline" className="mt-4 min-h-11 w-full" onClick={() => void resume()} isLoading={running}>
+                <Button variant="outline" className="mt-4 min-h-11 w-full whitespace-nowrap" onClick={() => void resume()} isLoading={running}>
                   <RefreshCw className="h-4 w-4" /> {
                     run.status === 'failed'
                       ? 'Retry Autopilot'
@@ -525,10 +410,14 @@ export function ProjectAutopilotPanel() {
                   }
                 </Button>
               ) : (
-                <Button asChild className="mt-4 min-h-11 w-full">
+                <Button asChild className="mt-4 min-h-11 w-full whitespace-nowrap">
                   <Link href="/admin/publishing">{run.status === 'succeeded' ? 'Open published dashboard' : 'Review dashboard and publish'} <ArrowRight className="h-4 w-4" /></Link>
                 </Button>
               )}
+              <Button variant="ghost" className="mt-2 min-h-11 w-full whitespace-nowrap text-[var(--dos-text-muted)]" onClick={() => void resetAndStart()} disabled={running}>
+                <RotateCcw className="h-4 w-4" /> Reset generated work
+              </Button>
+              <p className="mt-1 text-center text-[11px] leading-4 text-[var(--dos-text-muted)]">Reset preserves the connected source, introspected schema, and selected tables.</p>
             </>
           )}
         </section>

@@ -293,7 +293,6 @@ test.describe('KPI requirement Autopilot', () => {
   test('surfaces coverage in the UI and snapshots requirement evidence at publish', () => {
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/project-autopilot-panel.tsx'), 'utf8')
     const server = readFileSync(join(process.cwd(), 'src/lib/ai/project-autopilot-server.ts'), 'utf8')
-    expect(panel).toContain('KPI and chart requirements')
     expect(panel).toContain('Requirement coverage')
     expect(panel).toContain('requirementSpec')
     expect(server).toContain('requirementSpecHash')
