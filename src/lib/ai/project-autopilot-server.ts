@@ -12,6 +12,12 @@ import {
 } from '@/lib/ai/dashboard-requirement-resolver'
 import { buildDeterministicDatasetProposal } from '@/lib/ai/dataset-copilot'
 import {
+  DATASET_COPILOT_PROMPT_VERSION,
+  generateDatasetPlanningProposal,
+  generateSemanticMappingProposal,
+  SEMANTIC_COPILOT_PROMPT_VERSION,
+} from '@/lib/ai/governed-planner-server'
+import {
   buildProjectAutopilotDashboardSlots,
   buildProjectAutopilotPlan,
   ProjectAutopilotBriefSchema,
@@ -40,6 +46,7 @@ import type { DataSourceColumnMetadata } from '@/types/data-source'
 import type { DashboardBrief } from '@/types/dashboard-brief'
 import type {
   ProjectAutopilotArtifacts,
+  ProjectAutopilotAiPlanningEvidence,
   ProjectAutopilotBrief,
   ProjectAutopilotPlan,
   ProjectAutopilotRun,
@@ -62,6 +69,7 @@ interface RunContext extends ProjectScope {
 }
 
 const AUTOPILOT_SEMANTIC_MODEL_NAME = 'Autopilot Business Model'
+const AUTOPILOT_AI_AUTO_APPLY_CONFIDENCE = 0.8
 const AUTOPILOT_CHART_AUTO_APPROVAL_CONFIDENCE = 0.8
 
 interface SemanticModelSummary {
@@ -80,6 +88,11 @@ export interface AutopilotSemanticApprovalDecision {
 export interface AutopilotChartApprovalDecision {
   approved: boolean
   validationState: DashboardChartValidationState
+  reason: string
+}
+
+export interface AutopilotAiProposalDecision {
+  approved: boolean
   reason: string
 }
 
@@ -223,6 +236,29 @@ export function evaluateAutopilotChartApproval({
   }
 }
 
+export function evaluateAutopilotAiProposal({
+  confidence,
+  issues,
+  requiredSelectionsPresent = true,
+}: {
+  confidence: number
+  issues: Array<{ severity: 'error' | 'warning'; message: string }>
+  requiredSelectionsPresent?: boolean
+}): AutopilotAiProposalDecision {
+  const blockingIssue = issues.find(issue => issue.severity === 'error')
+  if (blockingIssue) return { approved: false, reason: blockingIssue.message }
+  if (!requiredSelectionsPresent) {
+    return { approved: false, reason: 'The AI proposal omitted one or more required governed semantic selections.' }
+  }
+  if (confidence < AUTOPILOT_AI_AUTO_APPLY_CONFIDENCE) {
+    return {
+      approved: false,
+      reason: `AI confidence ${confidence.toFixed(2)} is below the ${AUTOPILOT_AI_AUTO_APPLY_CONFIDENCE.toFixed(2)} automatic application threshold.`,
+    }
+  }
+  return { approved: true, reason: 'The AI proposal is grounded, complete, and above the automatic application threshold.' }
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
@@ -233,6 +269,18 @@ function strings(value: unknown) {
 
 function semanticKey(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '').slice(0, 80)
+}
+
+function setAiPlanningEvidence(
+  context: RunContext,
+  stage: 'semanticMapping' | 'datasetPlanning',
+  evidence: ProjectAutopilotAiPlanningEvidence,
+) {
+  context.artifacts.aiPlanning = { ...context.artifacts.aiPlanning, [stage]: evidence }
+}
+
+function generationErrorMessage(error: unknown) {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 500)
 }
 
 function mapColumn(row: Record<string, unknown>): DataSourceColumnMetadata {
@@ -649,10 +697,50 @@ async function ensureDraftSemanticModel(supabase: SupabaseClient, context: RunCo
   return String(data.id)
 }
 
+async function resolveAutopilotSemanticProposal(context: RunContext, columns: DataSourceColumnMetadata[]) {
+  const instruction = projectAutopilotInstruction(context.brief)
+  const deterministic = buildDeterministicSemanticProposal(columns, instruction)
+  try {
+    const generated = await generateSemanticMappingProposal({
+      columns,
+      instruction,
+      modelName: AUTOPILOT_SEMANTIC_MODEL_NAME,
+    })
+    const confidence = generated.proposal.mappings.reduce((sum, mapping) => sum + mapping.confidence, 0)
+      / generated.proposal.mappings.length
+    const mappedColumnIds = new Set(generated.proposal.mappings.map(mapping => mapping.columnId))
+    const requiredSelectionsPresent = selectSemanticContextColumns(columns).every(column => mappedColumnIds.has(column.id))
+    const decision = evaluateAutopilotAiProposal({
+      confidence,
+      issues: generated.issues,
+      requiredSelectionsPresent,
+    })
+    if (!decision.approved) throw new Error(decision.reason)
+    setAiPlanningEvidence(context, 'semanticMapping', {
+      source: 'ai',
+      providerId: generated.providerId,
+      modelId: generated.modelId,
+      promptVersion: SEMANTIC_COPILOT_PROMPT_VERSION,
+      confidence,
+      validationState: generated.state,
+      generatedAt: new Date().toISOString(),
+    })
+    return generated.proposal
+  } catch (error) {
+    setAiPlanningEvidence(context, 'semanticMapping', {
+      source: 'deterministic',
+      validationState: 'valid',
+      warning: generationErrorMessage(error),
+      generatedAt: new Date().toISOString(),
+    })
+    return deterministic
+  }
+}
+
 async function materializeSemanticModel(supabase: SupabaseClient, context: RunContext, modelId: string) {
   const { columns } = await selectedColumns(supabase, context)
   if (columns.length === 0) throw new Error('No selected schema columns are available')
-  const proposal = buildDeterministicSemanticProposal(columns, projectAutopilotInstruction(context.brief))
+  const proposal = await resolveAutopilotSemanticProposal(context, columns)
   const columnById = new Map(columns.map(column => [column.id, column]))
   const materialized = new Map<string, { entityId: string; fieldId: string }>()
   const nowIso = new Date().toISOString()
@@ -974,6 +1062,66 @@ async function validateAndApproveAutopilotSemanticModel(
   return decision
 }
 
+async function resolveAutopilotDatasetProposal({
+  context,
+  evidence,
+  preferredFieldIds,
+  preferredMetricIds,
+}: {
+  context: RunContext
+  evidence: Awaited<ReturnType<typeof semanticEvidence>>
+  preferredFieldIds: string[]
+  preferredMetricIds: string[]
+}) {
+  const instruction = projectAutopilotInstruction(context.brief)
+  const planningEvidence = { ...evidence, fields: evidence.fields.filter(field => field.role !== 'hidden') }
+  const deterministic = buildDeterministicDatasetProposal({
+    instruction,
+    fields: planningEvidence.fields,
+    metrics: planningEvidence.metrics,
+    relationships: planningEvidence.relationships,
+    preferredFieldIds,
+    preferredMetricIds,
+  })
+  try {
+    const generated = await generateDatasetPlanningProposal({
+      instruction,
+      modelName: 'Approved project semantic model',
+      fields: planningEvidence.fields,
+      metrics: planningEvidence.metrics,
+      relationships: planningEvidence.relationships,
+      requiredFieldIds: preferredFieldIds,
+      requiredMetricIds: preferredMetricIds,
+    })
+    const requiredSelectionsPresent = preferredFieldIds.every(id => generated.proposal.fieldIds.includes(id))
+      && preferredMetricIds.every(id => generated.proposal.metricIds.includes(id))
+    const decision = evaluateAutopilotAiProposal({
+      confidence: generated.proposal.confidence,
+      issues: generated.issues,
+      requiredSelectionsPresent,
+    })
+    if (!decision.approved) throw new Error(decision.reason)
+    setAiPlanningEvidence(context, 'datasetPlanning', {
+      source: 'ai',
+      providerId: generated.providerId,
+      modelId: generated.modelId,
+      promptVersion: DATASET_COPILOT_PROMPT_VERSION,
+      confidence: generated.proposal.confidence,
+      validationState: generated.state,
+      generatedAt: new Date().toISOString(),
+    })
+    return generated.proposal
+  } catch (error) {
+    setAiPlanningEvidence(context, 'datasetPlanning', {
+      source: 'deterministic',
+      validationState: 'valid',
+      warning: generationErrorMessage(error),
+      generatedAt: new Date().toISOString(),
+    })
+    return deterministic
+  }
+}
+
 async function ensurePublishedDataset(supabase: SupabaseClient, context: RunContext, modelId: string) {
   const coverage = context.artifacts.requirementCoverage
   const spec = context.brief.requirementSpec
@@ -1017,12 +1165,17 @@ async function ensurePublishedDataset(supabase: SupabaseClient, context: RunCont
     }
   }
   const evidence = await semanticEvidence(supabase, modelId)
-  const proposal = buildDeterministicDatasetProposal({
-    instruction: projectAutopilotInstruction(context.brief),
-    ...evidence,
+  const proposal = await resolveAutopilotDatasetProposal({
+    context,
+    evidence,
     preferredFieldIds,
     preferredMetricIds,
   })
+  const requiredSelectionsPresent = preferredFieldIds.every(id => proposal.fieldIds.includes(id))
+    && preferredMetricIds.every(id => proposal.metricIds.includes(id))
+  if (!requiredSelectionsPresent) {
+    throw new Error('Autopilot dataset planning could not preserve every required KPI semantic selection within safety limits.')
+  }
   const selection = {
     fieldIds: proposal.fieldIds,
     metricIds: proposal.metricIds,

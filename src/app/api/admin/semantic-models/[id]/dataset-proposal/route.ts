@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server'
-import { generateObject } from 'ai'
 import { z } from 'zod'
 
 import {
   buildDeterministicDatasetProposal,
-  DatasetCopilotProposalSchema,
-  validateDatasetCopilotProposal,
   type DatasetFieldEvidence,
   type DatasetMetricEvidence,
   type DatasetRelationshipEvidence,
 } from '@/lib/ai/dataset-copilot'
+import {
+  DATASET_COPILOT_PROMPT_VERSION,
+  generateDatasetPlanningProposal,
+} from '@/lib/ai/governed-planner-server'
 import { AI_WORKFLOW_CONTRACT_VERSION, AiWorkflowRequestSchema } from '@/lib/ai/workflow-contracts'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
 import {
@@ -22,7 +23,6 @@ import { accessContext, requireProjectAccess } from '@/lib/security/project-acce
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { BusinessFieldRole, BusinessMetricAggregation, BusinessRelationshipType } from '@/types/semantic-model'
 
-const PROMPT_VERSION = 'dataset-copilot.v1'
 const RequestSchema = z.object({
   instruction: z.string().trim().min(3).max(2_000),
 }).strict()
@@ -113,16 +113,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         actorUserId: auth.userId,
         providerId: ai.providerId,
         modelId: ai.modelId,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: DATASET_COPILOT_PROMPT_VERSION,
       })
-      const result = await generateObject({
-        model: ai.model,
-        schema: DatasetCopilotProposalSchema,
-        system: `You are DashboardOS Dataset Copilot. Select a compact, useful dataset from an approved semantic model.
-Reference only supplied IDs. Prefer business dimensions and dates over technical identifiers. Include only metrics relevant to the objective. Include approved relationships needed to connect selected entities. Never emit SQL or invent fields. The engineer reviews every proposal before it is created.`,
-        prompt: `BUSINESS OBJECTIVE\n${parsed.data.instruction}\n\nAPPROVED SEMANTIC MODEL\n${String(model.name)} v${Number(model.version ?? 1)}\n\nFIELDS\n${JSON.stringify(fields)}\n\nMETRICS\n${JSON.stringify(metrics)}\n\nRELATIONSHIPS\n${JSON.stringify(relationships)}`,
+      const checked = await generateDatasetPlanningProposal({
+        instruction: parsed.data.instruction,
+        modelName: String(model.name),
+        modelVersion: Number(model.version ?? 1),
+        fields,
+        metrics,
+        relationships,
+        ai,
       })
-      const checked = validateDatasetCopilotProposal({ proposal: result.object, fields, metrics, relationships })
       const validation = { state: checked.state, issues: checked.issues }
       const saved = await createAiWorkflowProposal({
         supabase: auth.supabase,
@@ -148,7 +149,7 @@ Reference only supplied IDs. Prefer business dimensions and dates over technical
         projectId,
         outputSummary: { proposalId: saved.id, fieldCount: checked.proposal.fieldIds.length, metricCount: checked.proposal.metricIds.length },
         validation,
-        usage: usageRecord(result.usage),
+        usage: usageRecord(checked.usage),
         latencyMs: Date.now() - startedAt,
       })
       return NextResponse.json({ proposalId: saved.id, proposal: checked.proposal, validation, source: 'ai' })

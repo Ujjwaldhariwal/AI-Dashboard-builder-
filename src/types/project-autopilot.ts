@@ -67,6 +67,17 @@ export interface ProjectAutopilotRequirementCoverage {
   items: ProjectAutopilotRequirementCoverageItem[]
 }
 
+export interface ProjectAutopilotAiPlanningEvidence {
+  source: 'ai' | 'deterministic'
+  providerId?: string
+  modelId?: string
+  promptVersion?: string
+  confidence?: number
+  validationState?: 'valid' | 'warning'
+  warning?: string
+  generatedAt: string
+}
+
 export interface ProjectAutopilotArtifacts {
   semanticModelId?: string
   datasetId?: string
@@ -75,6 +86,10 @@ export interface ProjectAutopilotArtifacts {
   dashboardId?: string
   dashboardVersionId?: string
   dashboardPageId?: string
+  aiPlanning?: {
+    semanticMapping?: ProjectAutopilotAiPlanningEvidence
+    datasetPlanning?: ProjectAutopilotAiPlanningEvidence
+  }
   releaseVerification?: {
     activePointerVerified: boolean
     immutableSnapshotVerified: boolean

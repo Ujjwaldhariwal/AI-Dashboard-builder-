@@ -95,11 +95,14 @@ test.describe('semantic copilot', () => {
 
   test('grounds the server and UI in the confirmed schema scope', () => {
     const route = readFileSync(join(process.cwd(), 'src/app/api/admin/semantic-models/[id]/ai-proposal/route.ts'), 'utf8')
+    const planner = readFileSync(join(process.cwd(), 'src/lib/ai/governed-planner-server.ts'), 'utf8')
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/semantic-model-admin-panel.tsx'), 'utf8')
 
     expect(route).toContain("from('data_source_relation_selections')")
     expect(route).toContain(".eq('status', 'included')")
-    expect(route).toContain('generateObject({')
+    expect(route).toContain('generateSemanticMappingProposal')
+    expect(planner).toContain('generateObject({')
+    expect(planner).toContain('validateSemanticCopilotProposal')
     expect(route).toContain('createAiWorkflowProposal')
     expect(route).toContain('markAiWorkflowAwaitingReview')
     expect(panel).toContain("scope: 'selected'")

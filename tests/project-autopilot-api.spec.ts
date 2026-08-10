@@ -6,6 +6,7 @@ import { expect, test } from '@playwright/test'
 import {
   autopilotSemanticContextMatches,
   canAutopilotUseSemanticModel,
+  evaluateAutopilotAiProposal,
   evaluateAutopilotChartApproval,
   evaluateAutopilotSemanticApproval,
   nextProjectArtifactName,
@@ -60,6 +61,20 @@ test.describe('project autopilot API', () => {
       metricCount: 4,
       validation: { ok: false, error: 'Metric source field is invalid or missing' },
     })).toMatchObject({ approved: false, reason: 'Metric source field is invalid or missing' })
+  })
+
+  test('auto-applies only grounded high-confidence AI proposals with required KPI selections', () => {
+    expect(evaluateAutopilotAiProposal({ confidence: 0.91, issues: [] })).toMatchObject({ approved: true })
+    expect(evaluateAutopilotAiProposal({ confidence: 0.79, issues: [] })).toMatchObject({ approved: false })
+    expect(evaluateAutopilotAiProposal({
+      confidence: 0.95,
+      issues: [{ severity: 'error', message: 'Unknown semantic ID' }],
+    })).toMatchObject({ approved: false, reason: 'Unknown semantic ID' })
+    expect(evaluateAutopilotAiProposal({
+      confidence: 0.95,
+      issues: [],
+      requiredSelectionsPresent: false,
+    })).toMatchObject({ approved: false })
   })
 
   test('auto-approves high-confidence chart warnings but preserves real review gates', () => {
@@ -224,12 +239,15 @@ test.describe('project autopilot API', () => {
     const executeRoute = readFileSync(join(process.cwd(), 'src/app/api/admin/projects/[id]/autopilot/execute/route.ts'), 'utf8')
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/project-autopilot-panel.tsx'), 'utf8')
     expect(server).toContain('buildDeterministicSemanticProposal')
+    expect(server).toContain('generateSemanticMappingProposal')
+    expect(server).toContain("source: 'deterministic'")
     expect(server).toContain('validateAndApproveAutopilotSemanticModel')
     expect(server).toContain('evaluateAutopilotChartApproval')
     expect(server).toContain('resolveProjectSemanticModel')
     expect(server).toContain('repairAutopilotRelationships')
     expect(server).toContain("action: 'business_model.approved'")
     expect(server).toContain('buildDeterministicDatasetProposal')
+    expect(server).toContain('generateDatasetPlanningProposal')
     expect(server).toContain('buildDeterministicChartSuiteProposal')
     expect(server).toContain("rpc('create_dashboard_chart_drafts'")
     expect(server).toContain("rpc('compose_project_autopilot_dashboard_draft'")

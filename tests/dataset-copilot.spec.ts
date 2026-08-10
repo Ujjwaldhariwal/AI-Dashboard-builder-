@@ -102,12 +102,14 @@ test.describe('dataset copilot', () => {
 
   test('uses an approved model proposal API instead of fixed guided recipes', () => {
     const route = readFileSync(join(process.cwd(), 'src/app/api/admin/semantic-models/[id]/dataset-proposal/route.ts'), 'utf8')
+    const planner = readFileSync(join(process.cwd(), 'src/lib/ai/governed-planner-server.ts'), 'utf8')
     const panel = readFileSync(join(process.cwd(), 'src/components/platform/datasets-admin-panel.tsx'), 'utf8')
 
     expect(route).toContain("model.status !== 'approved'")
     expect(route).toContain("workflowType: 'dataset_planning'")
-    expect(route).toContain('generateObject({')
-    expect(route).toContain('validateDatasetCopilotProposal')
+    expect(route).toContain('generateDatasetPlanningProposal')
+    expect(planner).toContain('generateObject({')
+    expect(planner).toContain('validateDatasetCopilotProposal')
     expect(panel).toContain('/dataset-proposal')
     expect(panel).toContain('Business request')
     expect(panel).not.toContain('/api/admin/guided-review/dataset-draft')

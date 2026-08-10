@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { generateObject } from 'ai'
 import { z } from 'zod'
 
+import { buildDeterministicSemanticProposal, validateSemanticCopilotProposal } from '@/lib/ai/semantic-copilot'
 import {
-  buildDeterministicSemanticProposal,
-  SemanticCopilotProposalSchema,
-  validateSemanticCopilotProposal,
-} from '@/lib/ai/semantic-copilot'
+  generateSemanticMappingProposal,
+  SEMANTIC_COPILOT_PROMPT_VERSION,
+} from '@/lib/ai/governed-planner-server'
 import { AI_WORKFLOW_CONTRACT_VERSION, AiWorkflowRequestSchema } from '@/lib/ai/workflow-contracts'
 import { getAiWorkflowModel } from '@/lib/ai/workflow-provider'
 import {
@@ -18,8 +17,6 @@ import {
 import { accessContext, requireProjectAccess } from '@/lib/security/project-access'
 import { getAuthedSupabase } from '@/lib/supabase/server'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
-
-const PROMPT_VERSION = 'semantic-copilot.v1'
 
 const SemanticProposalRequestSchema = z.object({
   instruction: z.string().trim().min(3).max(2_000).default('Build a reusable semantic model for dashboards and operational analysis.'),
@@ -142,43 +139,16 @@ export async function POST(
         actorUserId: auth.userId,
         providerId: ai.providerId,
         modelId: ai.modelId,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: SEMANTIC_COPILOT_PROMPT_VERSION,
       })
 
-      const evidence = columns.map(column => ({
-        columnId: column.id,
-        source: `${column.schemaName}.${column.tableName}.${column.columnName}`,
-        dataType: column.dataType,
-        nullable: column.isNullable,
-      }))
-
-      const result = await generateObject({
-        model: ai.model,
-        schema: SemanticCopilotProposalSchema,
-        system: `You are DashboardOS Semantic Copilot. Convert approved database schema evidence into a reviewable business semantic proposal.
-
-Rules:
-- Reference only columnId values supplied in APPROVED SCHEMA EVIDENCE.
-- Propose clear business entity and field names without assuming a specific industry.
-- Classify identifiers, dimensions, dates, measures, attributes, and sensitive/technical fields conservatively.
-- Only attach metric definitions to metric_source mappings.
-- Propose joins only when both source column IDs exist and the relationship is plausible.
-- Never output SQL, executable expressions, sample values, credentials, or extra keys.
-- Confidence is 0 to 1. Low-confidence choices still require a concise reason.
-- The proposal is reviewed by a human before materialization.`,
-        prompt: `BUSINESS OBJECTIVE
-${parsed.data.instruction}
-
-MODEL
-${String(model.name)} v${Number(model.version ?? 1)}
-
-APPROVED SCHEMA EVIDENCE
-${JSON.stringify(evidence)}
-
-Create the semantic proposal.`,
+      const checked = await generateSemanticMappingProposal({
+        columns,
+        instruction: parsed.data.instruction,
+        modelName: String(model.name),
+        modelVersion: Number(model.version ?? 1),
+        ai,
       })
-
-      const checked = validateSemanticCopilotProposal({ proposal: result.object, selectedColumns: columns })
       const validation = {
         state: checked.state,
         issues: checked.issues.map(issue => ({ ...issue })),
@@ -211,7 +181,7 @@ Create the semantic proposal.`,
           relationshipCount: checked.proposal.relationships.length,
         },
         validation,
-        usage: usageRecord(result.usage),
+        usage: usageRecord(checked.usage),
         latencyMs: Date.now() - startedAt,
       })
 
