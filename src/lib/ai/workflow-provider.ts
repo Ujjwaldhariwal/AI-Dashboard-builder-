@@ -37,6 +37,15 @@ export interface AiWorkflowModel extends AiWorkflowModelSelection {
   model: LanguageModel
 }
 
+export function getAiWorkflowProviderOptions(
+  selection: Pick<AiWorkflowModelSelection, 'providerId' | 'compatibleProviderName'>,
+) {
+  if (selection.providerId !== 'openai_compatible' || selection.compatibleProviderName?.toLowerCase() !== 'ollama') {
+    return undefined
+  }
+  return { ollama: { reasoningEffort: 'none' } }
+}
+
 function trimmed(value: string | undefined) {
   const normalized = value?.trim()
   return normalized ? normalized : null

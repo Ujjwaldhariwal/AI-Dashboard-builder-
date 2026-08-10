@@ -12,7 +12,11 @@ import {
   SemanticCopilotProposalSchema,
   validateSemanticCopilotProposal,
 } from '@/lib/ai/semantic-copilot'
-import { getAiWorkflowModel, type AiWorkflowModel } from '@/lib/ai/workflow-provider'
+import {
+  getAiWorkflowModel,
+  getAiWorkflowProviderOptions,
+  type AiWorkflowModel,
+} from '@/lib/ai/workflow-provider'
 import type { DataSourceColumnMetadata } from '@/types/data-source'
 
 export const SEMANTIC_COPILOT_PROMPT_VERSION = 'semantic-copilot.v1'
@@ -39,6 +43,7 @@ export async function generateSemanticMappingProposal({
   }))
   const result = await generateObject({
     model: ai.model,
+    providerOptions: getAiWorkflowProviderOptions(ai),
     schema: SemanticCopilotProposalSchema,
     system: `You are DashboardOS Semantic Copilot. Convert approved database schema evidence into a reviewable business semantic proposal.
 
@@ -88,6 +93,7 @@ export async function generateDatasetPlanningProposal({
 }) {
   const result = await generateObject({
     model: ai.model,
+    providerOptions: getAiWorkflowProviderOptions(ai),
     schema: DatasetCopilotProposalSchema,
     system: `You are DashboardOS Dataset Copilot. Select a compact, useful dataset from an approved semantic model.
 Reference only supplied IDs. Prefer business dimensions and dates over technical identifiers. Include only metrics relevant to the objective. Include approved relationships needed to connect selected entities. Include every required field and metric ID. Never emit SQL or invent fields.`,

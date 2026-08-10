@@ -12,7 +12,10 @@ import {
   buildAiWorkflowInputFingerprint,
   mapAiWorkflowRun,
 } from '../src/lib/ai/workflow-runs'
-import { resolveAiWorkflowModelSelection } from '../src/lib/ai/workflow-provider'
+import {
+  getAiWorkflowProviderOptions,
+  resolveAiWorkflowModelSelection,
+} from '../src/lib/ai/workflow-provider'
 import { classifyAiWorkflowFallback } from '../src/lib/ai/workflow-fallback'
 
 const tenantId = '11111111-1111-4111-8111-111111111111'
@@ -115,6 +118,17 @@ test.describe('governed AI workflow foundation', () => {
         AI_MODEL: 'local-model',
       },
     })).toThrow('AI_COMPATIBLE_BASE_URL')
+  })
+
+  test('disables reasoning for local Ollama structured planning', () => {
+    expect(getAiWorkflowProviderOptions({
+      providerId: 'openai_compatible',
+      compatibleProviderName: 'ollama',
+    })).toEqual({ ollama: { reasoningEffort: 'none' } })
+    expect(getAiWorkflowProviderOptions({
+      providerId: 'openai_compatible',
+      compatibleProviderName: 'groq',
+    })).toBeUndefined()
   })
 
   test('routes chart refinement through the configured workflow provider', () => {
