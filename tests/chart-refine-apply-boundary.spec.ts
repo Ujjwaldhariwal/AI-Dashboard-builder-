@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test'
 import {
   ChartRefineBodySchema,
   staleChartRevisionResponse,
-} from '../src/app/api/ai/chart-refine/route'
+} from '../src/lib/ai/chart-refinement-route-contract'
 import { parseChartAiPatchPayload } from '../src/lib/ai/chart-ai-contract'
 import {
   finalizeChartRefinementProposalAtomic,
