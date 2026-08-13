@@ -9,6 +9,7 @@ import type {
 } from '@/types/semantic-model'
 
 export const SEMANTIC_COPILOT_VERSION = 'dashboardos.semantic.proposal.v1' as const
+const SEMANTIC_SUMMARY_MAX_LENGTH = 500
 
 const MetricProposalSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -40,9 +41,13 @@ export const SemanticRelationshipProposalSchema = z.object({
 
 export const SemanticCopilotProposalSchema = z.object({
   version: z.literal(SEMANTIC_COPILOT_VERSION).default(SEMANTIC_COPILOT_VERSION),
-  summary: z.string().trim().min(2).max(500),
+  summary: z.string().trim().min(2).max(SEMANTIC_SUMMARY_MAX_LENGTH),
   mappings: z.array(SemanticMappingProposalSchema).min(1).max(80),
   relationships: z.array(SemanticRelationshipProposalSchema).max(24).default([]),
+}).strict()
+
+export const SemanticCopilotGenerationSchema = SemanticCopilotProposalSchema.extend({
+  summary: z.string().trim().min(2).max(4_000),
 }).strict()
 
 export type SemanticMappingProposal = z.infer<typeof SemanticMappingProposalSchema>
@@ -241,8 +246,10 @@ export function buildDeterministicSemanticProposal(
   const selectedTableCount = new Set(columns.map(column => (
     `${column.dataSourceId}:${column.schemaName}.${column.tableName}`
   ))).size
+  const summaryDetail = `Proposed ${mappings.length} governed mappings across ${byTable.size} of ${selectedTableCount} selected table${selectedTableCount === 1 ? '' : 's'} using ${contextColumns.length} of ${columns.length} columns.`
+  const summaryObjective = objective.trim().slice(0, Math.max(0, SEMANTIC_SUMMARY_MAX_LENGTH - summaryDetail.length - 1))
   return SemanticCopilotProposalSchema.parse({
-    summary: `${objective.trim()} Proposed ${mappings.length} governed mappings across ${byTable.size} of ${selectedTableCount} selected table${selectedTableCount === 1 ? '' : 's'} using ${contextColumns.length} of ${columns.length} columns.`,
+    summary: `${summaryObjective} ${summaryDetail}`.trim(),
     mappings,
     relationships,
   })
@@ -257,6 +264,14 @@ export function validateSemanticCopilotProposal({
 }) {
   const columnById = new Map(selectedColumns.map(column => [column.id, column]))
   const issues: SemanticProposalValidationIssue[] = []
+  if (proposal.summary.length > SEMANTIC_SUMMARY_MAX_LENGTH) {
+    issues.push({
+      severity: 'warning',
+      code: 'summary_truncated',
+      message: 'The AI summary exceeded the 500-character display limit and was shortened.',
+      path: ['summary'],
+    })
+  }
   const seenColumns = new Set<string>()
   const mappings = proposal.mappings.filter((mapping, index) => {
     const column = columnById.get(mapping.columnId)
@@ -296,7 +311,12 @@ export function validateSemanticCopilotProposal({
     issues.push({ severity: 'error', code: 'no_valid_mappings', message: 'No valid mappings remained after schema validation.' })
   }
 
-  const sanitized = SemanticCopilotProposalSchema.parse({ ...proposal, mappings, relationships })
+  const sanitized = SemanticCopilotProposalSchema.parse({
+    ...proposal,
+    summary: proposal.summary.slice(0, SEMANTIC_SUMMARY_MAX_LENGTH),
+    mappings,
+    relationships,
+  })
   return {
     proposal: sanitized,
     issues,

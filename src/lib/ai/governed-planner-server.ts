@@ -9,7 +9,7 @@ import {
 } from '@/lib/ai/dataset-copilot'
 import {
   selectSemanticContextColumns,
-  SemanticCopilotProposalSchema,
+  SemanticCopilotGenerationSchema,
   validateSemanticCopilotProposal,
 } from '@/lib/ai/semantic-copilot'
 import {
@@ -44,7 +44,7 @@ export async function generateSemanticMappingProposal({
   const result = await generateObject({
     model: ai.model,
     providerOptions: getAiWorkflowProviderOptions(ai),
-    schema: SemanticCopilotProposalSchema,
+    schema: SemanticCopilotGenerationSchema,
     system: `You are DashboardOS Semantic Copilot. Convert approved database schema evidence into a reviewable business semantic proposal.
 
 Rules:

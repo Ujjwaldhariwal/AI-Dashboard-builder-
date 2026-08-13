@@ -93,6 +93,22 @@ test.describe('semantic copilot', () => {
     expect(proposal.summary).toContain('using 80 of 120 columns')
   })
 
+  test('bounds long Autopilot instructions and verbose model summaries', () => {
+    const proposal = buildDeterministicSemanticProposal(selectedColumns, 'KPI requirement. '.repeat(300))
+
+    expect(proposal.summary.length).toBeLessThanOrEqual(500)
+    expect(proposal.summary).toContain('using 6 of 6 columns')
+
+    const checked = validateSemanticCopilotProposal({
+      proposal: { ...proposal, summary: 'Verbose model summary. '.repeat(40) },
+      selectedColumns,
+    })
+    expect(checked.proposal.summary.length).toBeLessThanOrEqual(500)
+    expect(checked.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'summary_truncated', severity: 'warning' }),
+    ]))
+  })
+
   test('grounds the server and UI in the confirmed schema scope', () => {
     const route = readFileSync(join(process.cwd(), 'src/app/api/admin/semantic-models/[id]/ai-proposal/route.ts'), 'utf8')
     const planner = readFileSync(join(process.cwd(), 'src/lib/ai/governed-planner-server.ts'), 'utf8')
